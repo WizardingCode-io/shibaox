@@ -6,13 +6,9 @@ import { collectRun, type RuntimeAdapter, type TaskJob } from '../executors/type
 import { type CheckRunners, defaultCheckRunners, runGate } from '../gates/engine.js';
 import { injectTeamGates } from '../org/inject-gates.js';
 import type { Decider, HumanHandler } from './deciders.js';
-import { replay } from './reducer.js';
+import { isTerminal, replay } from './reducer.js';
 import { readyNodes } from './scheduler.js';
-import type { RunState, RunStatus } from './state.js';
-
-function isTerminalStatus(status: RunStatus): boolean {
-  return status === 'completed' || status === 'failed' || status === 'cancelled';
-}
+import type { RunState } from './state.js';
 
 export interface EngineDeps {
   store: EventStore;
@@ -122,14 +118,23 @@ export class RunEngine {
 
   async cancel(runId: string, reason: string): Promise<RunState> {
     const state = await this.state(runId);
-    if (isTerminalStatus(state.status)) return state;
-    this.controllerFor(runId).abort(new Error(reason));
+    if (isTerminal(state.status)) return state;
+    // Record the cancellation before aborting: the reducer keeps terminal
+    // status sticky, so RunCancelled must be durably appended first or a
+    // NodeFailed racing in from the aborted task could land first and win.
     await this.emit({ type: 'RunCancelled', runId, at: this.now(), reason });
+    this.controllerFor(runId).abort(new Error(reason));
+    this.releaseController(runId);
     return this.state(runId);
   }
 
   async listRuns(): Promise<RunSummary[]> {
     return this.deps.store.listRuns();
+  }
+
+  /** Number of runs with a live AbortController (test/observability helper). */
+  controllerCount(): number {
+    return this.controllers.size;
   }
 
   private controllerFor(runId: string): AbortController {
@@ -139,6 +144,10 @@ export class RunEngine {
       this.controllers.set(runId, c);
     }
     return c;
+  }
+
+  private releaseController(runId: string): void {
+    this.controllers.delete(runId);
   }
 
   private resolveWorkflow(name: string): Workflow {
@@ -180,15 +189,18 @@ export class RunEngine {
         interrupted = false;
       }
       if (state.status !== 'running') {
-        if (isTerminalStatus(state.status)) this.controllers.delete(runId);
+        if (isTerminal(state.status)) this.releaseController(runId);
         return state;
       }
-      if (this.controllerFor(runId).signal.aborted) return state;
+      if (this.controllerFor(runId).signal.aborted) {
+        this.releaseController(runId);
+        return state;
+      }
       const workflow = this.resolveWorkflow(state.workflow);
       const ready = readyNodes(state, workflow);
       if (ready.length === 0) {
         await this.emit({ type: 'RunCompleted', runId, at: this.now() });
-        this.controllers.delete(runId);
+        this.releaseController(runId);
         return this.state(runId);
       }
       if (steps >= this.maxSteps) {
@@ -198,7 +210,7 @@ export class RunEngine {
           at: this.now(),
           reason: `max steps exceeded (${this.maxSteps})`,
         });
-        this.controllers.delete(runId);
+        this.releaseController(runId);
         return this.state(runId);
       }
       await Promise.all(ready.map((nodeId) => this.executeNode(runId, nodeId, workflow, state)));

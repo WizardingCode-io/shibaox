@@ -14,7 +14,7 @@ function addCost(state: RunState, event: RunEvent): RunState {
   return cost ? { ...state, spentUsd: state.spentUsd + cost.usd } : state;
 }
 
-function isTerminal(status: RunStatus): boolean {
+export function isTerminal(status: RunStatus): boolean {
   return status === 'completed' || status === 'failed' || status === 'cancelled';
 }
 

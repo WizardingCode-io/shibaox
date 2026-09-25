@@ -425,7 +425,7 @@ describe('RunEngine', () => {
       });
       return { output: null, summary: '' };
     });
-    const { engine } = engineFor(dir, { adapters: { mock: adapter } });
+    const { engine, store } = engineFor(dir, { adapters: { mock: adapter } });
     const started = engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
     await new Promise((r) => setTimeout(r, 50));
     const runId = (await engine.listRuns())[0]!.runId;
@@ -435,5 +435,19 @@ describe('RunEngine', () => {
     const final = await started;
     expect(final.status).toBe('cancelled');
     expect(final.nodes.analyse?.status).toBe('failed');
+    const types = (await store.read(runId)).map((e) => e.type);
+    expect(types.indexOf('RunCancelled')).toBeGreaterThanOrEqual(0);
+    expect(types.indexOf('NodeFailed')).toBeGreaterThanOrEqual(0);
+    expect(types.indexOf('RunCancelled')).toBeLessThan(types.indexOf('NodeFailed'));
+  });
+
+  it('cancel() on a waiting_human run cancels it and releases the controller', async () => {
+    const { engine } = engineFor(scaffold(orgFiles('true')), { human: new DeferHuman() });
+    const waiting = await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
+    expect(waiting.status).toBe('waiting_human');
+    expect(engine.controllerCount()).toBe(1);
+    const cancelled = await engine.cancel(waiting.runId, 'stop');
+    expect(cancelled.status).toBe('cancelled');
+    expect(engine.controllerCount()).toBe(0);
   });
 });
