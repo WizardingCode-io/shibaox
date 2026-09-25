@@ -49,22 +49,36 @@ function readYamlFile<T>(root: string, rel: string, schema: ZodType<T>): T {
   return result.data;
 }
 
+interface DirEntities<T> {
+  items: Record<string, T>;
+  files: Record<string, string>;
+}
+
 function readDir<T extends Record<string, unknown>>(
   root: string,
   sub: string,
   schema: ZodType<T>,
   key: keyof T & string,
-): Record<string, T> {
+  kind: string,
+): DirEntities<T> {
   const dir = join(root, sub);
-  if (!existsSync(dir)) return {};
-  const out: Record<string, T> = {};
+  if (!existsSync(dir)) return { items: {}, files: {} };
+  const items: Record<string, T> = {};
+  const files: Record<string, string> = {};
   for (const name of readdirSync(dir)
     .filter((f) => /\.ya?ml$/.test(f))
     .sort()) {
-    const item = readYamlFile(root, join(sub, name), schema);
-    out[String(item[key])] = item;
+    const file = join(sub, name);
+    const item = readYamlFile(root, file, schema);
+    const id = String(item[key]);
+    const existingFile = files[id];
+    if (existingFile) {
+      throw new OrgLoadError(file, `duplicate ${kind} id "${id}" also defined in ${existingFile}`);
+    }
+    items[id] = item;
+    files[id] = file;
   }
-  return out;
+  return { items, files };
 }
 
 export function loadOrg(root: string): Org {
@@ -73,17 +87,23 @@ export function loadOrg(root: string): Org {
   const models = existsSync(join(root, 'models.yaml'))
     ? readYamlFile(root, 'models.yaml', ModelsSchema)
     : ModelsSchema.parse({});
-  const teams = readDir(root, 'teams', TeamSchema, 'team');
-  const roles = readDir(root, 'roles', RoleSchema, 'role');
-  const workflows = readDir(root, 'workflows', WorkflowSchema, 'workflow');
-  const gates = readDir(root, 'gates', GateSchema, 'gate');
-  const catalog = readDir(root, 'catalog', CatalogEntrySchema, 'id');
+  const { items: teams, files: teamFiles } = readDir(root, 'teams', TeamSchema, 'team', 'team');
+  const { items: roles } = readDir(root, 'roles', RoleSchema, 'role', 'role');
+  const { items: workflows, files: workflowFiles } = readDir(
+    root,
+    'workflows',
+    WorkflowSchema,
+    'workflow',
+    'workflow',
+  );
+  const { items: gates } = readDir(root, 'gates', GateSchema, 'gate', 'gate');
+  const { items: catalog } = readDir(root, 'catalog', CatalogEntrySchema, 'id', 'catalog entry');
 
   for (const t of org.teams) {
     if (!teams[t]) throw new OrgLoadError('org.yaml', `team "${t}" has no file in teams/`);
   }
   for (const [name, team] of Object.entries(teams)) {
-    const file = `teams/${name}.yaml`;
+    const file = teamFiles[name] ?? `teams/${name}.yaml`;
     if (!roles[team.lead])
       throw new OrgLoadError(file, `lead role "${team.lead}" is not defined in roles/`);
     for (const r of team.roles)
@@ -95,7 +115,7 @@ export function loadOrg(root: string): Org {
         throw new OrgLoadError(file, `workflow "${w}" is not defined in workflows/`);
   }
   for (const [name, wf] of Object.entries(workflows)) {
-    const file = `workflows/${name}.yaml`;
+    const file = workflowFiles[name] ?? `workflows/${name}.yaml`;
     if (wf.team && !teams[wf.team])
       throw new OrgLoadError(file, `team "${wf.team}" is not defined`);
     for (const [id, node] of Object.entries(wf.nodes)) {

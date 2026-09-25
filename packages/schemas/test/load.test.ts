@@ -63,4 +63,38 @@ describe('loadOrg', () => {
     });
     expect(() => loadOrg(dir)).toThrowError(/gate "nope"/);
   });
+
+  it('reports the actual source file, not a synthesized path, for a team cross-validation error', () => {
+    const filesWithoutTeam = Object.fromEntries(
+      Object.entries(good).filter(([rel]) => rel !== 'teams/eng.yaml'),
+    );
+    const dir = scaffold({
+      ...filesWithoutTeam,
+      'teams/eng-team.yml': good['teams/eng.yaml'].replace('gates: [tests]', 'gates: [nope]'),
+    });
+    expect(() => loadOrg(dir)).toThrowError(OrgLoadError);
+    try {
+      loadOrg(dir);
+    } catch (e) {
+      const err = e as OrgLoadError;
+      expect(err.file).toBe('teams/eng-team.yml');
+    }
+  });
+
+  it('rejects duplicate ids across files in the same directory', () => {
+    const dir = scaffold({
+      ...good,
+      'roles/a.yaml': 'role: dup\n',
+      'roles/b.yaml': 'role: dup\n',
+    });
+    expect(() => loadOrg(dir)).toThrowError(OrgLoadError);
+    try {
+      loadOrg(dir);
+    } catch (e) {
+      const err = e as OrgLoadError;
+      expect(err.message).toContain('duplicate');
+      expect(err.message).toContain('dup');
+      expect(err.message).toContain('roles/a.yaml');
+    }
+  });
 });
