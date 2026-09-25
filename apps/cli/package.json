@@ -1,0 +1,24 @@
+{
+  "name": "@shibaox/cli",
+  "version": "0.0.1",
+  "type": "module",
+  "bin": {
+    "shibaox": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && chmod +x dist/index.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@shibaox/core": "workspace:*",
+    "@shibaox/persistence-sqlite": "workspace:*",
+    "@shibaox/schemas": "workspace:*",
+    "commander": "^15.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "tsx": "^4.20.0"
+  }
+}
