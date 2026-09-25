@@ -1,0 +1,62 @@
+# Direct APIs
+- { id: anthropic, name: Anthropic (API key), kind: anthropic, auth: { type: api_key, env: ANTHROPIC_API_KEY }, models: [claude-opus-5-5, claude-sonnet-5, claude-haiku-4-5], pricing: { claude-haiku-4-5: { input_per_m: 1, output_per_m: 5 } } }
+- { id: anthropic-subscription, name: Anthropic (Claude subscription via Claude Code), via_runtime: claude-code, models: [claude-opus-5-5, claude-sonnet-5, claude-haiku-4-5], notes: Uses the login already present in the Claude Code CLI }
+- { id: openai, name: OpenAI (API key), kind: openai, auth: { type: api_key, env: OPENAI_API_KEY }, models: [gpt-5, gpt-5-mini] }
+- { id: openai-codex-subscription, name: OpenAI (ChatGPT/Codex sign-in via Codex CLI), via_runtime: codex, models: [gpt-5-codex] }
+- { id: google, name: Google Gemini (API key), kind: google, auth: { type: api_key, env: GOOGLE_GENERATIVE_AI_API_KEY }, models: [gemini-2.5-pro, gemini-2.5-flash] }
+- { id: gemini-cli-subscription, name: Google Gemini (OAuth via Gemini CLI), via_runtime: gemini-cli, models: [gemini-2.5-pro] }
+- { id: xai, name: xAI Grok, kind: xai, auth: { type: api_key, env: XAI_API_KEY }, models: [grok-4] }
+- { id: mistral, name: Mistral, kind: mistral, auth: { type: api_key, env: MISTRAL_API_KEY }, models: [mistral-large-latest, codestral-latest] }
+- { id: deepseek, name: DeepSeek, kind: deepseek, auth: { type: api_key, env: DEEPSEEK_API_KEY }, models: [deepseek-chat, deepseek-reasoner] }
+- { id: cohere, name: Cohere, kind: cohere, auth: { type: api_key, env: COHERE_API_KEY }, models: [command-a-03-2025] }
+- { id: moonshotai, name: Moonshot / Kimi (API key), kind: moonshotai, auth: { type: api_key, env: MOONSHOT_API_KEY }, models: [kimi-k2-0905-preview] }
+- { id: kimi-coding, name: Kimi for Coding (Coding Plan), kind: openai-compatible, base_url: https://api.kimi.com/coding/v1, auth: { type: api_key, env: KIMI_CODING_API_KEY }, verify: true }
+- { id: alibaba, name: Alibaba Model Studio (official provider), kind: alibaba, auth: { type: api_key, env: ALIBABA_API_KEY }, models: [qwen3-max, qwen3-coder-plus] }
+- { id: qwen-dashscope, name: Qwen Cloud (DashScope, OpenAI-compatible), kind: openai-compatible, base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1, auth: { type: api_key, env: DASHSCOPE_API_KEY }, models: [qwen3-coder-plus] }
+- { id: qwen-portal-subscription, name: Qwen Portal (OAuth via Qwen Code CLI), via_runtime: qwen-code }
+- { id: minimax, name: MiniMax, kind: minimax, auth: { type: api_key, env: MINIMAX_API_KEY }, models: [MiniMax-M2] }
+- { id: zai, name: Z.AI GLM (API key), kind: zai, auth: { type: api_key, env: ZAI_API_KEY }, models: [glm-4.6] }
+- { id: zai-coding, name: Z.AI GLM Coding Plan, kind: openai-compatible, base_url: https://api.z.ai/api/coding/paas/v4, auth: { type: api_key, env: ZAI_API_KEY }, models: [glm-4.6], verify: true }
+- { id: stepfun, name: StepFun, kind: openai-compatible, base_url: https://api.stepfun.com/v1, auth: { type: api_key, env: STEPFUN_API_KEY }, verify: true }
+- { id: xiaomi, name: Xiaomi MiMo, kind: openai-compatible, base_url: https://api.xiaomimimo.com/v1, auth: { type: api_key, env: XIAOMI_API_KEY }, verify: true }
+- { id: volcengine, name: Volcengine Ark, kind: openai-compatible, base_url: https://ark.cn-beijing.volces.com/api/v3, auth: { type: api_key, env: ARK_API_KEY } }
+- { id: tencent-cloud, name: Tencent Hunyuan, kind: openai-compatible, base_url: https://api.hunyuan.cloud.tencent.com/v1, auth: { type: api_key, env: HUNYUAN_API_KEY } }
+- { id: qianfan, name: Baidu Qianfan, kind: openai-compatible, base_url: https://qianfan.baidubce.com/v2, auth: { type: api_key, env: QIANFAN_API_KEY } }
+- { id: byteplus, name: BytePlus Ark, kind: openai-compatible, base_url: https://ark.ap-southeast.bytepluses.com/api/v3, auth: { type: api_key, env: BYTEPLUS_API_KEY } }
+- { id: venice, name: Venice, kind: openai-compatible, base_url: https://api.venice.ai/api/v1, auth: { type: api_key, env: VENICE_API_KEY } }
+- { id: arcee, name: Arcee AI, kind: openai-compatible, base_url: https://conductor.arcee.ai/v1, auth: { type: api_key, env: ARCEE_API_KEY }, verify: true }
+- { id: synthetic, name: Synthetic, kind: openai-compatible, base_url: https://api.synthetic.new/v1, auth: { type: api_key, env: SYNTHETIC_API_KEY }, verify: true }
+- { id: vydra, name: Vydra, kind: openai-compatible, base_url_env: VYDRA_BASE_URL, auth: { type: api_key, env: VYDRA_API_KEY }, verify: true }
+- { id: gmi-cloud, name: GMI Cloud, kind: openai-compatible, base_url: https://api.gmi-serving.com/v1, auth: { type: api_key, env: GMI_API_KEY }, verify: true }
+- { id: opencode, name: OpenCode Zen, kind: openai-compatible, base_url: https://opencode.ai/zen/v1, auth: { type: api_key, env: OPENCODE_API_KEY }, verify: true }
+- { id: opencode-go, name: OpenCode Go, kind: openai-compatible, base_url: https://opencode.ai/zen/go/v1, auth: { type: api_key, env: OPENCODE_API_KEY }, verify: true }
+- { id: github-copilot-subscription, name: GitHub Copilot (via Copilot CLI), via_runtime: copilot-cli }
+- { id: claude-max-proxy, name: Claude Max API proxy (local OpenAI-compatible proxy), kind: openai-compatible, base_url_env: CLAUDE_MAX_PROXY_URL, auth: { type: none }, verify: true }
+# Gateways and enterprise clouds
+- { id: bedrock, name: Amazon Bedrock, kind: bedrock, auth: { type: aws }, models: [anthropic.claude-sonnet-4-5, amazon.nova-pro-v1:0] }
+- { id: bedrock-mantle, name: Bedrock Mantle (OpenAI-compatible), kind: openai-compatible, base_url_env: BEDROCK_MANTLE_BASE_URL, auth: { type: api_key, env: AWS_BEARER_TOKEN_BEDROCK }, verify: true }
+- { id: vertex, name: Google Vertex AI, kind: vertex, auth: { type: gcp }, models: [gemini-2.5-pro] }
+- { id: vertex-anthropic, name: Anthropic on Vertex, kind: vertex-anthropic, auth: { type: gcp }, models: [claude-sonnet-4-5@20250929] }
+- { id: azure, name: Azure OpenAI, kind: azure, auth: { type: azure }, models: [gpt-5] }
+- { id: microsoft-foundry, name: Microsoft Foundry (OpenAI-compatible), kind: openai-compatible, base_url_env: AZURE_FOUNDRY_BASE_URL, auth: { type: api_key, env: AZURE_FOUNDRY_API_KEY }, verify: true }
+- { id: cloudflare-gateway, name: Cloudflare AI Gateway (OpenAI-compatible), kind: openai-compatible, base_url_env: CLOUDFLARE_GATEWAY_URL, auth: { type: api_key, env: CLOUDFLARE_GATEWAY_API_KEY }, notes: "URL like https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat" }
+- { id: vercel-gateway, name: Vercel AI Gateway, kind: openai-compatible, base_url: https://ai-gateway.vercel.sh/v1, auth: { type: api_key, env: AI_GATEWAY_API_KEY } }
+- { id: openrouter, name: OpenRouter, kind: openrouter, auth: { type: api_key, env: OPENROUTER_API_KEY }, models: [anthropic/claude-sonnet-4.5, openai/gpt-5, meta-llama/llama-3.3-70b-instruct, qwen/qwen3-coder], pricing: { anthropic/claude-sonnet-4.5: { input_per_m: 3, output_per_m: 15 } } }
+- { id: clawrouter, name: ClawRouter, kind: openai-compatible, base_url_env: CLAWROUTER_BASE_URL, auth: { type: api_key, env: CLAWROUTER_API_KEY }, verify: true }
+- { id: litellm, name: LiteLLM proxy, kind: openai-compatible, base_url: http://localhost:4000/v1, auth: { type: api_key, env: LITELLM_API_KEY } }
+- { id: kilocode, name: Kilocode gateway, kind: openai-compatible, base_url_env: KILOCODE_BASE_URL, auth: { type: api_key, env: KILOCODE_API_KEY }, verify: true }
+# Hosted inference
+- { id: groq, name: Groq, kind: groq, auth: { type: api_key, env: GROQ_API_KEY }, models: [llama-3.3-70b-versatile, openai/gpt-oss-120b] }
+- { id: cerebras, name: Cerebras, kind: cerebras, auth: { type: api_key, env: CEREBRAS_API_KEY }, models: [llama-3.3-70b] }
+- { id: togetherai, name: Together AI, kind: togetherai, auth: { type: api_key, env: TOGETHER_AI_API_KEY }, models: [meta-llama/Llama-3.3-70B-Instruct-Turbo] }
+- { id: fireworks, name: Fireworks, kind: fireworks, auth: { type: api_key, env: FIREWORKS_API_KEY }, models: [accounts/fireworks/models/llama-v3p3-70b-instruct] }
+- { id: nvidia, name: NVIDIA NIM, kind: openai-compatible, base_url: https://integrate.api.nvidia.com/v1, auth: { type: api_key, env: NVIDIA_API_KEY }, models: [meta/llama-3.3-70b-instruct] }
+- { id: huggingface, name: Hugging Face Inference, kind: huggingface, auth: { type: api_key, env: HUGGINGFACE_API_KEY } }
+- { id: deepinfra, name: DeepInfra, kind: deepinfra, auth: { type: api_key, env: DEEPINFRA_API_KEY } }
+- { id: chutes, name: Chutes, kind: openai-compatible, base_url: https://llm.chutes.ai/v1, auth: { type: api_key, env: CHUTES_API_KEY }, verify: true }
+- { id: novita, name: NovitaAI, kind: openai-compatible, base_url: https://api.novita.ai/v3/openai, auth: { type: api_key, env: NOVITA_API_KEY } }
+- { id: perplexity, name: Perplexity, kind: perplexity, auth: { type: api_key, env: PERPLEXITY_API_KEY }, models: [sonar-pro] }
+- { id: ollama-cloud, name: Ollama Cloud, kind: openai-compatible, base_url: https://ollama.com/v1, auth: { type: api_key, env: OLLAMA_API_KEY } }
+# Local
+- { id: ollama, name: Ollama (local), kind: openai-compatible, base_url: http://localhost:11434/v1, auth: { type: none }, models: [llama3.2, qwen2.5-coder:7b] }
+- { id: lmstudio, name: LM Studio (local), kind: openai-compatible, base_url: http://localhost:1234/v1, auth: { type: none } }
