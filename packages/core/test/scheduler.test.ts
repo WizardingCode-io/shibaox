@@ -91,6 +91,58 @@ describe('readyNodes', () => {
       ),
     ).toEqual(['b1']);
   });
+  it('gate rework to start node makes it ready again', () => {
+    const simpleWf = WorkflowSchema.parse({
+      workflow: 'w2',
+      start: 'a',
+      nodes: {
+        a: { type: 'task', role: 'r', next: 'g' },
+        g: { type: 'gate', gates: ['t'], on_pass: 'done', on_fail: 'a' },
+        done: { type: 'human', action: 'ok' },
+      },
+    });
+    const createdSimple: RunEvent = {
+      type: 'RunCreated',
+      runId: 'r2',
+      at,
+      workflow: 'w2',
+      input: {},
+      workspace: '/w',
+    };
+    const startedSimple = (nodeId: string): RunEvent => ({
+      type: 'NodeStarted',
+      runId: 'r2',
+      nodeId,
+      at,
+    });
+    const doneSimple = (nodeId: string): RunEvent => ({
+      type: 'NodeCompleted',
+      runId: 'r2',
+      nodeId,
+      at,
+      output: null,
+      summary: '',
+    });
+    const base = [createdSimple, startedSimple('a'), doneSimple('a'), startedSimple('g')];
+    const report = { gates: ['t'], passed: false, checks: [] };
+    expect(
+      readyNodes(
+        replay([
+          ...base,
+          {
+            type: 'GateFailed',
+            runId: 'r2',
+            nodeId: 'g',
+            at,
+            report,
+            rework: 'a',
+          },
+        ]),
+        simpleWf,
+      ),
+    ).toEqual(['a']);
+  });
+
   it('decide follows the chosen option', () => {
     const evs: RunEvent[] = [
       created,

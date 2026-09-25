@@ -7,9 +7,11 @@ export function readyNodes(state: RunState, workflow: Workflow): string[] {
   if (state.status !== 'running') return [];
   const statusOf = (id: string): NodeStatus => state.nodes[id]?.status ?? 'pending';
   const ready = new Set<string>();
-  if (Object.keys(state.nodes).length === 0 && statusOf(workflow.start) === 'pending') {
-    ready.add(workflow.start);
-  }
+  const startEntry = state.nodes[workflow.start];
+  const startReady = startEntry
+    ? startEntry.status === 'pending'
+    : Object.keys(state.nodes).length === 0;
+  if (startReady) ready.add(workflow.start);
 
   for (const [id, node] of Object.entries(workflow.nodes)) {
     const status = statusOf(id);
