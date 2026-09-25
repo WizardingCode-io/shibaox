@@ -1,0 +1,54 @@
+import type { Cost, GateReport, Role } from '@shibaox/schemas';
+
+export type Capability = 'write-code' | 'run-tests' | 'read-only' | 'shell';
+
+export type RuntimeEvent =
+  | { type: 'started' }
+  | { type: 'text'; text: string }
+  | { type: 'tool_use'; name: string; input: unknown }
+  | { type: 'tool_result'; name: string; output: unknown }
+  | { type: 'file_changed'; path: string }
+  | { type: 'result'; output: unknown; summary: string; cost?: Cost }
+  | { type: 'error'; message: string };
+
+export interface TaskJob {
+  runId: string;
+  nodeId: string;
+  role: Role;
+  instruction: string;
+  input: Record<string, unknown>;
+  workspace: string;
+  context: { lastGateReport?: GateReport; previousOutputs: Record<string, unknown> };
+}
+
+export interface ExecutionContext {
+  signal: AbortSignal;
+  log: (line: string) => void;
+}
+
+export interface TaskResult {
+  output: unknown;
+  summary: string;
+  cost?: Cost;
+}
+
+export interface RuntimeAdapter {
+  readonly id: string;
+  capabilities(): Capability[];
+  run(job: TaskJob, ctx: ExecutionContext): AsyncIterable<RuntimeEvent>;
+  cancel(jobId: string): Promise<void>;
+}
+
+export async function collectRun(
+  adapter: RuntimeAdapter,
+  job: TaskJob,
+  ctx: ExecutionContext,
+): Promise<TaskResult> {
+  for await (const event of adapter.run(job, ctx)) {
+    if (event.type === 'text') ctx.log(event.text);
+    if (event.type === 'error') throw new Error(event.message);
+    if (event.type === 'result')
+      return { output: event.output, summary: event.summary, cost: event.cost };
+  }
+  throw new Error(`adapter ${adapter.id} ended without a result for node ${job.nodeId}`);
+}
