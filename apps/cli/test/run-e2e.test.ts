@@ -1,12 +1,13 @@
 import { cpSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { AutoApproveHuman } from '@shibaox/core';
 import { describe, expect, it } from 'vitest';
 import { scaffoldOrg } from '../src/commands/init.js';
 import { runWorkflow } from '../src/commands/run.js';
 
-const sample = new URL('../../../examples/sample-repo', import.meta.url).pathname;
+const sample = fileURLToPath(new URL('../../../examples/sample-repo', import.meta.url));
 
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), 'e2e-'));
