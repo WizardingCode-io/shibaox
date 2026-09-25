@@ -24,37 +24,55 @@ export async function startFakeOpenAI(script: FakeScript) {
           res.end('not found');
           return;
         }
-        const parsed = JSON.parse(body) as { messages: unknown[]; tools?: unknown[] };
+        let parsed: { messages: unknown[]; tools?: unknown[] };
+        try {
+          parsed = JSON.parse(body) as { messages: unknown[]; tools?: unknown[] };
+        } catch {
+          res.statusCode = 400;
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify({ error: { message: 'invalid json' } }));
+          return;
+        }
         requests.push(parsed);
-        const t = await script(parsed, turn++);
-        const message = t.toolCalls
-          ? {
-              role: 'assistant',
-              content: null,
-              tool_calls: t.toolCalls.map((c, i) => ({
-                id: `call_${turn}_${i}`,
-                type: 'function',
-                function: { name: c.name, arguments: JSON.stringify(c.args) },
-              })),
-            }
-          : { role: 'assistant', content: t.content ?? '' };
-        const promptTokens = Math.max(1, Math.ceil(body.length / 4));
-        const completionTokens = Math.max(1, Math.ceil(JSON.stringify(message).length / 4));
-        res.setHeader('content-type', 'application/json');
-        res.end(
-          JSON.stringify({
-            id: `chatcmpl-${turn}`,
-            object: 'chat.completion',
-            created: Math.floor(Date.now() / 1000),
-            model: 'm',
-            choices: [{ index: 0, message, finish_reason: t.toolCalls ? 'tool_calls' : 'stop' }],
-            usage: {
-              prompt_tokens: promptTokens,
-              completion_tokens: completionTokens,
-              total_tokens: promptTokens + completionTokens,
-            },
-          }),
-        );
+        try {
+          const t = await script(parsed, turn++);
+          const message = t.toolCalls
+            ? {
+                role: 'assistant',
+                content: null,
+                tool_calls: t.toolCalls.map((c, i) => ({
+                  id: `call_${turn}_${i}`,
+                  type: 'function',
+                  function: { name: c.name, arguments: JSON.stringify(c.args) },
+                })),
+              }
+            : { role: 'assistant', content: t.content ?? '' };
+          const promptTokens = Math.max(1, Math.ceil(body.length / 4));
+          const completionTokens = Math.max(1, Math.ceil(JSON.stringify(message).length / 4));
+          res.setHeader('content-type', 'application/json');
+          res.end(
+            JSON.stringify({
+              id: `chatcmpl-${turn}`,
+              object: 'chat.completion',
+              created: Math.floor(Date.now() / 1000),
+              model: 'm',
+              choices: [{ index: 0, message, finish_reason: t.toolCalls ? 'tool_calls' : 'stop' }],
+              usage: {
+                prompt_tokens: promptTokens,
+                completion_tokens: completionTokens,
+                total_tokens: promptTokens + completionTokens,
+              },
+            }),
+          );
+        } catch (err) {
+          res.statusCode = 500;
+          res.setHeader('content-type', 'application/json');
+          res.end(
+            JSON.stringify({
+              error: { message: err instanceof Error ? err.message : String(err) },
+            }),
+          );
+        }
       })();
     });
   });
@@ -64,6 +82,10 @@ export async function startFakeOpenAI(script: FakeScript) {
   return {
     baseURL: `http://127.0.0.1:${port}/v1`,
     requests,
-    close: () => new Promise<void>((r) => server.close(() => r())),
+    close: () =>
+      new Promise<void>((r) => {
+        server.closeAllConnections();
+        server.close(() => r());
+      }),
   };
 }

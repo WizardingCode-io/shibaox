@@ -65,4 +65,34 @@ describe('LlmClient over an OpenAI-compatible fake', () => {
     expect(r.output).toEqual({ passed: true, evidence: 'ok' });
     await fake.close();
   });
+
+  it('surfaces a throwing script as a rejected generate() call instead of hanging or crashing', async () => {
+    fake = await startFakeOpenAI(() => {
+      throw new Error('upstream down');
+    });
+    const client = new LlmClient(new ProviderRegistry([entryFor(fake.baseURL)], {}));
+    await expect(
+      client.generate('fake/m', { messages: [{ role: 'user', content: 'hi' }] }),
+    ).rejects.toThrow(/upstream down/);
+    await fake.close();
+  });
+
+  it('supports a script that resolves its turn asynchronously', async () => {
+    fake = await startFakeOpenAI(
+      () => new Promise((resolve) => setTimeout(() => resolve({ content: 'delayed' }), 20)),
+    );
+    const client = new LlmClient(new ProviderRegistry([entryFor(fake.baseURL)], {}));
+    const r = await client.generate('fake/m', { messages: [{ role: 'user', content: 'hi' }] });
+    expect(r.text).toBe('delayed');
+    await fake.close();
+  });
+
+  it('close() resolves promptly right after a completed request', async () => {
+    fake = await startFakeOpenAI(() => ({ content: 'done' }));
+    const client = new LlmClient(new ProviderRegistry([entryFor(fake.baseURL)], {}));
+    await client.generate('fake/m', { messages: [{ role: 'user', content: 'hi' }] });
+    const start = Date.now();
+    await fake.close();
+    expect(Date.now() - start).toBeLessThan(500);
+  });
 });
