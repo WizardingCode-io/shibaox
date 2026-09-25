@@ -348,6 +348,51 @@ describe('RunEngine', () => {
     expect(done.status).toBe('completed');
   });
 
+  it('a join gate that fails reworks one branch and completes when it passes', async () => {
+    const dir = scaffold({
+      'org.yaml': 'organization: wc\nteams: [eng]\n',
+      'teams/eng.yaml': 'team: eng\nlead: tl\nroles: [tl, analyst]\nworkflows: [jg]\n',
+      'roles/tl.yaml': 'role: tl\n',
+      'roles/analyst.yaml': 'role: analyst\nruntime: mock\n',
+      'gates/ready.yaml':
+        'gate: ready\nchecks:\n  - { name: ok-file, type: code, command: "test -f ok.txt" }\n',
+      'workflows/jg.yaml': [
+        'workflow: jg',
+        'team: eng',
+        'start: p',
+        'nodes:',
+        '  p: { type: parallel, branches: [b1, b2], join: g }',
+        '  b1: { type: task, role: analyst, instruction: b1 }',
+        '  b2: { type: task, role: analyst, instruction: b2 }',
+        '  g: { type: gate, gates: [ready], on_pass: h, on_fail: b1, max_retries: 1 }',
+        '  h: { type: human, action: ok }',
+        '',
+      ].join('\n'),
+    });
+    const workspace = mkdtempSync(join(tmpdir(), 'ws-'));
+    const calls: string[] = [];
+    const { engine, store } = engineFor(dir, {
+      adapters: {
+        mock: new MockAdapter((j) => {
+          calls.push(j.nodeId);
+          // b1 creates the file the gate checks for only on its second run
+          if (calls.filter((c) => c === 'b1').length === 2)
+            writeFileSync(join(workspace, 'ok.txt'), 'ok');
+          return { output: null, summary: '' };
+        }),
+      },
+    });
+    const s = await engine.start({ workflow: 'jg', input: {}, workspace });
+    expect(s.status).toBe('completed');
+    expect(calls.sort()).toEqual(['b1', 'b1', 'b2']);
+    expect(s.nodes.b2?.attempts).toBe(1);
+    expect(s.nodes.g).toMatchObject({ status: 'passed', attempts: 2 });
+    expect(s.nodes.h?.status).toBe('completed');
+    const types = (await store.read(s.runId)).map((e) => e.type);
+    expect(types.filter((t) => t === 'GateFailed')).toHaveLength(1);
+    expect(types.filter((t) => t === 'GatePassed')).toHaveLength(1);
+  });
+
   it('resume on a budget-paused run requires a budget above what was spent', async () => {
     const { engine } = engineFor(scaffold(orgFiles('true')));
     const paused = await engine.start({

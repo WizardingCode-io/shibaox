@@ -50,7 +50,7 @@ export function readyNodes(state: RunState, workflow: Workflow): string[] {
       case 'parallel':
         if (p.status === 'completed') {
           targets.push(...node.branches);
-          if (joinReady(state, node.branches, node.join)) ready.add(node.join);
+          if (joinReady(state, p.finishedIdx, node.branches, node.join)) ready.add(node.join);
         }
         break;
     }
@@ -59,15 +59,34 @@ export function readyNodes(state: RunState, workflow: Workflow): string[] {
   return [...ready].sort();
 }
 
-function joinReady(state: RunState, branches: readonly string[], joinId: string): boolean {
+/**
+ * A join is ready when every branch finished after the current fan-out
+ * (`branch.finishedIdx > parallel.finishedIdx`) and, if the join already ran,
+ * some branch finished after it last started. "Some" lets a gate that reworks
+ * a single branch re-run as the join without re-running the other branches.
+ */
+function joinReady(
+  state: RunState,
+  parallelFinishedIdx: number | undefined,
+  branches: readonly string[],
+  joinId: string,
+): boolean {
   const join = state.nodes[joinId];
   if (join && (join.status === 'running' || join.status === 'waiting')) return false;
+  if (parallelFinishedIdx === undefined) return false;
   const branchStates = branches.map((b) => state.nodes[b]);
-  if (!branchStates.every((b) => finished(b?.status))) return false;
+  const fresh = branchStates.every(
+    (b) =>
+      b !== undefined &&
+      finished(b.status) &&
+      b.finishedIdx !== undefined &&
+      b.finishedIdx > parallelFinishedIdx,
+  );
+  if (!fresh) return false;
   if (neverStarted(join)) return true;
   const joinStarted = join?.startedIdx;
   return (
     joinStarted !== undefined &&
-    branchStates.every((b) => b?.finishedIdx !== undefined && b.finishedIdx > joinStarted)
+    branchStates.some((b) => b?.finishedIdx !== undefined && b.finishedIdx > joinStarted)
   );
 }

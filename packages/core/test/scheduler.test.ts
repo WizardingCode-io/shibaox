@@ -91,6 +91,38 @@ describe('readyNodes', () => {
       ),
     ).toEqual(['b1']);
   });
+  it('a join gate reworking one branch re-runs only that branch, then the gate', () => {
+    const joinWf = WorkflowSchema.parse({
+      workflow: 'jg',
+      start: 'p',
+      nodes: {
+        p: { type: 'parallel', branches: ['b1', 'b2'], join: 'g' },
+        b1: { type: 'task', role: 'r' },
+        b2: { type: 'task', role: 'r' },
+        g: { type: 'gate', gates: ['t'], on_pass: 'h', on_fail: 'b1' },
+        h: { type: 'human', action: 'ok' },
+      },
+    });
+    const report = { gates: ['t'], passed: false, checks: [] };
+    const failed: RunEvent[] = [
+      created,
+      started('p'),
+      done('p'),
+      started('b1'),
+      done('b1'),
+      started('b2'),
+      done('b2'),
+      started('g'),
+      { type: 'GateFailed', runId: 'r', nodeId: 'g', at, report, rework: 'b1' },
+    ];
+    expect(readyNodes(replay(failed), joinWf)).toEqual(['b1']);
+    expect(readyNodes(replay([...failed, started('b1')]), joinWf)).toEqual([]);
+    const reworked = [...failed, started('b1'), done('b1')];
+    expect(readyNodes(replay(reworked), joinWf)).toEqual(['g']);
+    const s = replay(reworked);
+    expect(s.nodes.b2).toMatchObject({ attempts: 1, startedIdx: 5, finishedIdx: 6 });
+  });
+
   it('gate rework to start node makes it ready again', () => {
     const simpleWf = WorkflowSchema.parse({
       workflow: 'w2',
