@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Org, RunEvent, Workflow, WorkflowNode } from '@shibaox/schemas';
-import type { EventStore } from '../events/store.js';
+import type { EventStore, RunSummary } from '../events/store.js';
 import { runCommand } from '../executors/code.js';
 import { collectRun, type RuntimeAdapter, type TaskJob } from '../executors/types.js';
 import { type CheckRunners, defaultCheckRunners, runGate } from '../gates/engine.js';
@@ -8,7 +8,11 @@ import { injectTeamGates } from '../org/inject-gates.js';
 import type { Decider, HumanHandler } from './deciders.js';
 import { replay } from './reducer.js';
 import { readyNodes } from './scheduler.js';
-import type { RunState } from './state.js';
+import type { RunState, RunStatus } from './state.js';
+
+function isTerminalStatus(status: RunStatus): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled';
+}
 
 export interface EngineDeps {
   store: EventStore;
@@ -29,6 +33,7 @@ export class RunEngine {
   private readonly now: () => string;
   private readonly maxSteps: number;
   private readonly checkRunners: CheckRunners;
+  private readonly controllers = new Map<string, AbortController>();
 
   constructor(private readonly deps: EngineDeps) {
     this.log = deps.log ?? (() => {});
@@ -115,6 +120,27 @@ export class RunEngine {
     return this.drive(runId, { interrupted: true });
   }
 
+  async cancel(runId: string, reason: string): Promise<RunState> {
+    const state = await this.state(runId);
+    if (isTerminalStatus(state.status)) return state;
+    this.controllerFor(runId).abort(new Error(reason));
+    await this.emit({ type: 'RunCancelled', runId, at: this.now(), reason });
+    return this.state(runId);
+  }
+
+  async listRuns(): Promise<RunSummary[]> {
+    return this.deps.store.listRuns();
+  }
+
+  private controllerFor(runId: string): AbortController {
+    let c = this.controllers.get(runId);
+    if (!c) {
+      c = new AbortController();
+      this.controllers.set(runId, c);
+    }
+    return c;
+  }
+
   private resolveWorkflow(name: string): Workflow {
     const wf = this.deps.org.workflows[name];
     if (!wf) throw new Error(`workflow "${name}" is not defined in the org`);
@@ -153,11 +179,16 @@ export class RunEngine {
         state = markInterrupted(state);
         interrupted = false;
       }
-      if (state.status !== 'running') return state;
+      if (state.status !== 'running') {
+        if (isTerminalStatus(state.status)) this.controllers.delete(runId);
+        return state;
+      }
+      if (this.controllerFor(runId).signal.aborted) return state;
       const workflow = this.resolveWorkflow(state.workflow);
       const ready = readyNodes(state, workflow);
       if (ready.length === 0) {
         await this.emit({ type: 'RunCompleted', runId, at: this.now() });
+        this.controllers.delete(runId);
         return this.state(runId);
       }
       if (steps >= this.maxSteps) {
@@ -167,6 +198,7 @@ export class RunEngine {
           at: this.now(),
           reason: `max steps exceeded (${this.maxSteps})`,
         });
+        this.controllers.delete(runId);
         return this.state(runId);
       }
       await Promise.all(ready.map((nodeId) => this.executeNode(runId, nodeId, workflow, state)));
@@ -235,7 +267,7 @@ export class RunEngine {
             },
           };
           const result = await collectRun(adapter, job, {
-            signal: new AbortController().signal,
+            signal: this.controllerFor(runId).signal,
             log: this.log,
           });
           await this.emit({

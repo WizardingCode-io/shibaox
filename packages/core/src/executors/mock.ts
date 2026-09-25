@@ -7,7 +7,7 @@ import type {
   TaskResult,
 } from './types.js';
 
-export type MockScript = (job: TaskJob) => TaskResult | Promise<TaskResult>;
+export type MockScript = (job: TaskJob, ctx: ExecutionContext) => TaskResult | Promise<TaskResult>;
 
 export class MockAdapter implements RuntimeAdapter {
   readonly id = 'mock';
@@ -20,14 +20,17 @@ export class MockAdapter implements RuntimeAdapter {
   capabilities(): Capability[] {
     return ['write-code', 'run-tests', 'shell'];
   }
-  async *run(job: TaskJob, _ctx: ExecutionContext): AsyncIterable<RuntimeEvent> {
+  async *run(job: TaskJob, ctx: ExecutionContext): AsyncIterable<RuntimeEvent> {
+    if (ctx.signal.aborted) {
+      yield { type: 'error', message: 'aborted' };
+      return;
+    }
     yield { type: 'started' };
     try {
-      const r = await this.script(job);
+      const r = await this.script(job, ctx);
       yield { type: 'result', output: r.output, summary: r.summary, cost: r.cost };
     } catch (e) {
       yield { type: 'error', message: e instanceof Error ? e.message : String(e) };
     }
   }
-  async cancel(): Promise<void> {}
 }

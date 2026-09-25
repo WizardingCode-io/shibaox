@@ -410,4 +410,30 @@ describe('RunEngine', () => {
     );
     expect((await engine.state(paused.runId)).status).toBe('paused_budget');
   });
+
+  it('cancel() aborts the running task and leaves the run cancelled', async () => {
+    const dir = scaffold(orgFiles('true'));
+    let seenSignal: AbortSignal | undefined;
+    const adapter = new MockAdapter(async (_j, ctx) => {
+      seenSignal = ctx.signal;
+      await new Promise<void>((resolve, reject) => {
+        const t = setTimeout(resolve, 5_000);
+        ctx.signal.addEventListener('abort', () => {
+          clearTimeout(t);
+          reject(new Error('aborted'));
+        });
+      });
+      return { output: null, summary: '' };
+    });
+    const { engine } = engineFor(dir, { adapters: { mock: adapter } });
+    const started = engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
+    await new Promise((r) => setTimeout(r, 50));
+    const runId = (await engine.listRuns())[0]!.runId;
+    const cancelled = await engine.cancel(runId, 'user');
+    expect(cancelled.status).toBe('cancelled');
+    expect(seenSignal?.aborted).toBe(true);
+    const final = await started;
+    expect(final.status).toBe('cancelled');
+    expect(final.nodes.analyse?.status).toBe('failed');
+  });
 });

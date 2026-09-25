@@ -36,7 +36,6 @@ export interface RuntimeAdapter {
   readonly id: string;
   capabilities(): Capability[];
   run(job: TaskJob, ctx: ExecutionContext): AsyncIterable<RuntimeEvent>;
-  cancel(jobId: string): Promise<void>;
 }
 
 export async function collectRun(
