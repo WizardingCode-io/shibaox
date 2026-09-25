@@ -122,6 +122,8 @@ dist
 *.db
 .shibaox/
 graphify-out/
+.superpowers/
+.idea/
 ```
 
 `.npmrc`:
@@ -498,7 +500,7 @@ export const ModelsSchema = z.object({
   providers: z
     .record(z.string(), z.object({ api_key_env: z.string().optional(), base_url: z.string().optional() }))
     .default({}),
-  tiers: z.record(ModelTierSchema, z.string()).default({}),
+  tiers: z.partialRecord(ModelTierSchema, z.string()).default({}),
   roles: z.record(z.string(), z.object({ model: z.string(), runtime: z.string().optional() })).default({}),
   gates: z.record(z.string(), z.string()).default({}),
 });
@@ -1178,7 +1180,7 @@ const wf = WorkflowSchema.parse({
     p: { type: 'parallel', branches: ['b1', 'b2'], join: 'g' },
     b1: { type: 'task', role: 'r' },
     b2: { type: 'code', command: 'true' },
-    g: { type: 'gate', gates: ['t'], on_pass: 'd', on_fail: 'a' },
+    g: { type: 'gate', gates: ['t'], on_pass: 'd', on_fail: 'b1' },
     d: { type: 'decide', by: 'lead', options: ['ship', 'rework'], next: { ship: 'h', rework: 'a' } },
     h: { type: 'human', action: 'ok' },
   },
@@ -1204,7 +1206,7 @@ describe('readyNodes', () => {
     const base = [created, started('a'), done('a'), started('p'), done('p'), started('b1'), done('b1'), started('b2'), done('b2'), started('g')];
     const report = { gates: ['t'], passed: true, checks: [] };
     expect(readyNodes(replay([...base, { type: 'GatePassed', runId: 'r', nodeId: 'g', at, report }]), wf)).toEqual(['d']);
-    expect(readyNodes(replay([...base, { type: 'GateFailed', runId: 'r', nodeId: 'g', at, report: { ...report, passed: false }, rework: 'a' }]), wf)).toEqual(['a']);
+    expect(readyNodes(replay([...base, { type: 'GateFailed', runId: 'r', nodeId: 'g', at, report: { ...report, passed: false }, rework: 'b1' }]), wf)).toEqual(['b1']);
   });
   it('decide follows the chosen option', () => {
     const evs: RunEvent[] = [created, started('d'), { type: 'DecisionMade', runId: 'r', nodeId: 'd', at, choice: 'ship' }];
