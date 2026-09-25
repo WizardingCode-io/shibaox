@@ -32,8 +32,12 @@ export function runCommand(opts: CommandOptions): Promise<CommandResult> {
     });
     const timer = setTimeout(() => {
       timedOut = true;
-      if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL');
-      else child.kill('SIGKILL');
+      try {
+        if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL');
+        else child.kill('SIGKILL');
+      } catch {
+        // process already exited between the timer firing and the kill call
+      }
     }, opts.timeoutMs);
     child.on('close', (code) => {
       clearTimeout(timer);

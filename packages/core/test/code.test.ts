@@ -17,4 +17,11 @@ describe('runCommand', () => {
     expect(r.timedOut).toBe(true);
     expect(r.exitCode).not.toBe(0);
   });
+  it('never rejects when the child exits right as a tiny timeout fires', async () => {
+    for (let i = 0; i < 20; i++) {
+      const r = await runCommand({ command: 'echo hi', cwd: process.cwd(), timeoutMs: 1 });
+      expect(r).toBeDefined();
+      expect(typeof r.timedOut).toBe('boolean');
+    }
+  });
 });
