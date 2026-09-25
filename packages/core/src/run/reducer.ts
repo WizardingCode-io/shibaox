@@ -20,39 +20,48 @@ function isTerminal(status: RunStatus): boolean {
 
 type NonCreatedEvent = Exclude<RunEvent, { type: 'RunCreated' }>;
 
-function applyEvent(s: RunState, event: NonCreatedEvent): RunState {
+function applyEvent(s: RunState, event: NonCreatedEvent, idx: number): RunState {
   switch (event.type) {
     case 'NodeStarted':
       return withNode(s, event.nodeId, {
         status: 'running',
+        startedIdx: idx,
         attempts: nodeOf(s, event.nodeId).attempts + 1,
         error: undefined,
       });
     case 'NodeCompleted':
       return withNode(s, event.nodeId, {
         status: 'completed',
+        finishedIdx: idx,
         output: event.output,
         summary: event.summary,
       });
     case 'NodeFailed':
       return {
-        ...withNode(s, event.nodeId, { status: 'failed', error: event.error }),
+        ...withNode(s, event.nodeId, { status: 'failed', finishedIdx: idx, error: event.error }),
         status: 'failed',
         error: `${event.nodeId}: ${event.error}`,
       };
     case 'GatePassed':
       return {
-        ...withNode(s, event.nodeId, { status: 'passed', report: event.report }),
+        ...withNode(s, event.nodeId, { status: 'passed', finishedIdx: idx, report: event.report }),
         lastGateReport: event.report,
       };
-    case 'GateFailed': {
-      const afterGate = withNode(s, event.nodeId, { status: 'pending', report: event.report });
-      const afterRework = withNode(afterGate, event.rework, { status: 'pending' });
-      return { ...afterRework, lastGateReport: event.report };
-    }
+    case 'GateFailed':
+      // The rework target is informational: the scheduler re-readies it by
+      // event order (this gate finished after the rework node last started).
+      return {
+        ...withNode(s, event.nodeId, {
+          status: 'gate_failed',
+          finishedIdx: idx,
+          report: event.report,
+        }),
+        lastGateReport: event.report,
+      };
     case 'DecisionMade':
       return withNode(s, event.nodeId, {
         status: 'completed',
+        finishedIdx: idx,
         choice: event.choice,
         output: { choice: event.choice, confidence: event.confidence },
       });
@@ -60,17 +69,31 @@ function applyEvent(s: RunState, event: NonCreatedEvent): RunState {
       return {
         ...withNode(s, event.nodeId, { status: 'waiting' }),
         status: 'waiting_human',
-        pendingHuman: { nodeId: event.nodeId, action: event.action, prompt: event.prompt },
+        pendingHumans: [
+          ...s.pendingHumans.filter((p) => p.nodeId !== event.nodeId),
+          { nodeId: event.nodeId, action: event.action, prompt: event.prompt },
+        ],
       };
-    case 'HumanResponded':
+    case 'HumanResponded': {
+      const pendingHumans = s.pendingHumans.filter((p) => p.nodeId !== event.nodeId);
+      const answered = withNode(s, event.nodeId, {
+        status: 'completed',
+        finishedIdx: idx,
+        output: { approved: event.approved, note: event.note },
+      });
+      if (!event.approved)
+        return {
+          ...answered,
+          pendingHumans: [],
+          status: 'cancelled',
+          error: `rejected by human at ${event.nodeId}${event.note ? `: ${event.note}` : ''}`,
+        };
       return {
-        ...withNode(s, event.nodeId, {
-          status: 'completed',
-          output: { approved: event.approved, note: event.note },
-        }),
-        status: 'running',
-        pendingHuman: undefined,
+        ...answered,
+        pendingHumans,
+        status: pendingHumans.length > 0 ? 'waiting_human' : 'running',
       };
+    }
     case 'BudgetWarning':
       return { ...s, budgetWarned: true };
     case 'BudgetExceeded':
@@ -89,7 +112,12 @@ function applyEvent(s: RunState, event: NonCreatedEvent): RunState {
   }
 }
 
-export function reduce(state: RunState | undefined, event: RunEvent): RunState {
+/**
+ * Applies one event. `idx` is the event's 0-based position in the run's log;
+ * it is recorded as `startedIdx`/`finishedIdx` so the scheduler can decide
+ * readiness by event order.
+ */
+export function reduce(state: RunState | undefined, event: RunEvent, idx: number): RunState {
   if (event.type === 'RunCreated') {
     return {
       runId: event.runId,
@@ -101,23 +129,24 @@ export function reduce(state: RunState | undefined, event: RunEvent): RunState {
       spentUsd: 0,
       budgetUsd: event.budgetUsd,
       budgetWarned: false,
+      pendingHumans: [],
     };
   }
   if (!state) throw new Error(`event ${event.type} before RunCreated for run ${event.runId}`);
   const s = addCost(state, event);
-  const next = applyEvent(s, event);
+  const next = applyEvent(s, event, idx);
   // Once a run reaches a terminal status, later events (e.g. a sibling's
   // HumanRequested/HumanResponded racing a parallel branch's NodeFailed) must
   // still update node entries, spentUsd and reports, but must never resurrect
   // the run-level status or overwrite the error that terminated it.
-  return isTerminal(state.status)
-    ? { ...next, status: state.status, error: state.error, pendingHuman: undefined }
-    : next;
+  if (isTerminal(state.status))
+    return { ...next, status: state.status, error: state.error, pendingHumans: [] };
+  return isTerminal(next.status) ? { ...next, pendingHumans: [] } : next;
 }
 
 export function replay(events: readonly RunEvent[]): RunState {
   let state: RunState | undefined;
-  for (const e of events) state = reduce(state, e);
+  for (const [idx, e] of events.entries()) state = reduce(state, e, idx);
   if (!state) throw new Error('cannot replay an empty event list');
   return state;
 }

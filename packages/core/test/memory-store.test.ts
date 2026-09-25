@@ -29,4 +29,11 @@ describe('MemoryEventStore', () => {
     expect(runs.find((r) => r.runId === 'a')?.status).toBe('completed');
     expect(runs.find((r) => r.runId === 'b')?.status).toBe('running');
   });
+
+  it('validates events on append like the SQLite store', async () => {
+    const store = new MemoryEventStore();
+    await expect(store.append({ type: 'RunCompleted', runId: 'a' } as never)).rejects.toThrow();
+    await expect(store.append({ type: 'NoSuchEvent', runId: 'a', at } as never)).rejects.toThrow();
+    expect(await store.read('a')).toEqual([]);
+  });
 });

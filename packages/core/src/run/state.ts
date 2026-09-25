@@ -7,7 +7,14 @@ export type RunStatus =
   | 'completed'
   | 'failed'
   | 'cancelled';
-export type NodeStatus = 'pending' | 'running' | 'completed' | 'passed' | 'failed' | 'waiting';
+export type NodeStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'passed'
+  | 'gate_failed'
+  | 'failed'
+  | 'waiting';
 
 export interface NodeState {
   status: NodeStatus;
@@ -17,6 +24,16 @@ export interface NodeState {
   choice?: string;
   report?: GateReport;
   error?: string;
+  /** Index (0-based) in the replayed event log of the latest NodeStarted. */
+  startedIdx?: number;
+  /** Index (0-based) in the replayed event log of the latest finishing event. */
+  finishedIdx?: number;
+}
+
+export interface PendingHuman {
+  nodeId: string;
+  action: string;
+  prompt: string;
 }
 
 export interface RunState {
@@ -29,7 +46,7 @@ export interface RunState {
   spentUsd: number;
   budgetUsd?: number;
   budgetWarned: boolean;
-  pendingHuman?: { nodeId: string; action: string; prompt: string };
+  pendingHumans: PendingHuman[];
   lastGateReport?: GateReport;
   error?: string;
 }

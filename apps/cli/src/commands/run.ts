@@ -65,11 +65,9 @@ export function printState(state: RunState): void {
   );
   for (const [id, n] of Object.entries(state.nodes))
     console.log(
-      `  ${id.padEnd(22)} ${n.status.padEnd(10)} attempts=${n.attempts}${n.choice ? ` choice=${n.choice}` : ''}${n.error ? ` error=${n.error}` : ''}`,
+      `  ${id.padEnd(22)} ${n.status.padEnd(11)} attempts=${n.attempts}${n.choice ? ` choice=${n.choice}` : ''}${n.error ? ` error=${n.error}` : ''}`,
     );
   if (state.error) console.log(`  error: ${state.error}`);
-  if (state.pendingHuman)
-    console.log(
-      `  waiting for human at ${state.pendingHuman.nodeId}: ${state.pendingHuman.prompt}`,
-    );
+  for (const p of state.pendingHumans)
+    console.log(`  waiting for human at ${p.nodeId}: ${p.prompt}`);
 }

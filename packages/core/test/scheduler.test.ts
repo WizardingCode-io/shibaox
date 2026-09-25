@@ -149,9 +149,135 @@ describe('readyNodes', () => {
       started('d'),
       { type: 'DecisionMade', runId: 'r', nodeId: 'd', at, choice: 'ship' },
     ];
-    expect(readyNodes(replay(evs), wf)).toEqual(['h']);
+    // the start node was never started, so it is ready alongside the chosen target
+    expect(readyNodes(replay(evs), wf)).toEqual(['a', 'h']);
+  });
+  it('does not re-ready a start node that has already started', () => {
+    expect(readyNodes(replay([created, started('a')]), wf)).toEqual([]);
+  });
+  it('treats an interrupted node (pending, no startedIdx) as never started', () => {
+    // what the engine's markInterrupted produces for a node running at crash time
+    const s = replay([created, started('a'), done('a'), started('p')]);
+    const interrupted = {
+      ...s,
+      nodes: { ...s.nodes, p: { status: 'pending' as const, attempts: 1 } },
+    };
+    expect(readyNodes(interrupted, wf)).toEqual(['p']);
+    const startInterrupted = {
+      ...replay([created, started('a')]),
+      nodes: { a: { status: 'pending' as const, attempts: 1 } },
+    };
+    expect(readyNodes(startInterrupted, wf)).toEqual(['a']);
+  });
+  it('a gate that failed is not re-run while its rework is running', () => {
+    const report = { gates: ['t'], passed: false, checks: [] };
+    const evs: RunEvent[] = [
+      created,
+      started('a'),
+      done('a'),
+      started('p'),
+      done('p'),
+      started('b1'),
+      done('b1'),
+      started('b2'),
+      done('b2'),
+      started('g'),
+      { type: 'GateFailed', runId: 'r', nodeId: 'g', at, report, rework: 'b1' },
+      started('b1'),
+    ];
+    expect(readyNodes(replay(evs), wf)).toEqual([]);
   });
   it('returns nothing when the run is not running', () => {
     expect(readyNodes(replay([created, { type: 'RunCompleted', runId: 'r', at }]), wf)).toEqual([]);
+  });
+
+  it('decide loop-back re-readies an already finished node, then the decide again', () => {
+    const loopWf = WorkflowSchema.parse({
+      workflow: 'loop',
+      start: 'a',
+      nodes: {
+        a: { type: 'task', role: 'r', next: 'd' },
+        d: {
+          type: 'decide',
+          by: 'lead',
+          options: ['again', 'stop'],
+          next: { again: 'a', stop: 'h' },
+        },
+        h: { type: 'human', action: 'ok' },
+      },
+    });
+    const decided: RunEvent[] = [
+      created,
+      started('a'),
+      done('a'),
+      started('d'),
+      { type: 'DecisionMade', runId: 'r', nodeId: 'd', at, choice: 'again' },
+    ];
+    expect(readyNodes(replay(decided), loopWf)).toEqual(['a']);
+    expect(readyNodes(replay([...decided, started('a')]), loopWf)).toEqual([]);
+    expect(readyNodes(replay([...decided, started('a'), done('a')]), loopWf)).toEqual(['d']);
+  });
+  it('gate rework to a grandparent re-runs the chain in order, not the gate concurrently', () => {
+    const chainWf = WorkflowSchema.parse({
+      workflow: 'chain',
+      start: 'a',
+      nodes: {
+        a: { type: 'task', role: 'r', next: 'b' },
+        b: { type: 'task', role: 'r', next: 'g' },
+        g: { type: 'gate', gates: ['t'], on_pass: 'h', on_fail: 'a' },
+        h: { type: 'human', action: 'ok' },
+      },
+    });
+    const report = { gates: ['t'], passed: false, checks: [] };
+    const failed: RunEvent[] = [
+      created,
+      started('a'),
+      done('a'),
+      started('b'),
+      done('b'),
+      started('g'),
+      { type: 'GateFailed', runId: 'r', nodeId: 'g', at, report, rework: 'a' },
+    ];
+    expect(readyNodes(replay(failed), chainWf)).toEqual(['a']);
+    const aAgain = [...failed, started('a'), done('a')];
+    expect(readyNodes(replay(aAgain), chainWf)).toEqual(['b']);
+    const bAgain = [...aAgain, started('b'), done('b')];
+    expect(readyNodes(replay(bAgain), chainWf)).toEqual(['g']);
+  });
+  it('a re-entered parallel re-runs its branches and the join waits for the new round', () => {
+    const parWf = WorkflowSchema.parse({
+      workflow: 'par',
+      start: 'p',
+      nodes: {
+        p: { type: 'parallel', branches: ['b1', 'b2'], join: 'd' },
+        b1: { type: 'task', role: 'r' },
+        b2: { type: 'task', role: 'r' },
+        d: {
+          type: 'decide',
+          by: 'lead',
+          options: ['again', 'stop'],
+          next: { again: 'p', stop: 'h' },
+        },
+        h: { type: 'human', action: 'ok' },
+      },
+    });
+    const round1: RunEvent[] = [
+      created,
+      started('p'),
+      done('p'),
+      started('b1'),
+      done('b1'),
+      started('b2'),
+      done('b2'),
+      started('d'),
+      { type: 'DecisionMade', runId: 'r', nodeId: 'd', at, choice: 'again' },
+    ];
+    expect(readyNodes(replay(round1), parWf)).toEqual(['p']);
+    const p2 = [...round1, started('p'), done('p')];
+    expect(readyNodes(replay(p2), parWf)).toEqual(['b1', 'b2']);
+    expect(readyNodes(replay([...p2, started('b1'), done('b1')]), parWf)).toEqual(['b2']);
+    expect(
+      readyNodes(replay([...p2, started('b1'), done('b1'), started('b2'), done('b2')]), parWf),
+    ).toEqual(['d']);
   });
 });

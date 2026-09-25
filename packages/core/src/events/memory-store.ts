@@ -1,4 +1,4 @@
-import type { RunEvent } from '@shibaox/schemas';
+import { type RunEvent, RunEventSchema } from '@shibaox/schemas';
 import { replay } from '../run/reducer.js';
 import type { EventStore, RunSummary, StoredEvent } from './store.js';
 
@@ -7,7 +7,7 @@ export class MemoryEventStore implements EventStore {
   private seq = 0;
 
   async append(event: RunEvent): Promise<StoredEvent> {
-    const stored = { ...event, seq: ++this.seq };
+    const stored = { ...RunEventSchema.parse(event), seq: ++this.seq };
     this.events.push(stored);
     return stored;
   }

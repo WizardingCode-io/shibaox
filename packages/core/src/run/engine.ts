@@ -63,22 +63,52 @@ export class RunEngine {
     return replay(events);
   }
 
-  async respond(runId: string, answer: { approved: boolean; note?: string }): Promise<RunState> {
+  /**
+   * Records a human answer for a pending human node and continues the run.
+   * `nodeId` may be omitted only when exactly one human is pending.
+   */
+  async respond(
+    runId: string,
+    answer: { approved: boolean; note?: string },
+    nodeId?: string,
+  ): Promise<RunState> {
     const state = await this.state(runId);
-    if (state.status !== 'waiting_human' || !state.pendingHuman)
+    if (state.status !== 'waiting_human' || state.pendingHumans.length === 0)
       throw new Error(`run ${runId} is not waiting for a human`);
-    await this.recordHuman(runId, state.pendingHuman.nodeId, answer);
+    const pendingIds = state.pendingHumans.map((p) => p.nodeId);
+    let target: string;
+    if (nodeId === undefined) {
+      if (pendingIds.length !== 1)
+        throw new Error(
+          `run ${runId} is waiting on ${pendingIds.length} humans (${pendingIds.join(', ')}): pass a nodeId`,
+        );
+      target = pendingIds[0] as string;
+    } else {
+      if (!pendingIds.includes(nodeId))
+        throw new Error(
+          `run ${runId} is not waiting for a human at ${nodeId} (pending: ${pendingIds.join(', ')})`,
+        );
+      target = nodeId;
+    }
+    await this.recordHuman(runId, target, answer);
     return this.drive(runId);
   }
 
   async resume(runId: string, opts: { budgetUsd?: number } = {}): Promise<RunState> {
     const state = await this.state(runId);
     if (state.status === 'paused_budget') {
+      if (opts.budgetUsd === undefined || !(opts.budgetUsd > state.spentUsd))
+        throw new Error(
+          `run ${runId} is paused on budget: pass a budgetUsd higher than ${state.spentUsd}`,
+        );
       await this.emit({ type: 'RunResumed', runId, at: this.now(), budgetUsd: opts.budgetUsd });
-    } else if (state.status === 'waiting_human' && state.pendingHuman) {
-      const answer = await this.deps.human.ask({ runId, ...state.pendingHuman });
-      if ('deferred' in answer) return state;
-      await this.recordHuman(runId, state.pendingHuman.nodeId, answer);
+    } else if (state.status === 'waiting_human') {
+      for (const pending of state.pendingHumans) {
+        const answer = await this.deps.human.ask({ runId, ...pending });
+        if ('deferred' in answer) break;
+        await this.recordHuman(runId, pending.nodeId, answer);
+        if (!answer.approved) break;
+      }
     } else if (state.status !== 'running') {
       return state;
     }
@@ -112,13 +142,7 @@ export class RunEngine {
       approved: answer.approved,
       note: answer.note,
     });
-    if (!answer.approved)
-      await this.emit({
-        type: 'RunCancelled',
-        runId,
-        at: this.now(),
-        reason: `rejected by human at ${nodeId}${answer.note ? `: ${answer.note}` : ''}`,
-      });
+    // A rejection needs no extra event: the reducer derives `cancelled`.
   }
 
   private async drive(runId: string, opts: { interrupted?: boolean } = {}): Promise<RunState> {
@@ -324,7 +348,8 @@ export class RunEngine {
             prompt,
           });
           const afterRequest = await this.state(runId);
-          if (afterRequest.status !== 'waiting_human') return; // a sibling already ended the run this step
+          // a sibling already ended the run this step (terminal runs clear pendingHumans)
+          if (!afterRequest.pendingHumans.some((p) => p.nodeId === nodeId)) return;
           const answer = await this.deps.human.ask({ runId, nodeId, action: node.action, prompt });
           if ('deferred' in answer) return;
           await this.recordHuman(runId, nodeId, answer);
@@ -342,17 +367,28 @@ export class RunEngine {
           return;
       }
     } catch (e) {
-      await this.emit({ type: 'NodeFailed', runId, nodeId, at: at(), error: (e as Error).message });
+      await this.emit({
+        type: 'NodeFailed',
+        runId,
+        nodeId,
+        at: at(),
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 }
 
+/**
+ * Nodes left `running` by a crash become `pending` without a `startedIdx`, so
+ * the scheduler treats them as never started and runs them again.
+ */
 function markInterrupted(state: RunState): RunState {
   const nodes = Object.fromEntries(
-    Object.entries(state.nodes).map(([id, n]) => [
-      id,
-      n.status === 'running' ? { ...n, status: 'pending' as const } : n,
-    ]),
+    Object.entries(state.nodes).map(([id, n]) => {
+      if (n.status !== 'running') return [id, n];
+      const { startedIdx: _startedIdx, ...rest } = n;
+      return [id, { ...rest, status: 'pending' as const }];
+    }),
   );
   return { ...state, nodes };
 }

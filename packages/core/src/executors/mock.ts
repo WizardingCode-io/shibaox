@@ -26,7 +26,7 @@ export class MockAdapter implements RuntimeAdapter {
       const r = await this.script(job);
       yield { type: 'result', output: r.output, summary: r.summary, cost: r.cost };
     } catch (e) {
-      yield { type: 'error', message: (e as Error).message };
+      yield { type: 'error', message: e instanceof Error ? e.message : String(e) };
     }
   }
   async cancel(): Promise<void> {}

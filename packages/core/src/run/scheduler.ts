@@ -1,43 +1,73 @@
 import type { Workflow } from '@shibaox/schemas';
-import type { NodeStatus, RunState } from './state.js';
+import type { NodeState, NodeStatus, RunState } from './state.js';
 
-const finished = (s: NodeStatus) => s === 'completed' || s === 'passed';
+const finished = (s: NodeStatus | undefined) => s === 'completed' || s === 'passed';
 
+/**
+ * A node that has never started: no entry at all, or an entry left `pending`
+ * without a `startedIdx` (a node that was running when the process crashed,
+ * see `markInterrupted` in the engine).
+ */
+const neverStarted = (n: NodeState | undefined) =>
+  n === undefined || (n.status === 'pending' && n.startedIdx === undefined);
+
+/**
+ * Order-based readiness. A node P with an outcome points at its targets; a
+ * target X is ready when it never started, or when it is not in flight and P
+ * finished after X last started (so each outcome triggers X at most once).
+ */
 export function readyNodes(state: RunState, workflow: Workflow): string[] {
   if (state.status !== 'running') return [];
-  const statusOf = (id: string): NodeStatus => state.nodes[id]?.status ?? 'pending';
   const ready = new Set<string>();
-  const startEntry = state.nodes[workflow.start];
-  const startReady = startEntry
-    ? startEntry.status === 'pending'
-    : Object.keys(state.nodes).length === 0;
-  if (startReady) ready.add(workflow.start);
+  if (neverStarted(state.nodes[workflow.start])) ready.add(workflow.start);
+
+  const readyAfter = (target: string, finishedIdx: number | undefined): boolean => {
+    const x = state.nodes[target];
+    if (neverStarted(x)) return true;
+    if (!x || x.status === 'running' || x.status === 'waiting') return false;
+    return finishedIdx !== undefined && x.startedIdx !== undefined && finishedIdx > x.startedIdx;
+  };
 
   for (const [id, node] of Object.entries(workflow.nodes)) {
-    const status = statusOf(id);
+    const p = state.nodes[id];
+    if (!p) continue;
     const targets: string[] = [];
     switch (node.type) {
       case 'task':
       case 'code':
       case 'human':
-        if (status === 'completed' && node.next) targets.push(node.next);
+        if (p.status === 'completed' && node.next) targets.push(node.next);
         break;
       case 'decide': {
-        const choice = state.nodes[id]?.choice;
-        if (status === 'completed' && choice && node.next[choice]) targets.push(node.next[choice]);
+        const target = p.choice ? node.next[p.choice] : undefined;
+        if (p.status === 'completed' && target) targets.push(target);
         break;
       }
       case 'gate':
-        if (status === 'passed') targets.push(node.on_pass);
+        if (p.status === 'passed') targets.push(node.on_pass);
+        else if (p.status === 'gate_failed') targets.push(node.on_fail);
         break;
       case 'parallel':
-        if (status === 'completed') {
+        if (p.status === 'completed') {
           targets.push(...node.branches);
-          if (node.branches.every((b) => finished(statusOf(b)))) targets.push(node.join);
+          if (joinReady(state, node.branches, node.join)) ready.add(node.join);
         }
         break;
     }
-    for (const t of targets) if (statusOf(t) === 'pending') ready.add(t);
+    for (const t of targets) if (readyAfter(t, p.finishedIdx)) ready.add(t);
   }
   return [...ready].sort();
+}
+
+function joinReady(state: RunState, branches: readonly string[], joinId: string): boolean {
+  const join = state.nodes[joinId];
+  if (join && (join.status === 'running' || join.status === 'waiting')) return false;
+  const branchStates = branches.map((b) => state.nodes[b]);
+  if (!branchStates.every((b) => finished(b?.status))) return false;
+  if (neverStarted(join)) return true;
+  const joinStarted = join?.startedIdx;
+  return (
+    joinStarted !== undefined &&
+    branchStates.every((b) => b?.finishedIdx !== undefined && b.finishedIdx > joinStarted)
+  );
 }

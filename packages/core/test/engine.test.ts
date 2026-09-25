@@ -47,7 +47,7 @@ function engineFor(
   dir: string,
   overrides: Partial<ConstructorParameters<typeof RunEngine>[0]> = {},
 ) {
-  const store = new MemoryEventStore();
+  const store = overrides.store ?? new MemoryEventStore();
   const engine = new RunEngine({
     store,
     org: loadOrg(dir),
@@ -137,18 +137,21 @@ describe('RunEngine', () => {
     const { engine } = engineFor(scaffold(orgFiles('true')), { human: new DeferHuman() });
     const waiting = await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
     expect(waiting.status).toBe('waiting_human');
-    expect(waiting.pendingHuman?.nodeId).toBe('ship');
+    expect(waiting.pendingHumans.map((p) => p.nodeId)).toEqual(['ship']);
     const done = await engine.respond(waiting.runId, { approved: true });
     expect(done.status).toBe('completed');
   });
 
   it('a rejected human approval cancels the run', async () => {
-    const { engine } = engineFor(scaffold(orgFiles('true')), {
+    const { engine, store } = engineFor(scaffold(orgFiles('true')), {
       human: { ask: async () => ({ approved: false, note: 'no' }) },
     });
     const s = await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
     expect(s.status).toBe('cancelled');
-    expect(s.error).toContain('ship');
+    expect(s.error).toBe('rejected by human at ship: no');
+    const types = (await store.read(s.runId)).map((e) => e.type);
+    expect(types.at(-1)).toBe('HumanResponded');
+    expect(types).not.toContain('RunCancelled');
   });
 
   it('fails the task node when no adapter matches the role runtime', async () => {
@@ -238,6 +241,128 @@ describe('RunEngine', () => {
     });
     const { engine } = engineFor(dir, { decider: new ScriptedDecider({}, 'again'), maxSteps: 10 });
     const s = await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
-    expect(['cancelled', 'completed']).toContain(s.status);
+    expect(s.status).toBe('cancelled');
+    expect(s.error).toContain('max steps');
+  });
+
+  it('a judge "rework" loops back to implement and qa, then ships after human approval', async () => {
+    const choices = ['rework', 'ship'];
+    const calls: string[] = [];
+    const { engine, store } = engineFor(scaffold(orgFiles('true')), {
+      decider: {
+        decide: async () => ({ choice: choices.shift() ?? 'ship' }),
+      },
+      adapters: {
+        mock: new MockAdapter((j) => {
+          calls.push(j.nodeId);
+          return { output: null, summary: '' };
+        }),
+      },
+    });
+    const s = await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
+    expect(s.status).toBe('completed');
+    expect(calls).toEqual(['analyse', 'implement', 'implement']);
+    expect(s.nodes.implement?.attempts).toBe(2);
+    expect(s.nodes.qa?.attempts).toBe(2);
+    expect(s.nodes.judge).toMatchObject({ attempts: 2, choice: 'ship' });
+    expect(s.nodes.ship).toMatchObject({ status: 'completed', attempts: 1 });
+    const events = await store.read(s.runId);
+    expect(events.flatMap((e) => (e.type === 'DecisionMade' ? [e.choice] : []))).toEqual([
+      'rework',
+      'ship',
+    ]);
+    expect(events.filter((e) => e.type === 'HumanResponded')).toHaveLength(1);
+  });
+
+  it('parallel human branches wait together; respond by node id finishes the run', async () => {
+    const dir = scaffold({
+      'org.yaml': 'organization: wc\nteams: [eng]\n',
+      'teams/eng.yaml': 'team: eng\nlead: tl\nroles: [tl, analyst]\nworkflows: [par]\n',
+      'roles/tl.yaml': 'role: tl\n',
+      'roles/analyst.yaml': 'role: analyst\nruntime: mock\n',
+      'workflows/par.yaml': [
+        'workflow: par',
+        'team: eng',
+        'start: p',
+        'nodes:',
+        '  p: { type: parallel, branches: [h1, h2], join: done }',
+        '  h1: { type: human, action: a1 }',
+        '  h2: { type: human, action: a2 }',
+        '  done: { type: task, role: analyst, instruction: fin }',
+        '',
+      ].join('\n'),
+    });
+    const { engine } = engineFor(dir, { human: new DeferHuman() });
+    const waiting = await engine.start({ workflow: 'par', input: {}, workspace: process.cwd() });
+    expect(waiting.status).toBe('waiting_human');
+    expect(waiting.pendingHumans.map((p) => p.nodeId).sort()).toEqual(['h1', 'h2']);
+    await expect(engine.respond(waiting.runId, { approved: true })).rejects.toThrow(
+      /h1.*h2|h2.*h1/,
+    );
+    await expect(engine.respond(waiting.runId, { approved: true }, 'nope')).rejects.toThrow(
+      /not waiting for a human at nope/,
+    );
+    const half = await engine.respond(waiting.runId, { approved: true }, 'h1');
+    expect(half.status).toBe('waiting_human');
+    expect(half.pendingHumans.map((p) => p.nodeId)).toEqual(['h2']);
+    expect(half.nodes.done).toBeUndefined();
+    const done = await engine.respond(waiting.runId, { approved: true }, 'h2');
+    expect(done.status).toBe('completed');
+    expect(done.nodes.done?.status).toBe('completed');
+  });
+
+  it('resume on a waiting run asks every pending human in order', async () => {
+    const dir = scaffold({
+      'org.yaml': 'organization: wc\nteams: [eng]\n',
+      'teams/eng.yaml': 'team: eng\nlead: tl\nroles: [tl, analyst]\nworkflows: [par]\n',
+      'roles/tl.yaml': 'role: tl\n',
+      'roles/analyst.yaml': 'role: analyst\nruntime: mock\n',
+      'workflows/par.yaml': [
+        'workflow: par',
+        'team: eng',
+        'start: p',
+        'nodes:',
+        '  p: { type: parallel, branches: [h1, h2], join: done }',
+        '  h1: { type: human, action: a1 }',
+        '  h2: { type: human, action: a2 }',
+        '  done: { type: task, role: analyst, instruction: fin }',
+        '',
+      ].join('\n'),
+    });
+    const store = new MemoryEventStore();
+    const deferring = engineFor(dir, { store, human: new DeferHuman() }).engine;
+    const waiting = await deferring.start({ workflow: 'par', input: {}, workspace: process.cwd() });
+    expect(waiting.status).toBe('waiting_human');
+    const asked: string[] = [];
+    const answering = engineFor(dir, {
+      store,
+      human: {
+        ask: async (req) => {
+          asked.push(req.nodeId);
+          return { approved: true };
+        },
+      },
+    }).engine;
+    const done = await answering.resume(waiting.runId);
+    expect(asked).toEqual(waiting.pendingHumans.map((p) => p.nodeId));
+    expect(done.status).toBe('completed');
+  });
+
+  it('resume on a budget-paused run requires a budget above what was spent', async () => {
+    const { engine } = engineFor(scaffold(orgFiles('true')));
+    const paused = await engine.start({
+      workflow: 'hello',
+      input: {},
+      workspace: process.cwd(),
+      budgetUsd: 0.15,
+    });
+    expect(paused.status).toBe('paused_budget');
+    await expect(engine.resume(paused.runId)).rejects.toThrow(
+      `run ${paused.runId} is paused on budget: pass a budgetUsd higher than ${paused.spentUsd}`,
+    );
+    await expect(engine.resume(paused.runId, { budgetUsd: 0.1 })).rejects.toThrow(
+      /paused on budget/,
+    );
+    expect((await engine.state(paused.runId)).status).toBe('paused_budget');
   });
 });

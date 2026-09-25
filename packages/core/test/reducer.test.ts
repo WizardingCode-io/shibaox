@@ -19,6 +19,7 @@ describe('replay', () => {
     expect(s.status).toBe('running');
     expect(s.nodes).toEqual({});
     expect(s.spentUsd).toBe(0);
+    expect(s.pendingHumans).toEqual([]);
   });
 
   it('tracks node lifecycle, attempts and cost', () => {
@@ -39,7 +40,7 @@ describe('replay', () => {
     expect(s.spentUsd).toBeCloseTo(0.25);
   });
 
-  it('gate failure resets the gate and the rework node to pending, keeping attempts', () => {
+  it('gate failure marks the gate gate_failed and leaves the rework node untouched', () => {
     const report = { gates: ['tests'], passed: false, checks: [] };
     const s = replay([
       created,
@@ -48,9 +49,44 @@ describe('replay', () => {
       { type: 'NodeStarted', runId: 'r1', nodeId: 'g', at },
       { type: 'GateFailed', runId: 'r1', nodeId: 'g', at, report, rework: 'a' },
     ]);
-    expect(s.nodes.a).toMatchObject({ status: 'pending', attempts: 1 });
-    expect(s.nodes.g).toMatchObject({ status: 'pending', attempts: 1 });
+    expect(s.nodes.a).toMatchObject({
+      status: 'completed',
+      attempts: 1,
+      startedIdx: 1,
+      finishedIdx: 2,
+    });
+    expect(s.nodes.g).toMatchObject({
+      status: 'gate_failed',
+      attempts: 1,
+      report,
+      startedIdx: 3,
+      finishedIdx: 4,
+    });
     expect(s.lastGateReport).toEqual(report);
+  });
+
+  it('records startedIdx and finishedIdx as event log indexes for every finishing event', () => {
+    const report = { gates: ['tests'], passed: true, checks: [] };
+    const s = replay([
+      created,
+      { type: 'NodeStarted', runId: 'r1', nodeId: 'g', at },
+      { type: 'GatePassed', runId: 'r1', nodeId: 'g', at, report },
+      { type: 'NodeStarted', runId: 'r1', nodeId: 'd', at },
+      { type: 'DecisionMade', runId: 'r1', nodeId: 'd', at, choice: 'x' },
+      { type: 'NodeStarted', runId: 'r1', nodeId: 'h', at },
+      { type: 'HumanRequested', runId: 'r1', nodeId: 'h', at, action: 'ok', prompt: '?' },
+      { type: 'HumanResponded', runId: 'r1', nodeId: 'h', at, approved: true },
+      { type: 'NodeStarted', runId: 'r1', nodeId: 'g', at },
+      { type: 'NodeFailed', runId: 'r1', nodeId: 'g', at, error: 'x' },
+    ]);
+    expect(s.nodes.d).toMatchObject({ startedIdx: 3, finishedIdx: 4 });
+    expect(s.nodes.h).toMatchObject({ startedIdx: 5, finishedIdx: 7 });
+    expect(s.nodes.g).toMatchObject({
+      status: 'failed',
+      attempts: 2,
+      startedIdx: 8,
+      finishedIdx: 9,
+    });
   });
 
   it('gate failure with a cost still adds to spentUsd', () => {
@@ -121,7 +157,7 @@ describe('replay', () => {
       { type: 'HumanRequested', runId: 'r1', nodeId: 'h', at, action: 'ok', prompt: '?' },
     ]);
     expect(s1.status).toBe('waiting_human');
-    expect(s1.pendingHuman).toEqual({ nodeId: 'h', action: 'ok', prompt: '?' });
+    expect(s1.pendingHumans).toEqual([{ nodeId: 'h', action: 'ok', prompt: '?' }]);
     const s2 = replay([
       created,
       { type: 'NodeStarted', runId: 'r1', nodeId: 'h', at },
@@ -129,7 +165,60 @@ describe('replay', () => {
       { type: 'HumanResponded', runId: 'r1', nodeId: 'h', at, approved: true },
     ]);
     expect(s2.status).toBe('running');
+    expect(s2.pendingHumans).toEqual([]);
     expect(s2.nodes.h?.status).toBe('completed');
+  });
+
+  it('two human requests build a two-item pendingHumans; the run waits until both respond', () => {
+    const base: RunEvent[] = [
+      created,
+      { type: 'NodeStarted', runId: 'r1', nodeId: 'h1', at },
+      { type: 'NodeStarted', runId: 'r1', nodeId: 'h2', at },
+      { type: 'HumanRequested', runId: 'r1', nodeId: 'h1', at, action: 'a1', prompt: 'p1' },
+      { type: 'HumanRequested', runId: 'r1', nodeId: 'h2', at, action: 'a2', prompt: 'p2' },
+    ];
+    const s1 = replay(base);
+    expect(s1.status).toBe('waiting_human');
+    expect(s1.pendingHumans).toEqual([
+      { nodeId: 'h1', action: 'a1', prompt: 'p1' },
+      { nodeId: 'h2', action: 'a2', prompt: 'p2' },
+    ]);
+    const s2 = replay([
+      ...base,
+      { type: 'HumanResponded', runId: 'r1', nodeId: 'h1', at, approved: true },
+    ]);
+    expect(s2.status).toBe('waiting_human');
+    expect(s2.pendingHumans).toEqual([{ nodeId: 'h2', action: 'a2', prompt: 'p2' }]);
+    expect(s2.nodes.h1).toMatchObject({ status: 'completed', finishedIdx: 5 });
+    const s3 = replay([
+      ...base,
+      { type: 'HumanResponded', runId: 'r1', nodeId: 'h1', at, approved: true },
+      { type: 'HumanResponded', runId: 'r1', nodeId: 'h2', at, approved: true },
+    ]);
+    expect(s3.status).toBe('running');
+    expect(s3.pendingHumans).toEqual([]);
+  });
+
+  it('a rejected human response cancels the run with the reason', () => {
+    const s = replay([
+      created,
+      { type: 'NodeStarted', runId: 'r1', nodeId: 'h1', at },
+      { type: 'NodeStarted', runId: 'r1', nodeId: 'h2', at },
+      { type: 'HumanRequested', runId: 'r1', nodeId: 'h1', at, action: 'a1', prompt: 'p1' },
+      { type: 'HumanRequested', runId: 'r1', nodeId: 'h2', at, action: 'a2', prompt: 'p2' },
+      { type: 'HumanResponded', runId: 'r1', nodeId: 'h1', at, approved: false, note: 'nope' },
+    ]);
+    expect(s.status).toBe('cancelled');
+    expect(s.error).toBe('rejected by human at h1: nope');
+    expect(s.pendingHumans).toEqual([]);
+    expect(s.nodes.h1?.status).toBe('completed');
+    const noNote = replay([
+      created,
+      { type: 'NodeStarted', runId: 'r1', nodeId: 'h', at },
+      { type: 'HumanRequested', runId: 'r1', nodeId: 'h', at, action: 'a', prompt: 'p' },
+      { type: 'HumanResponded', runId: 'r1', nodeId: 'h', at, approved: false },
+    ]);
+    expect(noNote.error).toBe('rejected by human at h');
   });
 
   it('budget exceeded pauses; RunResumed raises the limit and resumes', () => {
@@ -174,7 +263,7 @@ describe('replay', () => {
     ]);
     expect(s.status).toBe('failed');
     expect(s.error).toBe('bad: boom');
-    expect(s.pendingHuman).toBeUndefined();
+    expect(s.pendingHumans).toEqual([]);
     expect(s.nodes.ask?.status).toBe('completed');
   });
 
