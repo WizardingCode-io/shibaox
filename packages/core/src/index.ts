@@ -3,6 +3,7 @@ export * from './events/store.js';
 export * from './executors/code.js';
 export * from './executors/mock.js';
 export * from './executors/types.js';
+export * from './gates/engine.js';
 export * from './run/reducer.js';
 export * from './run/scheduler.js';
 export * from './run/state.js';

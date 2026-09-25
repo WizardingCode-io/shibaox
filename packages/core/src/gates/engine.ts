@@ -1,0 +1,97 @@
+import type { Check, CheckResult, Gate, GateReport } from '@shibaox/schemas';
+import { runCommand } from '../executors/code.js';
+import type { RunState } from '../run/state.js';
+
+export interface CheckContext {
+  runId: string;
+  nodeId: string;
+  workspace: string;
+  state: RunState;
+  log: (line: string) => void;
+}
+export type CheckRunner = (check: Check, ctx: CheckContext) => Promise<CheckResult>;
+export type CheckRunners = Partial<Record<Check['type'], CheckRunner>>;
+
+const tail = (s: string, n = 2000) => (s.length > n ? `…${s.slice(-n)}` : s);
+
+export const codeCheckRunner: CheckRunner = async (check, ctx) => {
+  if (check.type !== 'code') throw new Error('codeCheckRunner got a non-code check');
+  const r = await runCommand({
+    command: check.command,
+    cwd: ctx.workspace,
+    timeoutMs: check.timeout_ms,
+  });
+  const passed = r.exitCode === 0 && !r.timedOut;
+  const evidence = r.timedOut
+    ? `timed out after ${check.timeout_ms}ms\n${tail(r.stdout)}${tail(r.stderr)}`
+    : `exit ${r.exitCode}\n${tail(r.stdout)}${tail(r.stderr)}`;
+  return {
+    name: check.name,
+    type: 'code',
+    passed,
+    skipped: false,
+    evidence,
+    suggestion: passed ? undefined : `Fix so that \`${check.command}\` exits 0`,
+  };
+};
+
+export const mockCheckRunner: CheckRunner = async (check) => {
+  if (check.type !== 'mock') throw new Error('mockCheckRunner got a non-mock check');
+  return {
+    name: check.name,
+    type: 'mock',
+    passed: check.passes,
+    skipped: false,
+    evidence: check.evidence,
+  };
+};
+
+export function defaultCheckRunners(): CheckRunners {
+  return { code: codeCheckRunner, mock: mockCheckRunner };
+}
+
+export async function runGate(args: {
+  gateIds: string[];
+  gates: Record<string, Gate>;
+  runners: CheckRunners;
+  ctx: CheckContext;
+}): Promise<GateReport> {
+  const checks: CheckResult[] = [];
+  let failed = false;
+  for (const gateId of args.gateIds) {
+    const gate = args.gates[gateId];
+    if (!gate) throw new Error(`gate "${gateId}" is not defined`);
+    for (const check of gate.checks) {
+      if (failed) {
+        checks.push({
+          name: check.name,
+          type: check.type,
+          passed: false,
+          skipped: true,
+          evidence: 'skipped: an earlier check failed',
+        });
+        continue;
+      }
+      const runner = args.runners[check.type];
+      const result: CheckResult = runner
+        ? await runner(check, args.ctx).catch((e: Error) => ({
+            name: check.name,
+            type: check.type,
+            passed: false,
+            skipped: false,
+            evidence: `runner error: ${e.message}`,
+          }))
+        : {
+            name: check.name,
+            type: check.type,
+            passed: false,
+            skipped: false,
+            evidence: `no runner registered for check type "${check.type}"`,
+          };
+      args.ctx.log(`[gate ${gateId}] ${check.name}: ${result.passed ? 'pass' : 'FAIL'}`);
+      checks.push(result);
+      if (!result.passed) failed = true;
+    }
+  }
+  return { gates: args.gateIds, passed: !failed, checks };
+}
