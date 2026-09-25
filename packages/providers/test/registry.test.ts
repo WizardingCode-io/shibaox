@@ -35,6 +35,27 @@ describe('ProviderRegistry', () => {
   it('throws a clear error when the provider is not configured', () => {
     expect(() => reg().model('anthropic/claude-sonnet-4-5')).toThrow(/ANTHROPIC_API_KEY/);
   });
+  it('forwards the injected AZURE_API_KEY to the azure factory instead of reading process.env', () => {
+    const previous = process.env.AZURE_API_KEY;
+    process.env.AZURE_API_KEY = 'WRONG-FROM-REAL-PROCESS-ENV';
+    try {
+      const m = reg({ AZURE_RESOURCE_NAME: 'r', AZURE_API_KEY: 'k' }).model('azure/gpt-5');
+      expect(m).toBeDefined();
+      // The azure provider resolves its "api-key" header lazily from `options.apiKey` (falling
+      // back to real process.env.AZURE_API_KEY only when unset). Reading it here proves the
+      // registry's injected env — not the real process env — is what actually gets used.
+      const headers = (
+        m as unknown as { config: { headers: () => Record<string, string> } }
+      ).config.headers();
+      expect(headers['api-key']).toBe('k');
+    } finally {
+      if (previous === undefined) delete process.env.AZURE_API_KEY;
+      else process.env.AZURE_API_KEY = previous;
+    }
+    expect(reg({ AZURE_RESOURCE_NAME: 'r' }).isConfigured('azure').missing).toEqual([
+      'AZURE_API_KEY',
+    ]);
+  });
   it('estimates cost from pricing when present', () => {
     const r = reg({ OPENROUTER_API_KEY: 'k' });
     const usd = r.estimateCost('openrouter/anthropic/claude-sonnet-4.5', {

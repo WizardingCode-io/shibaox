@@ -51,7 +51,8 @@ export const FACTORIES: Record<ProviderKind, Factory> = {
   anthropic: simple(createAnthropic),
   google: simple(createGoogleGenerativeAI),
   xai: simple(createXai),
-  azure: (i) => createAzure({ resourceName: i.env.AZURE_RESOURCE_NAME, apiKey: i.apiKey })(i.model),
+  azure: (i) =>
+    createAzure({ resourceName: i.env.AZURE_RESOURCE_NAME, apiKey: i.env.AZURE_API_KEY })(i.model),
   bedrock: (i) =>
     createAmazonBedrock({
       region: i.env.AWS_REGION,
