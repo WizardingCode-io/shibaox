@@ -1,10 +1,17 @@
 #!/usr/bin/env node
-import { Command } from 'commander';
+import { Command, InvalidArgumentError, Option } from 'commander';
 import { doctorCommand } from './commands/doctor.js';
 import { initCommand } from './commands/init.js';
 import { replayCommand } from './commands/replay.js';
+import { resumeRun } from './commands/resume.js';
 import { printState, runWorkflow } from './commands/run.js';
 import { runsCommand } from './commands/runs.js';
+
+function parseBudget(v: string): number {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) throw new InvalidArgumentError('must be a positive number');
+  return n;
+}
 
 const program = new Command()
   .name('shibaox')
@@ -26,8 +33,12 @@ program
   .requiredOption('--org <dir>', 'org repo directory')
   .requiredOption('--project <path>', 'project workspace')
   .requiredOption('--input <text>', 'request / spec text')
-  .option('--adapter <id>', 'runtime adapter (phase 1A: mock)', 'mock')
-  .option('--budget <usd>', 'budget in USD', (v) => Number(v))
+  .addOption(
+    new Option('--adapter <id>', 'runtime adapter (phase 1A: mock)')
+      .choices(['mock'])
+      .default('mock'),
+  )
+  .option('--budget <usd>', 'budget in USD (default: org budgets.per_run_usd)', parseBudget)
   .option('--db <path>', 'events database path')
   .action(
     async (
@@ -47,6 +58,18 @@ program
     },
   );
 program
+  .command('resume')
+  .argument('<runId>')
+  .description('continue a waiting, budget-paused or interrupted run')
+  .requiredOption('--org <dir>', 'org repo directory')
+  .option('--budget <usd>', 'new budget in USD (required to resume a budget pause)', parseBudget)
+  .option('--db <path>', 'events database path')
+  .action(async (runId: string, o: { org: string; budget?: number; db?: string }) => {
+    const state = await resumeRun(runId, o);
+    printState(state);
+    process.exit(state.status === 'completed' ? 0 : 2);
+  });
+program
   .command('runs')
   .requiredOption('--org <dir>')
   .option('--db <path>')
@@ -58,7 +81,7 @@ program
   .option('--db <path>')
   .action((runId: string, o: { org: string; db?: string }) => replayCommand(runId, o.org, o.db));
 
-program.parseAsync(process.argv).catch((e: Error) => {
-  console.error(e.message);
+program.parseAsync(process.argv).catch((e: unknown) => {
+  console.error(e instanceof Error ? e.message : String(e));
   process.exit(1);
 });

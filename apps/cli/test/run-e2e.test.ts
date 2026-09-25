@@ -2,9 +2,10 @@ import { cpSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AutoApproveHuman } from '@shibaox/core';
+import { AutoApproveHuman, DeferHuman } from '@shibaox/core';
 import { describe, expect, it } from 'vitest';
 import { scaffoldOrg } from '../src/commands/init.js';
+import { resumeRun } from '../src/commands/resume.js';
 import { runWorkflow } from '../src/commands/run.js';
 
 const sample = fileURLToPath(new URL('../../../examples/sample-repo', import.meta.url));
@@ -65,5 +66,58 @@ describe('shibaox run (mock adapter)', () => {
       log: () => {},
     });
     expect(state.status).toBe('paused_budget');
+  });
+  it('defers the human when not interactive, then resume approves and completes', async () => {
+    const { org, project, db } = setup();
+    const waiting = await runWorkflow('hello-feature', {
+      org,
+      project,
+      db,
+      input: 'add /health',
+      adapter: 'mock',
+      human: new DeferHuman(),
+      log: () => {},
+    });
+    expect(waiting.status).toBe('waiting_human');
+    expect(waiting.pendingHumans.map((p) => p.nodeId)).toEqual(['ship']);
+    const stillWaiting = await resumeRun(waiting.runId, {
+      org,
+      db,
+      human: new DeferHuman(),
+      log: () => {},
+    });
+    expect(stillWaiting.status).toBe('waiting_human');
+    const done = await resumeRun(waiting.runId, {
+      org,
+      db,
+      human: new AutoApproveHuman(),
+      log: () => {},
+    });
+    expect(done.status).toBe('completed');
+    expect(done.nodes.ship?.status).toBe('completed');
+  });
+  it('uses the org per-run budget when --budget is not given', async () => {
+    const { org, project, db } = setup();
+    const state = await runWorkflow('hello-feature', {
+      org,
+      project,
+      db,
+      input: 'x',
+      adapter: 'mock',
+      human: new AutoApproveHuman(),
+      log: () => {},
+    });
+    expect(state.budgetUsd).toBe(5);
+  });
+  it('rejects a project path that does not exist or is not a directory', async () => {
+    const { org, project, db } = setup();
+    const missing = join(project, 'nope');
+    await expect(
+      runWorkflow('hello-feature', { org, project: missing, db, input: 'x', adapter: 'mock' }),
+    ).rejects.toThrow(`project path not found: ${missing}`);
+    const file = join(project, 'math.test.js');
+    await expect(
+      runWorkflow('hello-feature', { org, project: file, db, input: 'x', adapter: 'mock' }),
+    ).rejects.toThrow(`project path not found: ${file}`);
   });
 });
