@@ -1,4 +1,5 @@
 export const ORG_TEMPLATE: Record<string, string> = {
+  'org/.gitignore': '.shibaox/\n',
   'org/org.yaml': `organization: my-org
 budgets:
   per_run_usd: 5

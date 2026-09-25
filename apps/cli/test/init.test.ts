@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadOrg } from '@shibaox/schemas';
@@ -15,6 +15,7 @@ describe('scaffoldOrg', () => {
     expect(org.teams.engineering?.gates).toEqual(['tests']);
     for (const d of ['00-org', '10-projects', '20-clients', '30-knowledge', '90-system'])
       expect(existsSync(join(dir, 'vault', d))).toBe(true);
+    expect(readFileSync(join(dir, 'org', '.gitignore'), 'utf8')).toContain('.shibaox/');
   });
   it('does not overwrite existing files', () => {
     const dir = mkdtempSync(join(tmpdir(), 'init-'));
