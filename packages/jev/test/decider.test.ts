@@ -43,12 +43,22 @@ describe('JevDecider', () => {
         probabilities: { ship: 0.55, rework: 0.45 },
       },
     }));
-    const fallback = { decide: async () => ({ choice: 'rework', confidence: 1 }) };
+    const fallback = {
+      decide: async () => ({
+        choice: 'rework',
+        confidence: 1,
+        cost: { usd: 0.5, inputTokens: 100, outputTokens: 10 },
+      }),
+    };
     const d = new JevDecider(new JevClient({ apiKey: 'k', baseURL: fake.baseURL }), {
       threshold: 0.8,
       fallback,
     });
-    expect((await d.decide(req)).choice).toBe('rework');
+    const r = await d.decide(req);
+    expect(r.choice).toBe('rework');
+    const jevInputTokens = Math.max(1, Math.ceil(JSON.stringify(fake.requests[0]).length / 4));
+    expect(r.cost?.inputTokens).toBe(100 + jevInputTokens);
+    expect(r.cost?.outputTokens).toBe(10);
   });
   it('without a fallback, low confidence still returns the Jev choice but flags it', async () => {
     fake = await startFakeJev(() => ({

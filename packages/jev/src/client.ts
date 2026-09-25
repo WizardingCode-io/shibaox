@@ -1,7 +1,17 @@
+import type { Cost } from '@shibaox/schemas';
 import { type Questions, type SystemOneResult, TypeSafeClient } from '@typesafe-ai/sdk';
 
 export const JEV_INPUT_USD_PER_M = 0.042;
 export type { Questions };
+
+export function addCost(a: Cost, b: Cost | undefined): Cost {
+  if (!b) return a;
+  return {
+    usd: a.usd + b.usd,
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+  };
+}
 
 export class JevClient {
   private readonly client: TypeSafeClient;

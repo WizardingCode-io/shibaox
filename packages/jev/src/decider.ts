@@ -1,6 +1,6 @@
 import type { Decider, Decision, DecisionRequest } from '@shibaox/core';
 import { choice } from '@typesafe-ai/sdk';
-import { gateByConfidence, type JevClient } from './client.js';
+import { addCost, gateByConfidence, type JevClient } from './client.js';
 
 export class JevDecider implements Decider {
   constructor(
@@ -27,7 +27,7 @@ export class JevDecider implements Decider {
     const verdict = gateByConfidence(a.confidence, this.opts.threshold ?? 0.8);
     if (verdict !== 'pass' && this.opts.fallback) {
       const f = await this.opts.fallback.decide(req);
-      return { ...f, cost: f.cost ? { ...f.cost, usd: f.cost.usd + cost.usd } : cost };
+      return { ...f, cost: addCost(cost, f.cost) };
     }
     return { choice: a.choice, confidence: a.confidence, cost };
   }

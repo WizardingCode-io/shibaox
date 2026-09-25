@@ -1,7 +1,7 @@
 import type { CheckContext, CheckRunner } from '@shibaox/core';
 import type { CheckResult } from '@shibaox/schemas';
 import { noul, score } from '@typesafe-ai/sdk';
-import { gateByConfidence, type JevClient, truncateState } from './client.js';
+import { addCost, gateByConfidence, type JevClient, truncateState } from './client.js';
 
 function stateFor(ctx: CheckContext): string {
   const spec = String(ctx.state.input.spec ?? JSON.stringify(ctx.state.input));
@@ -54,7 +54,7 @@ export function jevCheckRunner(
         name: check.name,
         type: 'jev',
         confidence,
-        cost: e.cost ? { ...e.cost, usd: e.cost.usd + cost.usd } : cost,
+        cost: addCost(cost, e.cost),
         evidence: `escalated to judge (jev ${confidence.toFixed(2)}): ${e.evidence}`,
       };
     }

@@ -50,6 +50,7 @@ describe('jevCheckRunner', () => {
       passed: true,
       skipped: false,
       evidence: 'judge says ok',
+      cost: { usd: 0.3, inputTokens: 50, outputTokens: 5 },
     });
     const run = jevCheckRunner(new JevClient({ apiKey: 'k', baseURL: fake.baseURL }), { escalate });
     const r = await run(
@@ -58,6 +59,9 @@ describe('jevCheckRunner', () => {
     );
     expect(r.passed).toBe(true);
     expect(r.evidence).toContain('escalated');
+    const jevInputTokens = Math.max(1, Math.ceil(JSON.stringify(fake.requests[0]).length / 4));
+    expect(r.cost?.inputTokens).toBe(50 + jevInputTokens);
+    expect(r.cost?.outputTokens).toBe(5);
   });
   it('never passes on low confidence without escalation', async () => {
     fake = await startFakeJev(() => ({ check: { type: 'noul', noul: 0.65 } }));
