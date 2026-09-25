@@ -15,6 +15,6 @@ export const RoleSchema = z.object({
       network: z.array(z.string()).default([]),
       approval_required: z.array(z.string()).default([]),
     })
-    .default({ fs: ['workspace'], network: [], approval_required: [] }),
+    .default(() => ({ fs: ['workspace'], network: [], approval_required: [] })),
 });
 export type Role = z.infer<typeof RoleSchema>;

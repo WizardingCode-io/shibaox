@@ -14,6 +14,13 @@ describe('org file schemas', () => {
     expect(r.model_tier).toBe('strong');
     expect(r.permissions.fs).toEqual(['workspace']);
   });
+  it('role permissions default is not shared between separate parses', () => {
+    const a = RoleSchema.parse({ role: 'backend' });
+    const b = RoleSchema.parse({ role: 'frontend' });
+    expect(a.permissions).not.toBe(b.permissions);
+    a.permissions.fs.push('extra');
+    expect(b.permissions.fs).toEqual(['workspace']);
+  });
   it('team requires lead and at least one role', () => {
     expect(TeamSchema.safeParse({ team: 'eng', lead: 'tl' }).success).toBe(false);
     expect(TeamSchema.parse({ team: 'eng', lead: 'tl', roles: ['tl'] }).gates).toEqual([]);
