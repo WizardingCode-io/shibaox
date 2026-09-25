@@ -1,0 +1,8 @@
+node_modules
+dist
+.turbo
+*.db
+.shibaox/
+graphify-out/
+.superpowers/
+.idea/
