@@ -7,7 +7,7 @@ import { type CheckRunners, defaultCheckRunners, runGate } from '../gates/engine
 import { injectTeamGates } from '../org/inject-gates.js';
 import type { Decider, HumanHandler } from './deciders.js';
 import { isTerminal, replay } from './reducer.js';
-import { readyNodes } from './scheduler.js';
+import { isStalled, readyNodes } from './scheduler.js';
 import type { RunState } from './state.js';
 
 export interface EngineDeps {
@@ -22,6 +22,7 @@ export interface EngineDeps {
   now?: () => string;
   maxSteps?: number;
   newRunId?: () => string;
+  scheduler?: { readyNodes: typeof readyNodes; isStalled: typeof isStalled };
 }
 
 export class RunEngine {
@@ -29,6 +30,7 @@ export class RunEngine {
   private readonly now: () => string;
   private readonly maxSteps: number;
   private readonly checkRunners: CheckRunners;
+  private readonly scheduler: { readyNodes: typeof readyNodes; isStalled: typeof isStalled };
   private readonly controllers = new Map<string, AbortController>();
 
   constructor(private readonly deps: EngineDeps) {
@@ -36,6 +38,7 @@ export class RunEngine {
     this.now = deps.now ?? (() => new Date().toISOString());
     this.maxSteps = deps.maxSteps ?? 200;
     this.checkRunners = deps.checkRunners ?? defaultCheckRunners();
+    this.scheduler = deps.scheduler ?? { readyNodes, isStalled };
   }
 
   async start(opts: {
@@ -44,7 +47,7 @@ export class RunEngine {
     workspace: string;
     budgetUsd?: number;
   }): Promise<RunState> {
-    this.resolveWorkflow(opts.workflow);
+    const workflowSnapshot = this.resolveFromOrg(opts.workflow);
     const runId = (this.deps.newRunId ?? randomUUID)();
     await this.emit({
       type: 'RunCreated',
@@ -54,6 +57,7 @@ export class RunEngine {
       input: opts.input,
       workspace: opts.workspace,
       budgetUsd: opts.budgetUsd,
+      workflowSnapshot,
     });
     return this.drive(runId);
   }
@@ -104,6 +108,9 @@ export class RunEngine {
         );
       await this.emit({ type: 'RunResumed', runId, at: this.now(), budgetUsd: opts.budgetUsd });
     } else if (state.status === 'waiting_human') {
+      if (opts.budgetUsd !== undefined) {
+        await this.emit({ type: 'RunResumed', runId, at: this.now(), budgetUsd: opts.budgetUsd });
+      }
       for (const pending of state.pendingHumans) {
         const answer = await this.deps.human.ask({ runId, ...pending });
         if ('deferred' in answer) break;
@@ -150,11 +157,21 @@ export class RunEngine {
     this.controllers.delete(runId);
   }
 
-  private resolveWorkflow(name: string): Workflow {
+  private resolveFromOrg(name: string): Workflow {
     const wf = this.deps.org.workflows[name];
     if (!wf) throw new Error(`workflow "${name}" is not defined in the org`);
     const team = wf.team ? this.deps.org.teams[wf.team] : undefined;
     return team ? injectTeamGates(wf, team) : wf;
+  }
+
+  /**
+   * Prefers the workflow snapshot recorded at `RunCreated` so a resumed run
+   * keeps executing the workflow it started with, even if the org's files
+   * changed since. Falls back to a fresh org lookup for older event logs
+   * recorded before snapshots existed.
+   */
+  private resolveWorkflow(state: RunState): Workflow {
+    return state.workflowSnapshot ?? this.resolveFromOrg(state.workflow);
   }
 
   private async emit(event: RunEvent): Promise<void> {
@@ -196,10 +213,20 @@ export class RunEngine {
         this.releaseController(runId);
         return state;
       }
-      const workflow = this.resolveWorkflow(state.workflow);
-      const ready = readyNodes(state, workflow);
+      const workflow = this.resolveWorkflow(state);
+      const ready = this.scheduler.readyNodes(state, workflow);
       if (ready.length === 0) {
-        await this.emit({ type: 'RunCompleted', runId, at: this.now() });
+        const stall = this.scheduler.isStalled(state, workflow);
+        if (stall.stalled) {
+          await this.emit({
+            type: 'RunCancelled',
+            runId,
+            at: this.now(),
+            reason: `stalled: ${stall.reason}`,
+          });
+        } else {
+          await this.emit({ type: 'RunCompleted', runId, at: this.now() });
+        }
         this.releaseController(runId);
         return this.state(runId);
       }

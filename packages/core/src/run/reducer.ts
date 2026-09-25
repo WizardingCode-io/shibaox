@@ -101,7 +101,7 @@ function applyEvent(s: RunState, event: NonCreatedEvent, idx: number): RunState 
     case 'RunResumed':
       return {
         ...s,
-        status: 'running',
+        status: s.status === 'paused_budget' ? 'running' : s.status,
         budgetUsd: event.budgetUsd ?? s.budgetUsd,
         budgetWarned: false,
       };
@@ -122,6 +122,7 @@ export function reduce(state: RunState | undefined, event: RunEvent, idx: number
     return {
       runId: event.runId,
       workflow: event.workflow,
+      workflowSnapshot: event.workflowSnapshot,
       input: event.input,
       workspace: event.workspace,
       status: 'running',

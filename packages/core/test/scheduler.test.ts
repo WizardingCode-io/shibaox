@@ -1,6 +1,6 @@
 import { type RunEvent, WorkflowSchema } from '@shibaox/schemas';
 import { describe, expect, it } from 'vitest';
-import { readyNodes, replay } from '../src/index.js';
+import { isStalled, readyNodes, replay } from '../src/index.js';
 
 const at = '2026-09-25T10:00:00.000Z';
 const wf = WorkflowSchema.parse({
@@ -311,5 +311,33 @@ describe('readyNodes', () => {
     expect(
       readyNodes(replay([...p2, started('b1'), done('b1'), started('b2'), done('b2')]), parWf),
     ).toEqual(['d']);
+  });
+});
+
+describe('isStalled', () => {
+  it('reports a pending node with no live path when nothing is ready', () => {
+    const wf = WorkflowSchema.parse({
+      workflow: 'w',
+      start: 'a',
+      nodes: {
+        a: { type: 'task', role: 'r', next: 'b' },
+        b: { type: 'task', role: 'r' },
+      },
+    });
+    const s = replay([created, started('a'), done('a'), started('b')]);
+    const interrupted = {
+      ...s,
+      nodes: { ...s.nodes, b: { ...s.nodes.b!, status: 'pending' as const, startedIdx: 5 } },
+    };
+    expect(readyNodes(interrupted, wf)).toEqual([]);
+    expect(isStalled(interrupted, wf)).toEqual({
+      stalled: true,
+      reason: 'node "b" is pending but no predecessor finished after it started',
+    });
+    expect(
+      isStalled(replay([created, started('a'), done('a'), started('b'), done('b')]), wf),
+    ).toEqual({
+      stalled: false,
+    });
   });
 });

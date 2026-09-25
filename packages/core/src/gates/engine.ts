@@ -1,4 +1,4 @@
-import type { Check, CheckResult, Gate, GateReport } from '@shibaox/schemas';
+import type { Check, CheckResult, Cost, Gate, GateReport } from '@shibaox/schemas';
 import { runCommand } from '../executors/code.js';
 import type { RunState } from '../run/state.js';
 
@@ -100,5 +100,18 @@ export async function runGate(args: {
       if (!result.passed) failed = true;
     }
   }
-  return { gates: args.gateIds, passed: !failed, checks };
+  return { gates: args.gateIds, passed: !failed, checks, cost: sumCosts(checks) };
+}
+
+function sumCosts(checks: readonly CheckResult[]): Cost | undefined {
+  const costs = checks.flatMap((c) => (c.cost ? [c.cost] : []));
+  if (costs.length === 0) return undefined;
+  return costs.reduce(
+    (acc, c) => ({
+      usd: acc.usd + c.usd,
+      inputTokens: acc.inputTokens + c.inputTokens,
+      outputTokens: acc.outputTokens + c.outputTokens,
+    }),
+    { usd: 0, inputTokens: 0, outputTokens: 0 },
+  );
 }

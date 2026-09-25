@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { WorkflowSchema } from './workflow.js';
 
 export const CostSchema = z.object({
   usd: z.number().min(0),
@@ -15,6 +16,7 @@ export const CheckResultSchema = z.object({
   evidence: z.string(),
   suggestion: z.string().optional(),
   confidence: z.number().min(0).max(1).optional(),
+  cost: CostSchema.optional(),
 });
 export type CheckResult = z.infer<typeof CheckResultSchema>;
 
@@ -37,6 +39,7 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     input: z.record(z.string(), z.unknown()),
     budgetUsd: z.number().positive().optional(),
     workspace: z.string(),
+    workflowSnapshot: WorkflowSchema.optional(),
   }),
   z.object({ ...node, type: z.literal('NodeStarted') }),
   z.object({

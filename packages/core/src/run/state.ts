@@ -1,4 +1,4 @@
-import type { GateReport } from '@shibaox/schemas';
+import type { GateReport, Workflow } from '@shibaox/schemas';
 
 export type RunStatus =
   | 'running'
@@ -39,6 +39,7 @@ export interface PendingHuman {
 export interface RunState {
   runId: string;
   workflow: string;
+  workflowSnapshot?: Workflow;
   input: Record<string, unknown>;
   workspace: string;
   status: RunStatus;

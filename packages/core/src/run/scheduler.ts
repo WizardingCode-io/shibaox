@@ -1,4 +1,4 @@
-import type { Workflow } from '@shibaox/schemas';
+import { transitionsOf, type Workflow } from '@shibaox/schemas';
 import type { NodeState, NodeStatus, RunState } from './state.js';
 
 const finished = (s: NodeStatus | undefined) => s === 'completed' || s === 'passed';
@@ -57,6 +57,41 @@ export function readyNodes(state: RunState, workflow: Workflow): string[] {
     for (const t of targets) if (readyAfter(t, p.finishedIdx)) ready.add(t);
   }
   return [...ready].sort();
+}
+
+/**
+ * Detects a run that is `running` with no ready node and no way to ever get
+ * one: a node left `pending` after having started (interrupted/reworked) or
+ * `gate_failed`, whose predecessors have not finished again since it started.
+ * Distinguishes a genuinely stuck run from one that has simply reached its
+ * end (nothing left `pending`/`gate_failed`), which should complete instead.
+ */
+export function isStalled(
+  state: RunState,
+  workflow: Workflow,
+): { stalled: boolean; reason?: string } {
+  if (state.status !== 'running') return { stalled: false };
+  for (const [id, n] of Object.entries(state.nodes)) {
+    const suspect =
+      (n.status === 'pending' && n.startedIdx !== undefined) || n.status === 'gate_failed';
+    if (!suspect) continue;
+    const hasLivePredecessor = Object.entries(workflow.nodes).some(([predId, predNode]) => {
+      if (!transitionsOf(predNode).includes(id)) return false;
+      const pred = state.nodes[predId];
+      return (
+        pred?.finishedIdx !== undefined &&
+        n.startedIdx !== undefined &&
+        pred.finishedIdx > n.startedIdx
+      );
+    });
+    if (!hasLivePredecessor) {
+      return {
+        stalled: true,
+        reason: `node "${id}" is pending but no predecessor finished after it started`,
+      };
+    }
+  }
+  return { stalled: false };
 }
 
 /**

@@ -450,4 +450,52 @@ describe('RunEngine', () => {
     expect(cancelled.status).toBe('cancelled');
     expect(engine.controllerCount()).toBe(0);
   });
+
+  it('stores the resolved workflow in RunCreated and resumes from it even if the org changed', async () => {
+    const dir = scaffold(orgFiles('true'));
+    const { engine, store } = engineFor(dir, { human: new DeferHuman() });
+    const waiting = await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
+    const created = (await store.read(waiting.runId))[0];
+    expect(created?.type === 'RunCreated' && created.workflowSnapshot?.nodes.qa).toBeTruthy();
+    writeFileSync(
+      join(dir, 'workflows/hello.yaml'),
+      'workflow: hello\nstart: only\nnodes:\n  only: { type: human, action: x }\n',
+    );
+    const { engine: engine2 } = engineFor(dir, { store, human: new AutoApproveHuman() }); // same store, new org
+    const done = await engine2.respond(waiting.runId, { approved: true });
+    expect(done.status).toBe('completed');
+    expect(done.nodes.ship?.status).toBe('completed'); // still the old workflow
+  });
+
+  it('cancels with a stall reason instead of completing when the scheduler reports a stall', async () => {
+    const dir = scaffold(orgFiles('true'));
+    const { engine, store } = engineFor(dir, {
+      scheduler: {
+        readyNodes: () => [],
+        isStalled: () => ({
+          stalled: true,
+          reason: 'node "x" is pending but no predecessor finished after it started',
+        }),
+      },
+    });
+    const s = await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
+    expect(s.status).toBe('cancelled');
+    expect(s.error).toContain('stalled: node "x"');
+    expect((await store.read(s.runId)).map((e) => e.type)).not.toContain('RunCompleted');
+  });
+
+  it('resume with a budget while waiting_human applies the new budget', async () => {
+    const dir = scaffold(orgFiles('true'));
+    const { engine, store } = engineFor(dir, { human: new DeferHuman() });
+    const waiting = await engine.start({
+      workflow: 'hello',
+      input: {},
+      workspace: process.cwd(),
+      budgetUsd: 1,
+    });
+    const { engine: engine2 } = engineFor(dir, { store, human: new AutoApproveHuman() });
+    const done = await engine2.resume(waiting.runId, { budgetUsd: 9 });
+    expect(done.status).toBe('completed');
+    expect(done.budgetUsd).toBe(9);
+  });
 });

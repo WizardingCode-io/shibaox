@@ -82,4 +82,31 @@ describe('runGate', () => {
       checks: [{ evidence: expect.stringContaining('runner error: plain') }],
     });
   });
+  it('sums the cost of checks that report one into the gate report', async () => {
+    const runners: CheckRunners = {
+      mock: async (check) => ({
+        name: check.name,
+        type: 'mock',
+        passed: true,
+        skipped: false,
+        evidence: 'ok',
+        cost: { usd: 0.01, inputTokens: 1, outputTokens: 1 },
+      }),
+    };
+    const twoChecks = {
+      ok: GateSchema.parse({
+        gate: 'ok',
+        checks: [
+          { name: 'c1', type: 'mock', passes: true },
+          { name: 'c2', type: 'mock', passes: true },
+        ],
+      }),
+    };
+    const r = await runGate({ gateIds: ['ok'], gates: twoChecks, runners, ctx });
+    expect(r.cost?.usd).toBeCloseTo(0.02);
+  });
+  it('omits the cost from the gate report when no check reports one', async () => {
+    const r = await runGate({ gateIds: ['ok'], gates, runners: defaultCheckRunners(), ctx });
+    expect(r.cost).toBeUndefined();
+  });
 });
