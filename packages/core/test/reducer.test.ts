@@ -163,6 +163,33 @@ describe('replay', () => {
     expect(s2.status).toBe('running');
   });
 
+  it('keeps a failed status sticky against a sibling human request/response racing in after it', () => {
+    const s = replay([
+      created,
+      { type: 'NodeStarted', runId: 'r1', nodeId: 'bad', at },
+      { type: 'NodeFailed', runId: 'r1', nodeId: 'bad', at, error: 'boom' },
+      { type: 'NodeStarted', runId: 'r1', nodeId: 'ask', at },
+      { type: 'HumanRequested', runId: 'r1', nodeId: 'ask', at, action: 'ok', prompt: '?' },
+      { type: 'HumanResponded', runId: 'r1', nodeId: 'ask', at, approved: true },
+    ]);
+    expect(s.status).toBe('failed');
+    expect(s.error).toBe('bad: boom');
+    expect(s.pendingHuman).toBeUndefined();
+    expect(s.nodes.ask?.status).toBe('completed');
+  });
+
+  it('keeps a cancelled status sticky against a sibling NodeFailed racing in after it', () => {
+    const s = replay([
+      created,
+      { type: 'RunCancelled', runId: 'r1', at, reason: 'rejected by human at ship' },
+      { type: 'NodeStarted', runId: 'r1', nodeId: 'bad', at },
+      { type: 'NodeFailed', runId: 'r1', nodeId: 'bad', at, error: 'boom' },
+    ]);
+    expect(s.status).toBe('cancelled');
+    expect(s.error).toBe('rejected by human at ship');
+    expect(s.nodes.bad?.status).toBe('failed');
+  });
+
   it('terminal events set final status', () => {
     expect(replay([created, { type: 'RunCompleted', runId: 'r1', at }]).status).toBe('completed');
     expect(replay([created, { type: 'RunCancelled', runId: 'r1', at, reason: 'x' }]).status).toBe(

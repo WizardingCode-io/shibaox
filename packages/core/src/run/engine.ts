@@ -323,6 +323,8 @@ export class RunEngine {
             action: node.action,
             prompt,
           });
+          const afterRequest = await this.state(runId);
+          if (afterRequest.status !== 'waiting_human') return; // a sibling already ended the run this step
           const answer = await this.deps.human.ask({ runId, nodeId, action: node.action, prompt });
           if ('deferred' in answer) return;
           await this.recordHuman(runId, nodeId, answer);

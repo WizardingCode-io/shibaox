@@ -198,6 +198,37 @@ describe('RunEngine', () => {
     expect(s.nodes.implement?.attempts).toBe(2);
   });
 
+  it('keeps the run failed when a parallel human sibling races a task failure', async () => {
+    const dir = scaffold({
+      'org.yaml': 'organization: wc\nteams: [eng]\n',
+      'teams/eng.yaml': 'team: eng\nlead: tl\nroles: [tl, analyst]\nworkflows: [par]\n',
+      'roles/tl.yaml': 'role: tl\n',
+      'roles/analyst.yaml': 'role: analyst\nruntime: mock\n',
+      'workflows/par.yaml': [
+        'workflow: par',
+        'team: eng',
+        'start: p',
+        'nodes:',
+        '  p: { type: parallel, branches: [bad, ask], join: done }',
+        '  bad: { type: task, role: analyst, instruction: bad }',
+        '  ask: { type: human, action: ok }',
+        '  done: { type: human, action: fin }',
+        '',
+      ].join('\n'),
+    });
+    const { engine } = engineFor(dir, {
+      adapters: {
+        mock: new MockAdapter(() => {
+          throw new Error('boom');
+        }),
+      },
+    });
+    const s = await engine.start({ workflow: 'par', input: {}, workspace: process.cwd() });
+    expect(s.status).toBe('failed');
+    expect(s.error).toContain('bad');
+    expect(s.nodes.done).toBeUndefined();
+  });
+
   it('cancels a workflow that would loop forever', async () => {
     const dir = scaffold({
       ...orgFiles('true'),

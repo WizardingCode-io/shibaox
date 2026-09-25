@@ -1,5 +1,5 @@
 import type { RunEvent } from '@shibaox/schemas';
-import type { NodeState, RunState } from './state.js';
+import type { NodeState, RunState, RunStatus } from './state.js';
 
 function nodeOf(state: RunState, id: string): NodeState {
   return state.nodes[id] ?? { status: 'pending', attempts: 0 };
@@ -14,22 +14,13 @@ function addCost(state: RunState, event: RunEvent): RunState {
   return cost ? { ...state, spentUsd: state.spentUsd + cost.usd } : state;
 }
 
-export function reduce(state: RunState | undefined, event: RunEvent): RunState {
-  if (event.type === 'RunCreated') {
-    return {
-      runId: event.runId,
-      workflow: event.workflow,
-      input: event.input,
-      workspace: event.workspace,
-      status: 'running',
-      nodes: {},
-      spentUsd: 0,
-      budgetUsd: event.budgetUsd,
-      budgetWarned: false,
-    };
-  }
-  if (!state) throw new Error(`event ${event.type} before RunCreated for run ${event.runId}`);
-  const s = addCost(state, event);
+function isTerminal(status: RunStatus): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled';
+}
+
+type NonCreatedEvent = Exclude<RunEvent, { type: 'RunCreated' }>;
+
+function applyEvent(s: RunState, event: NonCreatedEvent): RunState {
   switch (event.type) {
     case 'NodeStarted':
       return withNode(s, event.nodeId, {
@@ -96,6 +87,32 @@ export function reduce(state: RunState | undefined, event: RunEvent): RunState {
     case 'RunCancelled':
       return { ...s, status: 'cancelled', error: event.reason };
   }
+}
+
+export function reduce(state: RunState | undefined, event: RunEvent): RunState {
+  if (event.type === 'RunCreated') {
+    return {
+      runId: event.runId,
+      workflow: event.workflow,
+      input: event.input,
+      workspace: event.workspace,
+      status: 'running',
+      nodes: {},
+      spentUsd: 0,
+      budgetUsd: event.budgetUsd,
+      budgetWarned: false,
+    };
+  }
+  if (!state) throw new Error(`event ${event.type} before RunCreated for run ${event.runId}`);
+  const s = addCost(state, event);
+  const next = applyEvent(s, event);
+  // Once a run reaches a terminal status, later events (e.g. a sibling's
+  // HumanRequested/HumanResponded racing a parallel branch's NodeFailed) must
+  // still update node entries, spentUsd and reports, but must never resurrect
+  // the run-level status or overwrite the error that terminated it.
+  return isTerminal(state.status)
+    ? { ...next, status: state.status, error: state.error, pendingHuman: undefined }
+    : next;
 }
 
 export function replay(events: readonly RunEvent[]): RunState {
