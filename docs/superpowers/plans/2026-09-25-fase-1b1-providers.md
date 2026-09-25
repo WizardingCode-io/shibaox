@@ -1602,10 +1602,13 @@ export async function testProvider(reg: ProviderRegistry, id: string, model?: st
 `apps/cli/src/wiring.ts`:
 ```ts
 import { DirectAdapter } from '@shibaox/adapter-direct';
-import { type CheckRunners, type Decider, type EventStore, type HumanHandler, LeadDecider as _never, MockAdapter, RunEngine, ScriptedDecider, defaultCheckRunners, resolveModel } from '@shibaox/core';
-```
-(usar os imports reais: `LeadDecider`, `judgeCheckRunner`, `LlmClient`, `ProviderRegistry`, `loadCatalog` de `@shibaox/providers`; `JevClient`, `JevDecider`, `jevCheckRunner` de `@shibaox/jev`.)
-```ts
+import { type CheckRunners, type Decider, type EventStore, type HumanHandler, MockAdapter, RunEngine, ScriptedDecider, type TaskJob, defaultCheckRunners, resolveModel } from '@shibaox/core';
+import { JevClient, JevDecider, jevCheckRunner } from '@shibaox/jev';
+import { LeadDecider, LlmClient, type ProviderEntry, ProviderRegistry, judgeCheckRunner, loadCatalog } from '@shibaox/providers';
+import type { Org } from '@shibaox/schemas';
+
+const mockAdapter = () => new MockAdapter((j) => ({ output: { instruction: j.instruction }, summary: `mock ${j.role.role}: ${j.instruction}`, cost: { usd: 0.001, inputTokens: 10, outputTokens: 10 } }));
+
 export function buildRuntime(o: { org: Org; store: EventStore; human: HumanHandler; log: (l: string) => void; adapter?: string; env?: NodeJS.ProcessEnv; extraProviders?: ProviderEntry[]; orgRoot: string }) {
   const env = o.env ?? process.env;
   const registry = new ProviderRegistry([...loadCatalog(), ...(o.extraProviders ?? [])], env);
@@ -1626,7 +1629,7 @@ export function buildRuntime(o: { org: Org; store: EventStore; human: HumanHandl
   const lead: Decider | undefined = strongOk && strongRef ? new LeadDecider(llm, strongRef) : undefined;
   const decider: Decider = jev ? new JevDecider(jev, { threshold: 0.8, fallback: lead }) : (lead ?? new ScriptedDecider({}, 'ship'));
   if (!jev && !lead) warnings.push('no decider model configured: decide nodes always pick "ship"');
-  const engine = new RunEngine({ store, org: o.org, adapters: { mock: new MockAdapter(...cost script from 1A...), direct: new DirectAdapter({ registry, resolveRef, orgRoot: o.orgRoot }) }, defaultAdapter: adapter, decider, human: o.human, checkRunners, log: o.log });
+  const engine = new RunEngine({ store: o.store, org: o.org, adapters: { mock: mockAdapter(), direct: new DirectAdapter({ registry, resolveRef, orgRoot: o.orgRoot }) }, defaultAdapter: adapter, decider, human: o.human, checkRunners, log: o.log });
   return { engine, warnings, registry, adapter };
 }
 ```
