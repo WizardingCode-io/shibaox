@@ -36,21 +36,17 @@ export function injectTeamGates(workflow: Workflow, team: Team): Workflow {
     .filter(([, n]) => transitionsOf(n).length === 0)
     .map(([id]) => id);
   for (const t of terminals) {
-    const gateId = `team-gate:${t}`;
-    let inserted = false;
     for (const [pid, pnode] of Object.entries(workflow.nodes)) {
       if (pnode.type === 'gate' || !transitionsOf(pnode).includes(t)) continue;
+      const gateId = `team-gate:${pid}:${t}`;
       nodes[pid] = redirect(nodes[pid] ?? pnode, t, gateId);
-      if (!inserted) {
-        nodes[gateId] = {
-          type: 'gate',
-          gates: [...team.gates],
-          on_pass: t,
-          on_fail: pid,
-          max_retries: 3,
-        };
-        inserted = true;
-      }
+      nodes[gateId] = {
+        type: 'gate',
+        gates: [...team.gates],
+        on_pass: t,
+        on_fail: pid,
+        max_retries: 3,
+      };
     }
   }
   return { ...workflow, nodes };

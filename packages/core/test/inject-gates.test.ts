@@ -12,8 +12,8 @@ describe('injectTeamGates', () => {
       nodes: { a: { type: 'task', role: 'tl', next: 'h' }, h: { type: 'human', action: 'ok' } },
     });
     const out = injectTeamGates(wf, team);
-    expect(out.nodes.a).toMatchObject({ next: 'team-gate:h' });
-    expect(out.nodes['team-gate:h']).toEqual({
+    expect(out.nodes.a).toMatchObject({ next: 'team-gate:a:h' });
+    expect(out.nodes['team-gate:a:h']).toEqual({
       type: 'gate',
       gates: ['lint', 'tests'],
       on_pass: 'h',
@@ -33,7 +33,24 @@ describe('injectTeamGates', () => {
       },
     });
     const out = injectTeamGates(wf, team);
-    expect(out.nodes.d).toMatchObject({ next: { x: 'team-gate:h', y: 'team-gate:h' } });
+    expect(out.nodes.d).toMatchObject({ next: { x: 'team-gate:d:h', y: 'team-gate:d:h' } });
+  });
+  it('inserts one gate per predecessor when two nodes share the same terminal', () => {
+    const wf = WorkflowSchema.parse({
+      workflow: 'w',
+      start: 'a',
+      nodes: {
+        a: { type: 'task', role: 'tl', next: 'h' },
+        b: { type: 'task', role: 'tl', next: 'h' },
+        h: { type: 'human', action: 'ok' },
+      },
+    });
+    const out = injectTeamGates(wf, team);
+    expect(out.nodes.a).toMatchObject({ next: 'team-gate:a:h' });
+    expect(out.nodes.b).toMatchObject({ next: 'team-gate:b:h' });
+    expect(out.nodes['team-gate:a:h']).toMatchObject({ on_pass: 'h', on_fail: 'a' });
+    expect(out.nodes['team-gate:b:h']).toMatchObject({ on_pass: 'h', on_fail: 'b' });
+    expect(WorkflowSchema.safeParse(out).success).toBe(true);
   });
   it('does nothing when a gate node already covers the team gates', () => {
     const wf = WorkflowSchema.parse({
