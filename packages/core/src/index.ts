@@ -8,5 +8,6 @@ export * from './org/inject-gates.js';
 export * from './run/deciders.js';
 export * from './run/engine.js';
 export * from './run/reducer.js';
+export * from './run/router.js';
 export * from './run/scheduler.js';
 export * from './run/state.js';
