@@ -53,6 +53,22 @@ importers:
         specifier: ^26.6.2
         version: 26.6.2
 
+  packages/jev:
+    dependencies:
+      '@shibaox/core':
+        specifier: workspace:*
+        version: link:../core
+      '@shibaox/schemas':
+        specifier: workspace:*
+        version: link:../schemas
+      '@typesafe-ai/sdk':
+        specifier: ^0.6.0
+        version: 0.6.0
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.2
+        version: 26.6.2
+
   packages/persistence-sqlite:
     dependencies:
       '@shibaox/core':
@@ -711,6 +727,10 @@ packages:
 
   '@types/node@26.6.2':
     resolution: {integrity: sha512-X1P21scMv4zGKLYqjdGjaKa7COa0RKVYYZZN/NfvLQ1JegxFhdhpZG/Lyn8AXx6CDUavKAd11v6BvfpkDByK8g==}
+
+  '@typesafe-ai/sdk@0.6.0':
+    resolution: {integrity: sha512-IddX+Q0XM+VagOUZFeP7wZjaO4SHMdvnh2zEBdrZZnXedWI3BNK1lKhMx3ayrkFWvVLbVcUHJy6AVZlY+e6Jaw==}
+    engines: {node: '>=20'}
 
   '@vercel/oidc@3.2.0':
     resolution: {integrity: sha512-UycprH3T6n3jH0k44NHMa7pnFHGu/N05MjojYr+Mc6I7obkoLIJujSWwin1pCvdy/eOxrI/l3uDLQsmcrOb4ug==}
@@ -1533,6 +1553,8 @@ snapshots:
   '@types/node@26.6.2':
     dependencies:
       undici-types: 8.9.0
+
+  '@typesafe-ai/sdk@0.6.0': {}
 
   '@vercel/oidc@3.2.0': {}
 

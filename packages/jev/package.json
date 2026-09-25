@@ -1,0 +1,31 @@
+{
+  "name": "@shibaox/jev",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/fake-jev.d.ts",
+      "import": "./dist/testing/fake-jev.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@shibaox/core": "workspace:*",
+    "@shibaox/schemas": "workspace:*",
+    "@typesafe-ai/sdk": "^0.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2"
+  }
+}
