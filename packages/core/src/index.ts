@@ -5,6 +5,8 @@ export * from './executors/mock.js';
 export * from './executors/types.js';
 export * from './gates/engine.js';
 export * from './org/inject-gates.js';
+export * from './run/deciders.js';
+export * from './run/engine.js';
 export * from './run/reducer.js';
 export * from './run/scheduler.js';
 export * from './run/state.js';
