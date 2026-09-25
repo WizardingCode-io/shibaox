@@ -73,21 +73,28 @@ export async function runGate(args: {
         continue;
       }
       const runner = args.runners[check.type];
-      const result: CheckResult = runner
-        ? await runner(check, args.ctx).catch((e: Error) => ({
+      let result: CheckResult;
+      if (runner) {
+        try {
+          result = await runner(check, args.ctx);
+        } catch (e) {
+          result = {
             name: check.name,
             type: check.type,
             passed: false,
             skipped: false,
-            evidence: `runner error: ${e.message}`,
-          }))
-        : {
-            name: check.name,
-            type: check.type,
-            passed: false,
-            skipped: false,
-            evidence: `no runner registered for check type "${check.type}"`,
+            evidence: `runner error: ${e instanceof Error ? e.message : String(e)}`,
           };
+        }
+      } else {
+        result = {
+          name: check.name,
+          type: check.type,
+          passed: false,
+          skipped: false,
+          evidence: `no runner registered for check type "${check.type}"`,
+        };
+      }
       args.ctx.log(`[gate ${gateId}] ${check.name}: ${result.passed ? 'pass' : 'FAIL'}`);
       checks.push(result);
       if (!result.passed) failed = true;

@@ -1,6 +1,6 @@
 import { GateSchema } from '@shibaox/schemas';
 import { describe, expect, it } from 'vitest';
-import { defaultCheckRunners, type RunState, runGate } from '../src/index.js';
+import { type CheckRunners, defaultCheckRunners, type RunState, runGate } from '../src/index.js';
 
 const state: RunState = {
   runId: 'r',
@@ -52,5 +52,34 @@ describe('runGate', () => {
   });
   it('throws on an unknown gate id', async () => {
     await expect(runGate({ gateIds: ['ghost'], gates, runners: {}, ctx })).rejects.toThrow('ghost');
+  });
+  it('fails the check when a runner throws an Error, keeping the message as evidence', async () => {
+    const runners: CheckRunners = {
+      mock: async () => {
+        throw new Error('kaboom');
+      },
+    };
+    const singleGate = {
+      ok: GateSchema.parse({ gate: 'ok', checks: [{ name: 'm', type: 'mock', passes: true }] }),
+    };
+    const r = await runGate({ gateIds: ['ok'], gates: singleGate, runners, ctx });
+    expect(r.passed).toBe(false);
+    expect(r.checks[0]?.evidence).toContain('runner error: kaboom');
+  });
+  it('fails the check when a non-async runner throws a plain string synchronously, and runGate resolves', async () => {
+    const runners: CheckRunners = {
+      mock: () => {
+        throw 'plain';
+      },
+    };
+    const singleGate = {
+      ok: GateSchema.parse({ gate: 'ok', checks: [{ name: 'm', type: 'mock', passes: true }] }),
+    };
+    await expect(
+      runGate({ gateIds: ['ok'], gates: singleGate, runners, ctx }),
+    ).resolves.toMatchObject({
+      passed: false,
+      checks: [{ evidence: expect.stringContaining('runner error: plain') }],
+    });
   });
 });
