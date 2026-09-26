@@ -49,6 +49,10 @@ describe('shibaox run --adapter direct (fake providers)', () => {
       join(dir, 'org/models.yaml'),
       `providers: {}\ntiers: { strong: fake/m, cheap: fake/m, decision: jev-latest }\nroles: {}\ngates: {}\n`,
     );
+    writeFileSync(
+      join(dir, 'org/gates/tests.yaml'),
+      'gate: tests\nchecks:\n  - { name: unit-tests, type: code, command: "npm test", timeout_ms: 120000 }\n  - { name: spec, type: jev, question: "The outputs implement the request", threshold: 0.8 }\n',
+    );
     const project = join(dir, 'project');
     cpSync(sample, project, { recursive: true });
     const state = await runWorkflow('hello-feature', {

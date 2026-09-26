@@ -112,7 +112,7 @@ Each provider reads its key from the variable shown by `providers list` (for exa
 
 | Variable | Used for |
 | --- | --- |
-| `TYPESAFE_API_KEY` | Jev: `decide` nodes and `jev` gate checks. Without it `jev` checks fail. |
+| `TYPESAFE_API_KEY` | Jev: `decide` nodes and `jev` gate checks. Without it `jev` checks fail. `shibaox init` ships the `spec` jev check in `org/gates/tests.yaml` commented out; uncomment it once the key is set. |
 | `SHIBAOX_JEV_BASE_URL` | optional Jev endpoint override |
 | `SHIBAOX_REAL_TESTS=1` | enables `apps/cli/test/real.test.ts` (real calls, needs keys) |
 

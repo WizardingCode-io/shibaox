@@ -46,7 +46,7 @@ system_prompt: prompts/backend.md
   'org/gates/tests.yaml': `gate: tests
 checks:
   - { name: unit-tests, type: code, command: "npm test", timeout_ms: 120000 }
-  - { name: spec, type: jev, question: "The outputs implement the request", threshold: 0.8 }
+  # - { name: spec, type: jev, question: "The outputs implement the request", threshold: 0.8 }   # uncomment when TYPESAFE_API_KEY is set
 `,
   'org/workflows/hello-feature.yaml': `workflow: hello-feature
 team: engineering

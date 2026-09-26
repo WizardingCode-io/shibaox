@@ -13,11 +13,6 @@ const sample = fileURLToPath(new URL('../../../examples/sample-repo', import.met
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), 'e2e-'));
   scaffoldOrg(dir);
-  // The template gate also has a `jev` check, which needs TYPESAFE_API_KEY; keep the code check only.
-  writeFileSync(
-    join(dir, 'org/gates/tests.yaml'),
-    'gate: tests\nchecks:\n  - { name: unit-tests, type: code, command: "npm test", timeout_ms: 120000 }\n',
-  );
   const project = join(dir, 'project');
   cpSync(sample, project, { recursive: true });
   // An empty env keeps these runs hermetic: no provider or Jev key leaks in from the shell.
@@ -40,6 +35,7 @@ describe('shibaox run (mock adapter)', () => {
     expect(state.status).toBe('completed');
     expect(state.nodes.qa?.status).toBe('passed');
     expect(state.nodes.judge?.choice).toBe('ship');
+    expect(state.lastGateReport?.checks.map((c) => c.type)).toEqual(['code']);
   });
   it('fails after retries when the sample tests are broken', async () => {
     const { org, project, db, env } = setup();
