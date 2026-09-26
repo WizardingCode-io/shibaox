@@ -33,7 +33,6 @@ export class FakeDaemonClient implements DaemonClientLike {
   answerError?: { status: number; code: string; message: string };
   submitResult: { runId: string; warnings: string[] } = { runId: 'new-run', warnings: [] };
   private readonly streams = new Map<string, Stream>();
-  private nextRun = 0;
 
   private record(method: string, args: unknown[]): void {
     this.calls.push({ method, args });
@@ -93,7 +92,6 @@ export class FakeDaemonClient implements DaemonClientLike {
 
   async submitRun(req: SubmitRequest): Promise<{ runId: string; warnings: string[] }> {
     this.record('submitRun', [req]);
-    this.nextRun++;
     return this.submitResult;
   }
 
