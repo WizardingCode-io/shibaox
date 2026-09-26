@@ -14,6 +14,8 @@ export interface ToolArgs {
   onFinish: (output: unknown, summary: string) => void;
   commandTimeoutMs: number;
   maxFileBytes: number;
+  /** When given, exposes a `graph_query` tool backed by this function. */
+  graphQuery?: (question: string) => Promise<string>;
 }
 
 function walk(dir: string, root: string, out: string[], limit: number): void {
@@ -82,15 +84,28 @@ function scrubbedEnv(): Record<string, string> {
 
 /**
  * An argument leaves the workspace if it (or the value of `--flag=value`, or
- * the tail of a short option like `-o/path`) is absolute, uses `~` or has a
- * `..` segment. Checked on the parsed argv, so quoting cannot hide it.
+ * the value following a grouped short option like `-o/path` or `-rf../x`) is
+ * absolute, uses `~` or has a `..` segment. Checked on the parsed argv, so
+ * quoting cannot hide it.
  */
-function leavesWorkspace(arg: string): boolean {
+export function leavesWorkspace(arg: string): boolean {
+  const shortOptValue = /^-[A-Za-z]+(.*)$/.exec(arg)?.[1];
+  if (shortOptValue && leavesWorkspace(shortOptValue)) return true;
   const parts = [arg, ...arg.split('=').slice(1)];
-  if (/^-[A-Za-z]./.test(arg)) parts.push(arg.slice(2));
   return parts.some(
     (t) => t.startsWith('/') || t.startsWith('~') || t.split(/[\\/]/).includes('..'),
   );
+}
+
+/** Renders a tool call's input as a short, single-line log fragment (≤120 chars). */
+function summarizeInput(input: unknown): string {
+  let s: string;
+  try {
+    s = JSON.stringify(input) ?? String(input);
+  } catch {
+    s = String(input);
+  }
+  return s.length > 120 ? s.slice(0, 120) : s;
 }
 
 /** An argument naming a `.git` path could rewrite git config or hooks (code execution). */
@@ -103,6 +118,7 @@ export function buildTools(a: ToolArgs): ToolSet {
     <I, O>(name: string, fn: (input: I) => Promise<O> | O) =>
     async (input: I): Promise<O | { error: string }> => {
       a.emit({ type: 'tool_use', name, input });
+      a.ctx.log(`[direct] ${name} ${summarizeInput(input)}`);
       try {
         const output = await fn(input);
         a.emit({ type: 'tool_result', name, output });
@@ -114,6 +130,8 @@ export function buildTools(a: ToolArgs): ToolSet {
       }
     };
   const allowed = new Set(a.role.tools);
+  const readOnly = a.role.capabilities.includes('read-only');
+  const graphQuery = a.graphQuery;
   return {
     list_files: tool({
       description: 'List files in the workspace (relative paths), up to 500 entries',
@@ -134,48 +152,68 @@ export function buildTools(a: ToolArgs): ToolSet {
         return { content: readFileSync(p, 'utf8') };
       }),
     }),
-    write_file: tool({
-      description: 'Create or overwrite a UTF-8 file in the workspace',
-      inputSchema: z.object({ path: z.string(), content: z.string() }),
-      execute: guarded('write_file', ({ path, content }: { path: string; content: string }) => {
-        const p = safePath(a.workspace, path, { write: true });
-        mkdirSync(dirname(p), { recursive: true });
-        writeFileSync(p, content);
-        a.emit({ type: 'file_changed', path });
-        return { ok: true, bytes: Buffer.byteLength(content) };
-      }),
-    }),
-    run_command: tool({
-      description: `Run one program without a shell (no operators, no $ or ~ expansion, no globs; single/double quotes group words literally); runs in the workspace; arguments must be relative paths inside it and must not touch .git; this is an allowlist, not a sandbox. Allowed programs: ${[...allowed].join(', ') || 'none'}`,
-      inputSchema: z.object({ command: z.string() }),
-      execute: guarded('run_command', async ({ command }: { command: string }) => {
-        const argv = splitCommand(command);
-        const program = argv[0] ?? '';
-        if (!allowed.has(program))
-          throw new Error(`command "${program}" is not allowed for role ${a.role.role}`);
-        if (SHELL_META.test(command))
-          throw new Error(
-            'shell operators (; & | ` $ < > newline) are not allowed; run one program per call',
-          );
-        for (const arg of argv.slice(1)) {
-          if (leavesWorkspace(arg)) throw new Error(`argument "${arg}" leaves the workspace`);
-          if (touchesGit(arg)) throw new Error(`argument "${arg}" targets .git`);
+    ...(readOnly
+      ? {}
+      : {
+          write_file: tool({
+            description: 'Create or overwrite a UTF-8 file in the workspace',
+            inputSchema: z.object({ path: z.string(), content: z.string() }),
+            execute: guarded(
+              'write_file',
+              ({ path, content }: { path: string; content: string }) => {
+                const p = safePath(a.workspace, path, { write: true });
+                mkdirSync(dirname(p), { recursive: true });
+                writeFileSync(p, content);
+                a.emit({ type: 'file_changed', path });
+                a.ctx.log(`[direct] wrote ${path}`);
+                return { ok: true, bytes: Buffer.byteLength(content) };
+              },
+            ),
+          }),
+          run_command: tool({
+            description: `Run one program without a shell (no operators, no $ or ~ expansion, no globs; single/double quotes group words literally); runs in the workspace; arguments must be relative paths inside it and must not touch .git; this is an allowlist, not a sandbox. Allowed programs: ${[...allowed].join(', ') || 'none'}`,
+            inputSchema: z.object({ command: z.string() }),
+            execute: guarded('run_command', async ({ command }: { command: string }) => {
+              const argv = splitCommand(command);
+              const program = argv[0] ?? '';
+              if (!allowed.has(program))
+                throw new Error(`command "${program}" is not allowed for role ${a.role.role}`);
+              if (SHELL_META.test(command))
+                throw new Error(
+                  'shell operators (; & | ` $ < > newline) are not allowed; run one program per call',
+                );
+              for (const arg of argv.slice(1)) {
+                if (leavesWorkspace(arg)) throw new Error(`argument "${arg}" leaves the workspace`);
+                if (touchesGit(arg)) throw new Error(`argument "${arg}" targets .git`);
+              }
+              const r = await runArgv({
+                argv,
+                cwd: a.workspace,
+                timeoutMs: a.commandTimeoutMs,
+                inheritEnv: false,
+                env: scrubbedEnv(),
+              });
+              return {
+                exitCode: r.exitCode,
+                timedOut: r.timedOut,
+                stdout: r.stdout.slice(-8000),
+                stderr: r.stderr.slice(-8000),
+              };
+            }),
+          }),
+        }),
+    ...(graphQuery
+      ? {
+          graph_query: tool({
+            description: 'Ask the knowledge graph a natural-language question about the codebase',
+            inputSchema: z.object({ question: z.string() }),
+            execute: guarded('graph_query', async ({ question }: { question: string }) => {
+              const answer = await graphQuery(question);
+              return { answer };
+            }),
+          }),
         }
-        const r = await runArgv({
-          argv,
-          cwd: a.workspace,
-          timeoutMs: a.commandTimeoutMs,
-          inheritEnv: false,
-          env: scrubbedEnv(),
-        });
-        return {
-          exitCode: r.exitCode,
-          timedOut: r.timedOut,
-          stdout: r.stdout.slice(-8000),
-          stderr: r.stderr.slice(-8000),
-        };
-      }),
-    }),
+      : {}),
     finish: tool({
       description:
         'Finish the task. Call exactly once when done, with the structured output and a one-line summary.',

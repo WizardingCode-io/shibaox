@@ -14,6 +14,7 @@ const entryFor = (baseURL: string): ProviderEntry => ({
   models: [],
   pricing: { m: { input_per_m: 1, output_per_m: 2 } },
   verify: false,
+  capabilities: { tools: true },
 });
 
 describe('LlmClient over an OpenAI-compatible fake', () => {

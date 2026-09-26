@@ -36,6 +36,7 @@ describe('providers command', () => {
           models: ['m'],
           pricing: {},
           verify: false,
+          capabilities: { tools: true },
         },
       ],
       {},

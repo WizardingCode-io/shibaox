@@ -25,6 +25,8 @@ export interface DirectAdapterOptions {
   maxFileBytes?: number;
   /** Retries on retryable provider errors (AI SDK default: 2). */
   maxRetries?: number;
+  /** When given, exposes a `graph_query` tool that answers questions from the knowledge graph. */
+  graphQuery?: (question: string) => Promise<string>;
 }
 
 const RULES =
@@ -72,26 +74,34 @@ export class DirectAdapter implements RuntimeAdapter {
     let finished: { output: unknown; summary: string } | undefined;
     let pending: Promise<Settled>;
     let ref: string;
+    let effectiveMaxSteps: number;
     try {
       ref = this.opts.resolveRef(job);
-      const tools = buildTools({
-        workspace: job.workspace,
-        role: job.role,
-        ctx,
-        emit,
-        onFinish: (output, summary) => {
-          finished = { output, summary };
-        },
-        commandTimeoutMs: this.opts.commandTimeoutMs ?? 120_000,
-        maxFileBytes: this.opts.maxFileBytes ?? 200_000,
-      });
+      // Models without tool-calling support (registry.supportsTools) get a single
+      // plain-text turn instead: no tools are sent and the reply is the result.
+      const supportsTools = this.opts.registry.supportsTools(ref);
+      effectiveMaxSteps = supportsTools ? (this.opts.maxSteps ?? 12) : 1;
+      const tools = supportsTools
+        ? buildTools({
+            workspace: job.workspace,
+            role: job.role,
+            ctx,
+            emit,
+            onFinish: (output, summary) => {
+              finished = { output, summary };
+            },
+            commandTimeoutMs: this.opts.commandTimeoutMs ?? 120_000,
+            maxFileBytes: this.opts.maxFileBytes ?? 200_000,
+            graphQuery: this.opts.graphQuery,
+          })
+        : undefined;
       pending = generate({
         model: this.opts.registry.model(ref),
         system: this.systemPrompt(job),
         messages: [{ role: 'user', content: this.userMessage(job) }],
         tools,
-        maxSteps: this.opts.maxSteps ?? 12,
-        stopOnTools: ['finish'],
+        maxSteps: effectiveMaxSteps,
+        stopOnTools: supportsTools ? ['finish'] : undefined,
         signal: ctx.signal,
         maxRetries: this.opts.maxRetries,
       }).then(
@@ -128,9 +138,15 @@ export class DirectAdapter implements RuntimeAdapter {
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
     };
-    const maxSteps = this.opts.maxSteps ?? 12;
-    if (!finished && (finishReason === 'tool-calls' || (steps >= maxSteps && text === ''))) {
-      yield { type: 'error', message: `max steps (${maxSteps}) reached without finish`, cost };
+    if (
+      !finished &&
+      (finishReason === 'tool-calls' || (steps >= effectiveMaxSteps && text === ''))
+    ) {
+      yield {
+        type: 'error',
+        message: `max steps (${effectiveMaxSteps}) reached without finish`,
+        cost,
+      };
       return;
     }
     // truncated ('length'), filtered ('content-filter') or failed output is not a result

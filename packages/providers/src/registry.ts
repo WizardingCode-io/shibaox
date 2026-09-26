@@ -30,6 +30,11 @@ export class ProviderRegistry {
       throw new Error(`model ref "${ref}" must look like <provider>/<model>`);
     return { provider: ref.slice(0, i), model: ref.slice(i + 1) };
   }
+  /** Whether the model at `ref` can be given function/tool definitions (`entry.capabilities.tools`). */
+  supportsTools(ref: string): boolean {
+    const { provider } = this.parseRef(ref);
+    return this.get(provider).capabilities.tools;
+  }
   resolveBaseUrl(e: ProviderEntry): string | undefined {
     if (e.base_url_env) return this.env[e.base_url_env] ?? undefined;
     return e.base_url;

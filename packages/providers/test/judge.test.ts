@@ -18,6 +18,7 @@ const reg = (baseURL: string) =>
         models: [],
         pricing: {},
         verify: false,
+        capabilities: { tools: true },
       },
     ],
     {},

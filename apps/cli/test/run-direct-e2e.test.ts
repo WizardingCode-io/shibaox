@@ -74,6 +74,7 @@ describe('shibaox run --adapter direct (fake providers)', () => {
           models: ['m'],
           pricing: { m: { input_per_m: 1, output_per_m: 1 } },
           verify: false,
+          capabilities: { tools: true },
         },
       ],
     });

@@ -31,6 +31,7 @@ const registry = (baseURL: string) =>
         models: [],
         pricing: {},
         verify: false,
+        capabilities: { tools: true },
       },
     ],
     {},
@@ -377,6 +378,7 @@ describe('DirectAdapter', () => {
           models: [],
           pricing: { m: { input_per_m: 1_000_000, output_per_m: 1_000_000 } },
           verify: false,
+          capabilities: { tools: true },
         },
       ],
       {},
@@ -417,6 +419,78 @@ describe('DirectAdapter', () => {
     expect((err as Error).message).toContain('boom');
     expect((err as Error).message).toContain('500');
     expect(fake.requests).toHaveLength(1); // maxRetries: 0
+  });
+
+  it('exposes graph_query when a query function is given and logs progress', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    const logs: string[] = [];
+    fake = await startFakeOpenAI((_r, turn) =>
+      turn === 0
+        ? { toolCalls: [{ name: 'graph_query', args: { question: 'who calls add?' } }] }
+        : { toolCalls: [{ name: 'finish', args: { output: { ok: true }, summary: 'done' } }] },
+    );
+    const adapter = new DirectAdapter({
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+      graphQuery: async (q) => `answer to ${q}`,
+    });
+    const r = await collectRun(adapter, jobFor(ws), {
+      signal: new AbortController().signal,
+      log: (l) => logs.push(l),
+    });
+    expect(r.output).toEqual({ ok: true });
+    expect(logs.some((l) => l.includes('[direct] graph_query'))).toBe(true);
+    const sent = JSON.stringify(fake.requests[1]);
+    expect(sent).toContain('answer to who calls add?');
+  });
+  it('runs text-only for models without tool support', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI((req) => ({
+      content: (req.tools?.length ?? 0) > 0 ? 'TOOLS WERE SENT' : 'plain answer',
+    }));
+    const reg = new ProviderRegistry(
+      [
+        {
+          id: 'fake',
+          name: 'Fake',
+          kind: 'openai-compatible',
+          base_url: fake.baseURL,
+          auth: { type: 'none' },
+          models: [],
+          pricing: {},
+          verify: false,
+          capabilities: { tools: false },
+        },
+      ],
+      {},
+    );
+    const r = await collectRun(
+      new DirectAdapter({ registry: reg, resolveRef: () => 'fake/m' }),
+      jobFor(ws),
+      ctx(),
+    );
+    expect(r.output).toEqual({ text: 'plain answer' });
+  });
+  it('read-only roles get no write_file or run_command', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI((req) => ({
+      content: JSON.stringify(
+        (req.tools as { function: { name: string } }[]).map((t) => t.function.name),
+      ),
+    }));
+    const job = {
+      ...jobFor(ws, ['echo']),
+      role: RoleSchema.parse({ role: 'analyst', capabilities: ['read-only'], tools: ['echo'] }),
+    };
+    const r = await collectRun(
+      new DirectAdapter({ registry: registry(fake.baseURL), resolveRef: () => 'fake/m' }),
+      job,
+      ctx(),
+    );
+    const names = JSON.parse((r.output as { text: string }).text) as string[];
+    expect(names).toEqual(expect.arrayContaining(['list_files', 'read_file', 'finish']));
+    expect(names).not.toContain('write_file');
+    expect(names).not.toContain('run_command');
   });
 
   it('aborts when the signal fires', async () => {

@@ -31,6 +31,7 @@ const unpricedFake: ProviderEntry = {
   models: ['m'],
   pricing: {},
   verify: false,
+  capabilities: { tools: true },
 };
 
 async function runCount(db: string): Promise<number> {

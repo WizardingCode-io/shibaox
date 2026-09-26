@@ -1,4 +1,6 @@
 # Pricing (USD per million tokens) is indicative; verify against the vendor before relying on budgets.
+# capabilities.tools defaults to { tools: true }; set capabilities: { tools: false } on an entry whose
+# model cannot use function/tool calling so the direct adapter runs it text-only. None need it today.
 # Direct APIs
 - { id: anthropic, name: Anthropic (API key), kind: anthropic, auth: { type: api_key, env: ANTHROPIC_API_KEY }, models: [claude-opus-5-5, claude-sonnet-5, claude-haiku-4-5], pricing: { claude-opus-5-5: { input_per_m: 15, output_per_m: 75 }, claude-sonnet-5: { input_per_m: 3, output_per_m: 15 }, claude-haiku-4-5: { input_per_m: 1, output_per_m: 5 } } }
 - { id: anthropic-subscription, name: Anthropic (Claude subscription via Claude Code), via_runtime: claude-code, models: [claude-opus-5-5, claude-sonnet-5, claude-haiku-4-5], notes: Uses the login already present in the Claude Code CLI }
