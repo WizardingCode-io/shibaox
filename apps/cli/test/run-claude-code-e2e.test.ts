@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,7 +15,7 @@ import { fakeQuery, msg } from '@shibaox/adapter-claude-code/testing';
 import { AutoApproveHuman, DeferHuman, type RunState } from '@shibaox/core';
 import { Graphify } from '@shibaox/memory';
 import { SqliteEventStore } from '@shibaox/persistence-sqlite';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { scaffoldOrg } from '../src/commands/init.js';
 import { resumeRun } from '../src/commands/resume.js';
 import { runWorkflow } from '../src/commands/run.js';
@@ -18,8 +26,15 @@ function git(cwd: string, ...args: string[]) {
   execFileSync('git', args, { cwd, stdio: 'ignore' });
 }
 
+const tmpDirs: string[] = [];
+afterEach(() => {
+  // run worktrees live inside the project, so removing the temp dir removes them too
+  for (const d of tmpDirs.splice(0)) rmSync(d, { recursive: true, force: true });
+});
+
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), 'cc-e2e-'));
+  tmpDirs.push(dir);
   scaffoldOrg(dir);
   writeFileSync(
     join(dir, 'org/models.yaml'),

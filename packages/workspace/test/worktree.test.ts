@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -9,6 +9,7 @@ import {
   isGitRepo,
   listRunWorkspaces,
   removeRunWorkspace,
+  worktreePreflight,
 } from '../src/index.js';
 
 function repo(): string {
@@ -75,5 +76,31 @@ describe('run workspaces', () => {
     expect(ws.mode).toBe('worktree');
     expect(existsSync(join(outer, '.git'))).toBe(true);
     expect(readFileSync(join(main, '.git', 'info', 'exclude'), 'utf8')).toContain('.shibaox/');
+  });
+});
+
+describe('worktreePreflight', () => {
+  it('accepts a committed repo and a tracked subfolder', async () => {
+    const project = repo();
+    mkdirSync(join(project, 'app'));
+    writeFileSync(join(project, 'app', 'x.txt'), 'x\n');
+    execFileSync('git', ['add', '.'], { cwd: project });
+    execFileSync('git', ['commit', '-q', '-m', 'app'], { cwd: project });
+    expect(await worktreePreflight(project)).toEqual({ ok: true });
+    expect(await worktreePreflight(join(project, 'app'))).toEqual({ ok: true });
+  });
+  it('refuses a repo with no commits', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'empty-'));
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+    expect(await worktreePreflight(dir)).toEqual({ ok: false, reason: 'project has no commits' });
+  });
+  it('refuses a subfolder that is not tracked at HEAD', async () => {
+    const project = repo();
+    mkdirSync(join(project, 'untracked'));
+    writeFileSync(join(project, 'untracked', 'y.txt'), 'y\n');
+    expect(await worktreePreflight(join(project, 'untracked'))).toEqual({
+      ok: false,
+      reason: 'project "untracked" is not tracked at HEAD',
+    });
   });
 });

@@ -223,6 +223,10 @@ the project is a git repository, else `inplace`. A worktree run gets its own che
 project's `HEAD` (uncommitted changes in the project are not in it; `.shibaox/` is added
 to `.git/info/exclude`). The main checkout is never touched. If the project is a
 subdirectory of a larger repository, tasks run in the same subdirectory of the worktree.
+A worktree needs a commit, and a subdirectory project must be tracked at `HEAD`: when
+the worktree default cannot be used the run prints `warn: <reason>; running in place`
+and works in place; an explicit `--workspace worktree` is refused instead
+(`cannot use a worktree: <reason>; commit first or use --workspace inplace`).
 
 Worktrees are kept after the run (the run prints `worktree: <path> (branch
 shibaox/<runId>)`): review, commit and merge the branch yourself, then clean up:

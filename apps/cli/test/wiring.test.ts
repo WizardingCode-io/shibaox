@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, cpSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +9,7 @@ import { SqliteEventStore } from '@shibaox/persistence-sqlite';
 import type { ProviderEntry } from '@shibaox/providers';
 import { startFakeOpenAI } from '@shibaox/providers/testing';
 import { loadOrg } from '@shibaox/schemas';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { scaffoldOrg } from '../src/commands/init.js';
 import { resumeRun } from '../src/commands/resume.js';
 import { runWorkflow } from '../src/commands/run.js';
@@ -18,12 +18,18 @@ import { buildRuntime } from '../src/wiring.js';
 
 const sample = fileURLToPath(new URL('../../../examples/sample-repo', import.meta.url));
 
+const tmpDirs: string[] = [];
+afterEach(() => {
+  for (const d of tmpDirs.splice(0)) rmSync(d, { recursive: true, force: true });
+});
+
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), 'wiring-'));
+  tmpDirs.push(dir);
   scaffoldOrg(dir);
   const project = join(dir, 'project');
   cpSync(sample, project, { recursive: true });
-  return { org: join(dir, 'org'), project, db: join(dir, 'events.db') };
+  return { dir, org: join(dir, 'org'), project, db: join(dir, 'events.db') };
 }
 
 const unpricedFake: ProviderEntry = {
@@ -286,5 +292,62 @@ describe('vault and worktrees', () => {
     lines.length = 0;
     await worktreeList({ project }, (l) => lines.push(l));
     expect(lines).toEqual(['no run worktrees']);
+  });
+
+  it('falls back to inplace when the project is an untracked subfolder of a repo', async () => {
+    const { dir, org, db } = setup();
+    const gitAt = (cwd: string, ...a: string[]) => execFileSync('git', a, { cwd, stdio: 'ignore' });
+    const repo = join(dir, 'mono');
+    cpSync(join(dir, 'project'), join(repo, 'app'), { recursive: true });
+    writeFileSync(join(repo, 'README.md'), '# root\n');
+    gitAt(repo, 'init', '-q', '-b', 'main');
+    gitAt(repo, 'add', 'README.md');
+    gitAt(
+      repo,
+      '-c',
+      'user.email=t@t',
+      '-c',
+      'user.name=t',
+      'commit',
+      '-q',
+      '--no-gpg-sign',
+      '-m',
+      'i',
+    );
+    const lines: string[] = [];
+    const state = await runWorkflow('hello-feature', {
+      org,
+      project: join(repo, 'app'),
+      db,
+      input: 'x',
+      env: {},
+      human: new AutoApproveHuman(),
+      log: (l) => lines.push(l),
+    });
+    expect(lines).toContain('warn: project "app" is not tracked at HEAD; running in place');
+    expect(state.workspaceMode).toBe('inplace');
+    expect(state.workspace).toBe(join(repo, 'app'));
+    expect(state.status).toBe('completed');
+  });
+
+  it('rejects an explicit worktree in a repo with no commits and creates nothing', async () => {
+    const { org, project, db } = setup();
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: project, stdio: 'ignore' });
+    await expect(
+      runWorkflow('hello-feature', {
+        org,
+        project,
+        db,
+        input: 'x',
+        workspace: 'worktree',
+        env: {},
+        human: new AutoApproveHuman(),
+        log: () => {},
+      }),
+    ).rejects.toThrow(
+      'cannot use a worktree: project has no commits; commit first or use --workspace inplace',
+    );
+    expect(existsSync(join(project, '.shibaox'))).toBe(false);
+    expect(await runCount(db)).toBe(0);
   });
 });

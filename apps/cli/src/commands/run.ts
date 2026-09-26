@@ -16,7 +16,12 @@ import { Graphify, graphJsonPath, writeDecisionNote, writeRunNote } from '@shiba
 import { SqliteEventStore } from '@shibaox/persistence-sqlite';
 import type { ProviderEntry } from '@shibaox/providers';
 import { loadOrg, type Org, type Workflow } from '@shibaox/schemas';
-import { createRunWorkspace, isGitRepo, type WorkspaceMode } from '@shibaox/workspace';
+import {
+  createRunWorkspace,
+  isGitRepo,
+  type WorkspaceMode,
+  worktreePreflight,
+} from '@shibaox/workspace';
 import { TerminalHuman } from '../terminal-human.js';
 import { type AdapterId, buildRuntime, effectiveAdapter, type GraphWiring } from '../wiring.js';
 
@@ -260,6 +265,29 @@ async function gitPrefix(project: string): Promise<string> {
   return r.exitCode === 0 ? r.stdout.trim() : '';
 }
 
+/**
+ * `explicit`, else `worktree` in a git repository and `inplace` elsewhere. A worktree needs a
+ * commit and, for a subfolder of the repository, that subfolder tracked at HEAD: a defaulted
+ * worktree falls back to `inplace` with a warning, an explicit one is refused.
+ */
+async function workspaceMode(
+  project: string,
+  explicit: WorkspaceMode | undefined,
+  log: (l: string) => void,
+): Promise<WorkspaceMode> {
+  if (explicit === 'inplace') return 'inplace';
+  if (!explicit && !(await isGitRepo(project))) return 'inplace';
+  if (explicit === 'worktree' && !(await isGitRepo(project))) return 'worktree'; // createRunWorkspace explains
+  const pre = await worktreePreflight(project);
+  if (pre.ok) return 'worktree';
+  if (explicit)
+    throw new Error(
+      `cannot use a worktree: ${pre.reason}; commit first or use --workspace inplace`,
+    );
+  log(`warn: ${pre.reason}; running in place`);
+  return 'inplace';
+}
+
 export async function runWorkflow(workflow: string, opts: RunOptions): Promise<RunState> {
   const orgDir = resolve(opts.org);
   const org = loadOrg(orgDir);
@@ -268,8 +296,7 @@ export async function runWorkflow(workflow: string, opts: RunOptions): Promise<R
   const wf = org.workflows[workflow];
   if (!wf) throw new Error(`workflow "${workflow}" is not defined in the org`);
   const adapter = effectiveAdapter(opts.adapter, org);
-  const mode: WorkspaceMode =
-    opts.workspace ?? ((await isGitRepo(project)) ? 'worktree' : 'inplace');
+  const mode = await workspaceMode(project, opts.workspace, logOf(opts));
   const store = new SqliteEventStore(dbPath(orgDir, opts.db));
   try {
     const budgetUsd = opts.budget ?? org.org.budgets.per_run_usd;

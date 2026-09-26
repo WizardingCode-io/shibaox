@@ -33,6 +33,24 @@ export async function isGitRepo(dir: string): Promise<boolean> {
   return r.exitCode === 0 && r.stdout.trim() === 'true';
 }
 
+/**
+ * Whether `project` can run in a worktree: the repository needs a commit (a worktree of an
+ * unborn branch is empty), and a project that is a subfolder of the repository must be
+ * tracked at `HEAD` (else the subfolder does not exist in the worktree).
+ */
+export async function worktreePreflight(
+  project: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const run = (argv: string[]) => runArgv({ argv, cwd: project, timeoutMs: 10_000 });
+  if ((await run(['git', 'rev-parse', '--verify', '-q', 'HEAD'])).exitCode !== 0)
+    return { ok: false, reason: 'project has no commits' };
+  const prefix = await run(['git', 'rev-parse', '--show-prefix']);
+  const rel = prefix.exitCode === 0 ? prefix.stdout.trim().replace(/\/$/, '') : '';
+  if (rel && (await run(['git', 'cat-file', '-e', `HEAD:${rel}`])).exitCode !== 0)
+    return { ok: false, reason: `project "${rel}" is not tracked at HEAD` };
+  return { ok: true };
+}
+
 async function ensureExcluded(project: string): Promise<void> {
   const commonDir = (await git(project, ['rev-parse', '--git-common-dir'])).trim();
   const gitCommonDir = resolve(project, commonDir);
