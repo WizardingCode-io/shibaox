@@ -9,8 +9,8 @@ import {
   type HumanHandler,
   type HumanRequest,
   isTerminal,
-  replay,
   type RunState,
+  replay,
 } from '@shibaox/core';
 
 export type InboxId = `human:${string}:${string}` | `approval:${string}`;
