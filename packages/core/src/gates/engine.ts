@@ -8,6 +8,8 @@ export interface CheckContext {
   workspace: string;
   state: RunState;
   log: (line: string) => void;
+  /** The run's abort signal; runners that call models should forward it. */
+  signal?: AbortSignal;
 }
 export type CheckRunner = (check: Check, ctx: CheckContext) => Promise<CheckResult>;
 export type CheckRunners = Partial<Record<Check['type'], CheckRunner>>;

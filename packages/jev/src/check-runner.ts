@@ -26,7 +26,7 @@ export function jevCheckRunner(
       check.kind === 'score'
         ? score(check.question, ['fails', 'partially', 'fully'])
         : noul(check.question);
-    const r = await client.fanOut(state, { check: q });
+    const r = await client.fanOut(state, { check: q }, { signal: ctx.signal });
     const a = r.answers.check as { noul?: number; score?: number; confidence?: number };
     const confidence = check.kind === 'score' ? (a.score ?? 0) / 2 : (a.noul ?? 0);
     const cost = {

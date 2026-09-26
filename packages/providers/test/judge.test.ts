@@ -61,6 +61,35 @@ describe('judgeCheckRunner', () => {
   });
 });
 
+describe('judgeCheckRunner errors and signal', () => {
+  it('turns a provider error into a failed check with the message and status', async () => {
+    fake = await startFakeOpenAI(() => {
+      throw new Error('boom');
+    });
+    const run = judgeCheckRunner(new LlmClient(reg(fake.baseURL), { maxRetries: 0 }), 'fake/m');
+    const ac = new AbortController();
+    const r = await run({ name: 'review', type: 'judge', role: 'team-leader', rubric: 'x' }, {
+      ...ctx,
+      signal: ac.signal,
+    } as never);
+    expect(r).toMatchObject({ name: 'review', type: 'judge', passed: false, skipped: false });
+    expect(r.evidence).toContain('boom');
+    expect(r.evidence).toContain('HTTP 500');
+  });
+  it('forwards the run signal: an aborted run makes no model call', async () => {
+    fake = await startFakeOpenAI(() => ({ content: '{"passed": true, "evidence": "ok"}' }));
+    const run = judgeCheckRunner(new LlmClient(reg(fake.baseURL)), 'fake/m');
+    const ac = new AbortController();
+    ac.abort(new Error('run cancelled'));
+    const r = await run({ name: 'review', type: 'judge', role: 'team-leader', rubric: 'x' }, {
+      ...ctx,
+      signal: ac.signal,
+    } as never);
+    expect(r.passed).toBe(false);
+    expect(fake.requests).toHaveLength(0);
+  });
+});
+
 describe('LeadDecider', () => {
   it('chooses among the node options', async () => {
     fake = await startFakeOpenAI(() => ({ content: '{"choice": "rework", "reasoning": "flaky"}' }));
@@ -89,5 +118,25 @@ describe('LeadDecider', () => {
         context: { input: {}, previousOutputs: {} },
       }),
     ).rejects.toThrow();
+  });
+  it('reports provider errors with the message and status, and forwards the signal', async () => {
+    fake = await startFakeOpenAI(() => {
+      throw new Error('boom');
+    });
+    const d = new LeadDecider(new LlmClient(reg(fake.baseURL), { maxRetries: 0 }), 'fake/m');
+    const req = {
+      runId: 'r',
+      nodeId: 'judge',
+      by: 'team-leader',
+      question: 'Ready?',
+      options: ['ship', 'rework'],
+      context: { input: {}, previousOutputs: {} },
+    };
+    await expect(d.decide(req)).rejects.toThrow(/lead decider fake\/m failed: .*boom.*HTTP 500/);
+    const before = fake.requests.length;
+    const ac = new AbortController();
+    ac.abort(new Error('run cancelled'));
+    await expect(d.decide({ ...req, signal: ac.signal })).rejects.toThrow(/lead decider/);
+    expect(fake.requests).toHaveLength(before);
   });
 });

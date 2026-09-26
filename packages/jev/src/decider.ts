@@ -15,9 +15,11 @@ export class JevDecider implements Decider {
       previousOutputs: req.context.previousOutputs,
       lastGateReport: req.context.lastGateReport,
     });
-    const r = await this.client.fanOut(state, {
-      decision: choice(req.question || 'Choose the next step', criteria),
-    });
+    const r = await this.client.fanOut(
+      state,
+      { decision: choice(req.question || 'Choose the next step', criteria) },
+      { signal: req.signal },
+    );
     const a = r.answers.decision;
     const cost = {
       usd: r.cost,

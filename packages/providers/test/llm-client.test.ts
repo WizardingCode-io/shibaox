@@ -98,8 +98,9 @@ describe('LlmClient over an OpenAI-compatible fake', () => {
     });
     const client = new LlmClient(new ProviderRegistry([entryFor(fake.baseURL)], {}));
     await expect(
-      client.generate('fake/m', { messages: [{ role: 'user', content: 'hi' }] }),
+      client.generate('fake/m', { messages: [{ role: 'user', content: 'hi' }], maxRetries: 0 }),
     ).rejects.toThrow(/upstream down/);
+    expect(fake.requests).toHaveLength(1); // maxRetries is forwarded to the SDK
     await fake.close();
   });
 

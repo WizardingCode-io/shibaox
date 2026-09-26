@@ -1,4 +1,4 @@
-import { generate, loadCatalog, ProviderRegistry } from '@shibaox/providers';
+import { describeError, generate, loadCatalog, ProviderRegistry } from '@shibaox/providers';
 
 export interface ProviderTestResult {
   ok: boolean;
@@ -6,20 +6,6 @@ export interface ProviderTestResult {
   text?: string;
   error?: string;
   ms?: number;
-}
-
-/**
- * Error text for the CLI: the AI SDK's connection errors end in an empty
- * detail ("Cannot connect to API: "), so the URL and errno code are appended.
- */
-export function describeError(err: unknown): string {
-  const base = err instanceof Error ? err.message.trim() : String(err);
-  const last = ((err as { lastError?: unknown } | null)?.lastError ?? err) as {
-    url?: unknown;
-    cause?: { code?: unknown };
-  } | null;
-  const extra = [last?.url, last?.cause?.code].filter((x) => typeof x === 'string').join(' ');
-  return extra ? `${base} (${extra})` : base;
 }
 
 /** One line per catalog entry: id, configuration status and whether its URL is unverified. */
@@ -71,6 +57,7 @@ export async function testProvider(
       model: reg.model(`${id}/${m}`),
       messages: [{ role: 'user', content: 'Reply with the single word: pong' }],
       maxSteps: 1,
+      maxRetries: 0, // a connectivity check: report the first failure, do not retry
     });
     return { ok: true, model: m, text: r.text.trim(), ms: Date.now() - t0 };
   } catch (err) {

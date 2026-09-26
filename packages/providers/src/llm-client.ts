@@ -62,14 +62,22 @@ export async function generate<T = unknown>(args: GenerateArgs): Promise<Generat
 }
 
 export class LlmClient {
-  constructor(private readonly registry: ProviderRegistry) {}
+  constructor(
+    private readonly registry: ProviderRegistry,
+    /** Defaults for every call; `maxRetries` in the call args wins. */
+    private readonly defaults: { maxRetries?: number } = {},
+  ) {}
 
   async generate<T = unknown>(
     ref: string,
     args: Omit<GenerateArgs, 'model'>,
   ): Promise<GenerateResult<T> & { cost?: number }> {
     const model = this.registry.model(ref);
-    const r = await generate<T>({ ...args, model });
+    const r = await generate<T>({
+      ...args,
+      model,
+      maxRetries: args.maxRetries ?? this.defaults.maxRetries,
+    });
     return { ...r, cost: this.registry.estimateCost(ref, r.usage) };
   }
 }

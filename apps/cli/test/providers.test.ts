@@ -1,7 +1,7 @@
 import { loadCatalog, ProviderRegistry } from '@shibaox/providers';
 import { startFakeOpenAI } from '@shibaox/providers/testing';
 import { describe, expect, it } from 'vitest';
-import { describeError, formatProviderList, testProvider } from '../src/commands/providers.js';
+import { formatProviderList, testProvider } from '../src/commands/providers.js';
 
 describe('providers command', () => {
   it('lists providers with configuration status and verify flag', () => {
@@ -54,17 +54,5 @@ describe('providers command', () => {
     const r = await testProvider(new ProviderRegistry(loadCatalog(), {}), 'anthropic-subscription');
     expect(r.ok).toBe(false);
     expect(r.error).toContain('claude-code');
-  });
-  it('describeError appends the url and errno code of connection errors', () => {
-    const err = Object.assign(new Error('Failed after 3 attempts. Cannot connect to API: '), {
-      lastError: {
-        url: 'http://localhost:11434/v1/chat/completions',
-        cause: { code: 'ECONNREFUSED' },
-      },
-    });
-    expect(describeError(err)).toBe(
-      'Failed after 3 attempts. Cannot connect to API: (http://localhost:11434/v1/chat/completions ECONNREFUSED)',
-    );
-    expect(describeError(new Error('plain'))).toBe('plain');
   });
 });

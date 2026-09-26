@@ -1,6 +1,7 @@
 import type { CheckContext, CheckRunner } from '@shibaox/core';
 import { z } from 'zod';
-import type { LlmClient } from './llm-client.js';
+import { describeError } from './errors.js';
+import type { GenerateResult, LlmClient } from './llm-client.js';
 
 const Verdict = z.object({
   passed: z.boolean(),
@@ -22,11 +23,23 @@ export function judgeContext(ctx: CheckContext): string {
 export function judgeCheckRunner(client: LlmClient, ref: string): CheckRunner {
   return async (check, ctx) => {
     if (check.type !== 'judge') throw new Error('judgeCheckRunner got a non-judge check');
-    const r = await client.generate<z.infer<typeof Verdict>>(ref, {
-      system: JUDGE_SYSTEM,
-      messages: [{ role: 'user', content: `Rubric:\n${check.rubric}\n\n${judgeContext(ctx)}` }],
-      output: Verdict,
-    });
+    let r: GenerateResult<z.infer<typeof Verdict>> & { cost?: number };
+    try {
+      r = await client.generate<z.infer<typeof Verdict>>(ref, {
+        system: JUDGE_SYSTEM,
+        messages: [{ role: 'user', content: `Rubric:\n${check.rubric}\n\n${judgeContext(ctx)}` }],
+        output: Verdict,
+        signal: ctx.signal,
+      });
+    } catch (e) {
+      return {
+        name: check.name,
+        type: 'judge',
+        passed: false,
+        skipped: false,
+        evidence: `judge ${ref} failed: ${describeError(e)}`,
+      };
+    }
     const v = r.output ?? { passed: false, evidence: 'judge returned no structured verdict' };
     return {
       name: check.name,

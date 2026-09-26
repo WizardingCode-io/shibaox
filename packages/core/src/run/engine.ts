@@ -352,6 +352,7 @@ export class RunEngine {
               previousOutputs: this.previousOutputs(state),
               lastGateReport: state.lastGateReport,
             },
+            signal: this.controllerFor(runId).signal,
           });
           if (!node.options.includes(d.choice))
             throw new Error(
@@ -373,7 +374,14 @@ export class RunEngine {
             gateIds: node.gates,
             gates: this.deps.org.gates,
             runners: this.checkRunners,
-            ctx: { runId, nodeId, workspace: state.workspace, state, log: this.log },
+            ctx: {
+              runId,
+              nodeId,
+              workspace: state.workspace,
+              state,
+              log: this.log,
+              signal: this.controllerFor(runId).signal,
+            },
           });
           if (report.passed) {
             await this.emit({

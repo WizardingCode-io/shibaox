@@ -11,6 +11,8 @@ export interface DecisionRequest {
     previousOutputs: Record<string, unknown>;
     lastGateReport?: GateReport;
   };
+  /** The run's abort signal; deciders that call models should forward it. */
+  signal?: AbortSignal;
 }
 export interface Decision {
   choice: string;

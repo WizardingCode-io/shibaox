@@ -27,12 +27,16 @@ export class JevClient {
   isConfigured(): boolean {
     return Boolean(this.apiKey);
   }
-  async fanOut<Q extends Questions>(state: unknown, questions: Q) {
+  async fanOut<Q extends Questions>(
+    state: unknown,
+    questions: Q,
+    opts: { signal?: AbortSignal } = {},
+  ) {
     if (!this.isConfigured()) throw new Error('Jev is not configured: set TYPESAFE_API_KEY');
-    const r = (await this.client.systemOne({
-      state: state as never,
-      questions,
-    })) as SystemOneResult<Q>;
+    const r = (await this.client.systemOne(
+      { state: state as never, questions },
+      { signal: opts.signal },
+    )) as SystemOneResult<Q>;
     const usage = { inputTokens: r.usage.input_tokens, outputTokens: r.usage.output_tokens };
     return {
       answers: r.answers,

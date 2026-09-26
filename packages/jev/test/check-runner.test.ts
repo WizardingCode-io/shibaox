@@ -63,6 +63,19 @@ describe('jevCheckRunner', () => {
     expect(r.cost?.inputTokens).toBe(50 + jevInputTokens);
     expect(r.cost?.outputTokens).toBe(5);
   });
+  it('forwards the run signal to the Jev request', async () => {
+    fake = await startFakeJev(() => ({ check: { type: 'noul', noul: 0.92 } }));
+    const run = jevCheckRunner(new JevClient({ apiKey: 'k', baseURL: fake.baseURL }));
+    const ac = new AbortController();
+    ac.abort(new Error('run cancelled'));
+    await expect(
+      run({ name: 'spec', type: 'jev', question: 'q', kind: 'noul', threshold: 0.8 }, {
+        ...ctx,
+        signal: ac.signal,
+      } as never),
+    ).rejects.toThrow();
+    expect(fake.requests).toHaveLength(0);
+  });
   it('never passes on low confidence without escalation', async () => {
     fake = await startFakeJev(() => ({ check: { type: 'noul', noul: 0.65 } }));
     const run = jevCheckRunner(new JevClient({ apiKey: 'k', baseURL: fake.baseURL }));

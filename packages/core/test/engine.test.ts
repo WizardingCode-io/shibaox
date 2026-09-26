@@ -115,6 +115,27 @@ describe('RunEngine', () => {
     expect(failed && 'cost' in failed && failed.cost?.usd).toBeCloseTo(0.3);
   });
 
+  it('passes the run abort signal to check runners and deciders', async () => {
+    const seen: string[] = [];
+    const { engine } = engineFor(scaffold(orgFiles('true')), {
+      checkRunners: {
+        code: async (check, ctx) => {
+          if (ctx.signal instanceof AbortSignal) seen.push('check');
+          return { name: check.name, type: 'code', passed: true, skipped: false, evidence: '' };
+        },
+      },
+      decider: {
+        decide: async (req) => {
+          if (req.signal instanceof AbortSignal) seen.push('decide');
+          return { choice: 'ship' };
+        },
+      },
+    });
+    const state = await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
+    expect(state.status).toBe('completed');
+    expect(seen).toEqual(['check', 'decide']);
+  });
+
   it('gate failure reworks then fails the run after max_retries with the report', async () => {
     const { engine, store } = engineFor(scaffold(orgFiles('exit 1')));
     const state = await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
