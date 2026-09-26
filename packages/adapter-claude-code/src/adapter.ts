@@ -2,9 +2,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Options, query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type {
+  ApprovalHandler,
   Capability,
   ExecutionContext,
-  HumanHandler,
   RuntimeAdapter,
   RuntimeEvent,
   TaskJob,
@@ -18,7 +18,8 @@ export type QueryFn = (args: { prompt: string; options?: Options }) => AsyncIter
 export type McpServers = NonNullable<Options['mcpServers']>;
 
 export interface ClaudeCodeAdapterOptions {
-  human: HumanHandler;
+  /** Answers push/deploy approvals; `canUseTool` blocks on it. */
+  approvals: ApprovalHandler;
   /** Org directory; role `system_prompt` paths resolve against it. */
   orgRoot?: string;
   model?: (job: TaskJob) => string | undefined;
@@ -109,9 +110,13 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     const abort = new AbortController();
     const onAbort = () => abort.abort(new Error('aborted'));
     ctx.signal.addEventListener('abort', onAbort, { once: true });
-    let deferred: ApprovalCategory | undefined;
-    const pending = () =>
-      `approval pending for ${deferred}: run is waiting for a human (task ${job.nodeId} cannot continue until approvals are persisted)`;
+    let deferred: { category: ApprovalCategory; approvalId: string } | undefined;
+    const pending = (): RuntimeEvent & { type: 'error' } => ({
+      type: 'error',
+      message: `approval pending for ${deferred?.category}: task ${job.nodeId} waits for the inbox`,
+      reason: 'approval_pending',
+      approvalId: deferred?.approvalId,
+    });
 
     const { allowedTools, disallowedTools } = mapRoleTools(job.role);
     const mcpServers = this.opts.mcpServers?.(job) ?? {};
@@ -125,12 +130,13 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
       canUseTool: buildCanUseTool({
         role: job.role,
         cwd: job.workspace,
-        human: this.opts.human,
+        approvals: this.opts.approvals,
         runId: job.runId,
         nodeId: job.nodeId,
         log: ctx.log,
-        onDeferred: (c) => {
-          deferred = c;
+        approvedCommands: job.approvedCommands,
+        onDeferred: (category, approvalId) => {
+          deferred = { category, approvalId };
         },
       }),
       maxTurns: this.opts.maxTurns ?? 60,
@@ -141,23 +147,32 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
         ? { type: 'json_schema', schema: job.outputSchema }
         : undefined,
       abortController: abort,
+      resume: job.resumeSessionId,
       env: buildSubprocessEnv(
         typeof this.opts.env === 'function' ? this.opts.env(job) : this.opts.env,
         process.env,
         { subscription: isSubscriptionRef(this.opts.modelRef?.(job)) },
       ),
     };
-    const prompt = [
-      `Task: ${job.instruction}`,
-      `Input: ${JSON.stringify(job.input)}`,
-      `Previous outputs: ${JSON.stringify(job.context.previousOutputs).slice(0, 60_000)}`,
-      `Last gate report: ${JSON.stringify(job.context.lastGateReport ?? null).slice(0, 20_000)}`,
-    ].join('\n\n');
+    // a resumed session already has the task: it only needs to know what was decided
+    const prompt =
+      job.resumeSessionId !== undefined
+        ? (job.resumeNote ?? 'Continue the task.')
+        : [
+            `Task: ${job.instruction}`,
+            `Input: ${JSON.stringify(job.input)}`,
+            `Previous outputs: ${JSON.stringify(job.context.previousOutputs).slice(0, 60_000)}`,
+            `Last gate report: ${JSON.stringify(job.context.lastGateReport ?? null).slice(0, 20_000)}`,
+            ...(job.resumeNote ? [job.resumeNote] : []),
+          ].join('\n\n');
 
     const toolNames = new Map<string, string>();
+    const toolStarted = new Map<string, number>();
     try {
       for await (const m of this.queryFn({ prompt, options })) {
         if (m.type === 'system' && m.subtype === 'init') {
+          if (m.session_id)
+            yield { type: 'session', runtime: 'claude-code', sessionId: m.session_id };
           const mcp = m.mcp_servers.map((s) => `${s.name}:${s.status}`).join(',');
           yield {
             type: 'text',
@@ -167,11 +182,19 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
             if (s.status === 'failed' || s.status === 'needs-auth')
               ctx.log(`[claude-code] warning: MCP server ${s.name} ${s.status}`);
         } else if (m.type === 'assistant') {
+          const parentToolUseId = m.parent_tool_use_id ?? undefined;
           for (const block of m.message.content) {
-            if (block.type === 'text') yield { type: 'text', text: block.text };
+            if (block.type === 'text') yield { type: 'text', text: block.text, parentToolUseId };
             else if (block.type === 'tool_use') {
               toolNames.set(block.id, block.name);
-              yield { type: 'tool_use', name: block.name, input: block.input };
+              toolStarted.set(block.id, Date.now());
+              yield {
+                type: 'tool_use',
+                id: block.id,
+                name: block.name,
+                input: block.input,
+                parentToolUseId,
+              };
               const fp = (block.input as { file_path?: unknown } | null)?.file_path;
               if (typeof fp === 'string' && FILE_TOOLS.includes(block.name))
                 yield { type: 'file_changed', path: fp };
@@ -179,21 +202,27 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
           }
         } else if (m.type === 'user') {
           const content = m.message.content;
+          const parentToolUseId = m.parent_tool_use_id ?? undefined;
           if (Array.isArray(content))
             for (const block of content)
-              if (block.type === 'tool_result')
+              if (block.type === 'tool_result') {
+                const started = toolStarted.get(block.tool_use_id);
                 yield {
                   type: 'tool_result',
+                  id: block.tool_use_id,
                   name: toolNames.get(block.tool_use_id) ?? 'unknown',
                   output: block.content,
+                  durationMs: started === undefined ? undefined : Date.now() - started,
+                  parentToolUseId,
                 };
+              }
         } else if (m.type === 'result') {
           const cost = {
             usd: m.total_cost_usd,
             inputTokens: m.usage.input_tokens,
             outputTokens: m.usage.output_tokens,
           };
-          if (deferred) yield { type: 'error', message: pending(), cost };
+          if (deferred) yield { ...pending(), cost };
           else if (m.subtype === 'error_max_budget_usd')
             // the run budget is spent: the engine pauses the run (resume --budget) instead of failing
             yield {
@@ -219,15 +248,11 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
           return;
         }
       }
-      yield {
-        type: 'error',
-        message: deferred ? pending() : 'claude-code ended without a result',
-      };
+      if (deferred) yield pending();
+      else yield { type: 'error', message: 'claude-code ended without a result' };
     } catch (e) {
-      yield {
-        type: 'error',
-        message: abort.signal.aborted ? 'aborted' : deferred ? pending() : describeError(e),
-      };
+      if (deferred) yield pending();
+      else yield { type: 'error', message: abort.signal.aborted ? 'aborted' : describeError(e) };
     } finally {
       ctx.signal.removeEventListener('abort', onAbort);
     }

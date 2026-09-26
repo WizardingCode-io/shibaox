@@ -28,6 +28,7 @@ export const msg = {
       tools: string[];
       mcp_servers: { name: string; status: string }[];
       apiKeySource: string;
+      session_id: string;
     }> = {},
   ) =>
     ({
@@ -38,6 +39,7 @@ export const msg = {
       mcp_servers: [],
       cwd: '/w',
       apiKeySource: 'none',
+      session_id: 'fake-session',
       ...extra,
     }) as unknown as SDKMessage,
   text: (text: string) =>
@@ -45,15 +47,17 @@ export const msg = {
       type: 'assistant',
       message: { content: [{ type: 'text', text }] },
     }) as unknown as SDKMessage,
-  toolUse: (id: string, name: string, input: unknown) =>
+  toolUse: (id: string, name: string, input: unknown, extra: Record<string, unknown> = {}) =>
     ({
       type: 'assistant',
       message: { content: [{ type: 'tool_use', id, name, input }] },
+      ...extra,
     }) as unknown as SDKMessage,
-  toolResult: (id: string, content: unknown) =>
+  toolResult: (id: string, content: unknown, extra: Record<string, unknown> = {}) =>
     ({
       type: 'user',
       message: { content: [{ type: 'tool_result', tool_use_id: id, content }] },
+      ...extra,
     }) as unknown as SDKMessage,
   success: (
     result: string,

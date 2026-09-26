@@ -1,6 +1,7 @@
 import { ClaudeCodeAdapter, type McpServers, type QueryFn } from '@shibaox/adapter-claude-code';
 import { DirectAdapter } from '@shibaox/adapter-direct';
 import {
+  type ApprovalHandler,
   type CheckRunners,
   type Decider,
   defaultCheckRunners,
@@ -48,6 +49,8 @@ export interface RuntimeOptions {
   org: Org;
   store: EventStore;
   human: HumanHandler;
+  /** Push/deploy approvals for adapters; defaults to asking `human` (deferred → task fails). */
+  approvals?: ApprovalHandler;
   log: (line: string) => void;
   /** Explicit adapter (`--adapter`); else `adapter:` in org.yaml; else `mock`. */
   adapter?: AdapterId;
@@ -65,6 +68,21 @@ export interface RuntimeOptions {
   graph?: GraphWiring;
   /** Run id for `start` (the CLI picks it first to name the worktree). */
   newRunId?: () => string;
+}
+
+/** Bridges a HumanHandler to the approval interface (the CLI's terminal prompt). */
+export function humanApprovals(human: HumanHandler): ApprovalHandler {
+  return {
+    request: async (req) => {
+      const a = await human.ask({
+        runId: req.runId,
+        nodeId: req.nodeId,
+        action: `approve-${req.category}`,
+        prompt: `Bash: ${req.command}`,
+      });
+      return 'deferred' in a ? { deferred: true, approvalId: 'terminal' } : a;
+    },
+  };
 }
 
 const mockAdapter = () =>
@@ -212,6 +230,7 @@ export function buildRuntime(o: RuntimeOptions) {
         warnings.push(`model "${ref}" has no pricing: budget cannot be enforced for it`);
 
   const orgRoot = o.orgRoot ?? o.org.root;
+  const approvals: ApprovalHandler = o.approvals ?? humanApprovals(o.human);
   const engine = new RunEngine({
     store: o.store,
     org: o.org,
@@ -219,7 +238,7 @@ export function buildRuntime(o: RuntimeOptions) {
       mock: mockAdapter(),
       direct: new DirectAdapter({ registry, resolveRef, orgRoot, graphQuery: o.graph?.query }),
       'claude-code': new ClaudeCodeAdapter({
-        human: o.human,
+        approvals,
         orgRoot,
         model: (job) => {
           const r = resolveRole(job.role, () => {});

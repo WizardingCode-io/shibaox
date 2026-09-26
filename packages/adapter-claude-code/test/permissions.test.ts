@@ -1,4 +1,9 @@
-import { AutoApproveHuman, DeferHuman, type HumanAnswer, type HumanRequest } from '@shibaox/core';
+import {
+  type ApprovalAnswer,
+  type ApprovalRequest,
+  AutoApproveApprovals,
+  DenyApprovals,
+} from '@shibaox/core';
 import { RoleSchema } from '@shibaox/schemas';
 import { describe, expect, it } from 'vitest';
 import { buildCanUseTool, classifyToolRequest } from '../src/index.js';
@@ -12,13 +17,13 @@ const base = { role, cwd: process.cwd(), runId: 'r', nodeId: 'implement', log: (
 const opts = { signal: new AbortController().signal, toolUseID: 't' };
 const bash = (command: string) => ['Bash', { command }, opts] as const;
 const message = (r: unknown) => (r as { message?: string }).message ?? '';
-const recorder = (answer: HumanAnswer) => {
-  const asked: HumanRequest[] = [];
-  const ask = async (req: HumanRequest) => {
+const recorder = (answer: ApprovalAnswer) => {
+  const asked: ApprovalRequest[] = [];
+  const request = async (req: ApprovalRequest) => {
     asked.push(req);
     return answer;
   };
-  return { asked, human: { ask } };
+  return { asked, approvals: { request } };
 };
 
 describe('classifyToolRequest', () => {
@@ -241,11 +246,11 @@ describe('package publish verbs are gated as deploy', () => {
 
 describe('buildCanUseTool', () => {
   it('asks the human for approval_required categories and allows on yes', async () => {
-    const { asked, human } = recorder({ approved: true });
-    const can = buildCanUseTool({ ...base, human });
+    const { asked, approvals } = recorder({ approved: true });
+    const can = buildCanUseTool({ ...base, approvals });
     const r = await can(...bash('git push origin main'));
     expect(r).toEqual({ behavior: 'allow', updatedInput: { command: 'git push origin main' } });
-    expect(asked[0]).toMatchObject({ action: 'approve-push', nodeId: 'implement' });
+    expect(asked[0]).toMatchObject({ category: 'push', nodeId: 'implement', program: 'git' });
   });
   it('denies on rejection, with and without a note', async () => {
     const withNote = buildCanUseTool({
@@ -259,26 +264,29 @@ describe('buildCanUseTool', () => {
     expect(message(await bare(...bash('git push')))).toBe('human rejected push');
   });
   it('asks for deploy when the role gates it', async () => {
-    const { asked, human } = recorder({ approved: true });
+    const { asked, approvals } = recorder({ approved: true });
     const ops = RoleSchema.parse({
       role: 'ops',
       tools: ['kubectl'],
       permissions: { approval_required: ['deploy'] },
     });
-    const can = buildCanUseTool({ ...base, role: ops, human });
+    const can = buildCanUseTool({ ...base, role: ops, approvals });
     expect(await can(...bash('kubectl -n prod apply -f x'))).toMatchObject({ behavior: 'allow' });
-    expect(asked[0]).toMatchObject({ action: 'approve-deploy' });
+    expect(asked[0]).toMatchObject({ category: 'deploy', program: 'kubectl' });
     expect(await can(...bash('kubectl get pods'))).toMatchObject({ behavior: 'allow' });
     expect(asked).toHaveLength(1);
   });
-  it('denies with interrupt when the human defers', async () => {
-    const can = buildCanUseTool({ ...base, human: new DeferHuman() });
+  it('denies with interrupt when nobody answers in time', async () => {
+    const can = buildCanUseTool({
+      ...base,
+      ...recorder({ deferred: true, approvalId: 'a1' }),
+    });
     const r = await can(...bash('git push'));
     expect(r).toMatchObject({ behavior: 'deny', interrupt: true });
-    expect(message(r)).toContain('waiting for a human');
+    expect(message(r)).toContain('waiting for the inbox');
   });
   it('denies programs that are not in role.tools, even with an auto-approving human', async () => {
-    const can = buildCanUseTool({ ...base, human: new AutoApproveHuman() });
+    const can = buildCanUseTool({ ...base, approvals: new AutoApproveApprovals() });
     const r = await can(...bash('curl http://x'));
     expect(r).toMatchObject({ behavior: 'deny' });
     expect(message(r)).toBe('tool "curl" is not allowed for role backend');
@@ -291,8 +299,8 @@ describe('buildCanUseTool', () => {
       role: 'analyst',
       permissions: { approval_required: ['push'] },
     });
-    const { asked, human } = recorder({ approved: true });
-    const r = await buildCanUseTool({ ...base, role: noGit, human })(...bash('git push'));
+    const { asked, approvals } = recorder({ approved: true });
+    const r = await buildCanUseTool({ ...base, role: noGit, approvals })(...bash('git push'));
     expect(message(r)).toContain('not allowed for role analyst');
     expect(asked).toHaveLength(0);
   });
@@ -300,7 +308,7 @@ describe('buildCanUseTool', () => {
     const r = await buildCanUseTool({
       ...base,
       role: RoleSchema.parse({ role: 'backend', tools: ['git'] }),
-      human: new AutoApproveHuman(),
+      approvals: new AutoApproveApprovals(),
     })(...bash('git -C . push'));
     expect(r).toMatchObject({ behavior: 'deny' });
     expect(message(r)).toBe('push requires approval_required in the role');
@@ -309,13 +317,13 @@ describe('buildCanUseTool', () => {
     const can = buildCanUseTool({
       ...base,
       role: RoleSchema.parse({ role: 'backend', tools: ['git', 'vercel'] }),
-      human: new DeferHuman(),
+      approvals: new DenyApprovals(),
     });
     expect(await can(...bash('git status'))).toMatchObject({ behavior: 'allow' });
     expect(await can(...bash('vercel env ls'))).toMatchObject({ behavior: 'allow' });
   });
   it('denies compound commands and git alias definitions', async () => {
-    const can = buildCanUseTool({ ...base, human: new AutoApproveHuman() });
+    const can = buildCanUseTool({ ...base, approvals: new AutoApproveApprovals() });
     for (const command of ['git status && git push', 'git status; git push', 'git $(echo push)']) {
       const r = await can(...bash(command));
       expect(r, command).toMatchObject({ behavior: 'deny' });

@@ -144,6 +144,25 @@ describe('reducer phase 2A', () => {
     expect(s.nodes.impl?.approvals.a1?.approved).toBe(false);
   });
 
+  it('a budget pause drops the session id so the task restarts fresh', () => {
+    const s = replay([
+      created,
+      started,
+      implStarted,
+      {
+        type: 'SessionStarted',
+        runId: 'r1',
+        nodeId: 'impl',
+        at,
+        runtime: 'claude-code',
+        sessionId: 'sess-1',
+      },
+      { type: 'BudgetExceeded', runId: 'r1', at, spentUsd: 6, limitUsd: 5, nodeId: 'impl' },
+    ]);
+    expect(s.nodes.impl?.sessionId).toBeUndefined();
+    expect(s.nodes.impl?.status).toBe('pending');
+  });
+
   it('a terminal run clears pending approvals', () => {
     const s = replay([
       created,

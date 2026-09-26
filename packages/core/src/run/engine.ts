@@ -590,9 +590,11 @@ export class RunEngine {
       }
     } catch (e) {
       if (e instanceof AdapterError && e.reason === 'approval_pending') {
+        // only an approval the inbox recorded can be answered later; otherwise the task fails
         const now = await this.state(runId);
-        const approvalId =
-          e.approvalId ?? now.pendingApprovals.find((p) => p.nodeId === nodeId)?.approvalId;
+        const pending = now.pendingApprovals.filter((p) => p.nodeId === nodeId);
+        const approvalId = (pending.find((p) => p.approvalId === e.approvalId) ?? pending[0])
+          ?.approvalId;
         if (approvalId) {
           await this.emit({
             type: 'NodeSuspended',

@@ -2,12 +2,12 @@ import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import type { CanUseTool, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
-import type { HumanHandler } from '@shibaox/core';
+import { type ApprovalHandler, argvHash } from '@shibaox/core';
 import type { Role } from '@shibaox/schemas';
 import { type ApprovalCategory, analyseBashCommand, type ToolCategory } from './bash-command.js';
 import { FILE_TOOLS } from './tools-map.js';
 
-export const APPROVAL_PENDING = 'approval pending: run is waiting for a human';
+export const APPROVAL_PENDING = 'approval pending: the run is waiting for the inbox';
 
 /** Classifies a tool request; `forbidden` means the command is refused whatever the role. */
 export function classifyToolRequest(
@@ -81,12 +81,14 @@ export interface CanUseToolArgs {
   role: Role;
   /** The task's working directory; file tools are confined to it. */
   cwd: string;
-  human: HumanHandler;
+  approvals: ApprovalHandler;
   runId: string;
   nodeId: string;
   log: (line: string) => void;
-  /** Called when the human defers an approval (the task is then interrupted). */
-  onDeferred?: (category: ApprovalCategory) => void;
+  /** argvHash → approved, for commands already answered on this node (no second question). */
+  approvedCommands?: Record<string, boolean>;
+  /** Called when nobody answered in time (the task is then interrupted). */
+  onDeferred?: (category: ApprovalCategory, approvalId: string) => void;
 }
 
 /**
@@ -101,7 +103,7 @@ export function buildCanUseTool(args: CanUseToolArgs): CanUseTool {
     return { behavior: 'deny', message };
   };
   const notAllowed = (name: string) => `tool "${name}" is not allowed for role ${args.role.role}`;
-  return async (toolName, input): Promise<PermissionResult> => {
+  return async (toolName, input, options): Promise<PermissionResult> => {
     const fileGroup = Object.entries(FILE_TOOLS).find(([, tools]) => tools.includes(toolName));
     if (fileGroup) {
       if (!args.role.tools.includes(fileGroup[0]))
@@ -119,14 +121,26 @@ export function buildCanUseTool(args: CanUseToolArgs): CanUseTool {
     const category = a.category;
     if (!args.role.permissions.approval_required.includes(category))
       return deny(toolName, input, `${category} requires approval_required in the role`);
-    const answer = await args.human.ask({
-      runId: args.runId,
-      nodeId: args.nodeId,
-      action: `approve-${category}`,
-      prompt: `${toolName}: ${command}`,
-    });
+    const hash = argvHash(a.argv);
+    const earlier = args.approvedCommands?.[hash];
+    if (earlier === true) return { behavior: 'allow', updatedInput: input };
+    if (earlier === false)
+      return deny(toolName, input, `${category} was already denied by the human`);
+    const answer = await args.approvals.request(
+      {
+        runId: args.runId,
+        nodeId: args.nodeId,
+        role: args.role.role,
+        tool: 'Bash',
+        program: a.program,
+        category,
+        command,
+        argv: a.argv,
+      },
+      { signal: options?.signal },
+    );
     if ('deferred' in answer) {
-      args.onDeferred?.(category);
+      args.onDeferred?.(category, answer.approvalId);
       return { behavior: 'deny', message: APPROVAL_PENDING, interrupt: true };
     }
     if (answer.approved) return { behavior: 'allow', updatedInput: input };

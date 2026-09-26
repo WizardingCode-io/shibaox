@@ -255,11 +255,12 @@ provider) stops it with `cannot start: ...`.
   (the default path in the `shibaox init` template; a `decide` node without a `ship`
   option fails; Jev decides instead when `TYPESAFE_API_KEY` is set) and `judge` checks
   cannot run (they fail), until phase 2.
-- **`approval_required` without a TTY.** Approvals are asked through the terminal. Without
-  a TTY the question is deferred, and a Claude Code task that needs a push/deploy approval
-  **fails** (`approval pending for push: ...`): Claude Code cannot wait across processes in
-  this phase. Run interactively, or keep approval-gated actions out of Claude Code tasks
-  (for example, leave the push to a `human` node).
+- **`approval_required` approvals.** A push/deploy inside a Claude Code task is answered from
+  the inbox (`shibaox approve`, or Telegram once the daemon runs): the session waits on the
+  request, and an approval applies to that exact command on that node. If nobody answers
+  within the approval timeout, or the daemon restarts, the task is suspended with its
+  `session_id` and resumed after the answer (`SessionStarted`/`NodeSuspended` events),
+  with a short note telling the session what was decided.
 - Settings files (`~/.claude`, project `.claude/`) are not loaded; the role prompt from
   `system_prompt` is appended to Claude Code's own system prompt.
 - **Budget.** Spend reported by Claude Code counts against the run budget (`--budget` or

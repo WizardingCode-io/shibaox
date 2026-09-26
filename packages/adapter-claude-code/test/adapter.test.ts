@@ -2,9 +2,9 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  AutoApproveHuman,
+  type ApprovalAnswer,
+  AutoApproveApprovals,
   collectRun,
-  DeferHuman,
   type RuntimeEvent,
   type TaskJob,
 } from '@shibaox/core';
@@ -27,6 +27,7 @@ const job = (extra: Partial<TaskJob> = {}): TaskJob => ({
   workspace: '/tmp/ws',
   context: { previousOutputs: {} },
   budgetRemainingUsd: 2.5,
+  approvedCommands: {},
   ...extra,
 });
 const ctx = () => ({ signal: new AbortController().signal, log: () => {} });
@@ -41,7 +42,7 @@ describe('ClaudeCodeAdapter', () => {
       msg.success('done', { structured_output: { files: ['src/a.ts'] } }),
     ]);
     const adapter = new ClaudeCodeAdapter({
-      human: new AutoApproveHuman(),
+      approvals: new AutoApproveApprovals(),
       queryFn: q,
       mcpServers: () => ({
         graphify: { type: 'stdio', command: 'python', args: ['-m', 'graphify.serve'] },
@@ -51,6 +52,7 @@ describe('ClaudeCodeAdapter', () => {
     for await (const e of adapter.run(job(), ctx())) events.push(e);
     expect(events.map((e) => e.type)).toEqual([
       'started',
+      'session',
       'text',
       'text',
       'tool_use',
@@ -84,7 +86,7 @@ describe('ClaudeCodeAdapter', () => {
   });
   it('turns an error result into an error event with cost', async () => {
     const q = fakeQuery(() => [msg.init(), msg.error('error_max_turns', 0.3)]);
-    const adapter = new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q });
+    const adapter = new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q });
     await expect(collectRun(adapter, job(), ctx())).rejects.toMatchObject({
       message: expect.stringContaining('error_max_turns'),
       cost: { usd: 0.3 },
@@ -92,7 +94,7 @@ describe('ClaudeCodeAdapter', () => {
   });
   it('reports error_max_budget_usd as a budget_exceeded error with its cost', async () => {
     const q = fakeQuery(() => [msg.init(), msg.error('error_max_budget_usd', 2.6)]);
-    const adapter = new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q });
+    const adapter = new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q });
     await expect(collectRun(adapter, job(), ctx())).rejects.toMatchObject({
       name: 'AdapterError',
       reason: 'budget_exceeded',
@@ -103,7 +105,7 @@ describe('ClaudeCodeAdapter', () => {
   it('uses the text result when there is no structured output', async () => {
     const q = fakeQuery(() => [msg.init(), msg.success('All good.')]);
     const r = await collectRun(
-      new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q }),
+      new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q }),
       job(),
       ctx(),
     );
@@ -125,10 +127,14 @@ describe('ClaudeCodeAdapter', () => {
     const ac = new AbortController();
     setTimeout(() => ac.abort(), 50);
     await expect(
-      collectRun(new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q }), job(), {
-        signal: ac.signal,
-        log: () => {},
-      }),
+      collectRun(
+        new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q }),
+        job(),
+        {
+          signal: ac.signal,
+          log: () => {},
+        },
+      ),
     ).rejects.toThrow(/abort/);
   });
   it('warns when an MCP server failed to connect', async () => {
@@ -137,10 +143,14 @@ describe('ClaudeCodeAdapter', () => {
       msg.init({ mcp_servers: [{ name: 'graphify', status: 'failed' }] }),
       msg.success('x'),
     ]);
-    await collectRun(new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q }), job(), {
-      signal: new AbortController().signal,
-      log: (l) => logs.push(l),
-    });
+    await collectRun(
+      new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q }),
+      job(),
+      {
+        signal: new AbortController().signal,
+        log: (l) => logs.push(l),
+      },
+    );
     expect(logs.join('\n')).toContain('graphify');
     expect(logs.join('\n')).toContain('failed');
   });
@@ -162,21 +172,26 @@ describe('ClaudeCodeAdapter', () => {
       tools: ['git'],
       permissions: { approval_required: ['push'] },
     });
+    const deferring = {
+      request: async (): Promise<ApprovalAnswer> => ({ deferred: true, approvalId: 'a1' }),
+    };
     await expect(
-      collectRun(
-        new ClaudeCodeAdapter({ human: new DeferHuman(), queryFn: q }),
-        job({ role }),
-        ctx(),
-      ),
+      collectRun(new ClaudeCodeAdapter({ approvals: deferring, queryFn: q }), job({ role }), ctx()),
     ).rejects.toMatchObject({
       message: expect.stringContaining('approval pending'),
+      reason: 'approval_pending',
+      approvalId: 'a1',
       cost: { usd: 0.2 },
     });
   });
   it('merges the configured env over the minimal inherited env', async () => {
     const q = fakeQuery(() => [msg.init(), msg.success('x')]);
     await collectRun(
-      new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q, env: { FOO: 'bar' } }),
+      new ClaudeCodeAdapter({
+        approvals: new AutoApproveApprovals(),
+        queryFn: q,
+        env: { FOO: 'bar' },
+      }),
       job(),
       ctx(),
     );
@@ -190,7 +205,7 @@ describe('ClaudeCodeAdapter', () => {
     try {
       const q = fakeQuery(() => [msg.init(), msg.success('x')]);
       await collectRun(
-        new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q }),
+        new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q }),
         job(),
         ctx(),
       );
@@ -218,7 +233,7 @@ describe('ClaudeCodeAdapter', () => {
         const q = fakeQuery(() => [msg.init(), msg.success('x')]);
         await collectRun(
           new ClaudeCodeAdapter({
-            human: new AutoApproveHuman(),
+            approvals: new AutoApproveApprovals(),
             queryFn: q,
             modelRef: () => ref,
             env,
@@ -250,7 +265,7 @@ describe('ClaudeCodeAdapter', () => {
     const q = fakeQuery(() => [msg.init(), msg.success('x')]);
     await collectRun(
       new ClaudeCodeAdapter({
-        human: new AutoApproveHuman(),
+        approvals: new AutoApproveApprovals(),
         queryFn: q,
         env: (j) => ({ NODE_ID: j.nodeId }),
       }),
@@ -262,17 +277,21 @@ describe('ClaudeCodeAdapter', () => {
   it('prints the apiKeySource from the init message', async () => {
     const q = fakeQuery(() => [msg.init({ apiKeySource: 'none' }), msg.success('x')]);
     const lines: string[] = [];
-    await collectRun(new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q }), job(), {
-      signal: new AbortController().signal,
-      log: (l) => lines.push(l),
-    });
+    await collectRun(
+      new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q }),
+      job(),
+      {
+        signal: new AbortController().signal,
+        log: (l) => lines.push(l),
+      },
+    );
     expect(lines.find((l) => l.startsWith('claude-code ready:'))).toContain('apiKeySource=none');
   });
   it('passes the output schema as a json_schema output format', async () => {
     const schema = { type: 'object', properties: { files: { type: 'array' } } };
     const q = fakeQuery(() => [msg.init(), msg.success('x', { structured_output: { files: [] } })]);
     const r = await collectRun(
-      new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q }),
+      new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q }),
       job({ outputSchema: schema }),
       ctx(),
     );
@@ -288,7 +307,7 @@ describe('ClaudeCodeAdapter', () => {
     );
     await expect(
       collectRun(
-        new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q }),
+        new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q }),
         job(),
         ctx(),
       ),
@@ -299,10 +318,14 @@ describe('ClaudeCodeAdapter', () => {
     const ac = new AbortController();
     ac.abort();
     await expect(
-      collectRun(new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q }), job(), {
-        signal: ac.signal,
-        log: () => {},
-      }),
+      collectRun(
+        new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q }),
+        job(),
+        {
+          signal: ac.signal,
+          log: () => {},
+        },
+      ),
     ).rejects.toThrow(/abort/);
     expect(q.calls).toHaveLength(0);
   });
@@ -310,7 +333,7 @@ describe('ClaudeCodeAdapter', () => {
     const q = fakeQuery(() => [msg.init(), msg.text('hmm')]);
     await expect(
       collectRun(
-        new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q }),
+        new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q }),
         job(),
         ctx(),
       ),
@@ -344,7 +367,7 @@ describe('file tools are scoped to the workspace', () => {
     );
     const role = RoleSchema.parse({ role: 'backend', tools });
     await collectRun(
-      new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q }),
+      new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q }),
       job({ role, workspace: ws }),
       ctx(),
     );

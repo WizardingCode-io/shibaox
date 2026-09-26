@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AutoApproveHuman, collectRun, type TaskJob } from '@shibaox/core';
+import { AutoApproveApprovals, collectRun, type TaskJob } from '@shibaox/core';
 import { RoleSchema } from '@shibaox/schemas';
 import { describe, expect, it } from 'vitest';
 import { ClaudeCodeAdapter } from '../src/index.js';
@@ -29,7 +29,7 @@ describe.skipIf(process.env.SHIBAOX_REAL_TESTS !== '1' || !hasClaude)('real clau
       budgetRemainingUsd: 0.5,
     };
     const r = await collectRun(
-      new ClaudeCodeAdapter({ human: new AutoApproveHuman(), maxTurns: 6 }),
+      new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), maxTurns: 6 }),
       job,
       { signal: new AbortController().signal, log: console.log },
     );

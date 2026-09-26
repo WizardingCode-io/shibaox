@@ -3,7 +3,7 @@ import { basename } from 'node:path';
 export type ApprovalCategory = 'push' | 'deploy';
 export type ToolCategory = ApprovalCategory | 'other';
 export type BashAnalysis =
-  | { ok: true; program: string; category: ToolCategory }
+  | { ok: true; program: string; category: ToolCategory; argv: string[] }
   | { ok: false; reason: string };
 
 export const COMPOUND_REASON = 'compound commands are not allowed; run one command per call';
@@ -165,6 +165,7 @@ function tokenize(command: string): Token[] | undefined {
 }
 
 function analyseGit(args: Token[], assignments: string[]): BashAnalysis {
+  const argv = ['git', ...args.map((t) => t.text)];
   const refuse = (reason: string): BashAnalysis => ({ ok: false, reason });
   if (assignments.some((a) => /^GIT_/i.test(a) && !/^GIT_(AUTHOR|COMMITTER)_/.test(a)))
     return refuse('configuring git through the environment is not allowed');
@@ -183,11 +184,12 @@ function analyseGit(args: Token[], assignments: string[]): BashAnalysis {
   }
   const sub = args[j]?.text;
   const rest = args.slice(j + 1).map((t) => t.text);
-  if (sub === undefined) return { ok: true, program: 'git', category: 'other' };
+  if (sub === undefined) return { ok: true, program: 'git', category: 'other', argv };
   if (!GIT_SUBCOMMANDS.has(sub)) return refuse(`git subcommand "${sub}" is not allowed`);
-  if (sub === 'push' || sub === 'send-pack') return { ok: true, program: 'git', category: 'push' };
+  if (sub === 'push' || sub === 'send-pack')
+    return { ok: true, program: 'git', category: 'push', argv };
   if ((sub === 'subtree' || sub === 'lfs') && rest.includes('push'))
-    return { ok: true, program: 'git', category: 'push' };
+    return { ok: true, program: 'git', category: 'push', argv };
   if (
     rest.some(
       (a) => GIT_RUNNER_OPTS.test(a) || GIT_RUNNER_SHORT[sub]?.some((o) => a.startsWith(o)),
@@ -201,7 +203,7 @@ function analyseGit(args: Token[], assignments: string[]): BashAnalysis {
     const writes = rest.some((a) => GIT_CONFIG_WRITE.includes(a));
     if (!reads || writes) return refuse('changing git config is not allowed');
   }
-  return { ok: true, program: 'git', category: 'other' };
+  return { ok: true, program: 'git', category: 'other', argv };
 }
 
 /**
@@ -234,6 +236,7 @@ export function analyseBashCommand(command: string): BashAnalysis {
   if (!head) return { ok: false, reason: 'empty command' };
   const program = basename(head.text);
   const args = tokens.slice(i + 1);
+  const argv = [head.text, ...args.map((t) => t.text)];
   const gated = GATED_PROGRAMS.includes(program);
   if (gated && head.text !== program)
     return { ok: false, reason: `run ${program} by name, not by path (${head.text})` };
@@ -252,7 +255,7 @@ export function analyseBashCommand(command: string): BashAnalysis {
         (positional.length === 0
           ? !words.some((w) => HELP.includes(w))
           : !VERCEL_READ_ONLY.includes(positional[0] as string)));
-    return { ok: true, program, category: deploys ? 'deploy' : 'other' };
+    return { ok: true, program, category: deploys ? 'deploy' : 'other', argv };
   }
-  return { ok: true, program, category: 'other' };
+  return { ok: true, program, category: 'other', argv };
 }

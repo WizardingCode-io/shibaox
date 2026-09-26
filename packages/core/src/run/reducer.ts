@@ -178,8 +178,9 @@ function applyEvent(s: RunState, event: NonCreatedEvent, idx: number): RunState 
       return { ...s, budgetWarned: true };
     case 'BudgetExceeded': {
       if (event.nodeId === undefined) return { ...s, status: 'paused_budget' };
-      // the stopped task becomes never-started again, so it re-runs once the run resumes
-      const { startedIdx: _startedIdx, ...rest } = nodeOf(s, event.nodeId);
+      // the stopped task becomes never-started again, so it re-runs once the run resumes;
+      // a fresh session (no resume): only approval suspensions keep the session id
+      const { startedIdx: _startedIdx, sessionId: _sessionId, ...rest } = nodeOf(s, event.nodeId);
       return {
         ...s,
         status: 'paused_budget',
