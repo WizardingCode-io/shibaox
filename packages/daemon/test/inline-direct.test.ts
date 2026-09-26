@@ -6,8 +6,8 @@ import { AutoApproveHuman } from '@shibaox/core';
 import { startFakeJev } from '@shibaox/jev/testing';
 import { startFakeOpenAI } from '@shibaox/providers/testing';
 import { afterEach, describe, expect, it } from 'vitest';
-import { scaffoldOrg } from '../src/commands/init.js';
-import { runWorkflow } from '../src/commands/run.js';
+import { runWorkflow } from '../src/inline.js';
+import { scaffoldOrg } from '../src/templates.js';
 
 const sample = fileURLToPath(new URL('../../../examples/sample-repo', import.meta.url));
 let fakes: { close(): Promise<void> }[] = [];

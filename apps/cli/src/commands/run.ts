@@ -1,153 +1,119 @@
-import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import type { QueryFn } from '@shibaox/adapter-claude-code';
-import type { EventStore, HumanHandler, RunEngine, RunState } from '@shibaox/core';
-import {
-  type AdapterId,
-  assertProjectDir,
-  buildRuntime,
-  effectiveAdapter,
-  finishRun,
-  type GraphMode,
-  type GraphWiring,
-  gitPrefix,
-  logWorktree,
-  prepareGraph,
-  projectName,
-  projectOf,
-  workspaceMode,
-  worktreeOf,
-} from '@shibaox/daemon';
-import type { Graphify } from '@shibaox/memory';
-import { SqliteEventStore } from '@shibaox/persistence-sqlite';
-import type { ProviderEntry } from '@shibaox/providers';
-import { loadOrg, type Org, type Workflow } from '@shibaox/schemas';
-import { createRunWorkspace, type WorkspaceMode } from '@shibaox/workspace';
-import { TerminalHuman } from '../terminal-human.js';
+import { resolve } from 'node:path';
+import type { AdapterId, GraphMode } from '@shibaox/daemon';
+import type { WorkspaceMode } from '@shibaox/workspace';
+import { connect } from '../client.js';
+import { exitCodeFor, formatState, type Out } from '../output.js';
+import { followRun } from './follow.js';
 
-export { finishRun, type GraphMode, logWorktree, prepareGraph, projectName, projectOf, worktreeOf };
-
-export interface EngineOptions {
-  /** Runtime adapter; when omitted, `adapter:` in org.yaml, else `mock`. */
-  adapter?: AdapterId;
-  human?: HumanHandler;
-  log?: (line: string) => void;
-  /** Environment for provider keys and Jev (default: `process.env`). */
-  env?: NodeJS.ProcessEnv;
-  /** Providers added to the built-in catalog. */
-  extraProviders?: ProviderEntry[];
-  /** `auto` (default): use `graphify-out/graph.json` when it exists; never builds it. */
-  graph?: GraphMode;
-  /** The SDK `query` for the Claude Code adapter (tests inject a fake). */
-  queryFn?: QueryFn;
-  /** Graphify runner (tests inject one with a fake exec). */
-  graphify?: Graphify;
-  /** Vault directory; overrides `vault:` in org.yaml. */
-  vault?: string;
-}
-
-export interface RunOptions extends EngineOptions {
+export interface RunCommandOptions {
   org: string;
   project: string;
   input: string;
-  budget?: number;
-  db?: string;
-  /** Default: `worktree` when the project is a git repository, else `inplace`. */
+  adapter?: AdapterId;
   workspace?: WorkspaceMode;
+  graph?: GraphMode;
+  budget?: number;
+  detach?: boolean;
 }
 
-export function dbPath(orgDir: string, override?: string): string {
-  const path = override ?? join(orgDir, '.shibaox', 'events.db');
-  mkdirSync(join(path, '..'), { recursive: true });
-  return path;
-}
-
-const logOf = (opts: EngineOptions) => opts.log ?? ((l: string) => console.log(l));
-
-/**
- * The engine shared by `run` and `resume`, built by `buildRuntime`; prints its
- * warnings. Throws `cannot start: ...` (before any event is written) when a
- * task role of `run.workflow` cannot resolve for the adapter.
- */
-export function buildEngine(
-  store: EventStore,
-  org: Org,
-  opts: EngineOptions,
-  run: { workflow?: Workflow; budgetUsd?: number; graph?: GraphWiring; runId?: string } = {},
-): RunEngine {
-  const log = logOf(opts);
-  const runId = run.runId;
-  const { engine, warnings } = buildRuntime({
-    org,
-    store,
-    human: opts.human ?? new TerminalHuman(),
-    log,
-    adapter: opts.adapter,
-    workflow: run.workflow,
-    budgetUsd: run.budgetUsd,
-    env: opts.env,
-    extraProviders: opts.extraProviders,
-    queryFn: opts.queryFn,
-    graph: run.graph,
-    newRunId: runId ? () => runId : undefined,
+/** `shibaox run`: submits to the daemon and, unless detached, follows the stream. */
+export async function runCommand(
+  workflow: string,
+  o: RunCommandOptions,
+  out: Out,
+): Promise<number> {
+  const client = await connect({ write: true });
+  const { runId, warnings } = await client.submitRun({
+    orgRoot: resolve(o.org),
+    project: resolve(o.project),
+    workflow,
+    input: o.input,
+    adapter: o.adapter,
+    workspace: o.workspace,
+    budgetUsd: o.budget,
+    graph: o.graph,
   });
-  for (const w of warnings) log(`warn: ${w}`);
-  return engine;
-}
-
-export async function runWorkflow(workflow: string, opts: RunOptions): Promise<RunState> {
-  const orgDir = resolve(opts.org);
-  const org = loadOrg(orgDir);
-  const project = resolve(opts.project);
-  assertProjectDir(project);
-  const wf = org.workflows[workflow];
-  if (!wf) throw new Error(`workflow "${workflow}" is not defined in the org`);
-  const adapter = effectiveAdapter(opts.adapter, org);
-  const mode = await workspaceMode(project, opts.workspace, logOf(opts));
-  const store = new SqliteEventStore(dbPath(orgDir, opts.db));
+  for (const w of warnings) out.line(`warn: ${w}`);
+  out.line(`run ${runId} queued`);
+  out.obj({ runId, warnings });
+  if (o.detach) return 0;
+  const ac = new AbortController();
+  const onSigint = () => ac.abort();
+  process.once('SIGINT', onSigint);
   try {
-    const budgetUsd = opts.budget ?? org.org.budgets.per_run_usd;
-    const graph = await prepareGraph({
-      project,
-      org,
-      workflow: wf,
-      request: opts.input,
-      adapter,
-      opts: { ...opts, log: logOf(opts) },
-    });
-    const runId = randomUUID();
-    // builds (and checks) the runtime before the worktree exists
-    const engine = buildEngine(store, org, opts, { workflow: wf, budgetUsd, graph, runId });
-    const ws = await createRunWorkspace({ project, runId, mode });
-    const workspace = ws.mode === 'worktree' ? join(ws.path, await gitPrefix(project)) : ws.path;
-    const state = await engine.start({
-      workflow,
-      input: { spec: opts.input },
-      workspace,
-      budgetUsd,
-      adapter,
-      workspaceMode: ws.mode,
-      project,
-      branch: ws.branch,
-    });
-    await finishRun(store, org, state, { ...opts, log: logOf(opts), adapter });
-    logWorktree(state, logOf(opts));
-    return state;
+    return await followRun(client, runId, { signal: ac.signal }, out);
   } finally {
-    store.close();
+    process.off('SIGINT', onSigint);
   }
 }
 
-export function printState(state: RunState): void {
-  console.log(
-    `\nrun ${state.runId}  workflow=${state.workflow}  status=${state.status}  spent=$${state.spentUsd.toFixed(4)}`,
-  );
-  for (const [id, n] of Object.entries(state.nodes))
-    console.log(
-      `  ${id.padEnd(22)} ${n.status.padEnd(11)} attempts=${n.attempts}${n.choice ? ` choice=${n.choice}` : ''}${n.error ? ` error=${n.error}` : ''}`,
+export async function resumeCommand(
+  runId: string,
+  o: { budget?: number },
+  out: Out,
+): Promise<number> {
+  const client = await connect({ write: true });
+  const state = await client.resume(runId, { budgetUsd: o.budget });
+  out.line(`run ${runId} resumed (${state.status})`);
+  out.obj({ runId, status: state.status });
+  return followRun(client, runId, {}, out);
+}
+
+export async function cancelCommand(runId: string, out: Out): Promise<number> {
+  const client = await connect({ write: true });
+  const state = await client.cancel(runId);
+  out.line(`run ${runId} ${state.status}`);
+  out.obj({ runId, status: state.status });
+  return 0;
+}
+
+export async function runsCommand(o: { status?: string; org?: string }, out: Out): Promise<number> {
+  const client = await connect();
+  const runs = await client.listRuns({ status: o.status, org: o.org ? resolve(o.org) : undefined });
+  if (runs.length === 0) out.line('No runs yet.');
+  for (const r of runs) {
+    out.line(
+      `${r.runId}  ${r.workflow.padEnd(20)} ${r.status.padEnd(16)} $${r.spentUsd.toFixed(4)}  ${r.updatedAt}`,
     );
-  if (state.error) console.log(`  error: ${state.error}`);
-  for (const p of state.pendingHumans)
-    console.log(`  waiting for human at ${p.nodeId}: ${p.prompt}`);
+    out.obj(r);
+  }
+  return 0;
+}
+
+export async function replayCommand(runId: string, o: { db?: string }, out: Out): Promise<number> {
+  if (o.db) {
+    const { SqliteEventStore } = await import('@shibaox/persistence-sqlite');
+    const { replay } = await import('@shibaox/core');
+    const store = new SqliteEventStore(resolve(o.db));
+    try {
+      const events = await store.read(runId);
+      if (events.length === 0) throw new Error(`run ${runId} not found in ${o.db}`);
+      for (const e of events) {
+        out.line(
+          `${String(e.seq).padStart(4)}  ${e.at}  ${e.type}${'nodeId' in e ? ` ${e.nodeId}` : ''}`,
+        );
+        out.obj(e);
+      }
+      const state = replay(events);
+      for (const l of formatState(state)) out.line(l);
+      out.obj({ final: state });
+      return exitCodeFor(state.status);
+    } finally {
+      store.close();
+    }
+  }
+  const client = await connect();
+  let seq = 0;
+  for await (const e of client.events(runId, { historyOnly: true })) {
+    if (e.kind !== 'run') continue;
+    seq++;
+    out.line(
+      `${String(seq).padStart(4)}  ${e.event.at}  ${e.event.type}${'nodeId' in e.event ? ` ${e.event.nodeId}` : ''}`,
+    );
+    out.obj(e.event);
+  }
+  const state = await client.getRun(runId);
+  for (const l of formatState(state)) out.line(l);
+  out.obj({ final: state });
+  return 0;
 }

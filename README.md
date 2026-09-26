@@ -62,29 +62,80 @@ shibaox init .
 # 2. Check local prerequisites (node and git are required; the rest is for phase 1B).
 shibaox doctor
 
-# 3. Run the hello-feature workflow against a copy of the sample repo.
+# 3. Run the hello-feature workflow against a copy of the sample repo. The first command
+#    that needs the daemon starts it in the background (see Daemon below).
 cp -R <path-to-shibaox>/examples/sample-repo ./project
 shibaox run hello-feature --org ./org --project ./project --input "add /health"
 ```
 
 `hello-feature` runs `analyse → implement → qa (gate: npm test) → judge (decide) → ship
-(human)`. In an interactive terminal the `ship` node asks `Approve the push? (y/n)`.
-Without a TTY (CI, `< /dev/null`) the question is deferred: the run stops with
-`status=waiting_human` and exit code 2. Other useful flags: `--budget <usd>` (defaults to
-`budgets.per_run_usd` in `org/org.yaml`), `--db <path>`, `--workspace` and `--graph` (see
-[Worktrees](#worktrees) and [Memory](#memory-vault--graphify)). The copied project is not a
-git repository, so this run works in place; in a git repository it runs in a worktree.
+(human)`. `run` submits the run to the daemon and follows it; in an interactive terminal
+the `ship` node asks `Approve the push? (y/n)` right there. Without a TTY the run keeps
+waiting in the inbox (`shibaox inbox`, `shibaox approve human:<runId>:ship`). Ctrl-C stops
+following, never the run. Other useful flags: `--detach` (submit and return), `--budget
+<usd>` (defaults to `budgets.per_run_usd` in `org/org.yaml`), `--workspace` and `--graph`
+(see [Worktrees](#worktrees) and [Memory](#memory-vault--graphify)), and `--json` on every
+command. The copied project is not a git repository, so this run works in place; in a git
+repository it runs in a worktree.
 
 ```sh
-# 4. List runs, then replay one run's event log and its derived state.
-shibaox runs --org ./org
-shibaox replay <runId> --org ./org
+# 4. List runs, follow one, replay its event log and derived state.
+shibaox runs
+shibaox follow <runId>
+shibaox replay <runId>
 
-# 5. Continue a run: answer pending humans, lift a budget pause, or re-run nodes
-#    interrupted by a crash. Exit code 0 when the run completes, 2 otherwise.
-shibaox resume <runId> --org ./org
-shibaox resume <runId> --org ./org --budget 10   # required after a budget pause
+# 5. Answer what is waiting for you, or continue a run: lift a budget pause, or re-run
+#    nodes interrupted by a crash. Exit code 0 when the run completes, 2 otherwise.
+shibaox inbox
+shibaox approve human:<runId>:ship --note "ship it"
+shibaox resume <runId> --budget 10   # required after a budget pause
 ```
+
+## Daemon
+
+Runs execute inside a per-user daemon (`~/.shibaox/`, or `$SHIBAOX_HOME`): closing the
+terminal never kills a run, and approvals wait in a persistent inbox. Any command that
+needs it starts it in the background and says so; `SHIBAOX_NO_AUTOSTART=1` disables that.
+
+```sh
+shibaox daemon start --detach   # or in the foreground: shibaox daemon start
+shibaox daemon status
+shibaox daemon stop             # waits for active runs; --force cancels them
+```
+
+- **Files.** `daemon.sock` (0600, HTTP JSON + SSE, no authentication: only your user reaches
+  it), `daemon.pid`, `daemon.log`, `daemon.yaml`, `events.db` (one SQLite database for every
+  org and project you run).
+- **Inbox.** `shibaox inbox` lists human nodes (`human:<runId>:<node>`) and tool approvals
+  (`approval:<id>`, a push or deploy asked by a Claude Code or direct task). `approve` and
+  `deny` answer them, with an optional `--note`. The first answer wins; a second one is
+  refused. An approval applies to that exact command on that node: the task never asks
+  twice for the same command.
+- **Sessions.** While a Claude Code task waits for an approval its session stays open. After
+  `approval_timeout_minutes` (default 120), or when the daemon restarts, the task is
+  suspended and resumed with `session_id` once you answer, with a note saying what was
+  decided.
+- **Concurrency.** `max_concurrent_runs` in `daemon.yaml` (default 4) and in `org.yaml`
+  (default 2); runs above the limits wait as `queued`.
+- **Channels.** macOS notifications (`osascript`, or `terminal-notifier` when installed) and
+  Telegram with Approve/Deny buttons. Channels get the command, run, node and role, never
+  file contents, diffs or tool output. Failed deliveries retry with backoff.
+- **Schedules.** `shibaox schedule add "0 9 * * 1-5" hello-feature --org ./org --project
+  ./project --input "daily check"`, `schedule list|rm|run`. A schedule whose previous run is
+  still active is skipped (logged).
+
+`daemon.yaml` (every key optional):
+
+```yaml
+max_concurrent_runs: 4
+approval_timeout_minutes: 120
+channels:
+  macos: { enabled: true }
+  telegram: { bot_token_env: SHIBAOX_TELEGRAM_TOKEN, chat_id: 123456789 }
+```
+
+`shibaox doctor` reports the daemon (and whether it is older than the CLI), Telegram
+(`getMe` with the configured token) and the `claude` login.
 
 ## Providers
 
@@ -329,10 +380,11 @@ attaches it; without such an entry it is attached whenever the graph exists.
 
 ## Where state lives
 
-Events are stored in `<org>/.shibaox/events.db` (SQLite, WAL mode) unless `--db` points
-elsewhere. `shibaox init` writes `org/.gitignore` with `.shibaox/`, so the database is
-never committed with the org repo. Deleting the file deletes the run history. Run
-worktrees live under `<project>/.shibaox/worktrees/`, run notes in the vault.
+Events are stored in `~/.shibaox/events.db` (SQLite, WAL mode; `$SHIBAOX_HOME` moves the
+directory), written only by the daemon. `shibaox replay <runId> --db <path>` reads a
+database offline, including the per-org `<org>/.shibaox/events.db` files of earlier phases.
+Deleting the file deletes the run history. Run worktrees live under
+`<project>/.shibaox/worktrees/`, run notes in the vault.
 
 ## Layout
 
@@ -347,6 +399,7 @@ worktrees live under `<project>/.shibaox/worktrees/`, run notes in the vault.
 | `packages/adapter-claude-code` | `ClaudeCodeAdapter`: Claude Agent SDK runtime, role tool rules, human approvals |
 | `packages/workspace` | git worktree per run: create, list, remove, diff |
 | `packages/memory` | vault run/decision notes, `Graphify` runner and MCP config |
-| `apps/cli` | `shibaox init / doctor / run / runs / replay / resume / providers / models / graph / worktree` |
+| `packages/daemon` | the local daemon: run manager (queue, restart recovery), inbox, socket API + client, channels, schedules, and the runtime wiring |
+| `apps/cli` | `shibaox init / doctor / daemon / run / follow / runs / replay / resume / cancel / inbox / approve / deny / schedule / providers / models / graph / worktree` |
 | `examples/sample-repo` | a tiny Node project used by the sample workflow and the e2e tests |
 | `docs/superpowers/specs` | the design spec |

@@ -378,6 +378,12 @@ export class DaemonServer {
       write({ kind: 'runtime', seq: RUNTIME_SEQ_BASE + e.seq, event: trimRuntime(e) });
     replaying = false;
     for (const env of pendingLive) if (env.kind !== 'run' || env.seq > last) write(env);
+    if (url.searchParams.get('history') === '1') {
+      // replay: the history and the current status, never waiting for the run to end
+      const st = await this.deps.runs.state(runId);
+      end(st.status);
+      return;
+    }
     endIfTerminal();
   }
 }

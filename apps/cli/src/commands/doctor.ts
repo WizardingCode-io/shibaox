@@ -1,4 +1,6 @@
 import { runCommand } from '@shibaox/core';
+import { DaemonClient, DaemonUnavailableError, homePaths, loadDaemonConfig } from '@shibaox/daemon';
+import { CLI_VERSION } from '../version.js';
 
 interface CheckLine {
   name: string;
@@ -31,6 +33,9 @@ export async function doctorCommand(): Promise<number> {
   lines.push(await which('claude'));
   lines.push(await which('codex'));
   lines.push(await which('cursor'));
+  lines.push(await daemonLine());
+  lines.push(await telegramLine());
+  lines.push(await claudeAuthLine());
   for (const env of ['ANTHROPIC_API_KEY', 'TYPESAFE_API_KEY']) {
     lines.push({
       name: env,
@@ -47,7 +52,90 @@ export async function doctorCommand(): Promise<number> {
   console.log(
     failed
       ? '\nFix the FAIL lines before running workflows.'
-      : '\nReady for mock runs. Phase 1B adds real runtimes.',
+      : '\nReady. Runs go through the daemon (started on demand).',
   );
   return failed ? 1 : 0;
+}
+
+async function daemonLine(): Promise<CheckLine> {
+  const paths = homePaths();
+  try {
+    const h = await new DaemonClient(paths.socket).health();
+    const stale = h.version !== CLI_VERSION ? ` (CLI is ${CLI_VERSION}: restart it)` : '';
+    return {
+      name: 'daemon',
+      ok: true,
+      detail: `running, version ${h.version}${stale}`,
+      required: false,
+    };
+  } catch (e) {
+    const detail =
+      e instanceof DaemonUnavailableError ? 'not running (starts on demand)' : String(e);
+    return { name: 'daemon', ok: false, detail, required: false };
+  }
+}
+
+async function telegramLine(): Promise<CheckLine> {
+  const paths = homePaths();
+  let tg: { bot_token_env: string; chat_id: number } | undefined;
+  try {
+    tg = loadDaemonConfig(paths.config).channels.telegram;
+  } catch (e) {
+    return {
+      name: 'telegram',
+      ok: false,
+      detail: e instanceof Error ? e.message : String(e),
+      required: false,
+    };
+  }
+  if (!tg)
+    return {
+      name: 'telegram',
+      ok: false,
+      detail: 'not configured (daemon.yaml channels.telegram)',
+      required: false,
+    };
+  const token = process.env[tg.bot_token_env];
+  if (!token)
+    return { name: 'telegram', ok: false, detail: `${tg.bot_token_env} not set`, required: false };
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+    const json = (await res.json()) as { ok?: boolean; result?: { username?: string } };
+    return json.ok
+      ? {
+          name: 'telegram',
+          ok: true,
+          detail: `bot @${json.result?.username ?? '?'}, chat ${tg.chat_id}`,
+          required: false,
+        }
+      : { name: 'telegram', ok: false, detail: 'getMe failed: check the token', required: false };
+  } catch (e) {
+    return {
+      name: 'telegram',
+      ok: false,
+      detail: `getMe failed: ${e instanceof Error ? e.message : String(e)}`,
+      required: false,
+    };
+  }
+}
+
+async function claudeAuthLine(): Promise<CheckLine> {
+  const r = await runCommand({
+    command: 'claude auth status',
+    cwd: process.cwd(),
+    timeoutMs: 15_000,
+  });
+  if (r.exitCode === 0)
+    return {
+      name: 'claude auth',
+      ok: true,
+      detail: r.stdout.trim().split('\n')[0] ?? 'logged in',
+      required: false,
+    };
+  return {
+    name: 'claude auth',
+    ok: false,
+    detail: 'not logged in or claude not found (run: claude)',
+    required: false,
+  };
 }

@@ -141,9 +141,13 @@ export class DaemonClient {
   /** SSE frames of a run, from `since` (a frame `seq`), until the run ends or `signal` aborts. */
   async *events(
     id: string,
-    o: { since?: number; signal?: AbortSignal } = {},
+    o: { since?: number; signal?: AbortSignal; historyOnly?: boolean } = {},
   ): AsyncIterable<Envelope> {
-    const path = `/runs/${encodeURIComponent(id)}/events${o.since ? `?since=${o.since}` : ''}`;
+    const q = new URLSearchParams();
+    if (o.since) q.set('since', String(o.since));
+    if (o.historyOnly) q.set('history', '1');
+    const qs = q.toString();
+    const path = `/runs/${encodeURIComponent(id)}/events${qs ? `?${qs}` : ''}`;
     const frames: Envelope[] = [];
     let done = false;
     let failure: unknown;

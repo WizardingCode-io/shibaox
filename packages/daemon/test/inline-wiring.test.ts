@@ -9,12 +9,12 @@ import { SqliteEventStore } from '@shibaox/persistence-sqlite';
 import type { ProviderEntry } from '@shibaox/providers';
 import { startFakeOpenAI } from '@shibaox/providers/testing';
 import { loadOrg } from '@shibaox/schemas';
+import { listRunWorkspaces, removeRunWorkspace } from '@shibaox/workspace';
 import { afterEach, describe, expect, it } from 'vitest';
-import { scaffoldOrg } from '../src/commands/init.js';
-import { resumeRun } from '../src/commands/resume.js';
-import { projectOf, runWorkflow } from '../src/commands/run.js';
-import { worktreeList, worktreeRemove } from '../src/commands/worktree.js';
-import { buildRuntime } from '../src/wiring.js';
+import { resumeRun, runWorkflow } from '../src/inline.js';
+import { projectOf } from '../src/runs/workspace.js';
+import { buildRuntime } from '../src/runtime.js';
+import { scaffoldOrg } from '../src/templates.js';
 
 const sample = fileURLToPath(new URL('../../../examples/sample-repo', import.meta.url));
 
@@ -284,14 +284,11 @@ describe('vault and worktrees', () => {
       log: () => {},
     });
     expect(state.workspaceMode).toBe('worktree');
-    const lines: string[] = [];
-    await worktreeList({ project }, (l) => lines.push(l));
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain(`shibaox/${state.runId}`);
-    await worktreeRemove(state.runId, { project, deleteBranch: true }, () => {});
-    lines.length = 0;
-    await worktreeList({ project }, (l) => lines.push(l));
-    expect(lines).toEqual(['no run worktrees']);
+    const items = await listRunWorkspaces(project);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.branch).toBe(`shibaox/${state.runId}`);
+    await removeRunWorkspace({ project, runId: state.runId, deleteBranch: true });
+    expect(await listRunWorkspaces(project)).toEqual([]);
   });
 
   it('records the project and branch of a worktree run and prefers them over path parsing', async () => {
@@ -363,7 +360,7 @@ describe('vault and worktrees', () => {
       log: () => {},
     });
     expect(waiting.status).toBe('waiting_human');
-    await worktreeRemove(waiting.runId, { project, deleteBranch: true }, () => {});
+    await removeRunWorkspace({ project, runId: waiting.runId, deleteBranch: true });
     const wt = join(project, '.shibaox', 'worktrees', waiting.runId);
     await expect(
       resumeRun(waiting.runId, { org, db, env: {}, human: new AutoApproveHuman(), log: () => {} }),

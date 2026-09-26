@@ -1,16 +1,26 @@
 #!/usr/bin/env node
+import { ADAPTER_IDS, type AdapterId, type GraphMode } from '@shibaox/daemon';
 import { Command, InvalidArgumentError, Option } from 'commander';
+import { connect } from './client.js';
+import { daemonStart, daemonStatus, daemonStop } from './commands/daemon.js';
 import { doctorCommand } from './commands/doctor.js';
+import { followRun } from './commands/follow.js';
 import { graphBuild, graphQuery, graphUpdate } from './commands/graph.js';
+import { answerCommand, inboxCommand } from './commands/inbox.js';
 import { initCommand } from './commands/init.js';
 import { modelsCommand } from './commands/models.js';
 import { providersListCommand, providersTestCommand } from './commands/providers.js';
-import { replayCommand } from './commands/replay.js';
-import { resumeRun } from './commands/resume.js';
-import { type GraphMode, printState, runWorkflow } from './commands/run.js';
-import { runsCommand } from './commands/runs.js';
+import {
+  cancelCommand,
+  replayCommand,
+  resumeCommand,
+  runCommand,
+  runsCommand,
+} from './commands/run.js';
+import { scheduleAdd, scheduleList, scheduleRemove, scheduleRun } from './commands/schedule.js';
 import { worktreeList, worktreeRemove } from './commands/worktree.js';
-import { ADAPTER_IDS, type AdapterId } from './wiring.js';
+import { makeOut } from './output.js';
+import { CLI_VERSION } from './version.js';
 
 function parseBudget(v: string): number {
   const n = Number(v);
@@ -25,11 +35,14 @@ const graphOption = () =>
   new Option('--graph <mode>', 'use graphify-out/graph.json when it exists (never builds it)')
     .choices(['auto', 'off'])
     .default('auto');
+const jsonOf = (cmd: Command): boolean => Boolean(cmd.optsWithGlobals().json);
+const out = (cmd: Command) => makeOut(jsonOf(cmd));
 
 const program = new Command()
   .name('shibaox')
   .description('Agent OS over coding runtimes')
-  .version('0.0.1');
+  .version(CLI_VERSION)
+  .option('--json', 'one JSON object per line instead of text');
 
 program
   .command('init')
@@ -38,11 +51,13 @@ program
   .action((dir: string) => initCommand(dir));
 program
   .command('doctor')
-  .description('check local prerequisites')
+  .description('check local prerequisites, the daemon and channels')
   .action(async () => exitWith(await doctorCommand()));
+
 program
   .command('run')
   .argument('<workflow>')
+  .description('submit a run to the daemon and follow it (Ctrl-C leaves it running)')
   .requiredOption('--org <dir>', 'org repo directory')
   .requiredOption('--project <path>', 'project workspace')
   .requiredOption('--input <text>', 'request / spec text')
@@ -60,50 +75,154 @@ program
   )
   .addOption(graphOption())
   .option('--budget <usd>', 'budget in USD (default: org budgets.per_run_usd)', parseBudget)
-  .option('--db <path>', 'events database path')
-  .action(
-    async (
-      workflow: string,
-      o: {
-        org: string;
-        project: string;
-        input: string;
-        adapter?: AdapterId;
-        workspace?: 'inplace' | 'worktree';
-        graph?: GraphMode;
-        budget?: number;
-        db?: string;
-      },
-    ) => {
-      const state = await runWorkflow(workflow, o);
-      printState(state);
-      exitWith(state.status === 'completed' ? 0 : 2);
-    },
-  );
+  .option('--detach', 'submit and return without following')
+  .action(async function (this: Command, workflow: string, o: Record<string, unknown>) {
+    exitWith(
+      await runCommand(
+        workflow,
+        {
+          org: o.org as string,
+          project: o.project as string,
+          input: o.input as string,
+          adapter: o.adapter as AdapterId | undefined,
+          workspace: o.workspace as 'inplace' | 'worktree' | undefined,
+          graph: o.graph as GraphMode | undefined,
+          budget: o.budget as number | undefined,
+          detach: Boolean(o.detach),
+        },
+        out(this),
+      ),
+    );
+  });
+program
+  .command('follow')
+  .argument('<runId>')
+  .description('print a run as it progresses')
+  .option('--since <n>', 'start after frame n', (v) => Number(v))
+  .action(async function (this: Command, runId: string, o: { since?: number }) {
+    const client = await connect();
+    const ac = new AbortController();
+    process.once('SIGINT', () => ac.abort());
+    exitWith(await followRun(client, runId, { since: o.since, signal: ac.signal }, out(this)));
+  });
 program
   .command('resume')
   .argument('<runId>')
   .description('continue a waiting, budget-paused or interrupted run')
-  .requiredOption('--org <dir>', 'org repo directory')
-  .addOption(
-    new Option(
-      '--adapter <id>',
-      'runtime adapter (default: the one the run was started with)',
-    ).choices(ADAPTER_IDS),
-  )
-  .addOption(graphOption())
   .option('--budget <usd>', 'new budget in USD (required to resume a budget pause)', parseBudget)
-  .option('--db <path>', 'events database path')
-  .action(
-    async (
-      runId: string,
-      o: { org: string; adapter?: AdapterId; graph?: GraphMode; budget?: number; db?: string },
-    ) => {
-      const state = await resumeRun(runId, o);
-      printState(state);
-      exitWith(state.status === 'completed' ? 0 : 2);
-    },
-  );
+  .action(async function (this: Command, runId: string, o: { budget?: number }) {
+    exitWith(await resumeCommand(runId, o, out(this)));
+  });
+program
+  .command('cancel')
+  .argument('<runId>')
+  .description('cancel a run')
+  .action(async function (this: Command, runId: string) {
+    exitWith(await cancelCommand(runId, out(this)));
+  });
+program
+  .command('runs')
+  .description('list runs')
+  .option('--status <status>', 'only runs in this status')
+  .option('--org <dir>', 'only runs of this org')
+  .action(async function (this: Command, o: { status?: string; org?: string }) {
+    exitWith(await runsCommand(o, out(this)));
+  });
+program
+  .command('replay')
+  .argument('<runId>')
+  .description('print the event log of a run (offline with --db)')
+  .option('--db <path>', 'read this events database instead of asking the daemon')
+  .action(async function (this: Command, runId: string, o: { db?: string }) {
+    exitWith(await replayCommand(runId, o, out(this)));
+  });
+
+program
+  .command('inbox')
+  .description('what is waiting for you: human nodes and tool approvals')
+  .action(async function (this: Command) {
+    exitWith(await inboxCommand(out(this)));
+  });
+program
+  .command('approve')
+  .argument('<id>', 'an inbox id (human:<run>:<node> or approval:<id>)')
+  .option('--note <text>')
+  .action(async function (this: Command, id: string, o: { note?: string }) {
+    exitWith(await answerCommand(id, true, o, out(this)));
+  });
+program
+  .command('deny')
+  .argument('<id>', 'an inbox id (human:<run>:<node> or approval:<id>)')
+  .option('--note <text>')
+  .action(async function (this: Command, id: string, o: { note?: string }) {
+    exitWith(await answerCommand(id, false, o, out(this)));
+  });
+
+const schedule = program.command('schedule').description('cron schedules that submit runs');
+schedule
+  .command('add')
+  .argument('<cron>', 'cron expression, e.g. "0 9 * * 1-5"')
+  .argument('<workflow>')
+  .requiredOption('--org <dir>')
+  .requiredOption('--project <path>')
+  .option('--input <text>')
+  .addOption(new Option('--adapter <id>').choices(ADAPTER_IDS))
+  .option('--budget <usd>', 'budget in USD', parseBudget)
+  .action(async function (
+    this: Command,
+    cron: string,
+    workflow: string,
+    o: Record<string, unknown>,
+  ) {
+    exitWith(
+      await scheduleAdd(
+        cron,
+        workflow,
+        {
+          org: o.org as string,
+          project: o.project as string,
+          input: o.input as string | undefined,
+          adapter: o.adapter as string | undefined,
+          budget: o.budget as number | undefined,
+        },
+        out(this),
+      ),
+    );
+  });
+schedule.command('list').action(async function (this: Command) {
+  exitWith(await scheduleList(out(this)));
+});
+schedule
+  .command('rm')
+  .argument('<id>')
+  .action(async function (this: Command, id: string) {
+    exitWith(await scheduleRemove(id, out(this)));
+  });
+schedule
+  .command('run')
+  .argument('<id>')
+  .description('submit the schedule now')
+  .action(async function (this: Command, id: string) {
+    exitWith(await scheduleRun(id, out(this)));
+  });
+
+const daemon = program.command('daemon').description('the local daemon that executes runs');
+daemon
+  .command('start')
+  .option('--detach', 'run in the background (log: ~/.shibaox/daemon.log)')
+  .action(async function (this: Command, o: { detach?: boolean }) {
+    exitWith(await daemonStart(o, out(this)));
+  });
+daemon
+  .command('stop')
+  .option('--force', 'cancel active runs instead of waiting for them')
+  .action(async function (this: Command, o: { force?: boolean }) {
+    exitWith(await daemonStop(o, out(this)));
+  });
+daemon.command('status').action(async function (this: Command) {
+  exitWith(await daemonStatus(out(this)));
+});
+
 const providers = program.command('providers').description('model providers from the catalog');
 providers
   .command('list')
@@ -121,17 +240,6 @@ program
   .description('show how each org role resolves to a model')
   .requiredOption('--org <dir>', 'org repo directory')
   .action((o: { org: string }) => modelsCommand(o));
-program
-  .command('runs')
-  .requiredOption('--org <dir>')
-  .option('--db <path>')
-  .action((o: { org: string; db?: string }) => runsCommand(o.org, o.db));
-program
-  .command('replay')
-  .argument('<runId>')
-  .requiredOption('--org <dir>')
-  .option('--db <path>')
-  .action((runId: string, o: { org: string; db?: string }) => replayCommand(runId, o.org, o.db));
 
 const graph = program.command('graph').description('code knowledge graph (graphify)');
 graph
