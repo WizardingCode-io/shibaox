@@ -1,4 +1,4 @@
-import { Text } from 'ink';
+import { Box, Text } from 'ink';
 import type { ToolInfo } from '../stream.js';
 import { colors, WAVE_FRAMES } from '../theme.js';
 
@@ -34,15 +34,28 @@ export function ToolCallLine({ tool, depth, motion, frame }: ToolCallLineProps) 
   const look = statusLook(tool, motion, frame);
   const pad = depth === 1 ? '    ' : '';
   const duration = tool.durationMs === undefined ? '' : `  ${tool.durationMs} ms`;
+  // the summary shrinks and truncates; duration and status always stay visible
   return (
-    <Text>
-      {pad}
-      <Text color={colors.muted}>{'> '}</Text>
-      <Text bold>{tool.name}</Text>
-      {tool.summary ? ` ${tool.summary}` : ''}
-      {duration}
-      {'  '}
-      <Text color={look.color}>{look.text}</Text>
-    </Text>
+    <Box flexDirection="row">
+      <Box flexShrink={0}>
+        <Text>
+          {pad}
+          <Text color={colors.muted}>{'> '}</Text>
+          <Text bold>{tool.name}</Text>
+        </Text>
+      </Box>
+      {tool.summary ? (
+        <Box flexShrink={1} minWidth={0}>
+          <Text wrap="truncate"> {tool.summary}</Text>
+        </Box>
+      ) : null}
+      <Box flexShrink={0}>
+        <Text>
+          {duration}
+          {'  '}
+          <Text color={look.color}>{look.text}</Text>
+        </Text>
+      </Box>
+    </Box>
   );
 }

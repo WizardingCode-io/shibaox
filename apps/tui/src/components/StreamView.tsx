@@ -34,7 +34,7 @@ export function StreamView({ lines, height, width, offset, motion, frame }: Stre
         const pad = line.depth === 1 ? '    ' : '';
         if (line.kind === 'event' || line.kind === 'session')
           return (
-            <Text key={key} color={colors.muted}>
+            <Text key={key} color={colors.muted} wrap="truncate">
               {pad}
               {line.text}
             </Text>

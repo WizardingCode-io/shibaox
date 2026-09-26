@@ -47,6 +47,12 @@ export function Dashboard(props: DashboardProps) {
 
   const selected = state.selectedRunId;
   const lines = selected ? (state.streams[selected] ?? []) : [];
+  // a new selection starts at the end of its stream (state derived from the previous render)
+  const [prevSelected, setPrevSelected] = useState(selected);
+  if (prevSelected !== selected) {
+    setPrevSelected(selected);
+    setOffset(undefined);
+  }
   const hasRunningTool = lines.some((l) => l.kind === 'tool' && l.tool?.status === 'running');
   useEffect(() => {
     if (!motion || !hasRunningTool) return;
@@ -67,90 +73,112 @@ export function Dashboard(props: DashboardProps) {
       Object.keys(state.runStates[selected ?? '']?.workflowSnapshot?.nodes ?? {}).length,
   );
 
-  const needDaemon = (): boolean => {
-    if (state.actionsEnabled) return true;
-    store.showToast('Daemon unreachable', 'danger');
-    return false;
-  };
-  const firstInbox = state.inbox[0];
-
   useInput(
     (input, key) => {
+      // keys can arrive faster than React re-renders: read the live store, not the render scope
+      const s = store.get();
+      const selectedNow = s.selectedRunId;
+      const linesNow = selectedNow ? (s.streams[selectedNow] ?? []) : [];
+      const nodeCount = Object.keys(
+        s.runStates[selectedNow ?? '']?.workflowSnapshot?.nodes ??
+          s.runStates[selectedNow ?? '']?.nodes ??
+          {},
+      ).length;
+      const streamHeightNow = Math.max(1, bodyHeight - 2 - nodeCount);
+      const first = s.inbox[0];
+      const needDaemonNow = (): boolean => {
+        if (s.actionsEnabled) return true;
+        store.showToast('Daemon unreachable', 'danger');
+        return false;
+      };
       if (prompt) return; // the Prompt handles its own keys
-      if (state.view === 'help' || state.view === 'inboxList') {
+      if (s.view === 'help' || s.view === 'inboxList') {
         if (key.escape || input === 'q') return store.setView('dashboard');
-        if (state.view === 'inboxList') {
+        if (s.view === 'inboxList') {
           if (input === 'j' || key.downArrow)
-            return setInboxIndex((i) => Math.min(i + 1, state.inbox.length - 1));
+            return setInboxIndex((i) => Math.min(i + 1, s.inbox.length - 1));
           if (input === 'k' || key.upArrow) return setInboxIndex((i) => Math.max(i - 1, 0));
-          const target = state.inbox[inboxIndex];
-          if ((input === 'a' || input === 'd') && target && needDaemon()) {
+          const target = s.inbox[inboxIndex];
+          if ((input === 'a' || input === 'd') && target && needDaemonNow()) {
             void poller.answer(target.id, input === 'a');
             store.setView('dashboard');
           }
         }
         return;
       }
-      if (state.view === 'newRun') return; // the form handles its own keys
-      if (input === 'q' || key.escape) return onExit(0);
+      if (s.view === 'newRun') return; // the form handles its own keys
+      if (input === 'q' || key.escape || (key.ctrl && input === 'c')) return onExit(0);
       if (input === '?') return store.setView('help');
-      if (input === 'f') return store.setFilter(state.filter === 'active' ? 'all' : 'active');
-      if (key.tab) return store.setFocus(state.focus === 'list' ? 'detail' : 'list');
+      if (input === 'f') return store.setFilter(s.filter === 'active' ? 'all' : 'active');
+      if (key.tab) return store.setFocus(s.focus === 'list' ? 'detail' : 'list');
       if (key.return) return store.setFocus('detail');
       if (input === 'j' || key.downArrow) {
-        if (state.focus === 'list') return store.moveSelection(1);
-        return setOffset((o) =>
-          Math.min(
-            (o ?? Math.max(0, lines.length - streamHeight)) + 1,
-            Math.max(0, lines.length - streamHeight),
-          ),
-        );
+        if (s.focus === 'list') return store.moveSelection(1);
+        // reaching the bottom turns auto-scroll back on (offset undefined = follow the end)
+        return setOffset((o) => {
+          const max = Math.max(0, linesNow.length - streamHeightNow);
+          const next = Math.min((o ?? max) + 1, max);
+          return next >= max ? undefined : next;
+        });
       }
       if (input === 'k' || key.upArrow) {
-        if (state.focus === 'list') return store.moveSelection(-1);
-        return setOffset((o) => Math.max((o ?? Math.max(0, lines.length - streamHeight)) - 1, 0));
+        if (s.focus === 'list') return store.moveSelection(-1);
+        return setOffset((o) =>
+          Math.max((o ?? Math.max(0, linesNow.length - streamHeightNow)) - 1, 0),
+        );
       }
       if (key.pageDown) return setOffset(undefined);
       if (input === 'a' || input === 'd') {
-        if (!firstInbox || !needDaemon()) return;
-        void poller.answer(firstInbox.id, input === 'a');
+        if (!first || !needDaemonNow()) return;
+        const approved = input === 'a';
+        // a push or deploy is irreversible: confirm it; a human decision is one key
+        if (first.kind === 'approval')
+          return setPrompt({
+            label: `${approved ? 'Approve' : 'Deny'} ${first.prompt}?`,
+            kind: 'confirm',
+            onSubmit: (v) => {
+              setPrompt(undefined);
+              if (v === true) void poller.answer(first.id, approved);
+            },
+          });
+        void poller.answer(first.id, approved);
         return;
       }
       if (input === 'n') {
-        if (!firstInbox || !needDaemon()) return;
+        if (!first || !needDaemonNow()) return;
         return setPrompt({
           label: 'Note:',
           kind: 'text',
           onSubmit: (v) => {
             setPrompt(undefined);
-            void poller.answer(firstInbox.id, true, String(v) || undefined);
+            void poller.answer(first.id, true, String(v) || undefined);
           },
         });
       }
       if (input === 'i') {
-        if (state.inbox.length === 0) return;
+        if (s.inbox.length === 0) return;
         setInboxIndex(0);
         return store.setView('inboxList');
       }
       if (input === 'N') {
-        if (!needDaemon()) return;
+        if (!needDaemonNow()) return;
         return store.setView('newRun');
       }
       if (input === 'c') {
-        if (!selected || !needDaemon()) return;
+        if (!selectedNow || !needDaemonNow()) return;
         return setPrompt({
-          label: `Cancel run ${selected.slice(0, 8)}?`,
+          label: `Cancel run ${selectedNow.slice(0, 8)}?`,
           kind: 'confirm',
           onSubmit: (v) => {
             setPrompt(undefined);
-            if (v === true) void poller.cancel(selected);
+            if (v === true) void poller.cancel(selectedNow);
           },
         });
       }
       if (input === 'r') {
-        if (!selected || !needDaemon()) return;
+        if (!selectedNow || !needDaemonNow()) return;
         const st =
-          state.runStates[selected]?.status ?? state.runs.find((r) => r.runId === selected)?.status;
+          s.runStates[selectedNow]?.status ?? s.runs.find((r) => r.runId === selectedNow)?.status;
         if (st === 'paused_budget')
           return setPrompt({
             label: 'New budget in USD:',
@@ -158,11 +186,11 @@ export function Dashboard(props: DashboardProps) {
             onSubmit: (v) => {
               setPrompt(undefined);
               const n = Number(v);
-              if (Number.isFinite(n) && n > 0) void poller.resume(selected, n);
+              if (Number.isFinite(n) && n > 0) void poller.resume(selectedNow, n);
               else store.showToast('Enter a positive number', 'danger');
             },
           });
-        void poller.resume(selected);
+        void poller.resume(selectedNow);
       }
     },
     { isActive: !tooSmall },

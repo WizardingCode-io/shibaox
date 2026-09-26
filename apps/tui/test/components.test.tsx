@@ -1,4 +1,5 @@
 import type { RunState } from '@shibaox/core';
+import { Box } from 'ink';
 import { render } from 'ink-testing-library';
 import { describe, expect, it } from 'vitest';
 import { AgentStatus } from '../src/components/AgentStatus.js';
@@ -85,6 +86,30 @@ describe('components', () => {
         <ToolCallLine tool={{ ...base, status: 'running' }} depth={0} motion frame={1} />,
       ).lastFrame(),
     ).toBe('> Read {"file_path":"a.ts"}  ▃▅▁');
+  });
+
+  it('a tool line wider than the pane keeps its duration and status word', () => {
+    const long = { name: 'Bash', summary: 'x'.repeat(80), status: 'approval' as const };
+    const { lastFrame } = render(
+      <Box width={60} height={1}>
+        <ToolCallLine tool={long} depth={0} motion={false} frame={0} />
+      </Box>,
+    );
+    expect(lastFrame()).toContain('needs approval');
+    expect(lastFrame()?.split('\n')).toHaveLength(1);
+    const done = {
+      name: 'Bash',
+      summary: 'y'.repeat(80),
+      status: 'done' as const,
+      durationMs: 1234,
+    };
+    expect(
+      render(
+        <Box width={60} height={1}>
+          <ToolCallLine tool={done} depth={0} motion={false} frame={0} />
+        </Box>,
+      ).lastFrame(),
+    ).toMatch(/1234 ms\s+done/);
   });
 
   it('StreamView shows the window given by offset', () => {

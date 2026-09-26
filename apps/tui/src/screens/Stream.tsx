@@ -40,13 +40,14 @@ export function Stream(props: StreamProps) {
     return () => clearInterval(t);
   }, [motion, hasRunningTool]);
 
-  const status = runState?.status;
+  // the run ends when its stream does: the history is replayed in full first
+  const ended = state.ended[runId];
   useEffect(() => {
-    if (status === 'completed' || status === 'failed' || status === 'cancelled') onEnd(status);
-  }, [status, onEnd]);
+    if (ended) onEnd(ended);
+  }, [ended, onEnd]);
 
   useInput((input, key) => {
-    if (input === 'q' || key.escape) return onEnd(undefined);
+    if (input === 'q' || key.escape || (key.ctrl && input === 'c')) return onEnd(undefined);
     const first = items[0];
     if ((input === 'a' || input === 'd') && first) {
       if (!state.actionsEnabled) return store.showToast('Daemon unreachable', 'danger');
@@ -55,14 +56,17 @@ export function Stream(props: StreamProps) {
   });
 
   const bannerRows = items.length > 0 ? 1 : 0;
+  // one row short of the terminal: a full-height root is fullscreen for Ink, which clears the
+  // scrollback on unmount
+  const rows = Math.max(3, size.rows - 1);
   return (
-    <Box flexDirection="column" width={size.columns} height={size.rows}>
+    <Box flexDirection="column" width={size.columns} height={rows}>
       {items.length > 0 ? <InboxBanner items={items} width={size.columns} /> : null}
       <RunDetail
         state={runState}
         summary={summary}
         lines={lines}
-        height={Math.max(3, size.rows - 1 - bannerRows)}
+        height={Math.max(3, rows - 1 - bannerRows)}
         width={size.columns}
         offset={Math.max(0, lines.length)}
         motion={motion}

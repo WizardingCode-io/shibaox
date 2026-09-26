@@ -65,7 +65,8 @@ export function NewRunForm(props: NewRunFormProps) {
     const prefs = loadPrefs(home);
     form.current = {
       org: existsSync(join(cwd, 'org')) ? join(cwd, 'org') : (prefs.lastOrg ?? ''),
-      project: prefs.lastProject ?? cwd,
+      // always the current directory: a remembered project from another repo would be a trap
+      project: cwd,
       workflow: '',
       input: '',
       adapter: prefs.lastAdapter ?? 'mock',

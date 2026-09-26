@@ -146,16 +146,19 @@ channels:
 
 `shibaox` with no command (or `shibaox ui`) opens an interactive dashboard over the daemon:
 runs on the left with a status word (`Working`, `Needs you`, `Queued`, `Done`, `Failed`,
-`Paused`), the selected run on the right with its nodes and live stream (agent text, tool
+`Paused`, `Cancelled`), the selected run on the right with its nodes and live stream (agent text, tool
 calls with their duration, subagents indented), and a banner at the top whenever something
 waits for you. It needs an interactive terminal of at least 60×15; below 100 columns it shows
 one pane at a time (`tab` switches).
 
-Keys: `j/k` select · `enter` focus the detail · `a`/`d` approve or deny the first inbox item
-(`n` adds a note, `i` lists them all) · `N` new run · `c` cancel · `r` resume · `f` active/all
-· `?` help · `q` quit (the daemon keeps running). The new-run form reads the workflows of the
-org (`./org` when it exists) and remembers the last org, project, adapter and workspace in
-`~/.shibaox/ui.json`. `SHIBAOX_NO_MOTION=1` freezes the working indicator.
+Keys: `j/k` select (or scroll the detail once it has focus; scrolling back to the bottom
+turns auto-scroll on again) · `enter` focus the detail · `tab` switch panes · `a`/`d`
+approve or deny the first inbox item (a push or deploy asks `y` first; `n` adds a note, `i`
+lists them all) · `N` new run · `c` cancel · `r` resume · `f` active/all · `?` help · `q` or
+Ctrl-C quit (the daemon keeps running). The new-run form reads the workflows of the org
+(`./org` when it exists), always starts with the current directory as the project, and
+remembers the last org, adapter and workspace in `~/.shibaox/ui.json`. `SHIBAOX_NO_MOTION=1`
+freezes the working indicator.
 
 In an interactive terminal, `shibaox run` (without `--detach`) and `shibaox follow` show the
 same live stream and answer approvals in place; without a TTY, or with `--json`, they print

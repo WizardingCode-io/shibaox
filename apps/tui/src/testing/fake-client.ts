@@ -32,6 +32,8 @@ export class FakeDaemonClient implements DaemonClientLike {
   /** When set, `answer()` throws this as a DaemonHttpError. */
   answerError?: { status: number; code: string; message: string };
   submitResult: { runId: string; warnings: string[] } = { runId: 'new-run', warnings: [] };
+  /** Frames every new `events()` of that run starts with (the daemon's history replay). */
+  history = new Map<string, Envelope[]>();
   private readonly streams = new Map<string, Stream>();
 
   private record(method: string, args: unknown[]): void {
@@ -101,7 +103,7 @@ export class FakeDaemonClient implements DaemonClientLike {
   ): AsyncIterable<Envelope> {
     this.calls.push({ method: 'events', args: [id, o] });
     const failing = this.failing;
-    const stream: Stream = { queue: [], closed: false };
+    const stream: Stream = { queue: [...(this.history.get(id) ?? [])], closed: false };
     this.streams.set(id, stream);
     const close = () => {
       stream.closed = true;
@@ -120,6 +122,8 @@ export class FakeDaemonClient implements DaemonClientLike {
             const env = stream.queue.shift() as Envelope;
             yield env;
             if (env.kind === 'end') return;
+            // one frame per macrotask, like frames arriving on a socket
+            await new Promise((r) => setImmediate(r));
           }
           if (stream.closed) return;
           await new Promise<void>((r) => {

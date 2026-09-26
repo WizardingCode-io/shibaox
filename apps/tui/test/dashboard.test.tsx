@@ -189,6 +189,55 @@ describe('Dashboard', () => {
     unmount();
   });
 
+  it('auto-scroll re-enables at the bottom and resets when the run changes', async () => {
+    const lines = (runId: string, n: number) =>
+      Array.from(
+        { length: n },
+        (_, i) => ({ kind: 'text', nodeId: 'x', depth: 0, text: `${runId}-line-${i}` }) as never,
+      );
+    store.pushLines('aaaa1111-x', lines('a', 40));
+    store.pushLines('bbbb2222-x', lines('b', 40));
+    const { lastFrame, stdin, unmount } = mount();
+    await flush();
+    expect(lastFrame()).toContain('a-line-39');
+    stdin.write('\r'); // focus the detail
+    stdin.write('k'); // scroll up one
+    await flush();
+    expect(lastFrame()).not.toContain('a-line-39');
+    stdin.write('j'); // back to the bottom: auto-scroll is on again
+    await flush();
+    store.pushLines(
+      'aaaa1111-x',
+      lines('a', 1).map((l) => ({ ...(l as object), text: 'a-new' }) as never),
+    );
+    await flush();
+    expect(lastFrame()).toContain('a-new');
+    stdin.write('k');
+    stdin.write('\t'); // back to the list
+    stdin.write('j'); // select run b: the offset does not follow
+    await flush();
+    // the new subscription replays b's history; the view must show its end, not a's offset
+    store.pushLines('bbbb2222-x', lines('b', 40));
+    await flush();
+    expect(lastFrame()).toContain('b-line-39');
+    unmount();
+  });
+
+  it('an approval item asks for confirmation before a is sent', async () => {
+    client.inboxItems = [item('approval:a2', 'aaaa1111-x', 'approval')];
+    await poller.tick();
+    const { lastFrame, stdin, unmount } = mount();
+    await flush();
+    stdin.write('a');
+    await flush();
+    expect(lastFrame()).toContain('Approve git push origin main?');
+    expect(client.calls.filter((c) => c.method === 'answer')).toHaveLength(0);
+    stdin.write('y');
+    await flush();
+    expect(client.calls.find((c) => c.method === 'answer')?.args[0]).toBe('approval:a2');
+    unmount();
+  });
+
   it('a small terminal only shows the size notice', async () => {
     const { lastFrame, unmount } = render(
       <Dashboard

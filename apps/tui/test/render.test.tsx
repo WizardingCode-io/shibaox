@@ -175,6 +175,95 @@ describe('renderStream', () => {
   });
 });
 
+describe('Ctrl-C and history (final review)', () => {
+  it('Ctrl-C in the dashboard resolves 0 and closes the poller', async () => {
+    const client = new FakeDaemonClient();
+    client.runs = [run('r1')];
+    client.states.set('r1', state('r1'));
+    io = { stdin: new FakeStdin(), stdout: new FakeStdout() };
+    const done = renderDashboard(client, {
+      version: '0.0.1',
+      stdin: io.stdin as never,
+      stdout: io.stdout as never,
+      env: { SHIBAOX_NO_MOTION: '1' },
+      debug: true,
+    });
+    await settle(60);
+    io.stdin.push('\x03');
+    expect(await done).toBe(0);
+    await settle();
+    expect(client.openStreams()).toEqual([]);
+  });
+
+  it('Ctrl-C while following resolves 0 and says the run keeps running', async () => {
+    const client = new FakeDaemonClient();
+    client.runs = [run('r3')];
+    client.states.set('r3', state('r3'));
+    io = { stdin: new FakeStdin(), stdout: new FakeStdout() };
+    const done = renderStream(client, 'r3', {
+      stdin: io.stdin as never,
+      stdout: io.stdout as never,
+      env: {},
+      debug: true,
+    });
+    await settle();
+    io.stdin.push('\x03');
+    expect(await done).toBe(0);
+    expect(io.stdout.text()).toContain('keeps running');
+  });
+
+  it('following a finished run replays the whole history before ending', async () => {
+    const client = new FakeDaemonClient();
+    client.runs = [run('r4', 'completed')];
+    client.states.set('r4', state('r4', 'completed'));
+    client.history.set('r4', [
+      frame('r4', 'run', { type: 'NodeStarted', nodeId: 'analyse' }, 1),
+      frame('r4', 'run', { type: 'NodeStarted', nodeId: 'implement' }, 2),
+      frame('r4', 'run', { type: 'NodeStarted', nodeId: 'qa' }, 3),
+      frame('r4', 'end', { status: 'completed' }, 4),
+    ]);
+    io = { stdin: new FakeStdin(), stdout: new FakeStdout() };
+    expect(
+      await renderStream(client, 'r4', {
+        stdin: io.stdin as never,
+        stdout: io.stdout as never,
+        env: {},
+        debug: true,
+      }),
+    ).toBe(0);
+    const text = io.stdout.text();
+    for (const n of ['── analyse ──', '── implement ──', '── qa ──']) expect(text).toContain(n);
+  });
+
+  it('never erases the terminal scrollback', async () => {
+    const client = new FakeDaemonClient();
+    client.runs = [run('r5', 'completed')];
+    client.states.set('r5', state('r5', 'completed'));
+    client.history.set('r5', [frame('r5', 'end', { status: 'completed' }, 1)]);
+    io = { stdin: new FakeStdin(), stdout: new FakeStdout() };
+    await renderStream(client, 'r5', {
+      stdin: io.stdin as never,
+      stdout: io.stdout as never,
+      env: {},
+    });
+    expect(io.stdout.frames.join('')).not.toContain('\x1b[3J');
+    const io2 = { stdin: new FakeStdin(), stdout: new FakeStdout() };
+    const done = renderDashboard(client, {
+      version: '0.0.1',
+      stdin: io2.stdin as never,
+      stdout: io2.stdout as never,
+      env: {},
+    });
+    await settle(60);
+    io2.stdin.push('q');
+    await done;
+    // the dashboard draws on the alternate screen and restores the main one on exit
+    const out = io2.stdout.frames.join('');
+    expect(out).toContain('\x1b[?1049h');
+    expect(out).toContain('\x1b[?1049l');
+  });
+});
+
 describe('inkStreams', () => {
   it('leaves undefined streams out so Ink keeps process.stdin/stdout', async () => {
     const { inkStreams } = await import('../src/index.js');

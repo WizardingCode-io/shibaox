@@ -74,7 +74,14 @@ export function renderDashboard(
         home: opts.home,
         onExit: finish,
       }),
-      { ...inkStreams(opts), exitOnCtrlC: true, patchConsole: false, debug: opts.debug },
+      {
+        ...inkStreams(opts),
+        exitOnCtrlC: false,
+        patchConsole: false,
+        debug: opts.debug,
+        // the dashboard owns the screen; the shell's scrollback is restored on exit
+        alternateScreen: !opts.debug,
+      },
     );
     poller.start();
   });

@@ -14,6 +14,8 @@ export interface AppState {
   runStates: Record<string, RunState>;
   streams: Record<string, StreamLine[]>;
   toast?: { text: string; tone: ToastTone; until: number };
+  /** Runs whose stream sent its `end` frame, with the final status. */
+  ended: Record<string, string>;
   filter: 'active' | 'all';
   view: View;
   focus: 'list' | 'detail';
@@ -30,6 +32,7 @@ const initialState = (): AppState => ({
   inbox: [],
   runStates: {},
   streams: {},
+  ended: {},
   filter: 'active',
   view: 'dashboard',
   focus: 'list',
@@ -112,6 +115,10 @@ export class AppStore {
     const i = visible.findIndex((r) => r.runId === this.state.selectedRunId);
     const next = (i < 0 ? 0 : (i + delta + visible.length) % visible.length) as number;
     this.set({ selectedRunId: visible[next]?.runId });
+  }
+
+  markEnded(runId: string, status: string): void {
+    this.set({ ended: { ...this.state.ended, [runId]: status } });
   }
 
   setRunState(state: RunState): void {

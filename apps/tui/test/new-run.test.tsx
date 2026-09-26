@@ -151,6 +151,35 @@ describe('NewRunForm', () => {
     unmount();
   });
 
+  it('project defaults to the current directory even with a remembered project', async () => {
+    const { dir, home } = setup();
+    savePrefs(home, { lastProject: '/elsewhere', lastAdapter: 'direct' });
+    const submitted: SubmitRequest[] = [];
+    const { stdin, unmount } = render(
+      <NewRunForm
+        cwd={dir}
+        home={home}
+        env={{}}
+        debounceMs={0}
+        onSubmit={async (req) => {
+          submitted.push(req);
+          return 'run-2';
+        }}
+        onCancel={() => {}}
+        onDone={() => {}}
+      />,
+    );
+    await flush();
+    stdin.write('\t');
+    stdin.write('\t');
+    stdin.write('\t');
+    type(stdin, 'go');
+    stdin.write('\r');
+    await flush();
+    expect(submitted[0]).toMatchObject({ project: dir, adapter: 'direct' });
+    unmount();
+  });
+
   it('prefs survive a round-trip and a broken file reads as empty', () => {
     const { home } = setup();
     savePrefs(home, { lastOrg: '/o', lastAdapter: 'direct' });

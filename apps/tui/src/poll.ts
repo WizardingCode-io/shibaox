@@ -146,7 +146,10 @@ export class Poller {
         if (next !== lines) this.store.setLines(runId, next as StreamLine[]);
         if (env.kind === 'end' || (env.kind === 'run' && RUN_EVENT_REFRESH.has(env.event.type)))
           await this.refreshRun(runId);
-        if (env.kind === 'end') return;
+        if (env.kind === 'end') {
+          this.store.markEnded(runId, env.status);
+          return;
+        }
       }
     } catch {
       // aborted, or the daemon went away: the poll loop notices and reopens
