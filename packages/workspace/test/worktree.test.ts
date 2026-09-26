@@ -57,4 +57,23 @@ describe('run workspaces', () => {
       createRunWorkspace({ project: plain, runId: 'r3', mode: 'worktree' }),
     ).rejects.toThrow(/not a git repository; use --workspace inplace/);
   });
+  it('rejects a path-escaping runId and creates nothing', async () => {
+    const project = repo();
+    await expect(createRunWorkspace({ project, runId: '../x', mode: 'worktree' })).rejects.toThrow(
+      /invalid runId "\.\.\/x"/,
+    );
+    expect(existsSync(join(project, '.shibaox'))).toBe(false);
+    await expect(removeRunWorkspace({ project, runId: 'a/b' })).rejects.toThrow(
+      /invalid runId "a\/b"/,
+    );
+  });
+  it('resolves the git common dir when the project is itself a worktree', async () => {
+    const main = repo();
+    const outer = join(mkdtempSync(join(tmpdir(), 'holder-')), 'outer');
+    execFileSync('git', ['worktree', 'add', '-q', outer, '-b', 'outer'], { cwd: main });
+    const ws = await createRunWorkspace({ project: outer, runId: 'r5', mode: 'worktree' });
+    expect(ws.mode).toBe('worktree');
+    expect(existsSync(join(outer, '.git'))).toBe(true);
+    expect(readFileSync(join(main, '.git', 'info', 'exclude'), 'utf8')).toContain('.shibaox/');
+  });
 });

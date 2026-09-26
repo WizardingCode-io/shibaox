@@ -1,6 +1,14 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { runArgv } from '@shibaox/core';
+
+const RUN_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
+
+function validateRunId(runId: string): void {
+  if (!RUN_ID_RE.test(runId) || runId.includes('..')) {
+    throw new Error(`invalid runId "${runId}"`);
+  }
+}
 
 export type WorkspaceMode = 'inplace' | 'worktree';
 export interface RunWorkspace {
@@ -25,10 +33,12 @@ export async function isGitRepo(dir: string): Promise<boolean> {
   return r.exitCode === 0 && r.stdout.trim() === 'true';
 }
 
-function ensureExcluded(project: string): void {
-  const exclude = join(project, '.git', 'info', 'exclude');
-  if (!existsSync(join(project, '.git', 'info')))
-    mkdirSync(join(project, '.git', 'info'), { recursive: true });
+async function ensureExcluded(project: string): Promise<void> {
+  const commonDir = (await git(project, ['rev-parse', '--git-common-dir'])).trim();
+  const gitCommonDir = resolve(project, commonDir);
+  const infoDir = join(gitCommonDir, 'info');
+  const exclude = join(infoDir, 'exclude');
+  if (!existsSync(infoDir)) mkdirSync(infoDir, { recursive: true });
   const current = existsSync(exclude) ? readFileSync(exclude, 'utf8') : '';
   if (!current.split('\n').includes('.shibaox/'))
     appendFileSync(exclude, `${current.endsWith('\n') || current === '' ? '' : '\n'}.shibaox/\n`);
@@ -39,10 +49,11 @@ export async function createRunWorkspace(args: {
   runId: string;
   mode: WorkspaceMode;
 }): Promise<RunWorkspace> {
+  validateRunId(args.runId);
   if (args.mode === 'inplace') return { path: args.project, mode: 'inplace' };
   if (!(await isGitRepo(args.project)))
     throw new Error(`project "${args.project}" is not a git repository; use --workspace inplace`);
-  ensureExcluded(args.project);
+  await ensureExcluded(args.project);
   const path = join(args.project, '.shibaox', 'worktrees', args.runId);
   const branch = `shibaox/${args.runId}`;
   mkdirSync(join(args.project, '.shibaox', 'worktrees'), { recursive: true });
@@ -77,6 +88,7 @@ export async function removeRunWorkspace(args: {
   runId: string;
   deleteBranch?: boolean;
 }): Promise<void> {
+  validateRunId(args.runId);
   const path = join(args.project, '.shibaox', 'worktrees', args.runId);
   await git(args.project, ['worktree', 'remove', '--force', path]);
   if (args.deleteBranch) await git(args.project, ['branch', '-D', `shibaox/${args.runId}`]);
