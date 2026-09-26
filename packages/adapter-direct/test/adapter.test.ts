@@ -8,7 +8,7 @@ import {
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { collectRun, type RuntimeEvent, type TaskJob } from '@shibaox/core';
+import { AdapterError, collectRun, type RuntimeEvent, type TaskJob } from '@shibaox/core';
 import { ProviderRegistry } from '@shibaox/providers';
 import { startFakeOpenAI } from '@shibaox/providers/testing';
 import { RoleSchema } from '@shibaox/schemas';
@@ -359,6 +359,64 @@ describe('DirectAdapter', () => {
     await expect(collectRun(adapter, jobFor(ws), ctx())).rejects.toThrow(
       'max steps (2) reached without finish',
     );
+  });
+
+  it('attaches the cost of the attempt to the max-steps error', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI(() => ({
+      toolCalls: [{ name: 'list_files', args: { subdir: '.' } }],
+    }));
+    const priced = new ProviderRegistry(
+      [
+        {
+          id: 'fake',
+          name: 'Fake',
+          kind: 'openai-compatible',
+          base_url: fake.baseURL,
+          auth: { type: 'none' },
+          models: [],
+          pricing: { m: { input_per_m: 1_000_000, output_per_m: 1_000_000 } },
+          verify: false,
+        },
+      ],
+      {},
+    );
+    const adapter = new DirectAdapter({
+      registry: priced,
+      resolveRef: () => 'fake/m',
+      maxSteps: 2,
+    });
+    const err = await collectRun(adapter, jobFor(ws), ctx()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AdapterError);
+    expect((err as AdapterError).cost?.usd).toBeGreaterThan(0);
+    expect((err as AdapterError).cost?.inputTokens).toBeGreaterThan(0);
+  });
+  it('fails a truncated answer (finish_reason length) instead of treating it as a result', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI(() => ({ content: 'half an ans', finishReason: 'length' }));
+    const adapter = new DirectAdapter({
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    await expect(collectRun(adapter, jobFor(ws), ctx())).rejects.toThrow(
+      'model stopped with reason "length" without finish',
+    );
+  });
+  it('reports provider errors with their message and HTTP status', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI(() => {
+      throw new Error('boom');
+    });
+    const adapter = new DirectAdapter({
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+      maxRetries: 0,
+    });
+    const err = await collectRun(adapter, jobFor(ws), ctx()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AdapterError);
+    expect((err as Error).message).toContain('boom');
+    expect((err as Error).message).toContain('500');
+    expect(fake.requests).toHaveLength(1); // maxRetries: 0
   });
 
   it('aborts when the signal fires', async () => {

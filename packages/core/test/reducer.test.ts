@@ -252,6 +252,23 @@ describe('replay', () => {
     expect(s2.status).toBe('running');
   });
 
+  it('sums the cost carried by NodeFailed', () => {
+    const s = replay([
+      created,
+      { type: 'NodeStarted', runId: 'r1', nodeId: 'a', at },
+      {
+        type: 'NodeFailed',
+        runId: 'r1',
+        nodeId: 'a',
+        at,
+        error: 'model stopped',
+        cost: { usd: 0.25, inputTokens: 10, outputTokens: 5 },
+      },
+    ]);
+    expect(s.status).toBe('failed');
+    expect(s.spentUsd).toBeCloseTo(0.25);
+  });
+
   it('keeps a failed status sticky against a sibling human request/response racing in after it', () => {
     const s = replay([
       created,

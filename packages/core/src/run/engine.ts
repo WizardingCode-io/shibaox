@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Org, RunEvent, Workflow, WorkflowNode } from '@shibaox/schemas';
 import type { EventStore, RunSummary } from '../events/store.js';
 import { runCommand } from '../executors/code.js';
-import { collectRun, type RuntimeAdapter, type TaskJob } from '../executors/types.js';
+import { AdapterError, collectRun, type RuntimeAdapter, type TaskJob } from '../executors/types.js';
 import { type CheckRunners, defaultCheckRunners, runGate } from '../gates/engine.js';
 import { injectTeamGates } from '../org/inject-gates.js';
 import type { Decider, HumanHandler } from './deciders.js';
@@ -444,6 +444,7 @@ export class RunEngine {
         nodeId,
         at: at(),
         error: e instanceof Error ? e.message : String(e),
+        ...(e instanceof AdapterError && e.cost ? { cost: e.cost } : {}),
       });
     }
   }

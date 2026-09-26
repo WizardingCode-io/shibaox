@@ -9,7 +9,7 @@ export type RuntimeEvent =
   | { type: 'tool_result'; name: string; output: unknown }
   | { type: 'file_changed'; path: string }
   | { type: 'result'; output: unknown; summary: string; cost?: Cost }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string; cost?: Cost };
 
 export interface TaskJob {
   runId: string;
@@ -38,6 +38,17 @@ export interface RuntimeAdapter {
   run(job: TaskJob, ctx: ExecutionContext): AsyncIterable<RuntimeEvent>;
 }
 
+/** A task failure reported by an adapter, carrying what the attempt cost (if known). */
+export class AdapterError extends Error {
+  constructor(
+    message: string,
+    readonly cost?: Cost,
+  ) {
+    super(message);
+    this.name = 'AdapterError';
+  }
+}
+
 export async function collectRun(
   adapter: RuntimeAdapter,
   job: TaskJob,
@@ -45,7 +56,7 @@ export async function collectRun(
 ): Promise<TaskResult> {
   for await (const event of adapter.run(job, ctx)) {
     if (event.type === 'text') ctx.log(event.text);
-    if (event.type === 'error') throw new Error(event.message);
+    if (event.type === 'error') throw new AdapterError(event.message, event.cost);
     if (event.type === 'result')
       return { output: event.output, summary: event.summary, cost: event.cost };
   }

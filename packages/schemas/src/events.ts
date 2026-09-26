@@ -49,7 +49,12 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     summary: z.string().default(''),
     cost: CostSchema.optional(),
   }),
-  z.object({ ...node, type: z.literal('NodeFailed'), error: z.string() }),
+  z.object({
+    ...node,
+    type: z.literal('NodeFailed'),
+    error: z.string(),
+    cost: CostSchema.optional(),
+  }),
   z.object({
     ...node,
     type: z.literal('GatePassed'),

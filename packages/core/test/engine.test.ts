@@ -9,6 +9,7 @@ import {
   MemoryEventStore,
   MockAdapter,
   RunEngine,
+  type RuntimeAdapter,
   ScriptedDecider,
 } from '../src/index.js';
 
@@ -89,6 +90,29 @@ describe('RunEngine', () => {
     expect(types.at(-1)).toBe('RunCompleted');
     expect(types).toContain('GatePassed');
     expect(types).toContain('DecisionMade');
+  });
+
+  it('counts the cost of a failed task attempt (adapter error with cost)', async () => {
+    const failing: RuntimeAdapter = {
+      id: 'mock',
+      capabilities: () => [],
+      async *run() {
+        yield { type: 'started' };
+        yield {
+          type: 'error',
+          message: 'max steps reached',
+          cost: { usd: 0.3, inputTokens: 100, outputTokens: 50 },
+        };
+      },
+    };
+    const { engine, store } = engineFor(scaffold(orgFiles('true')), {
+      adapters: { mock: failing },
+    });
+    const state = await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
+    expect(state.status).toBe('failed');
+    expect(state.spentUsd).toBeCloseTo(0.3);
+    const failed = (await store.read(state.runId)).find((e) => e.type === 'NodeFailed');
+    expect(failed && 'cost' in failed && failed.cost?.usd).toBeCloseTo(0.3);
   });
 
   it('gate failure reworks then fails the run after max_retries with the report', async () => {

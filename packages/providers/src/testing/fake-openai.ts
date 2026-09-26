@@ -3,6 +3,8 @@ import { createServer } from 'node:http';
 export interface FakeTurn {
   content?: string;
   toolCalls?: { name: string; args: unknown }[];
+  /** Overrides the OpenAI `finish_reason` (default: `tool_calls` with tool calls, else `stop`). */
+  finishReason?: string;
 }
 export type FakeScript = (
   req: { messages: unknown[]; tools?: unknown[] },
@@ -56,7 +58,13 @@ export async function startFakeOpenAI(script: FakeScript) {
               object: 'chat.completion',
               created: Math.floor(Date.now() / 1000),
               model: 'm',
-              choices: [{ index: 0, message, finish_reason: t.toolCalls ? 'tool_calls' : 'stop' }],
+              choices: [
+                {
+                  index: 0,
+                  message,
+                  finish_reason: t.finishReason ?? (t.toolCalls ? 'tool_calls' : 'stop'),
+                },
+              ],
               usage: {
                 prompt_tokens: promptTokens,
                 completion_tokens: completionTokens,

@@ -7,7 +7,12 @@ import type {
   RuntimeEvent,
   TaskJob,
 } from '@shibaox/core';
-import { type GenerateResult, generate, type ProviderRegistry } from '@shibaox/providers';
+import {
+  describeError,
+  type GenerateResult,
+  generate,
+  type ProviderRegistry,
+} from '@shibaox/providers';
 import { buildTools } from './tools.js';
 
 export interface DirectAdapterOptions {
@@ -18,6 +23,8 @@ export interface DirectAdapterOptions {
   maxSteps?: number;
   commandTimeoutMs?: number;
   maxFileBytes?: number;
+  /** Retries on retryable provider errors (AI SDK default: 2). */
+  maxRetries?: number;
 }
 
 const RULES =
@@ -86,12 +93,13 @@ export class DirectAdapter implements RuntimeAdapter {
         maxSteps: this.opts.maxSteps ?? 12,
         stopOnTools: ['finish'],
         signal: ctx.signal,
+        maxRetries: this.opts.maxRetries,
       }).then(
         (r): Settled => ({ ok: true, r }),
         (e: unknown): Settled => ({ ok: false, e }),
       );
     } catch (e) {
-      yield { type: 'error', message: e instanceof Error ? e.message : String(e) };
+      yield { type: 'error', message: describeError(e) };
       return;
     }
 
@@ -110,21 +118,30 @@ export class DirectAdapter implements RuntimeAdapter {
     while (queue.length > 0) yield queue.shift() as RuntimeEvent;
 
     if (!settled.ok) {
-      const e = settled.e;
-      yield { type: 'error', message: e instanceof Error ? e.message : String(e) };
+      // usage of a failed or aborted call is not reported by the SDK: no cost
+      yield { type: 'error', message: describeError(settled.e) };
       return;
     }
     const { usage, text, finishReason, steps } = settled.r;
-    const maxSteps = this.opts.maxSteps ?? 12;
-    if (!finished && (finishReason === 'tool-calls' || (steps >= maxSteps && text === ''))) {
-      yield { type: 'error', message: `max steps (${maxSteps}) reached without finish` };
-      return;
-    }
     const cost = {
       usd: this.opts.registry.estimateCost(ref, usage) ?? 0,
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
     };
+    const maxSteps = this.opts.maxSteps ?? 12;
+    if (!finished && (finishReason === 'tool-calls' || (steps >= maxSteps && text === ''))) {
+      yield { type: 'error', message: `max steps (${maxSteps}) reached without finish`, cost };
+      return;
+    }
+    // truncated ('length'), filtered ('content-filter') or failed output is not a result
+    if (!finished && finishReason !== 'stop') {
+      yield {
+        type: 'error',
+        message: `model stopped with reason "${finishReason}" without finish`,
+        cost,
+      };
+      return;
+    }
     if (finished)
       yield { type: 'result', output: finished.output, summary: finished.summary, cost };
     else yield { type: 'result', output: { text }, summary: text.slice(0, 200), cost };

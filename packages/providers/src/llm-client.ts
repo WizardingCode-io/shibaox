@@ -21,6 +21,8 @@ export interface GenerateArgs {
   stopOnTools?: string[];
   output?: z.ZodType;
   signal?: AbortSignal;
+  /** Retries on retryable provider errors (AI SDK default: 2). */
+  maxRetries?: number;
 }
 export interface GenerateResult<T = unknown> {
   text: string;
@@ -44,6 +46,7 @@ export async function generate<T = unknown>(args: GenerateArgs): Promise<Generat
       ? [isStepCount(args.maxSteps ?? 1), hasToolCall(...args.stopOnTools)]
       : isStepCount(args.maxSteps ?? 1),
     abortSignal: args.signal,
+    maxRetries: args.maxRetries,
     output: args.output ? Output.object({ schema: args.output }) : undefined,
   });
   return {

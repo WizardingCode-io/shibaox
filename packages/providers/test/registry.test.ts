@@ -23,6 +23,25 @@ describe('ProviderRegistry', () => {
     expect(reg().isConfigured('bedrock').missing).toContain('AWS_REGION');
     expect(reg().isConfigured('cloudflare-gateway').missing).toContain('CLOUDFLARE_GATEWAY_URL');
   });
+  it('prices the models named in the templates and README', () => {
+    const M = { inputTokens: 1_000_000, outputTokens: 1_000_000 };
+    expect(reg().estimateCost('anthropic/claude-sonnet-5', M)).toBe(18);
+    const expected: Record<string, number> = {
+      'anthropic/claude-opus-5-5': 90,
+      'anthropic/claude-haiku-4-5': 6,
+      'openai/gpt-5': 11.25,
+      'openai/gpt-5-mini': 2.25,
+      'google/gemini-2.5-pro': 11.25,
+      'google/gemini-2.5-flash': 2.8,
+      'openrouter/openai/gpt-5': 11.25,
+      'openrouter/anthropic/claude-sonnet-4.5': 18,
+      'openrouter/meta-llama/llama-3.3-70b-instruct': 0.4,
+      'openrouter/qwen/qwen3-coder': 1.5,
+    };
+    for (const [ref, usd] of Object.entries(expected))
+      expect(reg().estimateCost(ref, M), ref).toBeCloseTo(usd);
+    expect(reg().estimateCost('ollama/llama3.2', M)).toBeUndefined();
+  });
   it('refuses to build a model for a via_runtime provider', () => {
     expect(() => reg().model('anthropic-subscription/claude-sonnet-4-5')).toThrow(/via_runtime/);
   });
