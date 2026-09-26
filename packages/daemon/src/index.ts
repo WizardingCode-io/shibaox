@@ -13,5 +13,6 @@ export * from './runs/notes.js';
 export * from './runs/workspace.js';
 export * from './runtime.js';
 export * from './runtime-buffer.js';
+export * from './scheduler.js';
 export * from './server.js';
 export * from './templates.js';

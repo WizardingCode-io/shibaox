@@ -2,7 +2,7 @@ import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
 import type { QueryFn } from '@shibaox/adapter-claude-code';
 import type { EventStore, MockScript } from '@shibaox/core';
 import type { Graphify } from '@shibaox/memory';
-import { OutboxRepo, SqliteEventStore } from '@shibaox/persistence-sqlite';
+import { OutboxRepo, SchedulesRepo, SqliteEventStore } from '@shibaox/persistence-sqlite';
 import type { ProviderEntry } from '@shibaox/providers';
 import { macosChannel } from './channels/macos.js';
 import { OutboxWorker } from './channels/outbox.js';
@@ -12,6 +12,7 @@ import { type DaemonConfig, loadDaemonConfig } from './config.js';
 import { type HomePaths, homePaths } from './home.js';
 import { InboxService } from './inbox.js';
 import { RunManager } from './run-manager.js';
+import { Scheduler } from './scheduler.js';
 import { DaemonServer, type Health, type SchedulesApi } from './server.js';
 
 export interface DaemonOptions {
@@ -30,7 +31,7 @@ export interface DaemonOptions {
   version?: string;
   vault?: string;
   mockScript?: MockScript;
-  /** Wires schedules and channels (set by the full daemon; tests may omit). */
+  /** Schedules; by default a cron Scheduler over the SQLite store (none with an injected store). */
   schedules?: (d: Daemon) => SchedulesApi & { start(): void; stop(): void };
 }
 
@@ -123,7 +124,16 @@ export class Daemon {
   }
 
   async start(): Promise<void> {
-    this.schedules = this.opts.schedules?.(this);
+    this.schedules = this.opts.schedules
+      ? this.opts.schedules(this)
+      : this.store instanceof SqliteEventStore
+        ? new Scheduler({
+            repo: new SchedulesRepo(this.store.db),
+            runs: this.runs,
+            log: this.opts.log ?? ((l: string) => console.log(l)),
+            now: this.opts.now ? () => new Date(this.opts.now?.() ?? Date.now()) : undefined,
+          })
+        : undefined;
     await this.server.listen();
     writeFileSync(this.paths.pid, String(process.pid));
     for (const c of this.channels) await c.start?.();

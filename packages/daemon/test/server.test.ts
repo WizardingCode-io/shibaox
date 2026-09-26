@@ -195,6 +195,36 @@ describe('daemon server and client', () => {
     );
   });
 
+  it('schedules round-trip through the API (SQLite store)', async () => {
+    const s = setup();
+    const { client } = await started(s, { store: undefined });
+    const row = await client.addSchedule({
+      cron: '0 9 * * 1-5',
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'daily',
+      adapter: 'mock',
+    });
+    expect(row).toMatchObject({ cron: '0 9 * * 1-5', enabled: true });
+    expect((await client.schedules()).map((r) => r.id)).toEqual([row.id]);
+    const { runId } = await client.runSchedule(row.id);
+    expect((await client.getRun(runId)).workflow).toBe('hello-feature');
+    await client.removeSchedule(row.id);
+    expect(await client.schedules()).toEqual([]);
+    const bad = await client
+      .addSchedule({
+        cron: 'nope',
+        orgRoot: s.orgRoot,
+        project: s.project,
+        workflow: 'hello-feature',
+        input: '',
+      })
+      .catch((e: unknown) => e);
+    expect((bad as DaemonHttpError).status).toBe(400);
+    expect((bad as DaemonHttpError).message).toContain('invalid cron expression');
+  });
+
   it('cancel and shutdown', async () => {
     const s = setup();
     const { daemon, client } = await started(s, { mockScript: () => new Promise(() => {}) });
