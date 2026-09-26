@@ -1,9 +1,10 @@
-import { type EventStore, type RunSummary, replay, type StoredEvent } from '@shibaox/core';
+import { type EventStore, notify, type RunSummary, replay, type StoredEvent } from '@shibaox/core';
 import { type RunEvent, RunEventSchema } from '@shibaox/schemas';
 import Database from 'better-sqlite3';
 
 export class SqliteEventStore implements EventStore {
-  private readonly db: Database.Database;
+  readonly db: Database.Database;
+  private readonly listeners = new Set<(e: StoredEvent) => void>();
 
   constructor(path: string) {
     this.db = new Database(path);
@@ -22,7 +23,16 @@ export class SqliteEventStore implements EventStore {
     const info = this.db
       .prepare('INSERT INTO events (run_id, type, at, payload) VALUES (?, ?, ?, ?)')
       .run(parsed.runId, parsed.type, parsed.at, JSON.stringify(parsed));
-    return { ...parsed, seq: Number(info.lastInsertRowid) };
+    const stored = { ...parsed, seq: Number(info.lastInsertRowid) };
+    notify(this.listeners, stored);
+    return stored;
+  }
+
+  subscribe(listener: (e: StoredEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   async read(runId: string): Promise<StoredEvent[]> {

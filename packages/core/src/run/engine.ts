@@ -2,13 +2,20 @@ import { randomUUID } from 'node:crypto';
 import type { Org, RunEvent, Workflow, WorkflowNode } from '@shibaox/schemas';
 import type { EventStore, RunSummary } from '../events/store.js';
 import { runCommand } from '../executors/code.js';
-import { AdapterError, collectRun, type RuntimeAdapter, type TaskJob } from '../executors/types.js';
+import {
+  AdapterError,
+  collectRun,
+  type RuntimeAdapter,
+  type RuntimeEvent,
+  type TaskJob,
+} from '../executors/types.js';
 import { type CheckRunners, defaultCheckRunners, runGate } from '../gates/engine.js';
 import { injectTeamGates } from '../org/inject-gates.js';
+import type { ApprovalHandler } from './approvals.js';
 import type { Decider, HumanHandler } from './deciders.js';
 import { isTerminal, replay } from './reducer.js';
 import { isStalled, readyNodes } from './scheduler.js';
-import type { RunState } from './state.js';
+import type { PendingApproval, RunState } from './state.js';
 
 export interface EngineDeps {
   store: EventStore;
@@ -29,12 +36,31 @@ export interface EngineDeps {
   diffProvider?: (workspace: string) => Promise<string>;
   decider: Decider;
   human: HumanHandler;
+  /**
+   * Answers push/deploy approvals asked by adapters. The engine does not call it itself; it
+   * is here so one wiring hands the same handler to every adapter.
+   */
+  approvals?: ApprovalHandler;
+  /** Every RuntimeEvent a task adapter yields, for streaming (never persisted here). */
+  onRuntimeEvent?: (runId: string, nodeId: string, e: RuntimeEvent) => void;
   checkRunners?: CheckRunners;
   log?: (line: string) => void;
   now?: () => string;
   maxSteps?: number;
   newRunId?: () => string;
   scheduler?: { readyNodes: typeof readyNodes; isStalled: typeof isStalled };
+}
+
+export interface StartOptions {
+  workflow: string;
+  input: Record<string, unknown>;
+  workspace: string;
+  budgetUsd?: number;
+  adapter?: string;
+  workspaceMode?: 'inplace' | 'worktree';
+  project?: string;
+  branch?: string;
+  orgRoot?: string;
 }
 
 export class RunEngine {
@@ -53,16 +79,8 @@ export class RunEngine {
     this.scheduler = deps.scheduler ?? { readyNodes, isStalled };
   }
 
-  async start(opts: {
-    workflow: string;
-    input: Record<string, unknown>;
-    workspace: string;
-    budgetUsd?: number;
-    adapter?: string;
-    workspaceMode?: 'inplace' | 'worktree';
-    project?: string;
-    branch?: string;
-  }): Promise<RunState> {
+  /** Emits `RunCreated`; the run is `queued` until `run()`. */
+  async create(opts: StartOptions): Promise<string> {
     const workflowSnapshot = this.resolveFromOrg(opts.workflow);
     const runId = (this.deps.newRunId ?? randomUUID)();
     await this.emit({
@@ -78,9 +96,48 @@ export class RunEngine {
       workspaceMode: opts.workspaceMode,
       project: opts.project,
       branch: opts.branch,
+      orgRoot: opts.orgRoot,
     });
-    await this.emit({ type: 'RunStarted', runId, at: this.now() });
-    return this.drive(runId);
+    return runId;
+  }
+
+  /**
+   * Starts a `queued` run (emits `RunStarted`) or continues a `running` one left by a crash;
+   * any other status is returned untouched.
+   */
+  async run(runId: string): Promise<RunState> {
+    const state = await this.state(runId);
+    if (state.status === 'queued') {
+      await this.emit({ type: 'RunStarted', runId, at: this.now() });
+      return this.drive(runId);
+    }
+    if (state.status === 'running') return this.drive(runId, { interrupted: true });
+    return state;
+  }
+
+  async start(opts: StartOptions): Promise<RunState> {
+    return this.run(await this.create(opts));
+  }
+
+  /**
+   * For a run waiting on a tool approval whose task process is gone (daemon restart): every
+   * `running` node becomes re-runnable, keeping its session id for resume.
+   */
+  async suspend(runId: string): Promise<RunState> {
+    const state = await this.state(runId);
+    const first = state.pendingApprovals[0]?.approvalId;
+    if (state.status !== 'waiting_approval' || !first) return state;
+    for (const [nodeId, n] of Object.entries(state.nodes))
+      if (n.status === 'running')
+        await this.emit({
+          type: 'NodeSuspended',
+          runId,
+          nodeId,
+          at: this.now(),
+          sessionId: n.sessionId,
+          approvalId: state.pendingApprovals.find((p) => p.nodeId === nodeId)?.approvalId ?? first,
+        });
+    return this.state(runId);
   }
 
   async state(runId: string): Promise<RunState> {
@@ -122,6 +179,14 @@ export class RunEngine {
 
   async resume(runId: string, opts: { budgetUsd?: number } = {}): Promise<RunState> {
     const state = await this.state(runId);
+    if (state.status === 'waiting_approval') {
+      const p = state.pendingApprovals[0] as PendingApproval | undefined;
+      if (p)
+        throw new Error(
+          `run ${runId} is waiting for an approval: answer the pending approval first (shibaox approve approval:${p.approvalId})`,
+        );
+    }
+    if (state.status === 'queued') return this.run(runId);
     if (state.status === 'paused_budget') {
       if (opts.budgetUsd === undefined || !(opts.budgetUsd > state.spentUsd))
         throw new Error(
@@ -163,6 +228,27 @@ export class RunEngine {
   /** Number of runs with a live AbortController (test/observability helper). */
   controllerCount(): number {
     return this.controllers.size;
+  }
+
+  /** Streams the event and records a `session` as `SessionStarted` (awaited before the node ends). */
+  private onRuntimeEvent(
+    runId: string,
+    nodeId: string,
+    e: RuntimeEvent,
+    pendingEmits: Promise<void>[],
+  ): void {
+    this.deps.onRuntimeEvent?.(runId, nodeId, e);
+    if (e.type === 'session')
+      pendingEmits.push(
+        this.emit({
+          type: 'SessionStarted',
+          runId,
+          nodeId,
+          at: this.now(),
+          runtime: e.runtime,
+          sessionId: e.sessionId,
+        }),
+      );
   }
 
   private controllerFor(runId: string): AbortController {
@@ -311,6 +397,11 @@ export class RunEngine {
         case 'task': {
           const role = this.deps.org.roles[node.role];
           if (!role) throw new Error(`role "${node.role}" is not defined`);
+          const nodeState = state.nodes[nodeId];
+          const resolved = Object.values(nodeState?.approvals ?? {}).filter(
+            (a) => a.approved !== undefined,
+          );
+          const last = resolved.at(-1);
           const job: TaskJob = {
             runId,
             nodeId,
@@ -326,16 +417,28 @@ export class RunEngine {
               state.budgetUsd === undefined
                 ? undefined
                 : Math.max(0, state.budgetUsd - state.spentUsd),
+            approvedCommands: Object.fromEntries(
+              resolved.map((a) => [a.argvHash, a.approved as boolean]),
+            ),
+            // a node suspended with a session resumes it; a fresh node starts clean
+            resumeSessionId: nodeState?.sessionId,
+            resumeNote:
+              last && nodeState?.sessionId
+                ? `The approval for \`${last.command}\` was ${last.approved ? 'granted' : 'denied'}${last.note ? ` (${last.note})` : ''}. Continue the task.`
+                : undefined,
           };
           const runtimeId = this.deps.adapterFor
             ? this.deps.adapterFor(job)
             : (this.deps.defaultAdapter ?? role.runtime);
           const adapter = this.deps.adapters[runtimeId];
           if (!adapter) throw new Error(`no adapter registered for runtime "${runtimeId}"`);
+          const pendingEmits: Promise<void>[] = [];
           const result = await collectRun(adapter, job, {
             signal: this.controllerFor(runId).signal,
             log: this.log,
-          });
+            onEvent: (e) => this.onRuntimeEvent(runId, nodeId, e, pendingEmits),
+          }).finally(() => Promise.all(pendingEmits));
+          await Promise.all(pendingEmits);
           await this.emit({
             type: 'NodeCompleted',
             runId,
@@ -486,6 +589,23 @@ export class RunEngine {
           return;
       }
     } catch (e) {
+      if (e instanceof AdapterError && e.reason === 'approval_pending') {
+        const now = await this.state(runId);
+        const approvalId =
+          e.approvalId ?? now.pendingApprovals.find((p) => p.nodeId === nodeId)?.approvalId;
+        if (approvalId) {
+          await this.emit({
+            type: 'NodeSuspended',
+            runId,
+            nodeId,
+            at: at(),
+            sessionId: now.nodes[nodeId]?.sessionId,
+            approvalId,
+            ...(e.cost ? { cost: e.cost } : {}),
+          });
+          return;
+        }
+      }
       if (e instanceof AdapterError && e.reason === 'budget_exceeded') {
         const now = await this.state(runId);
         if (now.budgetUsd !== undefined) {

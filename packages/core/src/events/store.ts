@@ -15,4 +15,6 @@ export interface EventStore {
   append(event: RunEvent): Promise<StoredEvent>;
   read(runId: string): Promise<StoredEvent[]>;
   listRuns(): Promise<RunSummary[]>;
+  /** Called after every successful append; returns the unsubscribe function. */
+  subscribe(listener: (e: StoredEvent) => void): () => void;
 }

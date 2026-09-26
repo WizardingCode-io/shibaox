@@ -2,14 +2,33 @@ import { type RunEvent, RunEventSchema } from '@shibaox/schemas';
 import { replay } from '../run/reducer.js';
 import type { EventStore, RunSummary, StoredEvent } from './store.js';
 
+/** A listener that throws must not break the append that triggered it. */
+export function notify(listeners: Iterable<(e: StoredEvent) => void>, e: StoredEvent): void {
+  for (const l of listeners)
+    try {
+      l(e);
+    } catch {
+      // a broken subscriber never breaks the log
+    }
+}
+
 export class MemoryEventStore implements EventStore {
   private events: StoredEvent[] = [];
   private seq = 0;
+  private readonly listeners = new Set<(e: StoredEvent) => void>();
 
   async append(event: RunEvent): Promise<StoredEvent> {
     const stored = { ...RunEventSchema.parse(event), seq: ++this.seq };
     this.events.push(stored);
+    notify(this.listeners, stored);
     return stored;
+  }
+
+  subscribe(listener: (e: StoredEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   async read(runId: string): Promise<StoredEvent[]> {

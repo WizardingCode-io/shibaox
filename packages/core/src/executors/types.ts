@@ -4,15 +4,34 @@ export type Capability = 'write-code' | 'run-tests' | 'read-only' | 'shell';
 
 export type RuntimeEvent =
   | { type: 'started' }
-  | { type: 'text'; text: string }
-  | { type: 'tool_use'; name: string; input: unknown }
-  | { type: 'tool_result'; name: string; output: unknown }
+  /** The runtime opened a resumable session (Claude Code `session_id`). */
+  | { type: 'session'; runtime: string; sessionId: string }
+  | { type: 'text'; text: string; parentToolUseId?: string }
+  | { type: 'tool_use'; id?: string; name: string; input: unknown; parentToolUseId?: string }
+  | {
+      type: 'tool_result';
+      id?: string;
+      name: string;
+      output: unknown;
+      durationMs?: number;
+      parentToolUseId?: string;
+    }
   | { type: 'file_changed'; path: string }
   | { type: 'result'; output: unknown; summary: string; cost?: Cost }
-  | { type: 'error'; message: string; cost?: Cost; reason?: AdapterErrorReason };
+  | {
+      type: 'error';
+      message: string;
+      cost?: Cost;
+      reason?: AdapterErrorReason;
+      /** With `approval_pending`: the approval the task is waiting for. */
+      approvalId?: string;
+    };
 
-/** Why a task stopped, when the engine handles it specially (`budget_exceeded`: pause, not fail). */
-export type AdapterErrorReason = 'budget_exceeded';
+/**
+ * Why a task stopped, when the engine handles it specially: `budget_exceeded` pauses the run,
+ * `approval_pending` suspends the node until the inbox answers.
+ */
+export type AdapterErrorReason = 'budget_exceeded' | 'approval_pending';
 
 export interface TaskJob {
   runId: string;
@@ -26,11 +45,19 @@ export interface TaskJob {
   budgetRemainingUsd?: number;
   /** JSON Schema the task output should conform to, for adapters that support structured output. */
   outputSchema?: Record<string, unknown>;
+  /** Runtime session to resume (set when the node was suspended with a session id). */
+  resumeSessionId?: string;
+  /** What to tell the resumed session (which approval was granted or denied). */
+  resumeNote?: string;
+  /** argvHash → approved, for tool approvals already answered on this node. */
+  approvedCommands: Record<string, boolean>;
 }
 
 export interface ExecutionContext {
   signal: AbortSignal;
   log: (line: string) => void;
+  /** Every RuntimeEvent the adapter yields (for streaming); optional. */
+  onEvent?: (e: RuntimeEvent) => void;
 }
 
 export interface TaskResult {
@@ -51,6 +78,7 @@ export class AdapterError extends Error {
     message: string,
     readonly cost?: Cost,
     readonly reason?: AdapterErrorReason,
+    readonly approvalId?: string,
   ) {
     super(message);
     this.name = 'AdapterError';
@@ -63,8 +91,10 @@ export async function collectRun(
   ctx: ExecutionContext,
 ): Promise<TaskResult> {
   for await (const event of adapter.run(job, ctx)) {
+    ctx.onEvent?.(event);
     if (event.type === 'text') ctx.log(event.text);
-    if (event.type === 'error') throw new AdapterError(event.message, event.cost, event.reason);
+    if (event.type === 'error')
+      throw new AdapterError(event.message, event.cost, event.reason, event.approvalId);
     if (event.type === 'result')
       return { output: event.output, summary: event.summary, cost: event.cost };
   }

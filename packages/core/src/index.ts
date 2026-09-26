@@ -5,6 +5,7 @@ export * from './executors/mock.js';
 export * from './executors/types.js';
 export * from './gates/engine.js';
 export * from './org/inject-gates.js';
+export * from './run/approvals.js';
 export * from './run/autorouting.js';
 export * from './run/deciders.js';
 export * from './run/engine.js';
