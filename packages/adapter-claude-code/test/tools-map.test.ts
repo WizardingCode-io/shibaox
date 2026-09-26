@@ -17,7 +17,6 @@ describe('mapRoleTools', () => {
       'Edit',
       'Write',
       'Bash(node *)',
-      'Bash(pnpm *)',
       'Bash(jq *)',
     ]);
     expect(r.disallowedTools).toEqual([

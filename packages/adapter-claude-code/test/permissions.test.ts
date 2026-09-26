@@ -32,11 +32,10 @@ describe('classifyToolRequest', () => {
   it('sees push through git global options, env prefixes and quoting', () => {
     for (const command of [
       'git -C x push',
-      'git -c a=b push origin main',
       'FOO=1 git push',
       'env git push',
       'env -u X FOO=1 git push',
-      '/usr/bin/git --no-pager --git-dir=.git push',
+      'git --no-pager --git-dir=.git push',
       'git "pu"sh',
       'git send-pack origin',
       'git subtree push --prefix x origin main',
@@ -117,6 +116,121 @@ describe('classifyToolRequest', () => {
       'railway logs',
     ])
       expect(classifyToolRequest('Bash', { command }), command).toBe('other');
+  });
+});
+
+describe('git classifier fails closed', () => {
+  const cls = (command: string) => classifyToolRequest('Bash', { command });
+  it('refuses unknown git global options (they may take a value that hides the subcommand)', () => {
+    for (const command of [
+      'git --attr-source HEAD push origin main',
+      'git --attr-source=HEAD push',
+      'git --super-prefix x/ push',
+      'git --exec-path=/tmp/x status',
+      'git --frobnicate push',
+      'git -X push',
+    ])
+      expect(cls(command), command).toBe('forbidden');
+    for (const command of [
+      'git --no-pager log',
+      'git -C sub status',
+      'git --git-dir=.git --work-tree=. status',
+      'git --no-optional-locks status',
+      'git -P diff',
+    ])
+      expect(cls(command), command).toBe('other');
+  });
+  it('refuses -c, --config-env and git config writes', () => {
+    for (const command of [
+      'git -c core.pager=x log',
+      'git -c include.path=/tmp/evil status',
+      'git --config-env=core.sshCommand=X fetch',
+      'git --config-env core.pager=X log',
+      'git config include.path /tmp/evil',
+      'git config core.hooksPath /tmp/hooks',
+      'git config core.pager "sh -c x"',
+      'git config core.sshCommand x',
+      'git config user.name bob',
+      'git config --global user.name bob',
+      'git config --add remote.origin.pushurl x',
+      'git config --unset core.pager',
+      'git config --edit',
+      'git config -e',
+      'git config set core.pager x',
+      'git config --get core.pager --add x y',
+    ])
+      expect(cls(command), command).toBe('forbidden');
+    for (const command of [
+      'git config --get user.name',
+      'git config --list',
+      'git config -l',
+      'git config --get-regexp ^remote',
+      'git config get user.name',
+      'git config list',
+    ])
+      expect(cls(command), command).toBe('other');
+  });
+  it('refuses gated programs invoked by path', () => {
+    for (const command of [
+      './git push',
+      '/usr/bin/git push',
+      '/usr/bin/git status',
+      'bin/vercel deploy',
+      './npm publish',
+      'env /usr/bin/git push',
+    ])
+      expect(cls(command), command).toBe('forbidden');
+  });
+  it('refuses git subcommands that run other commands and unknown subcommands (aliases)', () => {
+    for (const command of [
+      'git rebase --exec "git push" HEAD~1',
+      'git rebase -x x HEAD~1',
+      'git submodule foreach git push',
+      'git bisect run ./x',
+      'git filter-branch --tree-filter x',
+      'git difftool --extcmd x',
+      'git p origin main',
+      'GIT_SSH_COMMAND=x git fetch',
+      'GIT_EXEC_PATH=/tmp git status',
+    ])
+      expect(cls(command), command).toBe('forbidden');
+    for (const command of [
+      'git status',
+      'git rebase -i HEAD~1',
+      'git submodule update --init',
+      'git commit -m "x"',
+      'GIT_AUTHOR_NAME=bot git commit -m x',
+    ])
+      expect(cls(command), command).toBe('other');
+  });
+});
+
+describe('package publish verbs are gated as deploy', () => {
+  const cls = (command: string) => classifyToolRequest('Bash', { command });
+  it('gates npm/pnpm/yarn publish-like verbs and docker push', () => {
+    for (const command of [
+      'npm publish',
+      'npm publish --access public',
+      'npm unpublish x@1',
+      'npm dist-tag add x@1 latest',
+      'npm deprecate x "old"',
+      'pnpm publish',
+      'pnpm -r publish',
+      'pnpm dist-tag add x@1 latest',
+      'yarn publish',
+      'yarn npm publish',
+      'docker push img:tag',
+    ])
+      expect(cls(command), command).toBe('deploy');
+    for (const command of [
+      'npm test',
+      'npm install',
+      'pnpm test',
+      'pnpm build',
+      'yarn install',
+      'docker build -t img .',
+    ])
+      expect(cls(command), command).toBe('other');
   });
 });
 

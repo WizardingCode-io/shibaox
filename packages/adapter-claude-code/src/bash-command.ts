@@ -20,6 +20,10 @@ export const DEPLOY_VERBS: Record<string, string[]> = {
   kubectl: ['apply', 'create', 'replace', 'patch', 'scale', 'set', 'edit', 'delete', 'rollout'],
   terraform: ['apply', 'destroy', 'import', 'state'],
   helm: ['install', 'upgrade', 'uninstall', 'rollback'],
+  npm: ['publish', 'unpublish', 'dist-tag', 'deprecate'],
+  pnpm: ['publish', 'unpublish', 'dist-tag', 'deprecate'],
+  yarn: ['publish', 'unpublish', 'dist-tag', 'deprecate'],
+  docker: ['push'],
 };
 /** vercel subcommands that do not deploy; any other invocation of `vercel` deploys a directory. */
 const VERCEL_READ_ONLY = [
@@ -50,15 +54,67 @@ export const GATED_PROGRAMS = ['git', ...Object.keys(DEPLOY_VERBS)];
 // Command separators, pipes, substitutions and backgrounding (`&` but not `2>&1` / `&>`).
 const COMPOUND = /;|&&|\||`|\$\(|[<>]\(|\n|\r|(?<![<>])&(?!>)/;
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-const GIT_OPTS_WITH_VALUE = [
-  '-C',
-  '-c',
-  '--git-dir',
-  '--work-tree',
-  '--namespace',
+/** git global options without a value; any global option not listed here is refused. */
+const GIT_FLAGS = [
+  '--no-pager',
+  '-p',
+  '--paginate',
+  '-P',
+  '--bare',
+  '--no-replace-objects',
+  '--no-lazy-fetch',
+  '--literal-pathspecs',
+  '--glob-pathspecs',
+  '--noglob-pathspecs',
+  '--icase-pathspecs',
+  '--no-optional-locks',
+  '--no-advice',
   '--exec-path',
-  '--super-prefix',
-  '--config-env',
+  '--html-path',
+  '--man-path',
+  '--info-path',
+  '--version',
+  '--help',
+  '-h',
+  '-v',
+];
+/** git global options taking one value (`--opt value`, or `--opt=value` for the long ones). */
+const GIT_OPTS_WITH_VALUE = ['-C', '--git-dir', '--work-tree', '--namespace'];
+/**
+ * git subcommands that may run; anything else (a user alias from `~/.gitconfig`, an external
+ * `git-<name>` program, a command runner such as `filter-branch` or `mergetool`) is refused.
+ */
+const GIT_SUBCOMMANDS = new Set(
+  (
+    'add am annotate apply archive bisect blame branch bundle cat-file check-attr check-ignore ' +
+    'check-mailmap check-ref-format checkout checkout-index cherry cherry-pick clean clone commit ' +
+    'commit-graph commit-tree config count-objects describe diff diff-files diff-index diff-tree ' +
+    'difftool fetch for-each-ref format-patch fsck gc grep hash-object help init lfs log ' +
+    'ls-files ls-remote ls-tree maintenance merge merge-base merge-file merge-tree mv name-rev ' +
+    'notes pull push range-diff read-tree rebase reflog remote repack replace reset restore ' +
+    'rev-list rev-parse revert rm send-pack shortlog show show-branch show-ref sparse-checkout ' +
+    'stash status submodule subtree switch symbolic-ref tag update-index update-ref var ' +
+    'verify-commit verify-tag version whatchanged worktree write-tree'
+  ).split(' '),
+);
+/** Subcommand options that make git run another program or load hooks/config. */
+const GIT_RUNNER_OPTS = /^--(upload-pack|receive-pack|exec|extcmd|config|template)(=|$)/;
+const GIT_RUNNER_SHORT: Record<string, string[]> = {
+  rebase: ['-x'],
+  difftool: ['-x'],
+  clone: ['-u', '-c'],
+};
+const GIT_RUNNER_WORDS: Record<string, string> = { submodule: 'foreach', bisect: 'run' };
+const GIT_CONFIG_READ = ['--get', '--get-all', '--get-regexp', '--get-urlmatch', '--list', '-l'];
+const GIT_CONFIG_WRITE = [
+  '--add',
+  '--unset',
+  '--unset-all',
+  '--replace-all',
+  '--rename-section',
+  '--remove-section',
+  '--edit',
+  '-e',
 ];
 const HELP = ['--help', '-h', '--version', '-v'];
 
@@ -104,23 +160,40 @@ function tokenize(command: string): Token[] | undefined {
 }
 
 function analyseGit(args: Token[], assignments: string[]): BashAnalysis {
-  if (assignments.some((a) => /^GIT_CONFIG/i.test(a) || /alias\./i.test(a)))
-    return { ok: false, reason: 'configuring git through the environment is not allowed' };
+  const refuse = (reason: string): BashAnalysis => ({ ok: false, reason });
+  if (assignments.some((a) => /^GIT_/i.test(a) && !/^GIT_(AUTHOR|COMMITTER)_/.test(a)))
+    return refuse('configuring git through the environment is not allowed');
+  if (assignments.some((a) => /alias\./i.test(a)))
+    return refuse('defining git aliases is not allowed');
   let j = 0;
   while (j < args.length && args[j]?.text.startsWith('-')) {
     const opt = args[j]?.text ?? '';
-    const value = GIT_OPTS_WITH_VALUE.includes(opt) ? args[j + 1]?.text : opt.split('=')[1];
-    if ((opt === '-c' || opt.startsWith('--config-env')) && /^alias\./i.test(value ?? ''))
-      return { ok: false, reason: 'defining git aliases is not allowed' };
-    j += GIT_OPTS_WITH_VALUE.includes(opt) ? 2 : 1;
+    const name = opt.startsWith('--') ? (opt.split('=')[0] as string) : opt;
+    if (opt === '-c' || name === '--config-env')
+      return refuse('setting git config on the command line is not allowed');
+    if (GIT_FLAGS.includes(opt)) j += 1;
+    else if (GIT_OPTS_WITH_VALUE.includes(opt)) j += 2;
+    else if (name !== opt && GIT_OPTS_WITH_VALUE.includes(name)) j += 1;
+    else return refuse(`git option "${name}" is not allowed`);
   }
   const sub = args[j]?.text;
   const rest = args.slice(j + 1).map((t) => t.text);
+  if (sub === undefined) return { ok: true, program: 'git', category: 'other' };
+  if (!GIT_SUBCOMMANDS.has(sub)) return refuse(`git subcommand "${sub}" is not allowed`);
   if (sub === 'push' || sub === 'send-pack') return { ok: true, program: 'git', category: 'push' };
   if ((sub === 'subtree' || sub === 'lfs') && rest.includes('push'))
     return { ok: true, program: 'git', category: 'push' };
-  if (sub === 'config' && rest.some((a) => /^alias\./i.test(a)))
-    return { ok: false, reason: 'defining git aliases is not allowed' };
+  if (
+    rest.some((a) => GIT_RUNNER_OPTS.test(a) || GIT_RUNNER_SHORT[sub]?.includes(a)) ||
+    (GIT_RUNNER_WORDS[sub] !== undefined && rest.includes(GIT_RUNNER_WORDS[sub] as string))
+  )
+    return refuse(`git ${sub} with an option that runs other programs is not allowed`);
+  if (sub === 'config') {
+    const reads =
+      rest[0] === 'get' || rest[0] === 'list' || rest.some((a) => GIT_CONFIG_READ.includes(a));
+    const writes = rest.some((a) => GIT_CONFIG_WRITE.includes(a));
+    if (!reads || writes) return refuse('changing git config is not allowed');
+  }
   return { ok: true, program: 'git', category: 'other' };
 }
 
@@ -155,6 +228,8 @@ export function analyseBashCommand(command: string): BashAnalysis {
   const program = basename(head.text);
   const args = tokens.slice(i + 1);
   const gated = GATED_PROGRAMS.includes(program);
+  if (gated && head.text !== program)
+    return { ok: false, reason: `run ${program} by name, not by path (${head.text})` };
   if (gated && (head.expands || args.some((t) => t.expands)))
     return { ok: false, reason: `shell expansion is not allowed in ${program} commands` };
   if (program === 'git') return analyseGit(args, assignments);
