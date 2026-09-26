@@ -36,12 +36,19 @@ export async function doctorCommand(): Promise<number> {
   lines.push(await daemonLine());
   lines.push(await telegramLine());
   lines.push(await claudeAuthLine());
+  // a Claude subscription (claude auth) replaces the API key; neither is needed for mock runs
+  const claudeOk = lines.some((l) => l.name === 'claude auth' && l.ok);
   for (const env of ['ANTHROPIC_API_KEY', 'TYPESAFE_API_KEY']) {
+    const set = Boolean(process.env[env]);
     lines.push({
       name: env,
-      ok: Boolean(process.env[env]),
-      detail: process.env[env] ? 'set' : 'missing',
-      required: env === 'ANTHROPIC_API_KEY',
+      ok: set,
+      detail: set
+        ? 'set'
+        : env === 'ANTHROPIC_API_KEY' && claudeOk
+          ? 'missing (fine: subscription roles use the claude login)'
+          : 'missing',
+      required: false,
     });
   }
   for (const l of lines)
@@ -135,17 +142,36 @@ async function claudeAuthLine(): Promise<CheckLine> {
     cwd: process.cwd(),
     timeoutMs: 15_000,
   });
-  if (r.exitCode === 0)
+  if (r.exitCode !== 0)
+    return {
+      name: 'claude auth',
+      ok: false,
+      detail: 'not logged in or claude not found (run: claude)',
+      required: false,
+    };
+  // `claude auth status` prints JSON; summarise it in one line
+  try {
+    const j = JSON.parse(r.stdout) as { loggedIn?: boolean; authMethod?: string; email?: string };
+    if (j.loggedIn === false)
+      return {
+        name: 'claude auth',
+        ok: false,
+        detail: 'not logged in (run: claude)',
+        required: false,
+      };
+    const who = [j.authMethod, j.email].filter(Boolean).join(', ');
+    return {
+      name: 'claude auth',
+      ok: true,
+      detail: `logged in${who ? ` (${who})` : ''}`,
+      required: false,
+    };
+  } catch {
     return {
       name: 'claude auth',
       ok: true,
       detail: r.stdout.trim().split('\n')[0] ?? 'logged in',
       required: false,
     };
-  return {
-    name: 'claude auth',
-    ok: false,
-    detail: 'not logged in or claude not found (run: claude)',
-    required: false,
-  };
+  }
 }
