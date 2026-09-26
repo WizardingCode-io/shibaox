@@ -1,3 +1,4 @@
+import { homePaths } from '@shibaox/daemon';
 import { Box, Text, useInput } from 'ink';
 import { useEffect, useState } from 'react';
 import { Help } from '../components/Help.js';
@@ -24,6 +25,8 @@ export interface DashboardProps {
   size?: TerminalSize;
   /** Working directory for the new-run form defaults. */
   cwd?: string;
+  /** The shibaox home (`ui.json`); defaults to `homePaths(env).root`. */
+  home?: string;
   onExit: (code: number) => void;
 }
 
@@ -184,8 +187,14 @@ export function Dashboard(props: DashboardProps) {
     body = (
       <NewRunForm
         cwd={props.cwd ?? process.cwd()}
+        home={props.home ?? homePaths(env).root}
         env={env}
-        onSubmit={(req) => poller.submit(req)}
+        onSubmit={async (req) => {
+          const id = await poller.submit(req);
+          // the poller already toasted the daemon's message; surface it in the form too
+          if (!id) throw new Error(store.get().toast?.text ?? 'Could not submit the run');
+          return id;
+        }}
         onCancel={() => store.setView('dashboard')}
         onDone={() => store.setView('dashboard')}
       />
