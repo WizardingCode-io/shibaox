@@ -6,7 +6,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { collectRun, type RuntimeEvent, type TaskJob } from '@shibaox/core';
 import { ProviderRegistry } from '@shibaox/providers';
@@ -181,6 +181,82 @@ describe('DirectAdapter', () => {
     const r = await collectRun(adapter, jobFor(ws), ctx());
     const listed = JSON.parse(String((r.output as { text: string }).text)) as { files: string[] };
     expect(listed.files.sort()).toEqual(['loop', 'out', join('src', 'a.ts')].sort());
+  });
+
+  it('does not leak host env: refuses $ expansion and scrubs the child env', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    process.env.FAKE_SECRET = 'top-secret-value';
+    try {
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell ${VAR} expansion under test
+      const cmds = ['echo $FAKE_SECRET', 'echo ${FAKE_SECRET}', 'env'];
+      fake = await startFakeOpenAI((req, turn) => {
+        if (turn === 0)
+          return { toolCalls: cmds.map((command) => ({ name: 'run_command', args: { command } })) };
+        return {
+          content: (req.messages.slice(-cmds.length) as { content: string }[])
+            .map((m) => m.content)
+            .join('\n'),
+        };
+      });
+      const adapter = new DirectAdapter({
+        registry: registry(fake.baseURL),
+        resolveRef: () => 'fake/m',
+      });
+      const r = await collectRun(adapter, jobFor(ws, ['echo', 'env']), ctx());
+      const text = String((r.output as { text: string }).text);
+      expect(text.match(/not allowed/g)).toHaveLength(2);
+      expect(text).toContain('"exitCode":0');
+      expect(text).toContain('PATH=');
+      expect(text).not.toContain('FAKE_SECRET');
+      expect(text).not.toContain('top-secret-value');
+    } finally {
+      delete process.env.FAKE_SECRET;
+    }
+  });
+  it('refuses command arguments that leave the workspace', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    const escapee = `shibaox-escape-${process.pid}-${Date.now()}`;
+    const cmds = [
+      `touch ../${escapee}`,
+      `touch ~/${escapee}`,
+      'cat /etc/passwd',
+      `touch a/../../${escapee}`,
+      'touch a.txt',
+    ];
+    fake = await startFakeOpenAI((req, turn) => {
+      if (turn === 0)
+        return { toolCalls: cmds.map((command) => ({ name: 'run_command', args: { command } })) };
+      return {
+        content: (req.messages.slice(-cmds.length) as { content: string }[])
+          .map((m) => m.content)
+          .join('\n'),
+      };
+    });
+    const adapter = new DirectAdapter({
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    const r = await collectRun(adapter, jobFor(ws, ['touch', 'cat']), ctx());
+    const text = String((r.output as { text: string }).text);
+    expect(text.match(/leaves the workspace/g)).toHaveLength(4);
+    expect(text).toContain(`argument \\"../${escapee}\\" leaves the workspace`);
+    expect(existsSync(join(ws, 'a.txt'))).toBe(true);
+    expect(existsSync(join(ws, '..', escapee))).toBe(false);
+    expect(existsSync(join(homedir(), escapee))).toBe(false);
+  });
+  it('errors when maxSteps runs out without finish', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI(() => ({
+      toolCalls: [{ name: 'list_files', args: { subdir: '.' } }],
+    }));
+    const adapter = new DirectAdapter({
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+      maxSteps: 2,
+    });
+    await expect(collectRun(adapter, jobFor(ws), ctx())).rejects.toThrow(
+      'max steps (2) reached without finish',
+    );
   });
 
   it('aborts when the signal fires', async () => {

@@ -1,4 +1,5 @@
 import {
+  type FinishReason,
   generateText,
   hasToolCall,
   isStepCount,
@@ -26,6 +27,8 @@ export interface GenerateResult<T = unknown> {
   output?: T;
   usage: { inputTokens: number; outputTokens: number };
   steps: number;
+  /** Why the last step ended (e.g. 'stop', 'tool-calls', 'length'). */
+  finishReason: FinishReason;
 }
 
 export async function generate<T = unknown>(args: GenerateArgs): Promise<GenerateResult<T>> {
@@ -51,6 +54,7 @@ export async function generate<T = unknown>(args: GenerateArgs): Promise<Generat
       outputTokens: r.usage.outputTokens ?? 0,
     },
     steps: r.steps.length,
+    finishReason: r.finishReason,
   };
 }
 

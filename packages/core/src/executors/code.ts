@@ -5,6 +5,8 @@ export interface CommandOptions {
   cwd: string;
   timeoutMs: number;
   env?: Record<string, string>;
+  /** Merge `process.env` under `env` (default true). When false the child sees only `env`. */
+  inheritEnv?: boolean;
 }
 export interface CommandResult {
   exitCode: number | null;
@@ -18,7 +20,7 @@ export function runCommand(opts: CommandOptions): Promise<CommandResult> {
     const child = spawn(opts.command, {
       cwd: opts.cwd,
       shell: true,
-      env: { ...process.env, ...opts.env },
+      env: opts.inheritEnv === false ? { ...opts.env } : { ...process.env, ...opts.env },
       detached: process.platform !== 'win32',
     });
     let stdout = '';

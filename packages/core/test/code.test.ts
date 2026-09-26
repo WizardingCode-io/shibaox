@@ -24,4 +24,22 @@ describe('runCommand', () => {
       expect(typeof r.timedOut).toBe('boolean');
     }
   });
+  it('does not inherit process.env when inheritEnv is false', async () => {
+    process.env.SHIBAOX_CODE_SECRET = 's3cret';
+    try {
+      const inherited = await runCommand({ command: 'env', cwd: process.cwd(), timeoutMs: 5000 });
+      expect(inherited.stdout).toContain('SHIBAOX_CODE_SECRET');
+      const scrubbed = await runCommand({
+        command: 'env',
+        cwd: process.cwd(),
+        timeoutMs: 5000,
+        inheritEnv: false,
+        env: { PATH: process.env.PATH ?? '', ONLY_ME: '1' },
+      });
+      expect(scrubbed.stdout).not.toContain('SHIBAOX_CODE_SECRET');
+      expect(scrubbed.stdout).toContain('ONLY_ME=1');
+    } finally {
+      delete process.env.SHIBAOX_CODE_SECRET;
+    }
+  });
 });

@@ -26,6 +26,7 @@ describe('LlmClient over an OpenAI-compatible fake', () => {
     const client = new LlmClient(new ProviderRegistry([entryFor(fake.baseURL)], {}));
     const r = await client.generate('fake/m', { messages: [{ role: 'user', content: 'hi' }] });
     expect(r.text).toBe('hello there');
+    expect(r.finishReason).toBe('stop');
     expect(r.usage.inputTokens).toBeGreaterThan(0);
     expect(r.cost).toBeCloseTo((r.usage.inputTokens * 1 + r.usage.outputTokens * 2) / 1_000_000);
     await fake.close();
@@ -75,6 +76,7 @@ describe('LlmClient over an OpenAI-compatible fake', () => {
     });
     expect(calls).toBe(1);
     expect(r.steps).toBe(1);
+    expect(r.finishReason).toBe('tool-calls');
     expect(fake.requests).toHaveLength(1);
     await fake.close();
   });

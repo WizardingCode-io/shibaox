@@ -114,7 +114,12 @@ export class DirectAdapter implements RuntimeAdapter {
       yield { type: 'error', message: e instanceof Error ? e.message : String(e) };
       return;
     }
-    const { usage, text } = settled.r;
+    const { usage, text, finishReason, steps } = settled.r;
+    const maxSteps = this.opts.maxSteps ?? 12;
+    if (!finished && (finishReason === 'tool-calls' || (steps >= maxSteps && text === ''))) {
+      yield { type: 'error', message: `max steps (${maxSteps}) reached without finish` };
+      return;
+    }
     const cost = {
       usd: this.opts.registry.estimateCost(ref, usage) ?? 0,
       inputTokens: usage.inputTokens,

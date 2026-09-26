@@ -28,11 +28,32 @@ function walk(dir: string, root: string, out: string[], limit: number): void {
 
 /**
  * The command runs through a shell, so a first-token allowlist alone is not
- * enough: reject chaining (; & |), substitution ($( ) and backticks),
+ * enough: reject chaining (; & |), expansion/substitution ($ and backticks),
  * redirection (< >) and line breaks, which would let an allowed program
- * smuggle in another one or write outside the workspace.
+ * smuggle in another one, read host env vars or write outside the workspace.
  */
-const SHELL_META = /[;&|`<>\n\r]|\$\(/;
+const SHELL_META = /[;&|`$<>\n\r]/;
+
+/** Keys copied from the host env; everything else (API keys, tokens) is scrubbed. */
+const ENV_KEYS = ['PATH', 'HOME', 'LANG', 'TMPDIR', 'TERM'] as const;
+
+function scrubbedEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const k of ENV_KEYS) {
+    const v = process.env[k];
+    if (v !== undefined) env[k] = v;
+  }
+  return env;
+}
+
+/** An argument leaves the workspace if it is absolute, uses `~` or has a `..` segment. */
+function leavesWorkspace(token: string): boolean {
+  const bare = token.replace(/^['"]+|['"]+$/g, '');
+  // also check the value part of `--flag=value` style arguments
+  return [bare, ...bare.split('=').slice(1)].some(
+    (t) => t.startsWith('/') || t.startsWith('~') || t.split(/[\\/]/).includes('..'),
+  );
+}
 
 export function buildTools(a: ToolArgs): ToolSet {
   const guarded =
@@ -82,7 +103,7 @@ export function buildTools(a: ToolArgs): ToolSet {
       }),
     }),
     run_command: tool({
-      description: `Run one program (no shell operators) in the workspace. Allowed programs: ${[...allowed].join(', ') || 'none'}`,
+      description: `Run one program (no shell operators); runs in the workspace; arguments must be relative paths inside it; this is an allowlist, not a sandbox. Allowed programs: ${[...allowed].join(', ') || 'none'}`,
       inputSchema: z.object({ command: z.string() }),
       execute: guarded('run_command', async ({ command }: { command: string }) => {
         const first = command.trim().split(/\s+/)[0] ?? '';
@@ -90,9 +111,17 @@ export function buildTools(a: ToolArgs): ToolSet {
           throw new Error(`command "${first}" is not allowed for role ${a.role.role}`);
         if (SHELL_META.test(command))
           throw new Error(
-            'shell operators (; & | ` $( < > newline) are not allowed; run one program per call',
+            'shell operators (; & | ` $ < > newline) are not allowed; run one program per call',
           );
-        const r = await runCommand({ command, cwd: a.workspace, timeoutMs: a.commandTimeoutMs });
+        for (const tok of command.trim().split(/\s+/).slice(1))
+          if (leavesWorkspace(tok)) throw new Error(`argument "${tok}" leaves the workspace`);
+        const r = await runCommand({
+          command,
+          cwd: a.workspace,
+          timeoutMs: a.commandTimeoutMs,
+          inheritEnv: false,
+          env: scrubbedEnv(),
+        });
         return {
           exitCode: r.exitCode,
           timedOut: r.timedOut,
