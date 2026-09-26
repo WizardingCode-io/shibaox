@@ -642,6 +642,37 @@ describe('RunEngine', () => {
     expect(seen).toEqual([undefined]);
   });
 
+  it('degrades to an empty diff and logs when diffProvider rejects, without failing the gate', async () => {
+    const logs: string[] = [];
+    const dir = scaffold({
+      ...orgFiles('true'),
+      'gates/tests.yaml': 'gate: tests\nchecks:\n  - { name: t, type: mock, passes: true }\n',
+    });
+    const seenDiffs: string[] = [];
+    const { engine } = engineFor(dir, {
+      diffProvider: async () => {
+        throw new Error('git not available');
+      },
+      log: (line) => logs.push(line),
+      checkRunners: {
+        mock: async (check, ctx) => {
+          seenDiffs.push(ctx.diff ? await ctx.diff() : 'none');
+          return {
+            name: check.name,
+            type: 'mock',
+            passed: check.passes,
+            skipped: false,
+            evidence: '',
+          };
+        },
+      },
+    });
+    const state = await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
+    expect(state.status).toBe('completed');
+    expect(seenDiffs).toEqual(['']);
+    expect(logs.some((l) => l.includes('diff unavailable: git not available'))).toBe(true);
+  });
+
   it('resume with a budget while waiting_human applies the new budget', async () => {
     const dir = scaffold(orgFiles('true'));
     const { engine, store } = engineFor(dir, { human: new DeferHuman() });

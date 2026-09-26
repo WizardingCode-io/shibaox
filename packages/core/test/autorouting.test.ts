@@ -1,6 +1,6 @@
 import { CatalogEntrySchema, RoleSchema, TeamSchema } from '@shibaox/schemas';
 import { describe, expect, it } from 'vitest';
-import { selectCapabilities } from '../src/index.js';
+import { AUTOROUTE_REQUEST_MAX_CHARS, selectCapabilities } from '../src/index.js';
 
 const catalog = [
   CatalogEntrySchema.parse({
@@ -60,6 +60,16 @@ describe('selectCapabilities', () => {
     });
     expect(r.attach.length + r.ambiguous.length + r.dropped.length).toBeLessThanOrEqual(40);
     expect(r.attach).toEqual(expect.arrayContaining(['s0', 's1', 's2', 's3', 's4']));
+  });
+  it('caps the request text forwarded to fanOut regardless of the input size', async () => {
+    const longRequest = 'x'.repeat(50_000);
+    let seenState = '';
+    const fanOut = async (state: string, q: Record<string, unknown>) => {
+      seenState = state;
+      return Object.fromEntries(Object.keys(q).map((k) => [k, { noul: 0.9 }]));
+    };
+    await selectCapabilities({ request: longRequest, role, catalog, fanOut });
+    expect(seenState.length).toBeLessThanOrEqual(AUTOROUTE_REQUEST_MAX_CHARS);
   });
 });
 

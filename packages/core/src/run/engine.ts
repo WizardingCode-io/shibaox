@@ -21,7 +21,11 @@ export interface EngineDeps {
    * node with the same "no adapter registered" error as the default path.
    */
   adapterFor?: (job: TaskJob) => string;
-  /** Produces the workspace diff for `CheckContext.diff` in gate checks. */
+  /**
+   * Produces the workspace diff for `CheckContext.diff` in gate checks. A
+   * rejecting provider degrades to an empty diff (logged as
+   * `diff unavailable: <message>`) rather than failing the check/gate.
+   */
   diffProvider?: (workspace: string) => Promise<string>;
   decider: Decider;
   human: HumanHandler;
@@ -400,7 +404,18 @@ export class RunEngine {
               state,
               log: this.log,
               signal: this.controllerFor(runId).signal,
-              diff: diffProvider ? () => diffProvider(state.workspace) : undefined,
+              diff: diffProvider
+                ? async () => {
+                    try {
+                      return await diffProvider(state.workspace);
+                    } catch (e) {
+                      this.log(
+                        `[engine] diff unavailable: ${e instanceof Error ? e.message : String(e)}`,
+                      );
+                      return '';
+                    }
+                  }
+                : undefined,
             },
           });
           if (report.passed) {

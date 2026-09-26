@@ -32,6 +32,8 @@ export interface AutorouteResult {
 }
 
 const MAX_CANDIDATES = 40;
+/** Upper bound on the request text forwarded to `fanOut`, to cap fan-out cost/payload size. */
+export const AUTOROUTE_REQUEST_MAX_CHARS = 20_000;
 const DEFAULT_THRESHOLDS = { attach: 0.8, ask: 0.5 };
 const CANDIDATE_TYPES = new Set<CapabilityCandidate['type']>(['skill', 'plugin', 'mcp', 'tool']);
 
@@ -84,7 +86,8 @@ export async function selectCapabilities(args: AutorouteArgs): Promise<Autoroute
       { instructions: `The capability ${c.id} (${c.description}) is needed for this request` },
     ]),
   );
-  const answers = await args.fanOut(args.request, questions);
+  const boundedRequest = args.request.slice(0, AUTOROUTE_REQUEST_MAX_CHARS);
+  const answers = await args.fanOut(boundedRequest, questions);
   const attach: string[] = [];
   const ambiguous: string[] = [];
   const dropped: string[] = [];
