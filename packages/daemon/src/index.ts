@@ -1,4 +1,7 @@
+export * from './channels/types.js';
+export * from './client.js';
 export * from './config.js';
+export * from './daemon.js';
 export * from './home.js';
 export * from './inbox.js';
 export * from './run-manager.js';
@@ -7,4 +10,5 @@ export * from './runs/notes.js';
 export * from './runs/workspace.js';
 export * from './runtime.js';
 export * from './runtime-buffer.js';
+export * from './server.js';
 export * from './templates.js';

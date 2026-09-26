@@ -179,7 +179,7 @@ export class RunEngine {
 
   async resume(runId: string, opts: { budgetUsd?: number } = {}): Promise<RunState> {
     const state = await this.state(runId);
-    if (state.status === 'waiting_approval') {
+    {
       const p = state.pendingApprovals[0] as PendingApproval | undefined;
       if (p)
         throw new Error(

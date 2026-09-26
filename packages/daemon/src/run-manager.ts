@@ -197,7 +197,7 @@ export class RunManager {
       throw new Error(
         `cannot resume run ${runId}: its worktree ${wt.path} no longer exists (see: shibaox worktree list --project ${wt.project})`,
       );
-    if (state.status === 'waiting_approval' && state.pendingApprovals.length > 0) {
+    if (state.pendingApprovals.length > 0) {
       const p = state.pendingApprovals[0];
       throw new Error(
         `run ${runId} is waiting for an approval: answer the pending approval first (shibaox approve approval:${p?.approvalId})`,
