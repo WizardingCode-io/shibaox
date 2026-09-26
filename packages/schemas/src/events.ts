@@ -95,6 +95,10 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     type: z.literal('BudgetExceeded'),
     spentUsd: z.number(),
     limitUsd: z.number(),
+    /** The task stopped by its runtime's budget cap; it goes back to pending and re-runs on resume. */
+    nodeId: z.string().optional(),
+    /** What that stopped attempt cost. */
+    cost: CostSchema.optional(),
   }),
   z.object({ ...base, type: z.literal('RunResumed'), budgetUsd: z.number().positive().optional() }),
   z.object({ ...base, type: z.literal('RunCompleted') }),

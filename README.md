@@ -216,8 +216,14 @@ provider) stops it with `cannot start: ...`.
   this phase. Run interactively, or keep approval-gated actions out of Claude Code tasks
   (for example, leave the push to a `human` node).
 - Settings files (`~/.claude`, project `.claude/`) are not loaded; the role prompt from
-  `system_prompt` is appended to Claude Code's own system prompt. Spend reported by Claude
-  Code counts against the run budget, and the remaining budget caps each task.
+  `system_prompt` is appended to Claude Code's own system prompt.
+- **Budget.** Spend reported by Claude Code counts against the run budget (`--budget` or
+  `budgets.per_run_usd`), and the remaining budget caps each task (`maxBudgetUsd`). For
+  `anthropic-subscription/...` roles this spend is **notional**: Claude Code reports a USD
+  equivalent even though the subscription charges nothing per call, and it still counts
+  against `per_run_usd`. When a task hits the cap the run pauses (`paused_budget`, the
+  task's cost recorded) instead of failing; `shibaox resume <runId> --budget <higher>`
+  re-runs that task.
 
 ## Worktrees
 

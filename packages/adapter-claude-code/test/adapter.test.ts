@@ -90,6 +90,16 @@ describe('ClaudeCodeAdapter', () => {
       cost: { usd: 0.3 },
     });
   });
+  it('reports error_max_budget_usd as a budget_exceeded error with its cost', async () => {
+    const q = fakeQuery(() => [msg.init(), msg.error('error_max_budget_usd', 2.6)]);
+    const adapter = new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q });
+    await expect(collectRun(adapter, job(), ctx())).rejects.toMatchObject({
+      name: 'AdapterError',
+      reason: 'budget_exceeded',
+      cost: { usd: 2.6 },
+    });
+    expect(q.calls[0]?.options.maxBudgetUsd).toBe(2.5);
+  });
   it('uses the text result when there is no structured output', async () => {
     const q = fakeQuery(() => [msg.init(), msg.success('All good.')]);
     const r = await collectRun(

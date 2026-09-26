@@ -194,6 +194,14 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
             outputTokens: m.usage.output_tokens,
           };
           if (deferred) yield { type: 'error', message: pending(), cost };
+          else if (m.subtype === 'error_max_budget_usd')
+            // the run budget is spent: the engine pauses the run (resume --budget) instead of failing
+            yield {
+              type: 'error',
+              message: 'claude-code stopped at the run budget (error_max_budget_usd)',
+              reason: 'budget_exceeded',
+              cost,
+            };
           else if (m.subtype === 'success')
             yield {
               type: 'result',

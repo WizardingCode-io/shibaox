@@ -96,8 +96,16 @@ function applyEvent(s: RunState, event: NonCreatedEvent, idx: number): RunState 
     }
     case 'BudgetWarning':
       return { ...s, budgetWarned: true };
-    case 'BudgetExceeded':
-      return { ...s, status: 'paused_budget' };
+    case 'BudgetExceeded': {
+      if (event.nodeId === undefined) return { ...s, status: 'paused_budget' };
+      // the stopped task becomes never-started again, so it re-runs once the run resumes
+      const { startedIdx: _startedIdx, ...rest } = nodeOf(s, event.nodeId);
+      return {
+        ...s,
+        status: 'paused_budget',
+        nodes: { ...s.nodes, [event.nodeId]: { ...rest, status: 'pending' } },
+      };
+    }
     case 'RunResumed':
       return {
         ...s,

@@ -481,6 +481,21 @@ export class RunEngine {
           return;
       }
     } catch (e) {
+      if (e instanceof AdapterError && e.reason === 'budget_exceeded') {
+        const now = await this.state(runId);
+        if (now.budgetUsd !== undefined) {
+          await this.emit({
+            type: 'BudgetExceeded',
+            runId,
+            nodeId,
+            at: at(),
+            spentUsd: now.spentUsd + (e.cost?.usd ?? 0),
+            limitUsd: now.budgetUsd,
+            ...(e.cost ? { cost: e.cost } : {}),
+          });
+          return;
+        }
+      }
       await this.emit({
         type: 'NodeFailed',
         runId,

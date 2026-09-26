@@ -9,7 +9,10 @@ export type RuntimeEvent =
   | { type: 'tool_result'; name: string; output: unknown }
   | { type: 'file_changed'; path: string }
   | { type: 'result'; output: unknown; summary: string; cost?: Cost }
-  | { type: 'error'; message: string; cost?: Cost };
+  | { type: 'error'; message: string; cost?: Cost; reason?: AdapterErrorReason };
+
+/** Why a task stopped, when the engine handles it specially (`budget_exceeded`: pause, not fail). */
+export type AdapterErrorReason = 'budget_exceeded';
 
 export interface TaskJob {
   runId: string;
@@ -47,6 +50,7 @@ export class AdapterError extends Error {
   constructor(
     message: string,
     readonly cost?: Cost,
+    readonly reason?: AdapterErrorReason,
   ) {
     super(message);
     this.name = 'AdapterError';
@@ -60,7 +64,7 @@ export async function collectRun(
 ): Promise<TaskResult> {
   for await (const event of adapter.run(job, ctx)) {
     if (event.type === 'text') ctx.log(event.text);
-    if (event.type === 'error') throw new AdapterError(event.message, event.cost);
+    if (event.type === 'error') throw new AdapterError(event.message, event.cost, event.reason);
     if (event.type === 'result')
       return { output: event.output, summary: event.summary, cost: event.cost };
   }

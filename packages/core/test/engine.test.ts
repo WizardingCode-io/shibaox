@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadOrg } from '@shibaox/schemas';
@@ -176,6 +176,79 @@ describe('RunEngine', () => {
     expect(paused.nodes.qa).toBeUndefined();
     const done = await engine.resume(paused.runId, { budgetUsd: 5 });
     expect(done.status).toBe('completed');
+  });
+
+  it('an adapter stopping on its budget pauses the run instead of failing it', async () => {
+    const dir = scaffold(orgFiles('true'));
+    try {
+      let implementCalls = 0;
+      const adapter: RuntimeAdapter = {
+        id: 'mock',
+        capabilities: () => [],
+        async *run(j) {
+          if (j.nodeId === 'implement' && ++implementCalls === 1) {
+            yield {
+              type: 'error',
+              message: 'claude-code ended with error_max_budget_usd',
+              reason: 'budget_exceeded',
+              cost: { usd: 0.95, inputTokens: 1, outputTokens: 1 },
+            };
+            return;
+          }
+          yield {
+            type: 'result',
+            output: {},
+            summary: 'ok',
+            cost: { usd: 0.1, inputTokens: 1, outputTokens: 1 },
+          };
+        },
+      };
+      const { engine, store } = engineFor(dir, { adapters: { mock: adapter } });
+      const paused = await engine.start({
+        workflow: 'hello',
+        input: {},
+        workspace: process.cwd(),
+        budgetUsd: 1,
+      });
+      expect(paused.status).toBe('paused_budget');
+      expect(paused.spentUsd).toBeCloseTo(1.05);
+      expect(paused.nodes.implement?.status).toBe('pending');
+      const events = await store.read(paused.runId);
+      expect(events.some((e) => e.type === 'NodeFailed')).toBe(false);
+      expect(events.at(-1)).toMatchObject({
+        type: 'BudgetExceeded',
+        nodeId: 'implement',
+        cost: { usd: 0.95 },
+        limitUsd: 1,
+      });
+      expect(events.at(-1)?.type === 'BudgetExceeded' && events.at(-1)).toMatchObject({
+        spentUsd: expect.closeTo(1.05, 5),
+      });
+      const done = await engine.resume(paused.runId, { budgetUsd: 5 });
+      expect(done.status).toBe('completed');
+      expect(implementCalls).toBe(2);
+      expect(done.nodes.implement).toMatchObject({ status: 'completed', attempts: 2 });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a budget_exceeded error in a run without a budget fails the node', async () => {
+    const dir = scaffold(orgFiles('true'));
+    try {
+      const adapter: RuntimeAdapter = {
+        id: 'mock',
+        capabilities: () => [],
+        async *run() {
+          yield { type: 'error', message: 'out of budget', reason: 'budget_exceeded' };
+        },
+      };
+      const { engine } = engineFor(dir, { adapters: { mock: adapter } });
+      const s = await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
+      expect(s.status).toBe('failed');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('passes the remaining budget to task jobs when the run has a budget', async () => {

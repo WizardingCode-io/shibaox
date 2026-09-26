@@ -236,6 +236,39 @@ describe('replay', () => {
     expect(s2.budgetUsd).toBe(5);
   });
 
+  it('a node-level BudgetExceeded records the cost, resets the node and pauses; resume re-readies it', () => {
+    const events: RunEvent[] = [
+      created,
+      { type: 'NodeStarted', runId: 'r1', nodeId: 'a', at },
+      {
+        type: 'BudgetExceeded',
+        runId: 'r1',
+        nodeId: 'a',
+        at,
+        spentUsd: 1.2,
+        limitUsd: 1,
+        cost: { usd: 1.2, inputTokens: 10, outputTokens: 5 },
+      },
+    ];
+    const s = replay(events);
+    expect(s.status).toBe('paused_budget');
+    expect(s.spentUsd).toBeCloseTo(1.2);
+    expect(s.error).toBeUndefined();
+    expect(s.nodes.a).toEqual({ status: 'pending', attempts: 1, error: undefined });
+    // pure and replay-deterministic
+    expect(replay(events)).toEqual(s);
+    const resumed = replay([...events, { type: 'RunResumed', runId: 'r1', at, budgetUsd: 5 }]);
+    expect(resumed.status).toBe('running');
+    expect(resumed.nodes.a?.startedIdx).toBeUndefined();
+    const again = replay([
+      ...events,
+      { type: 'RunResumed', runId: 'r1', at, budgetUsd: 5 },
+      { type: 'NodeStarted', runId: 'r1', nodeId: 'a', at },
+      { type: 'NodeCompleted', runId: 'r1', nodeId: 'a', at, output: 1, summary: 'ok' },
+    ]);
+    expect(again.nodes.a).toMatchObject({ status: 'completed', attempts: 2, startedIdx: 4 });
+  });
+
   it('budget warning flags budgetWarned without pausing the run; RunResumed clears it', () => {
     const s = replay([
       created,

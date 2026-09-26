@@ -161,6 +161,31 @@ describe('shibaox run --adapter claude-code (fake SDK)', () => {
     }
   });
 
+  it('pauses on the Claude Code budget cap and resume --budget continues the task', async () => {
+    const { org, project, db, vault } = setup();
+    let implementCalls = 0;
+    const q = fakeQuery((call) =>
+      call.prompt.includes('Implement the request') && ++implementCalls === 1
+        ? [msg.init(), msg.error('error_max_budget_usd', 5.2)]
+        : [msg.init(), msg.success('ok', { total_cost_usd: 0.01 })],
+    );
+    const common = { org, db, queryFn: q, human: new AutoApproveHuman(), env: {}, log: () => {} };
+    const paused = await runWorkflow('hello-feature', {
+      ...common,
+      project,
+      input: 'x',
+      adapter: 'claude-code',
+      workspace: 'inplace',
+      vault,
+    });
+    expect(paused.status).toBe('paused_budget');
+    expect(paused.spentUsd).toBeCloseTo(5.21);
+    expect(paused.nodes.implement?.status).toBe('pending');
+    const done = await resumeRun(paused.runId, { ...common, budget: 20 });
+    expect(done.status).toBe('completed');
+    expect(implementCalls).toBe(2);
+  });
+
   it('denies a push with interrupt when the human defers', async () => {
     const { org, project, db, vault } = setup();
     let decision: unknown;
