@@ -104,7 +104,7 @@ test('slash commands autocomplete and change the context; enter submits and open
       lastAdapter: 'direct',
       lastWorkflow: 'hello-feature',
     });
-    expect(f).toContain('session new-run');
+    expect(f).toContain('new-run · ');
   } finally {
     m.done();
   }

@@ -10,6 +10,7 @@ import { loadPrefs, PrefsProvider } from './context/prefs.js';
 import { type Route, RouteProvider, useRoute } from './context/route.js';
 import { MotionProvider, motionEnabled } from './motion/config.js';
 import { Home } from './routes/home.js';
+import { SessionFrame } from './routes/session/index.js';
 import { ThemeProvider } from './theme/context.js';
 import { DialogProvider } from './ui/dialog.js';
 import { Toast, ToastProvider, useToast } from './ui/toast.js';
@@ -40,7 +41,7 @@ function Shell(props: { single?: string }): JSX.Element {
           <Home />
         </Match>
         <Match when={route.data().type === 'session'}>
-          <text>{`session ${sessionId(route.data())}`}</text>
+          <SessionFrame runId={sessionId(route.data())} single={!!props.single} />
         </Match>
       </Switch>
       <Toast />
