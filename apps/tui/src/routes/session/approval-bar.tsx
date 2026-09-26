@@ -37,7 +37,7 @@ export function ApprovalBar(props: { runId: string }): JSX.Element {
 
   useKeys('pane', (key) => {
     const i = item();
-    if (!i || mode() === 'note') return false;
+    if (!i || mode() === 'note' || key.ctrl || key.meta) return false;
     if (mode() === 'confirm') {
       if (key.name === 'y') answer(true);
       else if (key.name === 'n' || key.name === 'escape') setMode('idle');

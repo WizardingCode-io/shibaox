@@ -72,7 +72,7 @@ export function Sidebar(props: {
   const inner = () => Math.max(8, props.width - 2);
 
   useKeys('pane', (key) => {
-    if (!props.focused) return false;
+    if (!props.focused || key.ctrl || key.meta) return false;
     const n = flat().length;
     switch (key.name) {
       case 'j':

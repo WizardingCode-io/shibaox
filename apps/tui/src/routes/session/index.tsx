@@ -4,6 +4,7 @@ import { createEffect, createMemo, createSignal, type JSX, onCleanup, Show } fro
 import { Confirm } from '../../component/dialogs/confirm.js';
 import { Footer } from '../../component/footer.js';
 import { Sidebar } from '../../component/sidebar.js';
+import { useCommands } from '../../context/commands.js';
 import { useData } from '../../context/data.js';
 import { useKeys } from '../../context/keys.js';
 import { usePrefs } from '../../context/prefs.js';
@@ -95,35 +96,62 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
     if (!sidebarVisible()) setFocus('conversation');
   });
 
-  useKeys('global', (key) => {
-    if (props.single || !(key.ctrl && key.name === 'b')) return false;
+  const toggleSidebar = () => {
     const next = !sidebarVisible();
     setOpenedByKey(next);
     prefs.update({ sidebar: next ? 'auto' : 'hide' });
+  };
+  const cancel = () =>
+    dialog.open(() => (
+      <Confirm
+        message={`Cancel run ${shortId(props.runId)}?`}
+        onYes={() => {
+          dialog.close();
+          void data.actions.cancel(props.runId);
+        }}
+        onNo={() => dialog.close()}
+      />
+    ));
+  const resume = () => {
+    if (status() === 'paused_budget') void data.actions.resume(props.runId);
+    else toast.show({ message: 'Nothing to resume', variant: 'info' });
+  };
+  const unregister = useCommands().register([
+    {
+      id: 'sidebar',
+      label: 'Toggle sidebar',
+      keys: 'ctrl+b',
+      run: toggleSidebar,
+      when: () => !props.single,
+    },
+    { id: 'cancel', label: 'Cancel run', keys: 'c', run: cancel },
+    {
+      id: 'resume',
+      label: 'Resume run',
+      keys: 'r',
+      run: resume,
+      when: () => status() === 'paused_budget',
+    },
+  ]);
+  onCleanup(unregister);
+  useKeys('global', (key) => {
+    if (props.single || !(key.ctrl && key.name === 'b')) return false;
+    toggleSidebar();
     return true;
   });
   useKeys('pane', (key) => {
+    if (key.ctrl || key.meta) return false;
     if (key.name === 'tab' && sidebarVisible()) {
       setFocus((f) => (f === 'sidebar' ? 'conversation' : 'sidebar'));
       return true;
     }
     if (focus() !== 'conversation') return false;
     if (key.name === 'c' && !key.ctrl) {
-      dialog.open(() => (
-        <Confirm
-          message={`Cancel run ${shortId(props.runId)}?`}
-          onYes={() => {
-            dialog.close();
-            void data.actions.cancel(props.runId);
-          }}
-          onNo={() => dialog.close()}
-        />
-      ));
+      cancel();
       return true;
     }
     if (key.name === 'r') {
-      if (status() === 'paused_budget') void data.actions.resume(props.runId);
-      else toast.show({ message: 'Nothing to resume', variant: 'info' });
+      resume();
       return true;
     }
     return false;

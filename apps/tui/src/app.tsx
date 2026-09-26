@@ -1,13 +1,17 @@
 import { type CliRenderer, createCliRenderer } from '@opentui/core';
 import { render, useTerminalDimensions } from '@opentui/solid';
 import { createEffect, type JSX, Match, Show, Switch } from 'solid-js';
+import { HelpDialog } from './component/dialogs/help.js';
+import { PaletteDialog } from './component/dialogs/palette.js';
+import { RunsDialog } from './component/dialogs/runs.js';
 import { Reconnecting } from './component/reconnecting.js';
 import { Tabs } from './component/tabs.js';
 import { TooSmall } from './component/too-small.js';
 import { ClientProvider, type DaemonClientLike } from './context/client.js';
+import { CommandsProvider, useCommands } from './context/commands.js';
 import { ConfigProvider } from './context/config.js';
 import { type Data, DataProvider, useData } from './context/data.js';
-import { ExitProvider } from './context/exit.js';
+import { ExitProvider, useExit } from './context/exit.js';
 import { KeysProvider, useKeys } from './context/keys.js';
 import { loadPrefs, PrefsProvider } from './context/prefs.js';
 import { RouteProvider } from './context/route.js';
@@ -15,7 +19,7 @@ import { MotionProvider, motionEnabled } from './motion/config.js';
 import { Home } from './routes/home.js';
 import { SessionFrame } from './routes/session/index.js';
 import { ThemeProvider } from './theme/context.js';
-import { DialogProvider } from './ui/dialog.js';
+import { DialogProvider, useDialog } from './ui/dialog.js';
 import { railVertical, tooSmall } from './ui/layout.js';
 import { Toast, ToastProvider, useToast } from './ui/toast.js';
 
@@ -45,28 +49,69 @@ export interface AppProps extends AppOptions {
 /** Tabs rail, the active tab's screen (home or a run), overlays and toasts. */
 function Shell(props: { single?: string }): JSX.Element {
   const data = useData();
+  const dialog = useDialog();
+  const commands = useCommands();
+  const exit = useExit();
   const dimensions = useTerminalDimensions();
   const vertical = () => railVertical(dimensions().width);
-  useKeys('global', (key) => {
-    if (props.single || !key.ctrl) return false;
-    switch (key.name) {
-      case 'n':
-        data.activate(undefined);
-        return true;
-      case ']':
-        data.nextTab(1);
-        return true;
-      case 'p': // ctrl+[ would be Escape in every terminal
-        data.nextTab(-1);
-        return true;
-      case 'w':
-        if (data.state.active) data.closeRun(data.state.active);
-        return true;
-      default:
-        return false;
-    }
-  });
   const active = () => props.single ?? data.state.active;
+  const help = () => dialog.open(() => <HelpDialog />);
+  const shell = [
+    {
+      id: 'home',
+      label: 'New run',
+      keys: 'ctrl+n',
+      run: () => data.activate(undefined),
+      when: () => !props.single,
+    },
+    {
+      id: 'runs',
+      label: 'Open a run',
+      keys: 'ctrl+o',
+      run: () => dialog.open(() => <RunsDialog />),
+      when: () => !props.single,
+    },
+    {
+      id: 'next',
+      label: 'Next tab',
+      keys: 'ctrl+]',
+      run: () => data.nextTab(1),
+      when: () => !props.single,
+    },
+    {
+      id: 'prev',
+      label: 'Previous tab',
+      keys: 'ctrl+p',
+      run: () => data.nextTab(-1),
+      when: () => !props.single,
+    },
+    {
+      id: 'close',
+      label: 'Close tab',
+      keys: 'ctrl+w',
+      run: () => data.state.active && data.closeRun(data.state.active),
+      when: () => !!data.state.active && !props.single,
+    },
+    { id: 'help', label: 'Help', keys: '?', run: help },
+    { id: 'quit', label: 'Quit', keys: 'ctrl+q', run: () => exit(0) },
+  ];
+  commands.register(shell);
+  useKeys('global', (key) => {
+    if (key.name === '?' && !key.ctrl) {
+      help();
+      return true;
+    }
+    if (!key.ctrl) return false;
+    if (key.name === 'k') {
+      dialog.open(() => <PaletteDialog />);
+      return true;
+    }
+    if (props.single) return false;
+    const cmd = shell.find((c) => c.keys === `ctrl+${key.name}`);
+    if (!cmd) return false;
+    cmd.run();
+    return true;
+  });
   return (
     <box width="100%" height="100%" flexDirection="column">
       <Show when={!tooSmall(dimensions().width, dimensions().height)} fallback={<TooSmall />}>
@@ -114,7 +159,11 @@ function WithData(props: AppProps): JSX.Element {
         initial={props.runId ? { type: 'session', runId: props.runId } : { type: 'home' }}
       >
         <Hooks onMount={props.onMount} runId={props.runId} onEnded={props.onEnded} />
-        <Shell single={props.runId} />
+        <CommandsProvider>
+          <DialogProvider>
+            <Shell single={props.runId} />
+          </DialogProvider>
+        </CommandsProvider>
       </RouteProvider>
     </DataProvider>
   );
@@ -133,9 +182,7 @@ export function App(props: AppProps): JSX.Element {
               <KeysProvider onExit={props.onExit}>
                 <ExitProvider onExit={props.onExit}>
                   <ToastProvider>
-                    <DialogProvider>
-                      <WithData {...props} />
-                    </DialogProvider>
+                    <WithData {...props} />
                   </ToastProvider>
                 </ExitProvider>
               </KeysProvider>

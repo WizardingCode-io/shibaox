@@ -95,6 +95,7 @@ export function Prompt(props: {
       set('');
       return true;
     }
+    if (key.name === '?') return true; // typed into the input, never the help shortcut
     if (suggestions().length === 0) return false;
     if (key.name === 'up') {
       setSelected((i) => (i - 1 + suggestions().length) % suggestions().length);

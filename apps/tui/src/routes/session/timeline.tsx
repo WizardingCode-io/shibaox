@@ -113,7 +113,7 @@ export function Timeline(props: {
   };
 
   useKeys('pane', (key) => {
-    if (!props.focused) return false;
+    if (!props.focused || key.ctrl || key.meta) return false;
     const n = rows().length;
     switch (key.name) {
       case 'j':
