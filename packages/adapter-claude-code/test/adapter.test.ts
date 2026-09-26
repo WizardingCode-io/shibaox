@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   AutoApproveHuman,
   collectRun,
@@ -6,7 +9,7 @@ import {
   type TaskJob,
 } from '@shibaox/core';
 import { RoleSchema } from '@shibaox/schemas';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { ClaudeCodeAdapter } from '../src/index.js';
 import { fakeQuery, msg } from '../src/testing/fake-query.js';
 
@@ -67,7 +70,7 @@ describe('ClaudeCodeAdapter', () => {
     expect(o.maxBudgetUsd).toBe(2.5);
     expect(o.settingSources).toEqual([]);
     expect(o.permissionMode).toBe('default');
-    expect(o.allowedTools).toEqual(expect.arrayContaining(['Read', 'Edit', 'mcp__graphify__*']));
+    expect(o.allowedTools).toEqual(['mcp__graphify__*']);
     expect(o.disallowedTools).toEqual(expect.arrayContaining(['Bash(git push *)']));
     expect(o.allowedTools).not.toContain('Bash(git *)');
     expect(o.settings).toBeUndefined();
@@ -240,5 +243,92 @@ describe('ClaudeCodeAdapter', () => {
         ctx(),
       ),
     ).rejects.toThrow('ended without a result');
+  });
+});
+
+describe('file tools are scoped to the workspace', () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+  const decide = async (
+    toolName: string,
+    input: Record<string, unknown>,
+    tools = ['read', 'write'],
+  ) => {
+    const ws = realpathSync(mkdtempSync(join(tmpdir(), 'shibaox-cc-scope-')));
+    dirs.push(ws);
+    mkdirSync(join(ws, 'src'));
+    let decision: unknown;
+    const q = fakeQuery(({ options }) =>
+      (async function* () {
+        yield msg.init();
+        decision = await options.canUseTool?.(toolName, input, {
+          signal: new AbortController().signal,
+          toolUseID: 't1',
+        } as never);
+        yield msg.success('x');
+      })(),
+    );
+    const role = RoleSchema.parse({ role: 'backend', tools });
+    await collectRun(
+      new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q }),
+      job({ role, workspace: ws }),
+      ctx(),
+    );
+    const o = q.calls[0]?.options ?? {};
+    return { decision: decision as { behavior: string; message?: string }, options: o, ws };
+  };
+  it('does not allow file tools wholesale', async () => {
+    const { options } = await decide('Glob', { pattern: '*' });
+    for (const t of ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
+      expect(options.allowedTools, t).not.toContain(t);
+  });
+  it('denies an Edit outside the workspace', async () => {
+    const { decision } = await decide('Edit', {
+      file_path: '../x',
+      old_string: '',
+      new_string: 'y',
+    });
+    expect(decision).toMatchObject({ behavior: 'deny' });
+    expect(decision.message).toContain('outside the workspace');
+  });
+  it('allows an Edit inside the workspace, relative or absolute', async () => {
+    expect((await decide('Edit', { file_path: 'src/a.ts' })).decision).toMatchObject({
+      behavior: 'allow',
+    });
+    const r = await decide('Write', { file_path: 'new/dir/b.ts', content: '' });
+    expect(r.decision).toMatchObject({ behavior: 'allow' });
+  });
+  it('denies a Read of ~/.ssh/id_rsa', async () => {
+    const { decision } = await decide('Read', { file_path: '~/.ssh/id_rsa' });
+    expect(decision).toMatchObject({ behavior: 'deny' });
+  });
+  it('denies an absolute path outside the workspace', async () => {
+    const { decision } = await decide('Read', { file_path: '/etc/passwd' });
+    expect(decision).toMatchObject({ behavior: 'deny' });
+  });
+  it('allows Glob with no path, but not a pattern that escapes', async () => {
+    expect((await decide('Glob', { pattern: '**/*.ts' })).decision).toMatchObject({
+      behavior: 'allow',
+    });
+    expect((await decide('Glob', { pattern: '../../**' })).decision).toMatchObject({
+      behavior: 'deny',
+    });
+    expect((await decide('Grep', { pattern: 'x', path: '/' })).decision).toMatchObject({
+      behavior: 'deny',
+    });
+  });
+  it('denies writes under .git', async () => {
+    const { decision } = await decide('Write', { file_path: '.git/hooks/pre-commit', content: '' });
+    expect(decision).toMatchObject({ behavior: 'deny' });
+  });
+  it('denies file tools the role does not have', async () => {
+    const { decision } = await decide('Edit', { file_path: 'src/a.ts' }, ['read']);
+    expect(decision).toMatchObject({ behavior: 'deny' });
+    expect(decision.message).toContain('not allowed for role backend');
+    expect((await decide('Read', { file_path: 'src/a.ts' }, [])).decision).toMatchObject({
+      behavior: 'deny',
+    });
   });
 });

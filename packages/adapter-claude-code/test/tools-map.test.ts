@@ -3,22 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { mapRoleTools } from '../src/index.js';
 
 describe('mapRoleTools', () => {
-  it('maps role.tools to allow rules, never for git or deploy programs, and always denies dangerous commands', () => {
+  it('maps role.tools to allow rules, never for file tools, git or deploy programs, and always denies dangerous commands', () => {
     const r = mapRoleTools(
       RoleSchema.parse({
         role: 'backend',
         tools: ['read', 'write', 'git', 'node', 'pnpm', 'jq', 'kubectl', 'vercel', 'terraform'],
       }),
     );
-    expect(r.allowedTools).toEqual([
-      'Read',
-      'Glob',
-      'Grep',
-      'Edit',
-      'Write',
-      'Bash(node *)',
-      'Bash(jq *)',
-    ]);
+    // file tools are decided per path by canUseTool
+    expect(r.allowedTools).toEqual(['Bash(node *)', 'Bash(jq *)']);
     expect(r.disallowedTools).toEqual([
       'Bash(rm -rf *)',
       'Bash(git push *)',

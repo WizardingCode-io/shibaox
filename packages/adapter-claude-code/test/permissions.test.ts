@@ -8,7 +8,7 @@ const role = RoleSchema.parse({
   tools: ['git'],
   permissions: { approval_required: ['push'] },
 });
-const base = { role, runId: 'r', nodeId: 'implement', log: () => {} };
+const base = { role, cwd: process.cwd(), runId: 'r', nodeId: 'implement', log: () => {} };
 const opts = { signal: new AbortController().signal, toolUseID: 't' };
 const bash = (command: string) => ['Bash', { command }, opts] as const;
 const message = (r: unknown) => (r as { message?: string }).message ?? '';

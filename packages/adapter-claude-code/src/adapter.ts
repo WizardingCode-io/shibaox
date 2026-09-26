@@ -110,6 +110,7 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
       permissionMode: 'default',
       canUseTool: buildCanUseTool({
         role: job.role,
+        cwd: job.workspace,
         human: this.opts.human,
         runId: job.runId,
         nodeId: job.nodeId,
