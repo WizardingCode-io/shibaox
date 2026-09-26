@@ -19,6 +19,10 @@ export interface TaskJob {
   input: Record<string, unknown>;
   workspace: string;
   context: { lastGateReport?: GateReport; previousOutputs: Record<string, unknown> };
+  /** What is left of the run budget (USD) when the run has one; adapters may cap spend with it. */
+  budgetRemainingUsd?: number;
+  /** JSON Schema the task output should conform to, for adapters that support structured output. */
+  outputSchema?: Record<string, unknown>;
 }
 
 export interface ExecutionContext {

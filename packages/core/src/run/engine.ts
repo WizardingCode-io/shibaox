@@ -304,6 +304,10 @@ export class RunEngine {
               lastGateReport: state.lastGateReport,
               previousOutputs: this.previousOutputs(state),
             },
+            budgetRemainingUsd:
+              state.budgetUsd === undefined
+                ? undefined
+                : Math.max(0, state.budgetUsd - state.spentUsd),
           };
           const result = await collectRun(adapter, job, {
             signal: this.controllerFor(runId).signal,

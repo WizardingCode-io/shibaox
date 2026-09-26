@@ -178,6 +178,29 @@ describe('RunEngine', () => {
     expect(done.status).toBe('completed');
   });
 
+  it('passes the remaining budget to task jobs when the run has a budget', async () => {
+    const seen: Record<string, number | undefined> = {};
+    const adapter = new MockAdapter((j) => {
+      seen[j.nodeId] = j.budgetRemainingUsd;
+      return { output: {}, summary: 'ok', cost: { usd: 0.1, inputTokens: 1, outputTokens: 1 } };
+    });
+    const { engine } = engineFor(scaffold(orgFiles('true')), { adapters: { mock: adapter } });
+    await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd(), budgetUsd: 1 });
+    expect(seen.analyse).toBeCloseTo(1);
+    expect(seen.implement).toBeCloseTo(0.9);
+    const unbudgeted: Record<string, number | undefined> = {};
+    const a2 = new MockAdapter((j) => {
+      unbudgeted[j.nodeId] = j.budgetRemainingUsd;
+      return { output: {}, summary: 'ok' };
+    });
+    await engineFor(scaffold(orgFiles('true')), { adapters: { mock: a2 } }).engine.start({
+      workflow: 'hello',
+      input: {},
+      workspace: process.cwd(),
+    });
+    expect(unbudgeted).toEqual({ analyse: undefined, implement: undefined });
+  });
+
   it('defers a human decision, then respond() finishes the run', async () => {
     const { engine } = engineFor(scaffold(orgFiles('true')), { human: new DeferHuman() });
     const waiting = await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
