@@ -1,11 +1,16 @@
 import { TextAttributes } from '@opentui/core';
-import { createSignal, type JSX, onCleanup, Show } from 'solid-js';
+import { createMemo, createSignal, type JSX, onCleanup, Show } from 'solid-js';
+import { Confirm } from '../../component/dialogs/confirm.js';
 import { Footer } from '../../component/footer.js';
 import { useData } from '../../context/data.js';
+import { useKeys } from '../../context/keys.js';
 import { duration, money, shortId } from '../../model/format.js';
 import { statusOf } from '../../model/status.js';
 import { ShimmerText } from '../../motion/shimmer-text.js';
 import { useTheme } from '../../theme/context.js';
+import { useDialog } from '../../ui/dialog.js';
+import { useToast } from '../../ui/toast.js';
+import { ApprovalBar, pendingFor } from './approval-bar.js';
 import { Timeline } from './timeline.js';
 
 export const SESSION_KEYS = 'enter expand · d diff · c cancel · r resume · ctrl+o runs · ? help';
@@ -19,6 +24,8 @@ export function SessionFrame(props: {
 }): JSX.Element {
   const data = useData();
   const theme = useTheme();
+  const dialog = useDialog();
+  const toast = useToast();
   const [now, setNow] = createSignal(Date.now());
   const tick = setInterval(() => setNow(Date.now()), 1000);
   onCleanup(() => clearInterval(tick));
@@ -45,6 +52,30 @@ export function SessionFrame(props: {
     return f === 'muted' ? theme.text.muted : theme.text.feedback[f];
   };
   const focused = () => props.focused ?? true;
+  const pending = createMemo(() => pendingFor(data.state.inbox, props.runId));
+
+  useKeys('pane', (key) => {
+    if (!focused()) return false;
+    if (key.name === 'c' && !key.ctrl) {
+      dialog.open(() => (
+        <Confirm
+          message={`Cancel run ${shortId(props.runId)}?`}
+          onYes={() => {
+            dialog.close();
+            void data.actions.cancel(props.runId);
+          }}
+          onNo={() => dialog.close()}
+        />
+      ));
+      return true;
+    }
+    if (key.name === 'r') {
+      if (status() === 'paused_budget') void data.actions.resume(props.runId);
+      else toast.show({ message: 'Nothing to resume', variant: 'info' });
+      return true;
+    }
+    return false;
+  });
 
   return (
     <box flexDirection="column" width="100%" height="100%">
@@ -74,7 +105,12 @@ export function SessionFrame(props: {
         </text>
       </box>
       <Timeline runId={props.runId} focused={focused()} />
-      <Footer left="" right={props.single ? STREAM_KEYS : SESSION_KEYS} />
+      <Show
+        when={pending().length > 0}
+        fallback={<Footer left="" right={props.single ? STREAM_KEYS : SESSION_KEYS} />}
+      >
+        <ApprovalBar runId={props.runId} />
+      </Show>
     </box>
   );
 }

@@ -15,13 +15,12 @@ const Context = createContext<{ register(e: Entry): () => void }>();
 
 /**
  * One keyboard listener for the whole app, dispatched by scope: ctrl+q exits always; an open
- * dialog is modal (only dialog handlers see keys, newest first); otherwise the newest prompt, then
- * the newest pane, then every global handler (newest first) until one consumes the key.
+ * dialog is modal (only dialog handlers see keys, newest first); otherwise prompt handlers, then
+ * pane handlers, then global handlers, each newest first, until one consumes the key.
  * ctrl+c exits unless a prompt handler consumes it (clearing its text) or a dialog is open.
  */
 export function KeysProvider(props: ParentProps<{ onExit: (code: number) => void }>): JSX.Element {
   const entries: Entry[] = [];
-  const last = (scope: Scope) => [...entries].reverse().find((e) => e.scope === scope);
   useKeyboard((key) => {
     if (key.ctrl && key.name === 'q') return props.onExit(0);
     if (entries.some((e) => e.scope === 'dialog')) {
@@ -29,14 +28,15 @@ export function KeysProvider(props: ParentProps<{ onExit: (code: number) => void
       for (const e of [...entries].reverse()) if (e.scope === 'dialog' && e.handler(key)) return;
       return;
     }
-    const prompt = last('prompt');
+    const ordered = [...entries].reverse();
+    const dispatch = (scope: Scope) => ordered.some((e) => e.scope === scope && e.handler(key));
     if (key.ctrl && key.name === 'c') {
-      if (prompt?.handler(key)) return;
+      if (dispatch('prompt')) return;
       return props.onExit(0);
     }
-    if (prompt?.handler(key)) return;
-    if (last('pane')?.handler(key)) return;
-    for (const e of [...entries].reverse()) if (e.scope === 'global' && e.handler(key)) return;
+    if (dispatch('prompt')) return;
+    if (dispatch('pane')) return;
+    dispatch('global');
   });
   const register = (e: Entry) => {
     entries.push(e);
