@@ -67,11 +67,11 @@ describe('ClaudeCodeAdapter', () => {
     expect(o.maxBudgetUsd).toBe(2.5);
     expect(o.settingSources).toEqual([]);
     expect(o.permissionMode).toBe('default');
-    expect(o.allowedTools).toEqual(
-      expect.arrayContaining(['Read', 'Edit', 'Bash(git *)', 'mcp__graphify__*']),
-    );
+    expect(o.allowedTools).toEqual(expect.arrayContaining(['Read', 'Edit', 'mcp__graphify__*']));
     expect(o.disallowedTools).toEqual(expect.arrayContaining(['Bash(git push *)']));
-    expect(o.settings).toEqual({ permissions: { ask: [] } });
+    expect(o.allowedTools).not.toContain('Bash(git *)');
+    expect(o.settings).toBeUndefined();
+    expect(o.outputFormat).toBeUndefined();
     expect(o.systemPrompt).toEqual({
       type: 'preset',
       preset: 'claude_code',
@@ -140,9 +140,6 @@ describe('ClaudeCodeAdapter', () => {
           toolUseID: 't1',
         } as never);
         expect(r).toMatchObject({ behavior: 'deny', interrupt: true });
-        expect(options.settings).toEqual({
-          permissions: { ask: expect.arrayContaining(['Bash(git push *)']) },
-        });
         expect(options.disallowedTools).not.toContain('Bash(git push *)');
         yield msg.error('error_during_execution', 0.2);
       })(),
@@ -163,7 +160,7 @@ describe('ClaudeCodeAdapter', () => {
       cost: { usd: 0.2 },
     });
   });
-  it('merges the configured env over the inherited process env', async () => {
+  it('merges the configured env over the minimal inherited env', async () => {
     const q = fakeQuery(() => [msg.init(), msg.success('x')]);
     await collectRun(
       new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q, env: { FOO: 'bar' } }),
@@ -171,5 +168,72 @@ describe('ClaudeCodeAdapter', () => {
       ctx(),
     );
     expect(q.calls[0]?.options.env).toMatchObject({ FOO: 'bar', PATH: process.env.PATH });
+  });
+  it('passes only a minimal env to the subprocess', async () => {
+    const prev = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'sk-secret';
+    try {
+      const q = fakeQuery(() => [msg.init(), msg.success('x')]);
+      await collectRun(
+        new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q }),
+        job(),
+        ctx(),
+      );
+      const env = q.calls[0]?.options.env ?? {};
+      expect(env).not.toHaveProperty('OPENAI_API_KEY');
+      expect(env.PATH).toBe(process.env.PATH);
+      expect(env.CLAUDE_AGENT_SDK_CLIENT_APP).toBe('shibaox');
+    } finally {
+      if (prev === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = prev;
+    }
+  });
+  it('passes the output schema as a json_schema output format', async () => {
+    const schema = { type: 'object', properties: { files: { type: 'array' } } };
+    const q = fakeQuery(() => [msg.init(), msg.success('x', { structured_output: { files: [] } })]);
+    const r = await collectRun(
+      new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q }),
+      job({ outputSchema: schema }),
+      ctx(),
+    );
+    expect(q.calls[0]?.options.outputFormat).toEqual({ type: 'json_schema', schema });
+    expect(r.output).toEqual({ files: [] });
+  });
+  it('turns an exception from the query into an error event', async () => {
+    const q = fakeQuery(() =>
+      (async function* () {
+        yield msg.init();
+        throw new Error('spawn claude ENOENT');
+      })(),
+    );
+    await expect(
+      collectRun(
+        new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q }),
+        job(),
+        ctx(),
+      ),
+    ).rejects.toThrow('spawn claude ENOENT');
+  });
+  it('fails without calling the SDK when the signal is already aborted', async () => {
+    const q = fakeQuery(() => [msg.init(), msg.success('x')]);
+    const ac = new AbortController();
+    ac.abort();
+    await expect(
+      collectRun(new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q }), job(), {
+        signal: ac.signal,
+        log: () => {},
+      }),
+    ).rejects.toThrow(/abort/);
+    expect(q.calls).toHaveLength(0);
+  });
+  it('fails when the stream ends without a result', async () => {
+    const q = fakeQuery(() => [msg.init(), msg.text('hmm')]);
+    await expect(
+      collectRun(
+        new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q }),
+        job(),
+        ctx(),
+      ),
+    ).rejects.toThrow('ended without a result');
   });
 });

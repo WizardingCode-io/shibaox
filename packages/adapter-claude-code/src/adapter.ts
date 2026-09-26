@@ -10,7 +10,8 @@ import type {
   TaskJob,
 } from '@shibaox/core';
 import { describeError } from '@shibaox/providers';
-import { buildCanUseTool, type ToolCategory } from './permissions.js';
+import type { ApprovalCategory } from './bash-command.js';
+import { buildCanUseTool } from './permissions.js';
 import { mapRoleTools } from './tools-map.js';
 
 export type QueryFn = (args: { prompt: string; options?: Options }) => AsyncIterable<SDKMessage>;
@@ -26,12 +27,40 @@ export interface ClaudeCodeAdapterOptions {
   maxTurns?: number;
   /** Injectable for tests; defaults to the SDK's `query`. */
   queryFn?: QueryFn;
-  /** Extra env for the Claude Code process, merged over `process.env`. */
+  /** Extra env for the Claude Code process, merged over the minimal inherited env. */
   env?: Record<string, string>;
 }
 
 const RULES =
   'You are running as an autonomous worker inside shibaox. Work only inside the current working directory. Do not push, deploy or publish unless the tool call is explicitly approved. When done, summarise what you changed.';
+const ENV_KEYS = [
+  'PATH',
+  'HOME',
+  'USER',
+  'LOGNAME',
+  'SHELL',
+  'TMPDIR',
+  'LANG',
+  'TERM',
+  'CLAUDE_CONFIG_DIR',
+];
+const ENV_PREFIXES = ['LC_', 'ANTHROPIC_', 'CLAUDE_CODE_'];
+
+/**
+ * The subprocess env. The SDK's `env` replaces the whole environment, so only what Claude Code
+ * needs is inherited: other secrets in the shibaox process (provider keys, tokens) stay out.
+ */
+export function buildSubprocessEnv(
+  extra: Record<string, string> = {},
+  source: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(source))
+    if (v !== undefined && (ENV_KEYS.includes(k) || ENV_PREFIXES.some((p) => k.startsWith(p))))
+      env[k] = v;
+  return { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: 'shibaox', ...extra };
+}
+
 const FILE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
 
 /** Runs tasks through Claude Code via the Claude Agent SDK. */
@@ -58,15 +87,18 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
 
   async *run(job: TaskJob, ctx: ExecutionContext): AsyncIterable<RuntimeEvent> {
     yield { type: 'started' };
+    if (ctx.signal.aborted) {
+      yield { type: 'error', message: 'aborted' };
+      return;
+    }
     const abort = new AbortController();
     const onAbort = () => abort.abort(new Error('aborted'));
-    if (ctx.signal.aborted) onAbort();
-    else ctx.signal.addEventListener('abort', onAbort, { once: true });
-    let deferred: Exclude<ToolCategory, 'other'> | undefined;
+    ctx.signal.addEventListener('abort', onAbort, { once: true });
+    let deferred: ApprovalCategory | undefined;
     const pending = () =>
       `approval pending for ${deferred}: run is waiting for a human (task ${job.nodeId} cannot continue until approvals are persisted)`;
 
-    const { allowedTools, disallowedTools, askTools } = mapRoleTools(job.role);
+    const { allowedTools, disallowedTools } = mapRoleTools(job.role);
     const mcpServers = this.opts.mcpServers?.(job) ?? {};
     const options: Options = {
       systemPrompt: { type: 'preset', preset: 'claude_code', append: this.rolePrompt(job) },
@@ -75,8 +107,6 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
       allowedTools: [...allowedTools, ...Object.keys(mcpServers).map((n) => `mcp__${n}__*`)],
       disallowedTools,
       permissionMode: 'default',
-      // Flag-level settings still apply with settingSources: []; ask rules route gated commands to canUseTool.
-      settings: { permissions: { ask: askTools } },
       canUseTool: buildCanUseTool({
         role: job.role,
         human: this.opts.human,
@@ -95,8 +125,7 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
         ? { type: 'json_schema', schema: job.outputSchema }
         : undefined,
       abortController: abort,
-      // Options.env REPLACES the subprocess env, so inherit process.env explicitly.
-      env: this.opts.env ? { ...process.env, ...this.opts.env } : undefined,
+      env: buildSubprocessEnv(this.opts.env),
     };
     const prompt = [
       `Task: ${job.instruction}`,
