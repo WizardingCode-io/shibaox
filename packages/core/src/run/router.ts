@@ -2,7 +2,7 @@ import type { Models, Role } from '@shibaox/schemas';
 
 export type ModelResolution =
   | { kind: 'direct'; ref: string; provider: string; model: string }
-  | { kind: 'runtime'; runtime: string; model?: string };
+  | { kind: 'runtime'; runtime: string; model?: string; ref?: string };
 export interface RouterProvider {
   id: string;
   via_runtime?: string;
@@ -31,6 +31,7 @@ export function resolveModel(args: {
         kind: 'runtime',
         runtime: args.defaultAdapter,
         model: override?.model ? splitRef(override.model).model : undefined,
+        ref: override?.model,
       },
       warnings,
     };
@@ -47,7 +48,7 @@ export function resolveModel(args: {
       throw new Error(
         `provider "${provider}" is only reachable via runtime "${p.via_runtime}"; it cannot run directly`,
       );
-    return { resolution: { kind: 'runtime', runtime: p.via_runtime, model }, warnings };
+    return { resolution: { kind: 'runtime', runtime: p.via_runtime, model, ref }, warnings };
   }
   if (!p.configured)
     throw new Error(
@@ -60,7 +61,7 @@ export function resolveModel(args: {
     provider === 'anthropic' &&
     args.runtimes.includes('claude-code')
   ) {
-    return { resolution: { kind: 'runtime', runtime: 'claude-code', model }, warnings };
+    return { resolution: { kind: 'runtime', runtime: 'claude-code', model, ref }, warnings };
   }
   if (
     args.defaultAdapter !== 'direct' &&

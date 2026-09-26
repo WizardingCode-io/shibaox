@@ -22,13 +22,19 @@ export interface ClaudeCodeAdapterOptions {
   /** Org directory; role `system_prompt` paths resolve against it. */
   orgRoot?: string;
   model?: (job: TaskJob) => string | undefined;
+  /**
+   * The job's full model ref (`<provider>/<model>`). For `anthropic-subscription/...` the
+   * subprocess gets no `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`, so Claude Code uses the
+   * `claude` login instead of billing the API key.
+   */
+  modelRef?: (job: TaskJob) => string | undefined;
   mcpServers?: (job: TaskJob) => McpServers;
   /** Default 60. */
   maxTurns?: number;
   /** Injectable for tests; defaults to the SDK's `query`. */
   queryFn?: QueryFn;
-  /** Extra env for the Claude Code process, merged over the minimal inherited env. */
-  env?: Record<string, string>;
+  /** Extra env for the Claude Code process (static or per job), merged over the minimal inherited env. */
+  env?: Record<string, string> | ((job: TaskJob) => Record<string, string>);
 }
 
 const RULES =
@@ -46,20 +52,28 @@ const ENV_KEYS = [
   'SSH_AUTH_SOCK',
 ];
 const ENV_PREFIXES = ['LC_', 'ANTHROPIC_', 'CLAUDE_CODE_'];
+/** Credentials that make Claude Code bill the API instead of the subscription login. */
+export const API_KEY_VARS = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'];
+export const isSubscriptionRef = (ref: string | undefined): boolean =>
+  ref?.startsWith('anthropic-subscription/') ?? false;
 
 /**
  * The subprocess env. The SDK's `env` replaces the whole environment, so only what Claude Code
  * needs is inherited: other secrets in the shibaox process (provider keys, tokens) stay out.
+ * With `subscription`, the API credentials are removed (also from `extra`).
  */
 export function buildSubprocessEnv(
   extra: Record<string, string> = {},
   source: NodeJS.ProcessEnv = process.env,
+  opts: { subscription?: boolean } = {},
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(source))
     if (v !== undefined && (ENV_KEYS.includes(k) || ENV_PREFIXES.some((p) => k.startsWith(p))))
       env[k] = v;
-  return { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: 'shibaox', ...extra };
+  const out: Record<string, string> = { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: 'shibaox', ...extra };
+  if (opts.subscription) for (const k of API_KEY_VARS) delete out[k];
+  return out;
 }
 
 const FILE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
@@ -127,7 +141,11 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
         ? { type: 'json_schema', schema: job.outputSchema }
         : undefined,
       abortController: abort,
-      env: buildSubprocessEnv(this.opts.env),
+      env: buildSubprocessEnv(
+        typeof this.opts.env === 'function' ? this.opts.env(job) : this.opts.env,
+        process.env,
+        { subscription: isSubscriptionRef(this.opts.modelRef?.(job)) },
+      ),
     };
     const prompt = [
       `Task: ${job.instruction}`,
@@ -143,7 +161,7 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
           const mcp = m.mcp_servers.map((s) => `${s.name}:${s.status}`).join(',');
           yield {
             type: 'text',
-            text: `claude-code ready: model=${m.model} tools=${m.tools.length} mcp=${mcp || 'none'}`,
+            text: `claude-code ready: model=${m.model} apiKeySource=${m.apiKeySource} tools=${m.tools.length} mcp=${mcp || 'none'}`,
           };
           for (const s of m.mcp_servers)
             if (s.status === 'failed' || s.status === 'needs-auth')

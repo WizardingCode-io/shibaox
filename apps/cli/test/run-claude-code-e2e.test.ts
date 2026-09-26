@@ -126,6 +126,41 @@ describe('shibaox run --adapter claude-code (fake SDK)', () => {
     expect(existsSync(created.workspace)).toBe(true);
   });
 
+  it('does not hand the API key to subscription roles', async () => {
+    const { org, project, db, vault } = setup();
+    writeFileSync(
+      join(org, 'models.yaml'),
+      'providers: {}\ntiers: { strong: anthropic-subscription/claude-sonnet-5, cheap: anthropic/claude-haiku-4-5, decision: jev-latest }\nroles: {}\ngates: {}\n',
+    );
+    const saved = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-e2e';
+    try {
+      const q = fakeQuery(() => [msg.init(), msg.success('ok')]);
+      await runWorkflow('hello-feature', {
+        org,
+        project,
+        db,
+        input: 'x',
+        adapter: 'claude-code',
+        workspace: 'inplace',
+        queryFn: q,
+        human: new AutoApproveHuman(),
+        env: { ANTHROPIC_API_KEY: 'sk-ant-e2e' },
+        vault,
+        log: () => {},
+      });
+      expect(q.calls).toHaveLength(2);
+      // analyse runs on anthropic/... (API key), implement on anthropic-subscription/...
+      expect(q.calls[0]?.options.model).toBe('claude-haiku-4-5');
+      expect(q.calls[0]?.options.env?.ANTHROPIC_API_KEY).toBe('sk-ant-e2e');
+      expect(q.calls[1]?.options.model).toBe('claude-sonnet-5');
+      expect(q.calls[1]?.options.env).not.toHaveProperty('ANTHROPIC_API_KEY');
+    } finally {
+      if (saved === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = saved;
+    }
+  });
+
   it('denies a push with interrupt when the human defers', async () => {
     const { org, project, db, vault } = setup();
     let decision: unknown;

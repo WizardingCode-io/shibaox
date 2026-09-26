@@ -40,6 +40,7 @@ describe('resolveModel', () => {
       kind: 'runtime',
       runtime: 'claude-code',
       model: 'claude-sonnet-5',
+      ref: 'anthropic-subscription/claude-sonnet-5',
     });
   });
   it('keeps claude-code for anthropic models when the role prefers it, otherwise goes direct with a warning', () => {
@@ -53,6 +54,7 @@ describe('resolveModel', () => {
       kind: 'runtime',
       runtime: 'claude-code',
       model: 'claude-sonnet-5',
+      ref: 'anthropic/claude-sonnet-5',
     });
     const b = resolveModel({
       role: RoleSchema.parse({ role: 'backend', model_tier: 'cheap', runtime: 'claude-code' }),
@@ -75,6 +77,7 @@ describe('resolveModel', () => {
       kind: 'runtime',
       runtime: 'claude-code',
       model: 'claude-sonnet-5',
+      ref: 'anthropic-subscription/claude-sonnet-5',
     });
   });
   it('the CLI adapter flag wins', () => {

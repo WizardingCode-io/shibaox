@@ -27,6 +27,7 @@ export const msg = {
       model: string;
       tools: string[];
       mcp_servers: { name: string; status: string }[];
+      apiKeySource: string;
     }> = {},
   ) =>
     ({
@@ -36,6 +37,7 @@ export const msg = {
       tools: ['Read', 'Edit'],
       mcp_servers: [],
       cwd: '/w',
+      apiKeySource: 'none',
       ...extra,
     }) as unknown as SDKMessage,
   text: (text: string) =>

@@ -196,6 +196,68 @@ describe('ClaudeCodeAdapter', () => {
       else process.env.SSH_AUTH_SOCK = prevSock;
     }
   });
+  it('strips API keys from the env of a subscription job and keeps them for an API job', async () => {
+    const saved = {
+      key: process.env.ANTHROPIC_API_KEY,
+      token: process.env.ANTHROPIC_AUTH_TOKEN,
+    };
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
+    process.env.ANTHROPIC_AUTH_TOKEN = 'tok-test';
+    try {
+      const envFor = async (ref: string, env?: Record<string, string>) => {
+        const q = fakeQuery(() => [msg.init(), msg.success('x')]);
+        await collectRun(
+          new ClaudeCodeAdapter({
+            human: new AutoApproveHuman(),
+            queryFn: q,
+            modelRef: () => ref,
+            env,
+          }),
+          job(),
+          ctx(),
+        );
+        return q.calls[0]?.options.env ?? {};
+      };
+      const sub = await envFor('anthropic-subscription/claude-sonnet-4-5', {
+        ANTHROPIC_API_KEY: 'sk-extra',
+      });
+      expect(sub).not.toHaveProperty('ANTHROPIC_API_KEY');
+      expect(sub).not.toHaveProperty('ANTHROPIC_AUTH_TOKEN');
+      expect(sub.PATH).toBe(process.env.PATH);
+      const api = await envFor('anthropic/claude-sonnet-4-5');
+      expect(api.ANTHROPIC_API_KEY).toBe('sk-ant-test');
+      expect(api.ANTHROPIC_AUTH_TOKEN).toBe('tok-test');
+    } finally {
+      for (const [k, v] of [
+        ['ANTHROPIC_API_KEY', saved.key],
+        ['ANTHROPIC_AUTH_TOKEN', saved.token],
+      ] as const)
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+    }
+  });
+  it('accepts a per-job env function', async () => {
+    const q = fakeQuery(() => [msg.init(), msg.success('x')]);
+    await collectRun(
+      new ClaudeCodeAdapter({
+        human: new AutoApproveHuman(),
+        queryFn: q,
+        env: (j) => ({ NODE_ID: j.nodeId }),
+      }),
+      job(),
+      ctx(),
+    );
+    expect(q.calls[0]?.options.env).toMatchObject({ NODE_ID: 'implement' });
+  });
+  it('prints the apiKeySource from the init message', async () => {
+    const q = fakeQuery(() => [msg.init({ apiKeySource: 'none' }), msg.success('x')]);
+    const lines: string[] = [];
+    await collectRun(new ClaudeCodeAdapter({ human: new AutoApproveHuman(), queryFn: q }), job(), {
+      signal: new AbortController().signal,
+      log: (l) => lines.push(l),
+    });
+    expect(lines.find((l) => l.startsWith('claude-code ready:'))).toContain('apiKeySource=none');
+  });
   it('passes the output schema as a json_schema output format', async () => {
     const schema = { type: 'object', properties: { files: { type: 'array' } } };
     const q = fakeQuery(() => [msg.init(), msg.success('x', { structured_output: { files: [] } })]);

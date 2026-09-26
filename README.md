@@ -195,9 +195,13 @@ starts, and one that cannot run (a runtime other than Claude Code, an unconfigur
 provider) stops it with `cannot start: ...`.
 
 - **Subscription vs API key.** `anthropic-subscription/...` uses the login of the `claude`
-  CLI (`claude` must be installed and signed in); no key is read by shibaox. With
-  `anthropic/...` the Claude Code process gets `ANTHROPIC_API_KEY` from the environment.
-  The Claude Code process only inherits `PATH`, `HOME`, locale/terminal variables,
+  CLI (`claude` must be installed and signed in): for these roles shibaox removes
+  `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` from the Claude Code process env, so an API
+  key in your shell is not billed. With `anthropic/...` the Claude Code process gets
+  `ANTHROPIC_API_KEY` from the environment. Each task prints
+  `claude-code ready: model=<model> apiKeySource=<source> ...`, where `apiKeySource` is what
+  Claude Code reports it authenticated with (`none` means the subscription login). The
+  Claude Code process only inherits `PATH`, `HOME`, locale/terminal variables,
   `SSH_AUTH_SOCK` and `ANTHROPIC_*`/`CLAUDE_CODE_*`; other secrets stay in shibaox.
 - **Tools.** A role's `tools:` map to Claude Code permissions: `read` → Read/Glob/Grep,
   `write` → Edit/Write, any other name → `Bash(<name> *)`. Everything else is denied,

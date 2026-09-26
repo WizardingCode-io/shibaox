@@ -225,6 +225,11 @@ export function buildRuntime(o: RuntimeOptions) {
           const r = resolveRole(job.role, () => {});
           return r.kind === 'runtime' ? r.model : undefined;
         },
+        // subscription roles run on the `claude` login: the API key is not handed over
+        modelRef: (job) => {
+          const r = resolveRole(job.role, () => {});
+          return r.kind === 'runtime' ? r.ref : undefined;
+        },
         mcpServers: () => ({ ...o.graph?.mcpServers }),
         queryFn: o.queryFn,
       }),
