@@ -42,6 +42,8 @@ export interface RunState {
   workflowSnapshot?: Workflow;
   input: Record<string, unknown>;
   workspace: string;
+  adapter?: string;
+  workspaceMode?: 'inplace' | 'worktree';
   status: RunStatus;
   nodes: Record<string, NodeState>;
   spentUsd: number;

@@ -60,6 +60,20 @@ describe('judgeCheckRunner', () => {
     const sent = fake.requests[0] as { messages: { role: string; content: string }[] };
     expect(sent.messages.map((m) => m.content).join('\n')).toContain('Tests must exist');
   });
+
+  it('includes the workspace diff in the judge message when ctx.diff is configured', async () => {
+    fake = await startFakeOpenAI(() => ({ content: '{"passed": true, "evidence": "ok"}' }));
+    const run = judgeCheckRunner(new LlmClient(reg(fake.baseURL)), 'fake/m');
+    const withDiff = { ...ctx, diff: async () => 'diff --git a/x b/x' };
+    await run(
+      { name: 'review', type: 'judge', role: 'team-leader', rubric: 'x' },
+      withDiff as never,
+    );
+    const sent = fake.requests[0] as { messages: { role: string; content: string }[] };
+    const content = sent.messages.map((m) => m.content).join('\n');
+    expect(content).toContain('## diff');
+    expect(content).toContain('diff --git');
+  });
 });
 
 describe('judgeCheckRunner errors and signal', () => {

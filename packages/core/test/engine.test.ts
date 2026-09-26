@@ -552,6 +552,96 @@ describe('RunEngine', () => {
     expect((await store.read(s.runId)).map((e) => e.type)).not.toContain('RunCompleted');
   });
 
+  it('records adapter and workspaceMode on RunCreated and RunState', async () => {
+    const { engine, store } = engineFor(scaffold(orgFiles('true')));
+    const state = await engine.start({
+      workflow: 'hello',
+      input: {},
+      workspace: process.cwd(),
+      adapter: 'direct',
+      workspaceMode: 'worktree',
+    });
+    expect(state.adapter).toBe('direct');
+    expect(state.workspaceMode).toBe('worktree');
+    const created = (await store.read(state.runId))[0];
+    expect(created?.type === 'RunCreated' && created.adapter).toBe('direct');
+    expect(created?.type === 'RunCreated' && created.workspaceMode).toBe('worktree');
+  });
+
+  it('leaves adapter and workspaceMode undefined when not passed to start()', async () => {
+    const { engine } = engineFor(scaffold(orgFiles('true')));
+    const state = await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
+    expect(state.adapter).toBeUndefined();
+    expect(state.workspaceMode).toBeUndefined();
+  });
+
+  it('adapterFor picks the adapter per task job, overriding defaultAdapter/role.runtime', async () => {
+    const seen: string[] = [];
+    const adapterA: RuntimeAdapter = {
+      id: 'a',
+      capabilities: () => [],
+      async *run(job) {
+        seen.push(`a:${job.nodeId}`);
+        yield { type: 'result', output: null, summary: '' };
+      },
+    };
+    const adapterB: RuntimeAdapter = {
+      id: 'b',
+      capabilities: () => [],
+      async *run(job) {
+        seen.push(`b:${job.nodeId}`);
+        yield { type: 'result', output: null, summary: '' };
+      },
+    };
+    const { engine } = engineFor(scaffold(orgFiles('true')), {
+      adapters: { a: adapterA, b: adapterB },
+      adapterFor: (job) => (job.nodeId === 'analyse' ? 'a' : 'b'),
+    });
+    const state = await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
+    expect(state.status).toBe('completed');
+    expect(seen).toContain('a:analyse');
+    expect(seen).toContain('b:implement');
+  });
+
+  it('adapterFor choosing an unregistered id fails the node with the existing error', async () => {
+    const { engine } = engineFor(scaffold(orgFiles('true')), { adapterFor: () => 'ghost' });
+    const state = await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
+    expect(state.status).toBe('failed');
+    expect(state.error).toContain('no adapter registered for runtime "ghost"');
+  });
+
+  it('passes ctx.diff backed by diffProvider to gate check runners', async () => {
+    const seenDiffs: string[] = [];
+    const workspace = process.cwd();
+    const { engine } = engineFor(scaffold(orgFiles('true')), {
+      diffProvider: async (ws) => `diff for ${ws}`,
+      checkRunners: {
+        code: async (check, ctx) => {
+          seenDiffs.push(ctx.diff ? await ctx.diff() : 'none');
+          return { name: check.name, type: 'code', passed: true, skipped: false, evidence: '' };
+        },
+      },
+    });
+    const state = await engine.start({ workflow: 'hello', input: {}, workspace });
+    expect(state.status).toBe('completed');
+    expect(seenDiffs).toEqual([`diff for ${workspace}`]);
+  });
+
+  it('leaves ctx.diff undefined when no diffProvider is configured', async () => {
+    const seen: (string | undefined)[] = [];
+    const { engine } = engineFor(scaffold(orgFiles('true')), {
+      checkRunners: {
+        code: async (check, ctx) => {
+          seen.push(ctx.diff);
+          return { name: check.name, type: 'code', passed: true, skipped: false, evidence: '' };
+        },
+      },
+    });
+    const state = await engine.start({ workflow: 'hello', input: {}, workspace: process.cwd() });
+    expect(state.status).toBe('completed');
+    expect(seen).toEqual([undefined]);
+  });
+
   it('resume with a budget while waiting_human applies the new budget', async () => {
     const dir = scaffold(orgFiles('true'));
     const { engine, store } = engineFor(dir, { human: new DeferHuman() });

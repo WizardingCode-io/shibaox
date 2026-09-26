@@ -11,13 +11,17 @@ const Verdict = z.object({
 export const JUDGE_SYSTEM =
   'You are a strict but fair technical reviewer. Judge the work against the rubric using only the provided context. Answer with the JSON object requested.';
 
-export function judgeContext(ctx: CheckContext): string {
+const DIFF_MAX_CHARS = 60_000;
+
+export async function judgeContext(ctx: CheckContext): Promise<string> {
   const outputs = Object.fromEntries(
     Object.entries(ctx.state.nodes)
       .filter(([, n]) => n.output !== undefined)
       .map(([id, n]) => [id, n.output]),
   );
-  return `## request\n${JSON.stringify(ctx.state.input)}\n\n## outputs\n${JSON.stringify(outputs).slice(0, 60_000)}\n\n## last gate report\n${JSON.stringify(ctx.state.lastGateReport ?? null).slice(0, 20_000)}`;
+  const diff = ctx.diff ? await ctx.diff() : undefined;
+  const diffSection = diff ? `\n\n## diff\n${diff.slice(0, DIFF_MAX_CHARS)}` : '';
+  return `## request\n${JSON.stringify(ctx.state.input)}\n\n## outputs\n${JSON.stringify(outputs).slice(0, 60_000)}${diffSection}\n\n## last gate report\n${JSON.stringify(ctx.state.lastGateReport ?? null).slice(0, 20_000)}`;
 }
 
 export function judgeCheckRunner(client: LlmClient, ref: string): CheckRunner {
@@ -27,7 +31,9 @@ export function judgeCheckRunner(client: LlmClient, ref: string): CheckRunner {
     try {
       r = await client.generate<z.infer<typeof Verdict>>(ref, {
         system: JUDGE_SYSTEM,
-        messages: [{ role: 'user', content: `Rubric:\n${check.rubric}\n\n${judgeContext(ctx)}` }],
+        messages: [
+          { role: 'user', content: `Rubric:\n${check.rubric}\n\n${await judgeContext(ctx)}` },
+        ],
         output: Verdict,
         signal: ctx.signal,
       });

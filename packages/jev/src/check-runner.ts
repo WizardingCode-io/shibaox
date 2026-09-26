@@ -3,7 +3,9 @@ import type { CheckResult } from '@shibaox/schemas';
 import { noul, score } from '@typesafe-ai/sdk';
 import { addCost, gateByConfidence, type JevClient, truncateState } from './client.js';
 
-function stateFor(ctx: CheckContext): string {
+const DIFF_MAX_CHARS = 60_000;
+
+async function stateFor(ctx: CheckContext): Promise<string> {
   const spec = String(ctx.state.input.spec ?? JSON.stringify(ctx.state.input));
   const output = JSON.stringify(
     Object.fromEntries(
@@ -12,7 +14,14 @@ function stateFor(ctx: CheckContext): string {
         .map(([id, n]) => [id, n.output]),
     ),
   );
-  return truncateState({ spec, output });
+  const diffText = ctx.diff ? (await ctx.diff()).slice(0, DIFF_MAX_CHARS) : undefined;
+  const gateReport = ctx.state.lastGateReport
+    ? JSON.stringify(ctx.state.lastGateReport)
+    : undefined;
+  const diff = [diffText, gateReport ? `## last gate report\n${gateReport}` : undefined]
+    .filter((s): s is string => Boolean(s))
+    .join('\n\n');
+  return truncateState({ spec, output, diff: diff || undefined });
 }
 
 export function jevCheckRunner(
@@ -21,7 +30,7 @@ export function jevCheckRunner(
 ): CheckRunner {
   return async (check, ctx) => {
     if (check.type !== 'jev') throw new Error('jevCheckRunner got a non-jev check');
-    const state = stateFor(ctx);
+    const state = await stateFor(ctx);
     const q =
       check.kind === 'score'
         ? score(check.question, ['fails', 'partially', 'fully'])

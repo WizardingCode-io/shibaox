@@ -10,6 +10,8 @@ export interface CheckContext {
   log: (line: string) => void;
   /** The run's abort signal; runners that call models should forward it. */
   signal?: AbortSignal;
+  /** Diff of the run's workspace, when the engine was given a `diffProvider`. */
+  diff?: () => Promise<string>;
 }
 export type CheckRunner = (check: Check, ctx: CheckContext) => Promise<CheckResult>;
 export type CheckRunners = Partial<Record<Check['type'], CheckRunner>>;

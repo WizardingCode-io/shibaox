@@ -60,7 +60,7 @@ describe('JevDecider', () => {
     expect(r.cost?.inputTokens).toBe(100 + jevInputTokens);
     expect(r.cost?.outputTokens).toBe(10);
   });
-  it('without a fallback, low confidence still returns the Jev choice but flags it', async () => {
+  it('without a fallback, low confidence throws instead of returning a flagged choice', async () => {
     fake = await startFakeJev(() => ({
       decision: {
         type: 'choice',
@@ -72,8 +72,27 @@ describe('JevDecider', () => {
     const d = new JevDecider(new JevClient({ apiKey: 'k', baseURL: fake.baseURL }), {
       threshold: 0.8,
     });
-    const r = await d.decide(req);
-    expect(r.choice).toBe('ship');
-    expect(r.confidence).toBe(0.55);
+    await expect(d.decide(req)).rejects.toThrow(
+      'jev decision below confidence threshold (0.55 < 0.8) and no fallback decider configured',
+    );
+  });
+  it('sends state with spec and output sections built from the question/input/previousOutputs', async () => {
+    fake = await startFakeJev(() => ({
+      decision: {
+        type: 'choice',
+        choice: 'ship',
+        confidence: 0.55,
+        probabilities: { ship: 0.55, rework: 0.45 },
+      },
+    }));
+    const d = new JevDecider(new JevClient({ apiKey: 'k', baseURL: fake.baseURL }), {
+      threshold: 0.8,
+    });
+    await expect(d.decide(req)).rejects.toThrow(/no fallback decider/);
+    const sent = fake.requests[0] as { state: string };
+    expect(sent.state).toContain('## spec');
+    expect(sent.state).toContain(req.question);
+    expect(sent.state).toContain('## output');
+    expect(sent.state).toContain('did');
   });
 });

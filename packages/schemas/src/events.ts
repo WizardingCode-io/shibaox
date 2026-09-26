@@ -40,6 +40,8 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     budgetUsd: z.number().positive().optional(),
     workspace: z.string(),
     workflowSnapshot: WorkflowSchema.optional(),
+    adapter: z.string().optional(),
+    workspaceMode: z.enum(['inplace', 'worktree']).optional(),
   }),
   z.object({ ...node, type: z.literal('NodeStarted') }),
   z.object({

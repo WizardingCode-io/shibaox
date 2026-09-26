@@ -15,6 +15,14 @@ export interface EngineDeps {
   org: Org;
   adapters: Record<string, RuntimeAdapter>;
   defaultAdapter?: string;
+  /**
+   * Picks the adapter id for a `task` node's job when present, overriding
+   * `defaultAdapter ?? role.runtime`. An id absent from `adapters` fails the
+   * node with the same "no adapter registered" error as the default path.
+   */
+  adapterFor?: (job: TaskJob) => string;
+  /** Produces the workspace diff for `CheckContext.diff` in gate checks. */
+  diffProvider?: (workspace: string) => Promise<string>;
   decider: Decider;
   human: HumanHandler;
   checkRunners?: CheckRunners;
@@ -46,6 +54,8 @@ export class RunEngine {
     input: Record<string, unknown>;
     workspace: string;
     budgetUsd?: number;
+    adapter?: string;
+    workspaceMode?: 'inplace' | 'worktree';
   }): Promise<RunState> {
     const workflowSnapshot = this.resolveFromOrg(opts.workflow);
     const runId = (this.deps.newRunId ?? randomUUID)();
@@ -58,6 +68,8 @@ export class RunEngine {
       workspace: opts.workspace,
       budgetUsd: opts.budgetUsd,
       workflowSnapshot,
+      adapter: opts.adapter,
+      workspaceMode: opts.workspaceMode,
     });
     return this.drive(runId);
   }
@@ -290,9 +302,6 @@ export class RunEngine {
         case 'task': {
           const role = this.deps.org.roles[node.role];
           if (!role) throw new Error(`role "${node.role}" is not defined`);
-          const runtimeId = this.deps.defaultAdapter ?? role.runtime;
-          const adapter = this.deps.adapters[runtimeId];
-          if (!adapter) throw new Error(`no adapter registered for runtime "${runtimeId}"`);
           const job: TaskJob = {
             runId,
             nodeId,
@@ -309,6 +318,11 @@ export class RunEngine {
                 ? undefined
                 : Math.max(0, state.budgetUsd - state.spentUsd),
           };
+          const runtimeId = this.deps.adapterFor
+            ? this.deps.adapterFor(job)
+            : (this.deps.defaultAdapter ?? role.runtime);
+          const adapter = this.deps.adapters[runtimeId];
+          if (!adapter) throw new Error(`no adapter registered for runtime "${runtimeId}"`);
           const result = await collectRun(adapter, job, {
             signal: this.controllerFor(runId).signal,
             log: this.log,
@@ -374,6 +388,7 @@ export class RunEngine {
           return;
         }
         case 'gate': {
+          const diffProvider = this.deps.diffProvider;
           const report = await runGate({
             gateIds: node.gates,
             gates: this.deps.org.gates,
@@ -385,6 +400,7 @@ export class RunEngine {
               state,
               log: this.log,
               signal: this.controllerFor(runId).signal,
+              diff: diffProvider ? () => diffProvider(state.workspace) : undefined,
             },
           });
           if (report.passed) {

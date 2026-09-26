@@ -86,6 +86,36 @@ describe('jevCheckRunner', () => {
     expect(r.passed).toBe(false);
     expect(r.suggestion).toContain('judge');
   });
+  it('includes the workspace diff and last gate report in the state sent to Jev', async () => {
+    fake = await startFakeJev(() => ({ check: { type: 'noul', noul: 0.92 } }));
+    const run = jevCheckRunner(new JevClient({ apiKey: 'k', baseURL: fake.baseURL }));
+    const withDiff = {
+      ...ctx,
+      diff: async () => 'diff --git a/x b/x',
+      state: {
+        ...ctx.state,
+        lastGateReport: { gates: ['tests'], passed: false, checks: [] },
+      },
+    };
+    await run(
+      { name: 'spec', type: 'jev', question: 'q', kind: 'noul', threshold: 0.8 },
+      withDiff as never,
+    );
+    const sent = fake.requests[0] as { state: string };
+    expect(sent.state).toContain('## diff');
+    expect(sent.state).toContain('diff --git');
+    expect(sent.state).toContain('## last gate report');
+  });
+  it('omits the diff section when ctx.diff is not configured', async () => {
+    fake = await startFakeJev(() => ({ check: { type: 'noul', noul: 0.92 } }));
+    const run = jevCheckRunner(new JevClient({ apiKey: 'k', baseURL: fake.baseURL }));
+    await run(
+      { name: 'spec', type: 'jev', question: 'q', kind: 'noul', threshold: 0.8 },
+      ctx as never,
+    );
+    const sent = fake.requests[0] as { state: string };
+    expect(sent.state).not.toContain('## diff');
+  });
   it('score checks pass when the normalised score meets the threshold', async () => {
     fake = await startFakeJev(() => ({
       check: {

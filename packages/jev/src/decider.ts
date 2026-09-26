@@ -1,6 +1,6 @@
 import type { Decider, Decision, DecisionRequest } from '@shibaox/core';
 import { choice } from '@typesafe-ai/sdk';
-import { addCost, gateByConfidence, type JevClient } from './client.js';
+import { addCost, gateByConfidence, type JevClient, truncateState } from './client.js';
 
 export class JevDecider implements Decider {
   constructor(
@@ -9,12 +9,12 @@ export class JevDecider implements Decider {
   ) {}
   async decide(req: DecisionRequest): Promise<Decision> {
     const criteria = Object.fromEntries(req.options.map((o) => [o, o]));
-    const state = JSON.stringify({
-      question: req.question,
-      input: req.context.input,
-      previousOutputs: req.context.previousOutputs,
-      lastGateReport: req.context.lastGateReport,
-    });
+    const spec = `${req.question}\n${JSON.stringify(req.context.input)}`;
+    const output = JSON.stringify(req.context.previousOutputs);
+    const diff = req.context.lastGateReport
+      ? JSON.stringify(req.context.lastGateReport)
+      : undefined;
+    const state = truncateState({ spec, output, diff });
     const r = await this.client.fanOut(
       state,
       { decision: choice(req.question || 'Choose the next step', criteria) },
@@ -26,10 +26,16 @@ export class JevDecider implements Decider {
       inputTokens: r.usage.inputTokens,
       outputTokens: r.usage.outputTokens,
     };
-    const verdict = gateByConfidence(a.confidence, this.opts.threshold ?? 0.8);
-    if (verdict !== 'pass' && this.opts.fallback) {
-      const f = await this.opts.fallback.decide(req);
-      return { ...f, cost: addCost(cost, f.cost) };
+    const threshold = this.opts.threshold ?? 0.8;
+    const verdict = gateByConfidence(a.confidence, threshold);
+    if (verdict !== 'pass') {
+      if (this.opts.fallback) {
+        const f = await this.opts.fallback.decide(req);
+        return { ...f, cost: addCost(cost, f.cost) };
+      }
+      throw new Error(
+        `jev decision below confidence threshold (${a.confidence} < ${threshold}) and no fallback decider configured`,
+      );
     }
     return { choice: a.choice, confidence: a.confidence, cost };
   }
