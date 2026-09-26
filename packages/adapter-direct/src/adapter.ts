@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
+  ApprovalHandler,
   Capability,
   ExecutionContext,
   RuntimeAdapter,
@@ -13,11 +14,13 @@ import {
   generate,
   type ProviderRegistry,
 } from '@shibaox/providers';
-import { buildTools } from './tools.js';
+import { APPROVAL_PENDING, buildTools } from './tools.js';
 
 export interface DirectAdapterOptions {
   registry: ProviderRegistry;
   resolveRef: (job: TaskJob) => string;
+  /** Answers push/deploy commands for roles with `approval_required`. */
+  approvals: ApprovalHandler;
   /** Org root used to resolve `role.system_prompt` paths. */
   orgRoot?: string;
   maxSteps?: number;
@@ -72,6 +75,11 @@ export class DirectAdapter implements RuntimeAdapter {
       wake?.();
     };
     let finished: { output: unknown; summary: string } | undefined;
+    let suspended: { approvalId: string } | undefined;
+    // a deferred approval aborts the model call; the task then ends with approval_pending
+    const abort = new AbortController();
+    const onAbort = () => abort.abort(ctx.signal.reason);
+    ctx.signal.addEventListener('abort', onAbort, { once: true });
     let pending: Promise<Settled>;
     let ref: string;
     let effectiveMaxSteps: number;
@@ -85,10 +93,18 @@ export class DirectAdapter implements RuntimeAdapter {
         ? buildTools({
             workspace: job.workspace,
             role: job.role,
+            runId: job.runId,
+            nodeId: job.nodeId,
             ctx,
             emit,
             onFinish: (output, summary) => {
               finished = { output, summary };
+            },
+            approvals: this.opts.approvals,
+            approvedCommands: job.approvedCommands ?? {},
+            onSuspend: (approvalId) => {
+              suspended = { approvalId };
+              abort.abort(new Error(APPROVAL_PENDING));
             },
             commandTimeoutMs: this.opts.commandTimeoutMs ?? 120_000,
             maxFileBytes: this.opts.maxFileBytes ?? 200_000,
@@ -102,13 +118,16 @@ export class DirectAdapter implements RuntimeAdapter {
         tools,
         maxSteps: effectiveMaxSteps,
         stopOnTools: supportsTools ? ['finish'] : undefined,
-        signal: ctx.signal,
+        signal: abort.signal,
         maxRetries: this.opts.maxRetries,
-      }).then(
-        (r): Settled => ({ ok: true, r }),
-        (e: unknown): Settled => ({ ok: false, e }),
-      );
+      })
+        .then(
+          (r): Settled => ({ ok: true, r }),
+          (e: unknown): Settled => ({ ok: false, e }),
+        )
+        .finally(() => ctx.signal.removeEventListener('abort', onAbort));
     } catch (e) {
+      ctx.signal.removeEventListener('abort', onAbort);
       yield { type: 'error', message: describeError(e) };
       return;
     }
@@ -127,6 +146,15 @@ export class DirectAdapter implements RuntimeAdapter {
     }
     while (queue.length > 0) yield queue.shift() as RuntimeEvent;
 
+    if (suspended) {
+      yield {
+        type: 'error',
+        message: `approval pending: task ${job.nodeId} waits for the inbox`,
+        reason: 'approval_pending',
+        approvalId: suspended.approvalId,
+      };
+      return;
+    }
     if (!settled.ok) {
       // usage of a failed or aborted call is not reported by the SDK: no cost
       yield { type: 'error', message: describeError(settled.e) };

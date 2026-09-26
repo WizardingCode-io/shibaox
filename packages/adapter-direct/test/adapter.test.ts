@@ -8,7 +8,13 @@ import {
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AdapterError, collectRun, type RuntimeEvent, type TaskJob } from '@shibaox/core';
+import {
+  AdapterError,
+  AutoApproveApprovals,
+  collectRun,
+  type RuntimeEvent,
+  type TaskJob,
+} from '@shibaox/core';
 import { ProviderRegistry } from '@shibaox/providers';
 import { startFakeOpenAI } from '@shibaox/providers/testing';
 import { RoleSchema } from '@shibaox/schemas';
@@ -50,6 +56,7 @@ const jobFor = (workspace: string, tools: string[] = ['echo']): TaskJob => ({
   input: { spec: 'x' },
   workspace,
   context: { previousOutputs: {} },
+  approvedCommands: {},
 });
 
 describe('DirectAdapter', () => {
@@ -68,6 +75,7 @@ describe('DirectAdapter', () => {
           },
     );
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: registry(fake.baseURL),
       resolveRef: () => 'fake/m',
     });
@@ -90,6 +98,7 @@ describe('DirectAdapter', () => {
     const ws = mkdtempSync(join(tmpdir(), 'ws-'));
     fake = await startFakeOpenAI(() => ({ content: 'Nothing to do here.' }));
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: registry(fake.baseURL),
       resolveRef: () => 'fake/m',
     });
@@ -106,6 +115,7 @@ describe('DirectAdapter', () => {
       return { content: last.includes('escapes workspace') ? 'blocked' : 'not blocked' };
     });
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: registry(fake.baseURL),
       resolveRef: () => 'fake/m',
     });
@@ -129,6 +139,7 @@ describe('DirectAdapter', () => {
       };
     });
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: registry(fake.baseURL),
       resolveRef: () => 'fake/m',
     });
@@ -145,6 +156,7 @@ describe('DirectAdapter', () => {
         : { content: (req.messages.at(-1) as { content: string }).content },
     );
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: registry(fake.baseURL),
       resolveRef: () => 'fake/m',
     });
@@ -173,6 +185,7 @@ describe('DirectAdapter', () => {
       };
     });
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: registry(fake.baseURL),
       resolveRef: () => 'fake/m',
     });
@@ -192,6 +205,7 @@ describe('DirectAdapter', () => {
       return { content: (req.messages.at(-1) as { content: string }).content };
     });
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: registry(fake.baseURL),
       resolveRef: () => 'fake/m',
     });
@@ -250,6 +264,7 @@ describe('DirectAdapter', () => {
       };
     });
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: registry(fake.baseURL),
       resolveRef: () => 'fake/m',
     });
@@ -285,6 +300,7 @@ describe('DirectAdapter', () => {
       };
     });
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: registry(fake.baseURL),
       resolveRef: () => 'fake/m',
     });
@@ -308,6 +324,7 @@ describe('DirectAdapter', () => {
       };
     });
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: registry(fake.baseURL),
       resolveRef: () => 'fake/m',
     });
@@ -337,6 +354,7 @@ describe('DirectAdapter', () => {
       };
     });
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: registry(fake.baseURL),
       resolveRef: () => 'fake/m',
     });
@@ -356,6 +374,7 @@ describe('DirectAdapter', () => {
       return { content: (req.messages.at(-1) as { content: string }).content };
     });
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: registry(fake.baseURL),
       resolveRef: () => 'fake/m',
     });
@@ -369,6 +388,7 @@ describe('DirectAdapter', () => {
       toolCalls: [{ name: 'list_files', args: { subdir: '.' } }],
     }));
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: registry(fake.baseURL),
       resolveRef: () => 'fake/m',
       maxSteps: 2,
@@ -400,6 +420,7 @@ describe('DirectAdapter', () => {
       {},
     );
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: priced,
       resolveRef: () => 'fake/m',
       maxSteps: 2,
@@ -413,6 +434,7 @@ describe('DirectAdapter', () => {
     const ws = mkdtempSync(join(tmpdir(), 'ws-'));
     fake = await startFakeOpenAI(() => ({ content: 'half an ans', finishReason: 'length' }));
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: registry(fake.baseURL),
       resolveRef: () => 'fake/m',
     });
@@ -426,6 +448,7 @@ describe('DirectAdapter', () => {
       throw new Error('boom');
     });
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: registry(fake.baseURL),
       resolveRef: () => 'fake/m',
       maxRetries: 0,
@@ -446,6 +469,7 @@ describe('DirectAdapter', () => {
         : { toolCalls: [{ name: 'finish', args: { output: { ok: true }, summary: 'done' } }] },
     );
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: registry(fake.baseURL),
       resolveRef: () => 'fake/m',
       graphQuery: async (q) => `answer to ${q}`,
@@ -515,6 +539,7 @@ describe('DirectAdapter', () => {
       () => new Promise((r) => setTimeout(() => r({ content: 'late' }), 2_000)) as never,
     );
     const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
       registry: registry(fake.baseURL),
       resolveRef: () => 'fake/m',
     });

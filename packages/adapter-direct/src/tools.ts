@@ -1,6 +1,13 @@
+import { randomUUID } from 'node:crypto';
 import { lstatSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
-import { type ExecutionContext, type RuntimeEvent, runArgv } from '@shibaox/core';
+import {
+  type ApprovalHandler,
+  argvHash,
+  type ExecutionContext,
+  type RuntimeEvent,
+  runArgv,
+} from '@shibaox/core';
 import type { Role } from '@shibaox/schemas';
 import { type ToolSet, tool } from 'ai';
 import { z } from 'zod';
@@ -9,9 +16,17 @@ import { safePath } from './safe-path.js';
 export interface ToolArgs {
   workspace: string;
   role: Role;
+  runId: string;
+  nodeId: string;
   ctx: ExecutionContext;
   emit: (e: RuntimeEvent) => void;
   onFinish: (output: unknown, summary: string) => void;
+  /** Answers push/deploy commands for roles with `approval_required`. */
+  approvals: ApprovalHandler;
+  /** argvHash → approved, for commands already answered on this node. */
+  approvedCommands: Record<string, boolean>;
+  /** Nobody answered in time: the adapter stops the task with `approval_pending`. */
+  onSuspend: (approvalId: string) => void;
   commandTimeoutMs: number;
   maxFileBytes: number;
   /** When given, exposes a `graph_query` tool backed by this function. */
@@ -108,6 +123,40 @@ function summarizeInput(input: unknown): string {
   return s.length > 120 ? s.slice(0, 120) : s;
 }
 
+/** Programs whose mutating verbs deploy (the full table lives in the Claude Code adapter). */
+const DEPLOY_VERBS: Record<string, string[]> = {
+  npm: ['publish', 'unpublish', 'dist-tag', 'dist-tags', 'deprecate'],
+  pnpm: ['publish', 'unpublish', 'dist-tag', 'dist-tags', 'deprecate'],
+  yarn: ['publish', 'unpublish', 'dist-tag', 'dist-tags', 'deprecate'],
+  docker: ['push'],
+};
+const DEPLOY_PROGRAMS = [
+  'vercel',
+  'fly',
+  'flyctl',
+  'netlify',
+  'heroku',
+  'railway',
+  'wrangler',
+  'kubectl',
+  'terraform',
+  'helm',
+];
+
+/** `push` for git pushes, `deploy` for publishing/deploy programs, else `undefined`. */
+export function approvalCategory(argv: string[]): 'push' | 'deploy' | undefined {
+  const [program = '', ...rest] = argv;
+  if (program === 'git')
+    return rest.includes('push') || rest.includes('send-pack') ? 'push' : undefined;
+  if (DEPLOY_PROGRAMS.includes(program)) return 'deploy';
+  const verbs = DEPLOY_VERBS[program];
+  if (verbs && rest.some((w) => verbs.includes(w) || (program === 'docker' && w === '--push')))
+    return 'deploy';
+  return undefined;
+}
+
+export const APPROVAL_PENDING = 'approval pending: the run is waiting for the inbox';
+
 /** An argument naming a `.git` path could rewrite git config or hooks (code execution). */
 function touchesGit(arg: string): boolean {
   return arg.split(/[\\/=]/).some((seg) => seg.toLowerCase() === '.git');
@@ -117,15 +166,23 @@ export function buildTools(a: ToolArgs): ToolSet {
   const guarded =
     <I, O>(name: string, fn: (input: I) => Promise<O> | O) =>
     async (input: I): Promise<O | { error: string }> => {
-      a.emit({ type: 'tool_use', name, input });
+      const id = randomUUID();
+      const started = Date.now();
+      a.emit({ type: 'tool_use', id, name, input });
       a.ctx.log(`[direct] ${name} ${summarizeInput(input)}`);
       try {
         const output = await fn(input);
-        a.emit({ type: 'tool_result', name, output });
+        a.emit({ type: 'tool_result', id, name, output, durationMs: Date.now() - started });
         return output;
       } catch (e) {
         const error = e instanceof Error ? e.message : String(e);
-        a.emit({ type: 'tool_result', name, output: { error } });
+        a.emit({
+          type: 'tool_result',
+          id,
+          name,
+          output: { error },
+          durationMs: Date.now() - started,
+        });
         return { error };
       }
     };
@@ -186,6 +243,38 @@ export function buildTools(a: ToolArgs): ToolSet {
               for (const arg of argv.slice(1)) {
                 if (leavesWorkspace(arg)) throw new Error(`argument "${arg}" leaves the workspace`);
                 if (touchesGit(arg)) throw new Error(`argument "${arg}" targets .git`);
+              }
+              const category = approvalCategory(argv);
+              if (category) {
+                if (!a.role.permissions.approval_required.includes(category))
+                  throw new Error(`${category} requires approval_required in the role`);
+                const hash = argvHash(argv);
+                const earlier = a.approvedCommands[hash];
+                if (earlier === false)
+                  throw new Error(`${category} was already denied by the human`);
+                if (earlier !== true) {
+                  const answer = await a.approvals.request(
+                    {
+                      runId: a.runId,
+                      nodeId: a.nodeId,
+                      role: a.role.role,
+                      tool: 'Bash',
+                      category,
+                      program,
+                      command,
+                      argv,
+                    },
+                    { signal: a.ctx.signal },
+                  );
+                  if ('deferred' in answer) {
+                    a.onSuspend(answer.approvalId);
+                    throw new Error(APPROVAL_PENDING);
+                  }
+                  if (!answer.approved)
+                    throw new Error(
+                      `human rejected ${category}${answer.note ? `: ${answer.note}` : ''}`,
+                    );
+                }
               }
               const r = await runArgv({
                 argv,

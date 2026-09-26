@@ -236,7 +236,13 @@ export function buildRuntime(o: RuntimeOptions) {
     org: o.org,
     adapters: {
       mock: mockAdapter(),
-      direct: new DirectAdapter({ registry, resolveRef, orgRoot, graphQuery: o.graph?.query }),
+      direct: new DirectAdapter({
+        registry,
+        resolveRef,
+        orgRoot,
+        graphQuery: o.graph?.query,
+        approvals,
+      }),
       'claude-code': new ClaudeCodeAdapter({
         approvals,
         orgRoot,
