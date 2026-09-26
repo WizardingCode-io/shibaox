@@ -18,9 +18,9 @@ import { RouteProvider } from './context/route.js';
 import { MotionProvider, motionEnabled } from './motion/config.js';
 import { Home } from './routes/home.js';
 import { SessionFrame } from './routes/session/index.js';
-import { ThemeProvider } from './theme/context.js';
+import { ThemeProvider, useTheme } from './theme/context.js';
 import { DialogProvider, useDialog } from './ui/dialog.js';
-import { railVertical, tooSmall } from './ui/layout.js';
+import { tooSmall } from './ui/layout.js';
 import { Toast, ToastProvider, useToast } from './ui/toast.js';
 
 export interface AppOptions {
@@ -55,8 +55,8 @@ function Shell(props: { single?: string }): JSX.Element {
   const dialog = useDialog();
   const commands = useCommands();
   const exit = useExit();
+  const theme = useTheme();
   const dimensions = useTerminalDimensions();
-  const vertical = () => railVertical(dimensions().width);
   const active = () => props.single ?? data.state.active;
   const help = () => dialog.open(() => <HelpDialog />);
   const shell = [
@@ -116,13 +116,13 @@ function Shell(props: { single?: string }): JSX.Element {
     return true;
   });
   return (
-    <box width="100%" height="100%" flexDirection="column">
+    <box width="100%" height="100%" flexDirection="column" backgroundColor={theme.background.base}>
       <Show when={!tooSmall(dimensions().width, dimensions().height)} fallback={<TooSmall />}>
-        <box width="100%" height="100%" flexDirection={vertical() ? 'row' : 'column'}>
-          <Show when={!props.single}>
-            <Tabs vertical={vertical()} />
+        <box width="100%" height="100%" flexDirection="column">
+          <Show when={!props.single && data.state.open.length > 0}>
+            <Tabs />
           </Show>
-          <box flexGrow={1} flexDirection="column" height="100%">
+          <box flexGrow={1} flexDirection="column" width="100%">
             <Switch>
               <Match when={!active()}>
                 <Home />

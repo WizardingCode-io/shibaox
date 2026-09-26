@@ -1,13 +1,11 @@
 import { TextAttributes } from '@opentui/core';
-import { createEffect, createSignal, For, type JSX, onCleanup, Show } from 'solid-js';
+import { createEffect, createSignal, For, type JSX, onCleanup } from 'solid-js';
 import { useData } from '../context/data.js';
 import { shortId } from '../model/format.js';
 import { statusOf } from '../model/status.js';
 import { useMotion } from '../motion/config.js';
 import { completionPulseOpacity } from '../motion/pulse.js';
 import { useTheme } from '../theme/context.js';
-import { RAIL_WIDTH } from '../ui/layout.js';
-import { marqueeText } from '../ui/marquee.js';
 import { tint } from './logo.js';
 
 const PULSE_MS = 1200;
@@ -37,7 +35,7 @@ function usePulse(unread: () => boolean) {
   return level;
 }
 
-function Tab(props: { runId?: string; vertical: boolean }): JSX.Element {
+function Tab(props: { runId?: string }): JSX.Element {
   const data = useData();
   const theme = useTheme();
   const active = () => data.state.active === props.runId;
@@ -59,103 +57,60 @@ function Tab(props: { runId?: string; vertical: boolean }): JSX.Element {
   const pulseColor = () =>
     unread() === 'needs' ? theme.text.feedback.warning : theme.text.feedback.success;
   const bg = () => {
-    const base = active() ? theme.background.action.primary.selected : theme.background.raised.base;
+    const base = active() ? theme.background.raised.high : theme.background.raised.base;
     return pulse() > 0 ? tint(base, pulseColor(), pulse() * 0.5) : base;
   };
   const label = () =>
-    props.runId ? `${look().symbol} ${shortId(props.runId)}${unread() ? ' •' : ''}` : '⌂ home';
-  const sub = () => marqueeText(summary()?.workflow ?? '', RAIL_WIDTH - 4, 0);
-  const activate = () => data.activate(props.runId);
+    props.runId
+      ? `${look().symbol} ${shortId(props.runId)} ${summary()?.workflow ?? ''}${unread() ? ' •' : ''}`
+      : '⌂';
   return (
-    <Show
-      when={props.vertical}
-      fallback={
-        <box
-          flexDirection="row"
-          flexShrink={0}
-          paddingLeft={1}
-          paddingRight={1}
-          backgroundColor={bg()}
-          onMouseUp={activate}
-        >
+    <box
+      flexDirection="row"
+      flexShrink={0}
+      height={1}
+      paddingLeft={2}
+      paddingRight={2}
+      backgroundColor={bg()}
+      onMouseUp={() => data.activate(props.runId)}
+    >
+      <text
+        fg={props.runId ? (active() ? theme.text.base : theme.text.muted) : theme.text.base}
+        attributes={active() ? TextAttributes.BOLD : undefined}
+        wrapMode="none"
+      >
+        {props.runId ? '' : label()}
+      </text>
+      {props.runId ? (
+        <>
+          <text fg={feedback()} wrapMode="none">{`${look().symbol} `}</text>
           <text
-            fg={props.runId ? feedback() : theme.text.base}
+            fg={active() ? theme.text.base : theme.text.muted}
             attributes={active() ? TextAttributes.BOLD : undefined}
             wrapMode="none"
           >
-            {label()}
+            {`${shortId(props.runId)} ${summary()?.workflow ?? ''}${unread() ? ' •' : ''}`}
           </text>
-        </box>
-      }
-    >
-      <box
-        flexDirection="row"
-        width="100%"
-        flexShrink={0}
-        backgroundColor={bg()}
-        onMouseUp={activate}
-      >
-        <text
-          fg={active() ? theme.text.action.primary.selected : theme.background.raised.base}
-          flexShrink={0}
-        >
-          {'┃ '}
-        </text>
-        <box flexDirection="column" flexGrow={1}>
-          <box height={1}>
-            <text
-              fg={props.runId ? feedback() : theme.text.base}
-              attributes={active() ? TextAttributes.BOLD : undefined}
-              wrapMode="none"
-            >
-              {label()}
-            </text>
-          </box>
-          <Show when={props.runId}>
-            <box height={1}>
-              <text fg={theme.text.muted} wrapMode="none">
-                {sub()}
-              </text>
-            </box>
-          </Show>
-        </box>
-      </box>
-    </Show>
+        </>
+      ) : null}
+    </box>
   );
 }
 
-/** The open runs as tabs: a vertical rail on wide terminals, one line on top otherwise. */
-export function Tabs(props: { vertical: boolean }): JSX.Element {
+/** One line of tabs on top: home, then every open run. Only shown while runs are open. */
+export function Tabs(): JSX.Element {
   const data = useData();
   const theme = useTheme();
   return (
-    <Show
-      when={props.vertical}
-      fallback={
-        <box
-          height={1}
-          flexShrink={0}
-          flexDirection="row"
-          width="100%"
-          backgroundColor={theme.background.raised.base}
-        >
-          <Tab vertical={false} />
-          <For each={data.state.open}>{(id) => <Tab runId={id} vertical={false} />}</For>
-        </box>
-      }
+    <box
+      height={1}
+      flexShrink={0}
+      flexDirection="row"
+      width="100%"
+      backgroundColor={theme.background.raised.base}
     >
-      <box
-        width={RAIL_WIDTH}
-        flexShrink={0}
-        height="100%"
-        flexDirection="column"
-        backgroundColor={theme.background.raised.base}
-        paddingTop={1}
-      >
-        <Tab vertical />
-        <box height={1} flexShrink={0} />
-        <For each={data.state.open}>{(id) => <Tab runId={id} vertical />}</For>
-      </box>
-    </Show>
+      <Tab />
+      <For each={data.state.open}>{(id) => <Tab runId={id} />}</For>
+    </box>
   );
 }

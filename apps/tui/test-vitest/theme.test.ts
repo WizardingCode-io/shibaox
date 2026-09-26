@@ -6,10 +6,10 @@ import shibaox from '../src/theme/shibaox.json' with { type: 'json' };
 describe('resolveTheme', () => {
   it('resolves hex and $ references into RGBA tokens', () => {
     const t = resolveTheme(shibaox);
-    expect(t.text.base.equals(RGBA.fromHex('#f7ede2'))).toBe(true);
-    expect(t.text.muted.equals(RGBA.fromHex('#b9a694'))).toBe(true);
-    expect(t.background.base.equals(RGBA.fromHex('#140e0a'))).toBe(true);
-    expect(t.text.feedback.success.equals(RGBA.fromHex('#6acb8e'))).toBe(true);
+    expect(t.text.base.equals(RGBA.fromHex('#e6e6e6'))).toBe(true);
+    expect(t.text.muted.equals(RGBA.fromHex('#8c8c8c'))).toBe(true);
+    expect(t.background.base.equals(RGBA.fromHex('#0a0a0a'))).toBe(true);
+    expect(t.text.feedback.success.equals(RGBA.fromHex('#6fcf97'))).toBe(true);
     // $text.base chains through $hue.neutral.200
     expect(t.text.action.primary.base.equals(t.text.base)).toBe(true);
   });

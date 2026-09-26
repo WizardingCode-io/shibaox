@@ -70,20 +70,21 @@ async function mount(o: { width?: number; height?: number; open?: string[] } = {
   return { client, setup, frame, ctrl, exits, hooks, done: () => setup.renderer.destroy() };
 }
 
-test('tabs: vertical rail on wide terminals, one line on narrow ones', async () => {
+test('tabs: one line on top with home and every open run, at any width', async () => {
   const m = await mount({ open: ['aaaa1111-x', 'bbbb2222-x'] });
   try {
     let f = await m.frame();
-    expect(f).toContain('⌂ home');
-    expect(f).toContain('aaaa1111');
-    expect(f).toContain('bbbb2222');
-    expect(f).toContain('hello-feature');
+    const row = f.split('\n').find((l) => l.includes('⌂')) ?? '';
+    expect(row).toContain('aaaa1111 hello-feature');
+    expect(row).toContain('bbbb2222 hello-feature');
     expect(m.hooks.data.state.active).toBe('bbbb2222-x');
     m.setup.resize(100, 30);
     f = await m.frame();
-    const railRows = f.split('\n').filter((l) => l.includes('⌂ home'));
-    expect(railRows).toHaveLength(1);
-    expect(railRows[0]).toContain('aaaa1111');
+    expect(f.split('\n').filter((l) => l.includes('⌂'))).toHaveLength(1);
+    m.hooks.data.closeRun('aaaa1111-x');
+    m.hooks.data.closeRun('bbbb2222-x');
+    f = await m.frame();
+    expect(f).not.toContain('⌂'); // no runs open: no tabs line on the home
   } finally {
     m.done();
   }

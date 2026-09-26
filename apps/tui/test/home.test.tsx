@@ -56,11 +56,12 @@ test('home shows the logo, prompt, context line and daemon footer', async () => 
     const f = await m.frame();
     expect(f).toContain('█');
     expect(f).toContain('Add a /health endpoint');
-    expect(f).toContain(`org ${basename(m.dir)}/org`);
     expect(f).toContain('workflow hello-feature');
     expect(f).toContain('adapter mock');
+    expect(f).toContain('project /');
     expect(f).toContain('daemon 0.0.1 · 0 running · 0 queued');
     expect(f).toContain('ctrl+o runs');
+    expect(f).toContain('shibaox 0.0.1');
   } finally {
     m.done();
   }
@@ -172,7 +173,7 @@ test('an unknown org is refused and the current one stays; ctrl+c clears the tex
     await m.setup.mockInput.pressEnter();
     let f = await m.frame();
     expect(f).toContain('Org not found');
-    expect(f).toContain(`org ${basename(m.dir)}/org`); // the valid org stays
+    expect(f).toContain('workflow hello-feature'); // the valid org stays
     await m.type('do it');
     await m.setup.mockInput.pressKey('c', { ctrl: true });
     f = await m.frame();

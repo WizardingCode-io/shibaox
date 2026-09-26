@@ -35,6 +35,8 @@ export function Prompt(props: {
   onInput?(text: string): void;
   /** A free-text command was entered without its value: the screen shows what to type. */
   onNeedValue?(cmd: PromptCommand['command']): void;
+  /** A line drawn inside the box under the input (the run context). */
+  footer?: JSX.Element;
 }): JSX.Element {
   const theme = useTheme();
   const motion = useMotion();
@@ -57,11 +59,14 @@ export function Prompt(props: {
   });
 
   const set = (value: string) => {
-    if (input) input.value = value;
+    if (input && !input.isDestroyed) input.value = value;
     setText(value);
   };
   const api: PromptRef = {
-    focus: () => input?.focus(),
+    // the home may already be gone when a closed dialog hands focus back
+    focus: () => {
+      if (input && !input.isDestroyed) input.focus();
+    },
     set,
     current: text,
     clear: () => set(''),
@@ -143,38 +148,46 @@ export function Prompt(props: {
       <Show when={suggestions().length > 0}>
         <Autocomplete items={suggestions()} selected={selected()} />
       </Show>
-      <box
-        width="100%"
-        border={['top']}
-        borderColor={theme.text.action.primary.selected}
-        paddingLeft={1}
-        paddingRight={1}
-        paddingTop={1}
-        paddingBottom={1}
-        backgroundColor={theme.background.raised.base}
-      >
-        <box flexDirection="row" width="100%">
-          <text fg={theme.text.action.primary.selected} flexShrink={0}>
-            {'› '}
-          </text>
-          <input
-            ref={(r: InputRenderable) => {
-              input = r;
-            }}
-            focused={!props.disabled}
-            placeholder={props.placeholders[placeholder()] ?? ''}
-            onInput={(v: string) => {
-              setText(v);
-              props.onInput?.(v);
-            }}
-            onSubmit={submit}
-            flexGrow={1}
-            backgroundColor={theme.background.raised.base}
-            focusedBackgroundColor={theme.background.raised.base}
-            textColor={theme.text.base}
-            placeholderColor={theme.text.muted}
-            cursorColor={theme.text.action.primary.selected}
-          />
+      <box flexDirection="row" width="100%">
+        <box width={1} flexShrink={0} backgroundColor={theme.text.action.primary.selected} />
+        <box
+          flexGrow={1}
+          flexDirection="column"
+          paddingLeft={2}
+          paddingRight={2}
+          paddingTop={1}
+          paddingBottom={1}
+          backgroundColor={theme.background.raised.base}
+        >
+          <box flexDirection="row" width="100%" height={1}>
+            <text fg={theme.text.action.primary.selected} flexShrink={0}>
+              {'› '}
+            </text>
+            <input
+              ref={(r: InputRenderable) => {
+                input = r;
+              }}
+              focused={!props.disabled}
+              placeholder={props.placeholders[placeholder()] ?? ''}
+              onInput={(v: string) => {
+                setText(v);
+                props.onInput?.(v);
+              }}
+              onSubmit={submit}
+              flexGrow={1}
+              backgroundColor={theme.background.raised.base}
+              focusedBackgroundColor={theme.background.raised.base}
+              textColor={theme.text.base}
+              placeholderColor={theme.text.muted}
+              cursorColor={theme.text.action.primary.selected}
+            />
+          </box>
+          <Show when={props.footer}>
+            <box height={1} flexShrink={0} />
+            <box height={1} flexShrink={0} flexDirection="row">
+              {props.footer}
+            </box>
+          </Show>
         </box>
       </box>
     </box>

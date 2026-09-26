@@ -4,7 +4,7 @@ import { loadOrg, OrgLoadError } from '@shibaox/schemas';
 import { createEffect, createMemo, createSignal, type JSX, on, Show } from 'solid-js';
 import { HelpDialog } from '../component/dialogs/help.js';
 import { RunsDialog } from '../component/dialogs/runs.js';
-import { Footer } from '../component/footer.js';
+import { KeyHints } from '../component/footer.js';
 import { Logo } from '../component/logo.js';
 import { Prompt, type PromptRef } from '../component/prompt/index.js';
 import { useConfig } from '../context/config.js';
@@ -26,11 +26,16 @@ import { useDialog } from '../ui/dialog.js';
 import { useToast } from '../ui/toast.js';
 
 export const PLACEHOLDERS = [
-  'Add a /health endpoint',
-  'Fix the failing tests',
-  'What does this repo do?',
+  'Ask the team anything… "Add a /health endpoint"',
+  'Ask the team anything… "Fix the failing tests"',
+  'Ask the team anything… "What does this repo do?"',
 ];
-export const FOOTER_KEYS = 'ctrl+o runs · ctrl+k commands · ? help';
+export const HOME_HINTS = [
+  { key: '/', label: 'commands' },
+  { key: 'ctrl+o', label: 'runs' },
+  { key: 'ctrl+k', label: 'palette' },
+  { key: '?', label: 'help' },
+];
 
 /** The org's workflows, or why it could not be loaded. */
 function orgInfo(root: string): { workflows: string[]; error?: string } {
@@ -52,6 +57,12 @@ export function daemonLine(d: ReturnType<typeof useData>['state'], version: stri
   return `daemon ${version} · ${running} running · ${queued} queued${needs ? ` · ▲ ${needs} needs you` : ''}`;
 }
 
+/** `~/dir` for paths under the home directory. */
+export function tilde(p: string): string {
+  const home = process.env.HOME;
+  return home && p.startsWith(home) ? `~${p.slice(home.length)}` : p;
+}
+
 export function Home(): JSX.Element {
   const theme = useTheme();
   const config = useConfig();
@@ -71,9 +82,13 @@ export function Home(): JSX.Element {
   const org = createMemo(() => orgInfo(ctx().org));
   // a closed dialog gives the keyboard back to the prompt
   createEffect(
-    on(dialog.depth, (d) => {
-      if (d === 0) setTimeout(() => prompt?.focus(), 0);
-    }, { defer: true }),
+    on(
+      dialog.depth,
+      (d) => {
+        if (d === 0) setTimeout(() => prompt?.focus(), 0);
+      },
+      { defer: true },
+    ),
   );
   const [error, setError] = createSignal<string | undefined>();
   const [hint, setHint] = createSignal<string | undefined>();
@@ -104,20 +119,29 @@ export function Home(): JSX.Element {
     route.navigate({ type: 'session', runId });
   };
 
-  const contextLine = () => {
-    const c = ctx();
-    const parts = [
-      `org ${basename(join(c.org, '..'))}/${basename(c.org)}`,
-      `workflow ${workflow() ?? '—'}`,
-      `project ${basename(c.project)}`,
-      `adapter ${c.adapter}`,
-    ];
-    if (c.workspace) parts.push(`workspace ${c.workspace}`);
-    if (c.budgetUsd !== undefined) parts.push(`budget ${money(c.budgetUsd)}`);
-    return parts.join(' · ');
-  };
   const notice = () => error() ?? org().error;
   void toast;
+  const contextFooter = () => {
+    const c = ctx();
+    const muted = theme.text.muted;
+    const accent = theme.text.action.primary.selected;
+    return (
+      <text fg={theme.text.base} wrapMode="none">
+        <span style={{ fg: muted }}>workflow </span>
+        <span style={{ fg: accent }}>{workflow() ?? '—'}</span>
+        <span style={{ fg: muted }}> adapter </span>
+        {c.adapter}
+        <span style={{ fg: muted }}> project </span>
+        {tilde(c.project)}
+        {c.workspace ? <span style={{ fg: muted }}>{`   workspace ${c.workspace}`}</span> : ''}
+        {c.budgetUsd !== undefined ? (
+          <span style={{ fg: muted }}>{`   budget ${money(c.budgetUsd)}`}</span>
+        ) : (
+          ''
+        )}
+      </text>
+    );
+  };
 
   return (
     <box flexDirection="column" width="100%" height="100%">
@@ -130,7 +154,7 @@ export function Home(): JSX.Element {
         <box flexGrow={1} minHeight={0} />
         <Logo />
         <box height={1} flexShrink={0} />
-        <box width="100%" maxWidth={75} flexShrink={0} flexDirection="column">
+        <box width="100%" maxWidth={76} flexShrink={0} flexDirection="column">
           <Prompt
             ref={(r) => {
               prompt = r;
@@ -144,23 +168,39 @@ export function Home(): JSX.Element {
               setHint(undefined);
             }}
             onNeedValue={(c) => setHint(COMMAND_HINT[c])}
+            footer={contextFooter()}
           />
-          <box flexShrink={0} paddingLeft={2} width="100%">
-            <text fg={theme.text.muted} wrapMode="word">
-              {contextLine()}
-            </text>
-          </box>
-          <Show when={notice() ?? hint()}>
-            <box height={1} flexShrink={0} paddingLeft={2}>
+          <box height={1} flexShrink={0} flexDirection="row" width="100%" paddingLeft={1}>
+            <Show when={notice() ?? hint()}>
               <text fg={notice() ? theme.text.feedback.error : theme.text.muted} wrapMode="none">
                 {notice() ?? hint() ?? ''}
               </text>
-            </box>
-          </Show>
+            </Show>
+            <box flexGrow={1} />
+            <KeyHints hints={HOME_HINTS} />
+          </box>
         </box>
         <box flexGrow={1} minHeight={0} />
       </box>
-      <Footer left={daemonLine(data.state, config.version)} right={FOOTER_KEYS} />
+      <box
+        height={1}
+        flexShrink={0}
+        flexDirection="row"
+        paddingLeft={2}
+        paddingRight={2}
+        width="100%"
+      >
+        <text fg={theme.text.muted} flexShrink={1} wrapMode="none">
+          {tilde(config.cwd)}
+        </text>
+        <text fg={theme.text.muted} flexShrink={0} wrapMode="none">
+          {`  ·  ${daemonLine(data.state, config.version)}`}
+        </text>
+        <box flexGrow={1} flexShrink={0} width={2} />
+        <text fg={theme.text.muted} flexShrink={0} wrapMode="none">
+          {`shibaox ${config.version}`}
+        </text>
+      </box>
     </box>
   );
 }

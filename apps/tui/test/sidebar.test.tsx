@@ -245,7 +245,7 @@ test('resizing from 160 to 80 columns collapses rail and sidebar without overflo
     m.setup.resize(80, 24);
     const f = await m.frame();
     expect(f).not.toContain('Needs you (1)');
-    expect(f.split('\n').filter((l) => l.includes('⌂ home'))).toHaveLength(1);
+    expect(f.split('\n').filter((l) => l.includes('⌂'))).toHaveLength(1);
     for (const line of f.split('\n')) expect(line.length).toBeLessThanOrEqual(80);
     expect(f.split('\n').at(-2)).toContain('enter expand');
   } finally {
