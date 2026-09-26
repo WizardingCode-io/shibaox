@@ -2,8 +2,11 @@ import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
 import type { QueryFn } from '@shibaox/adapter-claude-code';
 import type { EventStore, MockScript } from '@shibaox/core';
 import type { Graphify } from '@shibaox/memory';
-import { SqliteEventStore } from '@shibaox/persistence-sqlite';
+import { OutboxRepo, SqliteEventStore } from '@shibaox/persistence-sqlite';
 import type { ProviderEntry } from '@shibaox/providers';
+import { macosChannel } from './channels/macos.js';
+import { OutboxWorker } from './channels/outbox.js';
+import { telegramChannel } from './channels/telegram.js';
 import type { Channel } from './channels/types.js';
 import { type DaemonConfig, loadDaemonConfig } from './config.js';
 import { type HomePaths, homePaths } from './home.js';
@@ -21,6 +24,7 @@ export interface DaemonOptions {
   queryFn?: QueryFn;
   graphify?: Graphify;
   extraProviders?: ProviderEntry[];
+  /** Injected channels (tests); by default built from `daemon.yaml` and the platform. */
   channels?: Channel[];
   now?: () => string;
   version?: string;
@@ -43,6 +47,7 @@ export class Daemon {
   private readonly startedAt = Date.now();
   private readonly ownsStore: boolean;
   private schedules: (SchedulesApi & { start(): void; stop(): void }) | undefined;
+  private readonly outbox: OutboxWorker | undefined;
   private stopping: Promise<void> | undefined;
 
   constructor(private readonly opts: DaemonOptions = {}) {
@@ -51,20 +56,28 @@ export class Daemon {
     this.ownsStore = !opts.store;
     this.store = opts.store ?? new SqliteEventStore(this.paths.db);
     this.version = opts.version ?? '0.0.0';
-    this.channels = opts.channels ?? [];
     const log = opts.log ?? ((l: string) => console.log(l));
+    this.channels = opts.channels ?? defaultChannels(this.config, opts.env ?? process.env, log);
+    // with a SQLite store the outbox persists retries; an injected store delivers directly
+    this.outbox =
+      this.store instanceof SqliteEventStore && this.channels.length > 0
+        ? new OutboxWorker({ repo: new OutboxRepo(this.store.db), channels: this.channels, log })
+        : undefined;
     this.inbox = new InboxService({
       store: this.store,
       approvalTimeoutMs: this.config.approval_timeout_minutes * 60_000,
       now: opts.now,
       onItem: (item) => {
-        for (const c of this.channels)
-          c.notify(item).catch((e: unknown) =>
-            log(`[${c.id}] ${e instanceof Error ? e.message : String(e)}`),
-          );
+        if (this.outbox) this.outbox.enqueue(item);
+        else
+          for (const c of this.channels)
+            c.notify(item).catch((e: unknown) =>
+              log(`[${c.id}] ${e instanceof Error ? e.message : String(e)}`),
+            );
       },
       onResolved: (item, a) => {
         void this.runs.onInboxResolved(item, a);
+        this.outbox?.clear(item.id);
         for (const c of this.channels) c.resolved?.(item, a).catch(() => undefined);
       },
     });
@@ -114,6 +127,7 @@ export class Daemon {
     await this.server.listen();
     writeFileSync(this.paths.pid, String(process.pid));
     for (const c of this.channels) await c.start?.();
+    this.outbox?.start();
     await this.runs.start();
     this.schedules?.start();
   }
@@ -121,6 +135,7 @@ export class Daemon {
   stop(o: { force?: boolean } = {}): Promise<void> {
     this.stopping ??= (async () => {
       this.schedules?.stop();
+      this.outbox?.stop();
       await this.runs.stop({ force: o.force, graceMs: o.force ? 0 : 60_000 });
       for (const c of this.channels) await c.stop?.();
       await this.server.close();
@@ -129,4 +144,21 @@ export class Daemon {
     })();
     return this.stopping;
   }
+}
+
+/** macOS notifications when enabled on Darwin; Telegram when configured with a token in the env. */
+export function defaultChannels(
+  config: DaemonConfig,
+  env: NodeJS.ProcessEnv,
+  log: (line: string) => void,
+): Channel[] {
+  const out: Channel[] = [];
+  if (process.platform === 'darwin' && config.channels.macos.enabled) out.push(macosChannel());
+  const tg = config.channels.telegram;
+  if (tg) {
+    const token = env[tg.bot_token_env];
+    if (token) out.push(telegramChannel({ token, chatId: tg.chat_id, log }));
+    else log(`warn: telegram is configured but ${tg.bot_token_env} is not set: channel disabled`);
+  }
+  return out;
 }

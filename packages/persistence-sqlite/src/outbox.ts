@@ -37,8 +37,8 @@ export class OutboxRepo {
       CREATE INDEX IF NOT EXISTS outbox_next ON channel_outbox(next_at)`);
   }
 
-  enqueue(channel: string, inboxId: string, payload: unknown): OutboxRow {
-    const nextAt = new Date().toISOString();
+  enqueue(channel: string, inboxId: string, payload: unknown, nextAt?: string): OutboxRow {
+    nextAt ??= new Date().toISOString();
     const json = JSON.stringify(payload);
     const info = this.db
       .prepare(

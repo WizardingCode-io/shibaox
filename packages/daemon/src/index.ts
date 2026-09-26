@@ -1,3 +1,6 @@
+export * from './channels/macos.js';
+export * from './channels/outbox.js';
+export * from './channels/telegram.js';
 export * from './channels/types.js';
 export * from './client.js';
 export * from './config.js';
