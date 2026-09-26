@@ -132,8 +132,11 @@ export class Poller {
   }): Promise<void> {
     const { runId, controller } = stream;
     const mine = () => this.stream === stream && !controller.signal.aborted;
-    // a fresh subscription replays the history: start the run's lines over
+    // a fresh subscription replays the history: start the run's lines over, and show the
+    // run's nodes right away instead of waiting for its first event
     if (!stream.cursor) this.store.setLines(runId, []);
+    await this.refreshRun(runId);
+    if (!mine()) return;
     try {
       for await (const env of this.client.events(runId, {
         signal: controller.signal,

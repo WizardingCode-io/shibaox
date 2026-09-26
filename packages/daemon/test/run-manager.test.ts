@@ -428,3 +428,30 @@ describe('RunManager', () => {
     await vi.waitFor(() => expect(m.active().running).toBe(0));
   });
 });
+
+describe('RuntimeBuffer retire', () => {
+  it('drops only the oldest finished runs beyond the keep limit', async () => {
+    const { RuntimeBuffer } = await import('../src/runtime-buffer.js');
+    const b = new RuntimeBuffer(10, 2);
+    for (const id of ['a', 'b', 'c']) {
+      b.push(id, 'n', { type: 'text', text: 'x' }, 'now');
+      b.retire(id);
+    }
+    expect(b.read('a')).toEqual([]);
+    expect(b.read('b')).toHaveLength(1);
+    expect(b.read('c')).toHaveLength(1);
+  });
+});
+
+describe('runtime buffer after a run ends', () => {
+  it('keeps the stream of a finished run so a later follow still shows it', async () => {
+    const s = setup();
+    const store = new MemoryEventStore();
+    const { manager: m, inbox } = manager(store);
+    const { runId } = await submitMock(m, s, 'inplace');
+    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('waiting_human'));
+    await inbox.answer(`human:${runId}:ship`, { approved: true, via: 'cli' });
+    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('completed'));
+    expect(m.runtimeEvents(runId).length).toBeGreaterThan(0);
+  });
+});

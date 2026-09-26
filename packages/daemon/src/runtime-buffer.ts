@@ -12,8 +12,23 @@ export interface RuntimeEnvelope {
 /** The last `capacity` runtime events of each run, so a late `follow` can catch up. */
 export class RuntimeBuffer {
   private readonly runs = new Map<string, { seq: number; events: RuntimeEnvelope[] }>();
+  /** Finished runs whose buffer is kept (oldest first); beyond `keepFinished` they are dropped. */
+  private readonly finished: string[] = [];
 
-  constructor(private readonly capacity = 2000) {}
+  constructor(
+    private readonly capacity = 2000,
+    private readonly keepFinished = 50,
+  ) {}
+
+  /** The run ended: keep its stream for `follow`/the dashboard, dropping the oldest finished ones. */
+  retire(runId: string): void {
+    if (!this.runs.has(runId) || this.finished.includes(runId)) return;
+    this.finished.push(runId);
+    while (this.finished.length > this.keepFinished) {
+      const old = this.finished.shift();
+      if (old) this.runs.delete(old);
+    }
+  }
 
   push(runId: string, nodeId: string, event: RuntimeEvent, at: string): RuntimeEnvelope {
     let entry = this.runs.get(runId);

@@ -30,6 +30,13 @@ export async function doctorCommand(): Promise<number> {
   lines.push({ ...(await which('git')), required: true });
   lines.push(await which('uv'));
   lines.push(await which('graphify'));
+  const bun = await which('bun');
+  lines.push({
+    ...bun,
+    detail: bun.ok
+      ? `${bun.detail} (runs the dashboard)`
+      : 'not found (the dashboard needs Bun: https://bun.sh)',
+  });
   lines.push(await which('claude'));
   lines.push(await which('codex'));
   lines.push(await which('cursor'));

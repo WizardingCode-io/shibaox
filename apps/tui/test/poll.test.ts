@@ -81,7 +81,8 @@ describe('Poller', () => {
     expect(store.get().streams.a?.[0]).toMatchObject({ text: 'hello' });
     client.pushFrame('a', runFrame('a', 'NodeCompleted', 2));
     await flush();
-    expect(client.calls.filter((c) => c.method === 'getRun')).toHaveLength(1);
+    // one refresh when the subscription opens, one after NodeCompleted
+    expect(client.calls.filter((c) => c.method === 'getRun')).toHaveLength(2);
     expect(store.get().runStates.a).toBeDefined();
   });
 

@@ -1,6 +1,6 @@
 /** The footer line; every action key the dashboard understands. */
 export const KEY_HELP =
-  'j/k select · enter follow · a/d answer · N new run · c cancel · r resume · f filter · ? help · q quit';
+  'j/k select · enter detail · tab pane · a/d answer · n note · i inbox · N new run · c cancel · r resume · f filter · ? help · q quit';
 
 export const HELP_LINES = [
   'j/k or ↑/↓   move the selection (list) or scroll (detail)',

@@ -144,7 +144,10 @@ channels:
 
 ## Dashboard
 
-`shibaox` with no command (or `shibaox ui`) opens an interactive dashboard over the daemon:
+`shibaox` with no command (or `shibaox ui`) opens an interactive dashboard over the daemon.
+It is an [OpenTUI](https://opentui.com) app (`apps/tui`) and runs under [Bun](https://bun.sh)
+(1.3 or later), which the CLI spawns for you; without Bun the CLI says so and the text
+commands keep working. The dashboard shows:
 runs on the left with a status word (`Working`, `Needs you`, `Queued`, `Done`, `Failed`,
 `Paused`, `Cancelled`), the selected run on the right with its nodes and live stream (agent text, tool
 calls with their duration, subagents indented), and a banner at the top whenever something
@@ -160,9 +163,10 @@ Ctrl-C quit (the daemon keeps running). The new-run form reads the workflows of 
 remembers the last org, adapter and workspace in `~/.shibaox/ui.json`. `SHIBAOX_NO_MOTION=1`
 freezes the working indicator.
 
-In an interactive terminal, `shibaox run` (without `--detach`) and `shibaox follow` show the
-same live stream and answer approvals in place; without a TTY, or with `--json`, they print
-plain lines as before.
+In an interactive terminal with Bun installed, `shibaox run` (without `--detach`) and
+`shibaox follow` show the same live stream and answer approvals in place; without a TTY,
+without Bun, or with `--json`, they print plain lines as before. The daemon keeps the stream
+of the last 50 finished runs, so `follow` of a finished run still shows what happened.
 
 ## Providers
 
@@ -427,7 +431,7 @@ Deleting the file deletes the run history. Run worktrees live under
 | `packages/workspace` | git worktree per run: create, list, remove, diff |
 | `packages/memory` | vault run/decision notes, `Graphify` runner and MCP config |
 | `packages/daemon` | the local daemon: run manager (queue, restart recovery), inbox, socket API + client, channels, schedules, and the runtime wiring |
-| `apps/tui` | the Ink dashboard and live stream (`renderDashboard`, `renderStream`), a pure client of the daemon API |
+| `apps/tui` | the OpenTUI dashboard and live stream (Bun; `runDashboard`, `runStream`), a pure client of the daemon socket API |
 | `apps/cli` | `shibaox [ui] / init / doctor / daemon / run / follow / runs / replay / resume / cancel / inbox / approve / deny / schedule / providers / models / graph / worktree` |
 | `examples/sample-repo` | a tiny Node project used by the sample workflow and the e2e tests |
 | `docs/superpowers/specs` | the design spec |

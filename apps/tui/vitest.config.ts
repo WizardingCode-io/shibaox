@@ -4,7 +4,6 @@ import { defineConfig } from 'vitest/config';
 const src = (p: string) => fileURLToPath(new URL(`../../packages/${p}`, import.meta.url));
 
 export default defineConfig({
-  esbuild: { jsx: 'automatic' },
   resolve: {
     alias: {
       '@shibaox/core': src('core/src/index.ts'),
@@ -22,5 +21,5 @@ export default defineConfig({
       '@shibaox/workspace': src('workspace/src/index.ts'),
     },
   },
-  test: { include: ['test/**/*.test.{ts,tsx}'], testTimeout: 20_000 },
+  test: { include: ['test/**/*.test.ts'], testTimeout: 20_000 },
 });

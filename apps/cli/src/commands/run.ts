@@ -1,10 +1,11 @@
 import { resolve } from 'node:path';
 import type { AdapterId, GraphMode } from '@shibaox/daemon';
-import { renderStream } from '@shibaox/tui';
+import { homePaths } from '@shibaox/daemon';
 import type { WorkspaceMode } from '@shibaox/workspace';
 import { connect } from '../client.js';
 import { exitCodeFor, formatState, type Out } from '../output.js';
 import { followRun } from './follow.js';
+import { bunAvailable, spawnTui } from './ui.js';
 
 export interface RunCommandOptions {
   org: string;
@@ -48,15 +49,20 @@ export async function runCommand(
   }
 }
 
-/** The Ink stream in an interactive terminal; the plain text stream otherwise or with --json. */
+/**
+ * The OpenTUI stream (under Bun) in an interactive terminal; the plain text stream otherwise,
+ * with --json, or when Bun is not installed.
+ */
 export async function followAny(
   client: Parameters<typeof followRun>[0],
   runId: string,
   o: { since?: string; signal?: AbortSignal },
   out: Out,
 ): Promise<number> {
-  if (!out.json && process.stdout.isTTY && process.stdin.isTTY)
-    return renderStream(client, runId, { since: o.since, signal: o.signal, env: process.env });
+  if (!out.json && process.stdout.isTTY && process.stdin.isTTY && (await bunAvailable())) {
+    const paths = homePaths();
+    return spawnTui(['stream', runId, '--socket', paths.socket, '--home', paths.root]);
+  }
   return followRun(client, runId, o, out);
 }
 

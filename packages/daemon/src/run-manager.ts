@@ -385,7 +385,7 @@ export class RunManager {
           vault: this.opts.vault,
           adapter: prepared.adapter,
         });
-        this.buffer.drop(p.runId);
+        this.buffer.retire(p.runId);
       }
       this.pump();
     }
