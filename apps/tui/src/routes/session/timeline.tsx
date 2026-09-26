@@ -1,4 +1,5 @@
 import type { Renderable, ScrollBoxRenderable } from '@opentui/core';
+import { useTerminalDimensions } from '@opentui/solid';
 import {
   createEffect,
   createMemo,
@@ -51,6 +52,7 @@ export function Timeline(props: {
 }): JSX.Element {
   const data = useData();
   const theme = useTheme();
+  const dimensions = useTerminalDimensions();
   const cards = data.timeline(props.runId);
   const rows = createMemo(() => selectableRows(cards()));
   const [cursor, setCursor] = createSignal(0);
@@ -69,8 +71,9 @@ export function Timeline(props: {
     if (!following() || !scroll) return;
     scroll.scrollTo(scroll.scrollHeight);
   };
+  // OpenTUI's stickyScroll re-sticks after a programmatic scrollTo(0), so following is ours alone
   createEffect(
-    on(cards, () => {
+    on([cards, dimensions], () => {
       setTimeout(follow, 0);
       setTimeout(follow, 120);
     }),
@@ -162,8 +165,6 @@ export function Timeline(props: {
       }}
       flexGrow={1}
       width="100%"
-      stickyScroll
-      stickyStart="bottom"
       verticalScrollbarOptions={{
         visible: true,
         trackOptions: {
