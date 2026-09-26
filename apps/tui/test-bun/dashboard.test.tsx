@@ -42,10 +42,18 @@ const item = (id: string, runId: string, kind: 'human' | 'approval' = 'human'): 
 });
 
 async function mount(
-  o: { inbox?: InboxItem[]; width?: number; height?: number; failing?: boolean } = {},
+  o: {
+    inbox?: InboxItem[];
+    width?: number;
+    height?: number;
+    failing?: boolean;
+    runs?: number;
+  } = {},
 ) {
   const client = new FakeDaemonClient();
-  client.runs = [run('aaaa1111-x'), run('bbbb2222-x', 'waiting_human')];
+  client.runs = o.runs
+    ? Array.from({ length: o.runs }, (_, i) => run(`run${String(i).padStart(4, '0')}-x`))
+    : [run('aaaa1111-x'), run('bbbb2222-x', 'waiting_human')];
   for (const r of client.runs) client.states.set(r.runId, state(r.runId, r.status));
   client.inboxItems = o.inbox ?? [item('human:bbbb2222-x:ship', 'bbbb2222-x')];
   client.failing = o.failing ?? false;
@@ -173,7 +181,7 @@ describe('Dashboard (OpenTUI)', () => {
     }
   });
 
-  test('c confirms before cancelling; q and Ctrl-C exit', async () => {
+  test('c confirms before cancelling; q exits', async () => {
     const m = await mount();
     try {
       const f = await m.key('c');
@@ -182,9 +190,48 @@ describe('Dashboard (OpenTUI)', () => {
       expect(m.client.calls.find((c) => c.method === 'cancel')?.args).toEqual(['aaaa1111-x']);
       await m.key('q');
       expect(m.exits).toEqual([0]);
-      await m.setup.mockInput.pressKey('\x03');
-      await m.frame();
-      expect(m.exits.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      m.done();
+    }
+  });
+
+  test('Ctrl-C exits from the dashboard, from help, from a prompt and from the form', async () => {
+    for (const open of [[], ['?'], ['c'], ['N']]) {
+      const m = await mount({ inbox: [] });
+      try {
+        for (const k of open) await m.key(k);
+        await m.setup.mockInput.pressKey('\x03');
+        await m.frame();
+        expect(m.exits).toEqual([0]);
+      } finally {
+        m.done();
+      }
+    }
+  });
+
+  test('the runs list scrolls to keep the selection visible and never overflows its panel', async () => {
+    const m = await mount({ runs: 20, inbox: [], width: 120, height: 30 });
+    try {
+      let f = await m.frame();
+      expect(f).toContain('▸ run0000');
+      for (let i = 0; i < 15; i++) f = await m.key('j');
+      expect(m.store.get().selectedRunId).toBe('run0015-x');
+      expect(f).toContain('▸ run0015');
+      expect(f).toContain('j/k select');
+      // no run text on the panel's bottom border row
+      const border = f.split('\n').find((l) => l.startsWith('╰')) ?? '';
+      expect(border).not.toContain('run00');
+    } finally {
+      m.done();
+    }
+  });
+
+  test('titles use the status word, and the banner keeps its keys at 80 columns', async () => {
+    const m = await mount({ width: 80 });
+    try {
+      const f = await m.frame();
+      expect(f).toContain('[a]pprove');
+      expect(f).not.toContain('waiting_human');
     } finally {
       m.done();
     }

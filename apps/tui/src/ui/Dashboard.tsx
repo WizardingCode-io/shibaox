@@ -3,7 +3,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { HELP_LINES, KEY_HELP, MIN_COLUMNS, MIN_ROWS, NARROW_COLUMNS } from '../keys.js';
 import type { Poller } from '../poll.js';
 import type { AppStore } from '../store.js';
-import { colors, motionEnabled } from '../theme.js';
+import { colors, motionEnabled, statusOf } from '../theme.js';
 import { NewRunForm } from './NewRunForm.js';
 import { Prompt, type PromptSpec } from './Prompt.js';
 import { Banner, Footer, Line, Panel, StatusSpan, streamElements } from './widgets.js';
@@ -50,8 +50,10 @@ export function Dashboard(props: DashboardProps) {
   const narrow = width < NARROW_COLUMNS;
 
   useKeyboard((key) => {
+    // Ctrl-C quits from anywhere: views, prompts and the form included
+    if (key.ctrl && key.name === 'c') return onExit(0);
     if (tooSmall) {
-      if (key.name === 'q' || key.name === 'escape' || (key.ctrl && key.name === 'c')) onExit(0);
+      if (key.name === 'q' || key.name === 'escape') onExit(0);
       return;
     }
     const s = store.get();
@@ -68,7 +70,7 @@ export function Dashboard(props: DashboardProps) {
         if (key.name === 'j' || key.name === 'down')
           return setInboxIndex((i) => Math.min(i + 1, s.inbox.length - 1));
         if (key.name === 'k' || key.name === 'up') return setInboxIndex((i) => Math.max(i - 1, 0));
-        const target = s.inbox[inboxIndex];
+        const target = s.inbox[Math.min(inboxIndex, s.inbox.length - 1)];
         if ((key.name === 'a' || key.name === 'd') && target && needDaemon()) {
           void poller.answer(target.id, key.name === 'a');
           store.setView('dashboard');
@@ -166,16 +168,33 @@ export function Dashboard(props: DashboardProps) {
   const title = state.daemonReachable
     ? `shibaox · daemon ${state.health?.version ?? version} · ${state.health?.runs.running ?? 0} running · ${state.health?.runs.queued ?? 0} queued`
     : 'shibaox · Daemon unreachable, retrying…';
-  const listWidth = narrow ? '100%' : '30%';
-  const detailWidth = Math.max(20, narrow ? width - 4 : Math.floor(width * 0.7) - 4);
+  // the list takes 30% of the width within [24, 44] columns; the detail gets the rest
+  const listCols = narrow ? width : Math.min(44, Math.max(24, Math.floor(width * 0.3)));
+  const detailWidth = Math.max(20, narrow ? width - 4 : width - listCols - 4);
+  const bannerRows = state.inbox.length > 0 && state.view === 'dashboard' ? 3 : 0;
+  const bodyHeight = Math.max(3, height - 3 - bannerRows - 1);
+  // the list shows a window of runs (two rows each) around the selection
+  const perRun = 2;
+  const listRows = Math.max(1, Math.floor((bodyHeight - 2) / perRun));
+  const selectedIndex = Math.max(
+    0,
+    visible.findIndex((r) => r.runId === selected),
+  );
+  const listStart = Math.max(
+    0,
+    Math.min(selectedIndex - Math.floor(listRows / 2), visible.length - listRows),
+  );
+  const listWindow = visible.slice(listStart, listStart + listRows);
 
   const runsPanel = (
     <Panel
-      title="Runs"
+      title={
+        visible.length > listRows
+          ? `Runs (${listStart + 1}–${Math.min(visible.length, listStart + listRows)} of ${visible.length})`
+          : 'Runs'
+      }
       focused={state.focus === 'list'}
-      width={listWidth}
-      minWidth={24}
-      maxWidth={44}
+      width={listCols}
       flexShrink={0}
     >
       {visible.length === 0 ? (
@@ -183,7 +202,7 @@ export function Dashboard(props: DashboardProps) {
           <text fg={colors.muted}>No runs yet. Press N to start one.</text>
         </Line>
       ) : null}
-      {visible.map((r) => {
+      {listWindow.map((r) => {
         const sel = r.runId === selected;
         return (
           <box key={r.runId} flexDirection="column" flexShrink={0}>
@@ -208,7 +227,7 @@ export function Dashboard(props: DashboardProps) {
 
   const nodeIds = Object.keys(runState?.workflowSnapshot?.nodes ?? runState?.nodes ?? {});
   const detailTitle = selected
-    ? `${selected.slice(0, 8)} ${runState?.workflow ?? summary?.workflow ?? ''} · ${status ?? ''} · $${(runState?.spentUsd ?? summary?.spentUsd ?? 0).toFixed(4)}`
+    ? `${selected.slice(0, 8)} ${runState?.workflow ?? summary?.workflow ?? ''} · ${status ? statusOf({ status }).word : ''} · $${(runState?.spentUsd ?? summary?.spentUsd ?? 0).toFixed(4)}`
     : 'Run';
   const detailPanel = (
     <Panel title={detailTitle} focused={state.focus === 'detail'} flexGrow={1}>

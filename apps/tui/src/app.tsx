@@ -20,6 +20,17 @@ async function rendererFor(opts: AppOptions): Promise<{ renderer: CliRenderer; o
   return { renderer, owned: true };
 }
 
+/** Ctrl-C outside React: works even when a render error replaced the tree. */
+function onCtrlC(renderer: CliRenderer, fn: () => void): () => void {
+  const handler = (key: { ctrl?: boolean; name?: string }) => {
+    if (key.ctrl && key.name === 'c') fn();
+  };
+  renderer.keyInput.on('keypress', handler);
+  return () => {
+    renderer.keyInput.off('keypress', handler);
+  };
+}
+
 /** The dashboard; resolves with the exit code when the user quits. */
 export async function runDashboard(
   client: DaemonClientLike,
@@ -31,14 +42,17 @@ export async function runDashboard(
   const root = createRoot(renderer);
   return new Promise<number>((resolve) => {
     let done = false;
+    let offCtrlC = () => {};
     const finish = (code: number) => {
       if (done) return;
       done = true;
+      offCtrlC();
       poller.stop();
       root.unmount();
       if (owned) renderer.destroy();
       resolve(code);
     };
+    offCtrlC = onCtrlC(renderer, () => finish(0));
     root.render(
       <Dashboard
         store={store}
@@ -66,9 +80,11 @@ export async function runStream(
   const root = createRoot(renderer);
   return new Promise((resolve) => {
     let done = false;
+    const offCtrlC = () => {};
     const finish = (status: string | undefined) => {
       if (done) return;
       done = true;
+      offCtrlC();
       poller.stop();
       root.unmount();
       if (owned) renderer.destroy();

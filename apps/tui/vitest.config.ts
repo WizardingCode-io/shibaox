@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@shibaox/core': src('core/src/index.ts'),
+      '@shibaox/daemon/client': src('daemon/src/client.ts'),
       '@shibaox/daemon': src('daemon/src/index.ts'),
       '@shibaox/persistence-sqlite': src('persistence-sqlite/src/index.ts'),
       '@shibaox/schemas': src('schemas/src/index.ts'),

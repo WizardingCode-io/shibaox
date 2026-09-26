@@ -1,4 +1,5 @@
-import { DaemonHttpError, type SubmitRequest } from '@shibaox/daemon';
+import type { SubmitRequest } from '@shibaox/daemon';
+import { DaemonHttpError } from '@shibaox/daemon/client';
 import type { DaemonClientLike } from './client.js';
 import type { AppStore } from './store.js';
 import { applyFrame, RUN_EVENT_REFRESH, type StreamLine } from './stream.js';

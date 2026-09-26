@@ -146,8 +146,8 @@ channels:
 
 `shibaox` with no command (or `shibaox ui`) opens an interactive dashboard over the daemon.
 It is an [OpenTUI](https://opentui.com) app (`apps/tui`) and runs under [Bun](https://bun.sh)
-(1.3 or later), which the CLI spawns for you; without Bun the CLI says so and the text
-commands keep working. The dashboard shows:
+1.3 or later (checked by the CLI, which spawns it for you); without Bun the CLI says so and
+the text commands keep working. `pnpm test` also needs Bun for the dashboard's own tests. The dashboard shows:
 runs on the left with a status word (`Working`, `Needs you`, `Queued`, `Done`, `Failed`,
 `Paused`, `Cancelled`), the selected run on the right with its nodes and live stream (agent text, tool
 calls with their duration, subagents indented), and a banner at the top whenever something
@@ -156,7 +156,7 @@ one pane at a time (`tab` switches).
 
 Keys: `j/k` select (or scroll the detail once it has focus; scrolling back to the bottom
 turns auto-scroll on again) · `enter` focus the detail · `tab` switch panes · `a`/`d`
-approve or deny the first inbox item (a push or deploy asks `y` first; `n` adds a note, `i`
+approve or deny the first inbox item (an approval asks `y` first; `n` adds a note, `i`
 lists them all) · `N` new run · `c` cancel · `r` resume · `f` active/all · `?` help · `q` or
 Ctrl-C quit (the daemon keeps running). The new-run form reads the workflows of the org
 (`./org` when it exists), always starts with the current directory as the project, and
@@ -165,8 +165,9 @@ freezes the working indicator.
 
 In an interactive terminal with Bun installed, `shibaox run` (without `--detach`) and
 `shibaox follow` show the same live stream and answer approvals in place; without a TTY,
-without Bun, or with `--json`, they print plain lines as before. The daemon keeps the stream
-of the last 50 finished runs, so `follow` of a finished run still shows what happened.
+without Bun, or with `--json`, they print plain lines as before. When the run ends, the
+terminal stream closes and the run's final state is printed. The daemon keeps the (trimmed)
+stream of the last 50 finished runs, so the dashboard still shows what happened.
 
 ## Providers
 

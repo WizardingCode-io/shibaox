@@ -2,7 +2,7 @@ import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useEffect, useState } from 'react';
 import type { Poller } from '../poll.js';
 import type { AppStore } from '../store.js';
-import { colors, motionEnabled } from '../theme.js';
+import { colors, motionEnabled, statusOf } from '../theme.js';
 import { useAppState } from './Dashboard.js';
 import { Prompt, type PromptSpec } from './Prompt.js';
 import { Banner, Footer, Line, Panel, StatusSpan, streamElements } from './widgets.js';
@@ -64,7 +64,7 @@ export function Stream({ store, poller, runId, env = process.env, onEnd }: Strea
   });
 
   const nodeIds = Object.keys(runState?.workflowSnapshot?.nodes ?? runState?.nodes ?? {});
-  const title = `${runId.slice(0, 8)} ${runState?.workflow ?? summary?.workflow ?? ''} · ${status ?? ''} · $${(runState?.spentUsd ?? summary?.spentUsd ?? 0).toFixed(4)}`;
+  const title = `${runId.slice(0, 8)} ${runState?.workflow ?? summary?.workflow ?? ''} · ${status ? statusOf({ status }).word : ''} · $${(runState?.spentUsd ?? summary?.spentUsd ?? 0).toFixed(4)}`;
   return (
     <box flexDirection="column" width="100%" height="100%">
       {items.length > 0 ? <Banner items={items} keys="[a]pprove [d]eny" /> : null}

@@ -441,6 +441,22 @@ describe('RuntimeBuffer retire', () => {
     expect(b.read('b')).toHaveLength(1);
     expect(b.read('c')).toHaveLength(1);
   });
+
+  it('stores trimmed outputs and forgets a retired run that starts again', async () => {
+    const { RuntimeBuffer, STORED_TEXT_LIMIT } = await import('../src/runtime-buffer.js');
+    const b = new RuntimeBuffer(10, 1);
+    b.push('a', 'n', { type: 'tool_result', name: 'Read', output: 'x'.repeat(1_000_000) }, 'now');
+    b.push('a', 'n', { type: 'text', text: 'y'.repeat(100_000) }, 'now');
+    const [r, t] = b.read('a') as [{ event: { output: unknown } }, { event: { text: string } }];
+    expect(String(r.event.output).length).toBeLessThanOrEqual(STORED_TEXT_LIMIT + 1);
+    expect(t.event.text.length).toBeLessThanOrEqual(STORED_TEXT_LIMIT + 1);
+    b.retire('a');
+    // the run resumes: it is live again and must not be evicted by later retirements
+    b.push('a', 'n', { type: 'text', text: 'again' }, 'now');
+    b.push('b', 'n', { type: 'text', text: 'b' }, 'now');
+    b.retire('b');
+    expect(b.read('a')).toHaveLength(3);
+  });
 });
 
 describe('runtime buffer after a run ends', () => {

@@ -114,10 +114,14 @@ export function NewRunForm(props: NewRunFormProps) {
 
   useKeyboard((key) => {
     if (key.name === 'escape') return onCancel();
-    if (key.name === 'tab') {
-      const i = FIELDS.indexOf(field);
-      return setField(FIELDS[(i + (key.shift ? -1 : 1) + FIELDS.length) % FIELDS.length] as Field);
-    }
+    if (key.name === 'tab')
+      // functional: several tabs in one burst each move one field
+      return setField(
+        (f) =>
+          FIELDS[
+            (FIELDS.indexOf(f) + (key.shift ? -1 : 1) + FIELDS.length) % FIELDS.length
+          ] as Field,
+      );
     if (key.name === 'return' && !['workflow', 'adapter', 'workspace'].includes(field))
       void submit();
   });

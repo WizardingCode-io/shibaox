@@ -1,11 +1,13 @@
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { isTerminal, type RunStatus } from '@shibaox/core';
 import type { AdapterId, GraphMode } from '@shibaox/daemon';
 import { homePaths } from '@shibaox/daemon';
 import type { WorkspaceMode } from '@shibaox/workspace';
 import { connect } from '../client.js';
 import { exitCodeFor, formatState, type Out } from '../output.js';
 import { followRun } from './follow.js';
-import { bunAvailable, spawnTui } from './ui.js';
+import { bunAvailable, spawnTui, TUI_ENTRY } from './ui.js';
 
 export interface RunCommandOptions {
   org: string;
@@ -49,19 +51,44 @@ export async function runCommand(
   }
 }
 
+export interface FollowDeps {
+  tty: boolean;
+  bunAvailable: () => Promise<boolean>;
+  spawnTui: (args: string[]) => Promise<number>;
+}
+
+const defaultDeps = (): FollowDeps => ({
+  tty: Boolean(process.stdout.isTTY && process.stdin.isTTY && existsSync(TUI_ENTRY)),
+  bunAvailable,
+  spawnTui,
+});
+
 /**
- * The OpenTUI stream (under Bun) in an interactive terminal; the plain text stream otherwise,
- * with --json, or when Bun is not installed.
+ * The OpenTUI stream (under Bun) in an interactive terminal, followed by the run's final
+ * state once it ended; the plain text stream otherwise, with --json, or without Bun.
  */
 export async function followAny(
   client: Parameters<typeof followRun>[0],
   runId: string,
   o: { since?: string; signal?: AbortSignal },
   out: Out,
+  deps: FollowDeps = defaultDeps(),
 ): Promise<number> {
-  if (!out.json && process.stdout.isTTY && process.stdin.isTTY && (await bunAvailable())) {
+  if (!out.json && deps.tty && (await deps.bunAvailable())) {
+    // an unknown run is refused here, with the same error as the text path
+    await client.getRun(runId);
     const paths = homePaths();
-    return spawnTui(['stream', runId, '--socket', paths.socket, '--home', paths.root]);
+    const code = await deps.spawnTui([
+      'stream',
+      runId,
+      '--socket',
+      paths.socket,
+      '--home',
+      paths.root,
+    ]);
+    const state = await client.getRun(runId);
+    if (isTerminal(state.status as RunStatus)) for (const l of formatState(state)) out.line(l);
+    return code;
   }
   return followRun(client, runId, o, out);
 }

@@ -1,12 +1,6 @@
 import type { RunState } from '@shibaox/core';
-import {
-  DaemonHttpError,
-  type Envelope,
-  type Health,
-  type InboxItem,
-  type RunSummaryPlus,
-  type SubmitRequest,
-} from '@shibaox/daemon';
+import type { Envelope, Health, InboxItem, RunSummaryPlus, SubmitRequest } from '@shibaox/daemon';
+import { DaemonHttpError } from '@shibaox/daemon/client';
 import type { DaemonClientLike } from '../client.js';
 
 interface Stream {

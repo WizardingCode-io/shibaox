@@ -160,11 +160,18 @@ export function Banner({ items, keys }: { items: InboxItem[]; keys: string }) {
     .join(' · ');
   return (
     <Panel tone="attention" height={3}>
-      <text fg={colors.attention}>
-        <strong>{`▲ Needs you (${items.length}):`}</strong>
-        {` ${first.prompt} `}
-        <span fg={colors.muted}>{`· ${where}   ${keys}`}</span>
-      </text>
+      <box flexDirection="row" height={1}>
+        <box flexShrink={1} minWidth={0}>
+          <text fg={colors.attention}>
+            <strong>{`▲ Needs you (${items.length}):`}</strong>
+            {` ${first.prompt} `}
+            <span fg={colors.muted}>{`· ${where}`}</span>
+          </text>
+        </box>
+        <box flexShrink={0}>
+          <text fg={colors.muted}>{`   ${keys}`}</text>
+        </box>
+      </box>
     </Panel>
   );
 }
