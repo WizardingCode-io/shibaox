@@ -20,11 +20,13 @@ export const DEPLOY_VERBS: Record<string, string[]> = {
   kubectl: ['apply', 'create', 'replace', 'patch', 'scale', 'set', 'edit', 'delete', 'rollout'],
   terraform: ['apply', 'destroy', 'import', 'state'],
   helm: ['install', 'upgrade', 'uninstall', 'rollback'],
-  npm: ['publish', 'unpublish', 'dist-tag', 'deprecate'],
-  pnpm: ['publish', 'unpublish', 'dist-tag', 'deprecate'],
-  yarn: ['publish', 'unpublish', 'dist-tag', 'deprecate'],
+  npm: ['publish', 'unpublish', 'dist-tag', 'dist-tags', 'deprecate'],
+  pnpm: ['publish', 'unpublish', 'dist-tag', 'dist-tags', 'deprecate'],
+  yarn: ['publish', 'unpublish', 'dist-tag', 'dist-tags', 'deprecate'],
   docker: ['push'],
 };
+/** Flags that make an otherwise read-only deploy-program invocation publish (`docker buildx build --push`). */
+const DEPLOY_FLAGS: Record<string, string[]> = { docker: ['--push'] };
 /** vercel subcommands that do not deploy; any other invocation of `vercel` deploys a directory. */
 const VERCEL_READ_ONLY = [
   'env',
@@ -98,11 +100,14 @@ const GIT_SUBCOMMANDS = new Set(
   ).split(' '),
 );
 /** Subcommand options that make git run another program or load hooks/config. */
-const GIT_RUNNER_OPTS = /^--(upload-pack|receive-pack|exec|extcmd|config|template)(=|$)/;
+const GIT_RUNNER_OPTS =
+  /^--(upload-pack|receive-pack|exec|extcmd|config|template|open-files-in-pager)(=|$)/;
+/** Short options that take a command; `-O<cmd>` may be bundled, so these match by prefix. */
 const GIT_RUNNER_SHORT: Record<string, string[]> = {
   rebase: ['-x'],
   difftool: ['-x'],
   clone: ['-u', '-c'],
+  grep: ['-O'],
 };
 const GIT_RUNNER_WORDS: Record<string, string> = { submodule: 'foreach', bisect: 'run' };
 const GIT_CONFIG_READ = ['--get', '--get-all', '--get-regexp', '--get-urlmatch', '--list', '-l'];
@@ -184,7 +189,9 @@ function analyseGit(args: Token[], assignments: string[]): BashAnalysis {
   if ((sub === 'subtree' || sub === 'lfs') && rest.includes('push'))
     return { ok: true, program: 'git', category: 'push' };
   if (
-    rest.some((a) => GIT_RUNNER_OPTS.test(a) || GIT_RUNNER_SHORT[sub]?.includes(a)) ||
+    rest.some(
+      (a) => GIT_RUNNER_OPTS.test(a) || GIT_RUNNER_SHORT[sub]?.some((o) => a.startsWith(o)),
+    ) ||
     (GIT_RUNNER_WORDS[sub] !== undefined && rest.includes(GIT_RUNNER_WORDS[sub] as string))
   )
     return refuse(`git ${sub} with an option that runs other programs is not allowed`);
@@ -239,6 +246,7 @@ export function analyseBashCommand(command: string): BashAnalysis {
     const positional = words.filter((w) => !w.startsWith('-'));
     const deploys =
       positional.some((w) => verbs.includes(w)) ||
+      words.some((w) => DEPLOY_FLAGS[program]?.includes(w)) ||
       // `vercel`, `vercel ./dir`, `vercel --prod` deploy; only its read-only subcommands do not.
       (program === 'vercel' &&
         (positional.length === 0

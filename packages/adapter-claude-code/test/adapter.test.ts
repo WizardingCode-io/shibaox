@@ -391,9 +391,11 @@ describe('file tools are scoped to the workspace', () => {
       behavior: 'deny',
     });
   });
-  it('denies writes under .git', async () => {
-    const { decision } = await decide('Write', { file_path: '.git/hooks/pre-commit', content: '' });
-    expect(decision).toMatchObject({ behavior: 'deny' });
+  it('denies writes under .git, whatever the case of the segment', async () => {
+    for (const file_path of ['.git/hooks/pre-commit', '.GIT/hooks/pre-push', 'sub/.Git/config']) {
+      const { decision } = await decide('Write', { file_path, content: '' });
+      expect(decision, file_path).toMatchObject({ behavior: 'deny' });
+    }
   });
   it('denies file tools the role does not have', async () => {
     const { decision } = await decide('Edit', { file_path: 'src/a.ts' }, ['read']);

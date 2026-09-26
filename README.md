@@ -230,14 +230,14 @@ provider) stops it with `cannot start: ...`.
   | `kubectl` | `apply`, `create`, `replace`, `patch`, `scale`, `set`, `edit`, `delete`, `rollout` |
   | `terraform` | `apply`, `destroy`, `import`, `state` |
   | `helm` | `install`, `upgrade`, `uninstall`, `rollback` |
-  | `npm`, `pnpm`, `yarn` | `publish`, `unpublish`, `dist-tag`, `deprecate` |
-  | `docker` | `push` |
+  | `npm`, `pnpm`, `yarn` | `publish`, `unpublish`, `dist-tag`, `dist-tags`, `deprecate` |
+  | `docker` | `push`, and any invocation with `--push` (`docker buildx build --push`) |
 
   `gh` is not gated: a role that lists it can create releases or merge PRs without
   approval. git pushes are `git push`, `git send-pack`, `git subtree push` and
   `git lfs push`. The git classifier fails closed: unknown global options, `-c`,
   `--config-env`, `git config` writes (only `--get*`/`--list`/`get`/`list` are allowed),
-  subcommand options that run programs (`--exec`, `--upload-pack`, `--receive-pack`,
+  subcommand options that run programs (`--exec`, `--upload-pack`, `--receive-pack`, `grep -O`/`--open-files-in-pager`,
   `--template`, `--config`, `rebase -x`, `submodule foreach`, `bisect run`, ...),
   subcommands it does not know (including aliases) and `GIT_*` environment prefixes
   (other than `GIT_AUTHOR_*`/`GIT_COMMITTER_*`) are refused.

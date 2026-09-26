@@ -189,6 +189,9 @@ describe('git classifier fails closed', () => {
       'git bisect run ./x',
       'git filter-branch --tree-filter x',
       'git difftool --extcmd x',
+      'git grep -O"sh -c id" foo',
+      'git grep -Ovim foo',
+      'git grep --open-files-in-pager=x foo',
       'git p origin main',
       'GIT_SSH_COMMAND=x git fetch',
       'GIT_EXEC_PATH=/tmp git status',
@@ -220,6 +223,8 @@ describe('package publish verbs are gated as deploy', () => {
       'yarn publish',
       'yarn npm publish',
       'docker push img:tag',
+      'docker buildx build --push -t x .',
+      'npm dist-tags add x@1 latest',
     ])
       expect(cls(command), command).toBe('deploy');
     for (const command of [

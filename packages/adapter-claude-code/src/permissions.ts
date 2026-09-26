@@ -69,7 +69,10 @@ export function fileToolViolation(
     if (toolName !== 'Grep' || key === 'glob')
       if (typeof v === 'string' && escapes(v)) return `${key} "${v}" is outside the workspace`;
   }
-  if (FILE_TOOLS.write?.includes(toolName) && target.split(/[\\/]/).includes('.git'))
+  if (
+    FILE_TOOLS.write?.includes(toolName) &&
+    target.split(/[\\/]/).some((seg) => seg.toLowerCase() === '.git')
+  )
     return 'writing inside .git is not allowed';
   return undefined;
 }
