@@ -92,7 +92,11 @@ export function Timeline(props: {
     else if (top + el.height > scroll.scrollTop + scroll.viewport.height)
       scroll.scrollTo(top + el.height - scroll.viewport.height);
   };
-  createEffect(on(cursor, () => setTimeout(ensureVisible, 0), { defer: true }));
+  // only after a one-row move: right after scrollTo(0)/scrollTo(end) the row positions are stale
+  const move = (delta: number) => {
+    setCursor((c) => c + delta);
+    setTimeout(ensureVisible, 0);
+  };
 
   const toggle = () => {
     const id = selectedRow();
@@ -111,13 +115,13 @@ export function Timeline(props: {
     switch (key.name) {
       case 'j':
       case 'down':
-        if (cursor() < n - 1) setCursor((c) => c + 1);
+        if (cursor() < n - 1) move(1);
         else scroll?.scrollBy(1);
         return true;
       case 'k':
       case 'up':
         setFollowing(false);
-        if (cursor() > 0) setCursor((c) => c - 1);
+        if (cursor() > 0) move(-1);
         else scroll?.scrollBy(-1);
         return true;
       case 'pagedown':

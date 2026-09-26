@@ -1,5 +1,5 @@
 import type { RunState } from '@shibaox/core';
-import type { InboxId, SubmitRequest } from '@shibaox/daemon';
+import type { Envelope, InboxId, SubmitRequest } from '@shibaox/daemon';
 import { DaemonHttpError } from '@shibaox/daemon/client';
 import type { SetStoreFunction } from 'solid-js/store';
 import { RUN_EVENT_REFRESH } from '../model/stream.js';
@@ -35,11 +35,16 @@ interface Sub {
   runId: string;
   controller: AbortController;
   cursor?: string;
+  /** Frames received but not yet written to the store (flushed every FLUSH_MS). */
+  pending: Envelope[];
+  flushTimer?: NodeJS.Timeout;
 }
 
 const DEFAULTS: PollerIntervals = { fast: 500, normal: 1000, slow: 5000, health: 5000 };
 const FAST_WINDOW_MS = 3000;
 const REFRESH_THROTTLE_MS = 200;
+/** Frames are written to the store in batches: one store update per burst, not per frame. */
+const FLUSH_MS = 50;
 
 /**
  * Feeds the data store: `listRuns` + `inbox` on a timer (faster after an action, slower while
@@ -137,7 +142,7 @@ export class Poller {
   /** Opens the run's SSE stream (history first); a no-op when already subscribed. */
   subscribe(runId: string): void {
     if (this.subs.has(runId)) return;
-    const sub: Sub = { runId, controller: new AbortController() };
+    const sub: Sub = { runId, controller: new AbortController(), pending: [] };
     this.subs.set(runId, sub);
     if (this.get().reachable) void this.consume(sub);
   }
@@ -149,13 +154,40 @@ export class Poller {
   private close(runId: string): void {
     const sub = this.subs.get(runId);
     if (!sub) return;
+    this.flush(sub);
     sub.controller.abort();
     this.subs.delete(runId);
   }
 
+  private flush(sub: Sub): void {
+    if (sub.flushTimer) clearTimeout(sub.flushTimer);
+    sub.flushTimer = undefined;
+    if (sub.pending.length === 0) return;
+    const batch = sub.pending;
+    sub.pending = [];
+    this.set('frames', sub.runId, (frames = []) => {
+      const all =
+        frames.length + batch.length > FRAME_LIMIT
+          ? [...frames, ...batch].slice(-FRAME_LIMIT)
+          : [...frames, ...batch];
+      return all;
+    });
+  }
+
+  private queue(sub: Sub, env: Envelope): void {
+    sub.pending.push(env);
+    if (!sub.flushTimer) sub.flushTimer = setTimeout(() => this.flush(sub), FLUSH_MS);
+  }
+
   private reopen(old: Sub): void {
+    this.flush(old);
     old.controller.abort();
-    const sub: Sub = { runId: old.runId, controller: new AbortController(), cursor: old.cursor };
+    const sub: Sub = {
+      runId: old.runId,
+      controller: new AbortController(),
+      cursor: old.cursor,
+      pending: [],
+    };
     this.subs.set(old.runId, sub);
     void this.consume(sub);
   }
@@ -174,15 +206,13 @@ export class Poller {
         since: sub.cursor,
       })) {
         if (!mine()) return;
-        if (env.kind !== 'end') sub.cursor = env.cursor;
-        if (env.kind !== 'end')
-          this.set('frames', runId, (frames = []) =>
-            frames.length >= FRAME_LIMIT
-              ? [...frames.slice(frames.length - FRAME_LIMIT + 1), env]
-              : [...frames, env],
-          );
+        if (env.kind !== 'end') {
+          sub.cursor = env.cursor;
+          this.queue(sub, env);
+        }
         if (env.kind === 'run' && RUN_EVENT_REFRESH.has(env.event.type)) this.refreshSoon(runId);
         if (env.kind === 'end') {
+          this.flush(sub);
           await this.refreshRun(runId);
           this.set('ended', runId, env.status);
           this.subs.delete(runId);

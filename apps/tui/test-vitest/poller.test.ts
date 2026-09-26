@@ -35,6 +35,8 @@ const end = (seq: number, status = 'completed'): Envelope =>
   ({ kind: 'end', seq, cursor: `${seq}:0`, status }) as unknown as Envelope;
 const flush = async (n = 6) => {
   for (let i = 0; i < n; i++) await new Promise((r) => setImmediate(r));
+  await vi.advanceTimersByTimeAsync(60); // frames reach the store in 50 ms batches
+  for (let i = 0; i < n; i++) await new Promise((r) => setImmediate(r));
 };
 
 function setup() {
