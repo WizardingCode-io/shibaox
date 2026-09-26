@@ -2,6 +2,8 @@
 import { Command, InvalidArgumentError, Option } from 'commander';
 import { doctorCommand } from './commands/doctor.js';
 import { initCommand } from './commands/init.js';
+import { modelsCommand } from './commands/models.js';
+import { providersListCommand, providersTestCommand } from './commands/providers.js';
 import { replayCommand } from './commands/replay.js';
 import { resumeRun } from './commands/resume.js';
 import { printState, runWorkflow } from './commands/run.js';
@@ -34,9 +36,10 @@ program
   .requiredOption('--project <path>', 'project workspace')
   .requiredOption('--input <text>', 'request / spec text')
   .addOption(
-    new Option('--adapter <id>', 'runtime adapter (phase 1A: mock)')
-      .choices(['mock'])
-      .default('mock'),
+    new Option(
+      '--adapter <id>',
+      'runtime adapter (default: direct when the strong tier has a configured provider, else mock)',
+    ).choices(['mock', 'direct']),
   )
   .option('--budget <usd>', 'budget in USD (default: org budgets.per_run_usd)', parseBudget)
   .option('--db <path>', 'events database path')
@@ -47,7 +50,7 @@ program
         org: string;
         project: string;
         input: string;
-        adapter: 'mock';
+        adapter?: 'mock' | 'direct';
         budget?: number;
         db?: string;
       },
@@ -62,13 +65,43 @@ program
   .argument('<runId>')
   .description('continue a waiting, budget-paused or interrupted run')
   .requiredOption('--org <dir>', 'org repo directory')
+  .addOption(
+    new Option('--adapter <id>', 'runtime adapter (default: as for run)').choices([
+      'mock',
+      'direct',
+    ]),
+  )
   .option('--budget <usd>', 'new budget in USD (required to resume a budget pause)', parseBudget)
   .option('--db <path>', 'events database path')
-  .action(async (runId: string, o: { org: string; budget?: number; db?: string }) => {
-    const state = await resumeRun(runId, o);
-    printState(state);
-    process.exit(state.status === 'completed' ? 0 : 2);
-  });
+  .action(
+    async (
+      runId: string,
+      o: { org: string; adapter?: 'mock' | 'direct'; budget?: number; db?: string },
+    ) => {
+      const state = await resumeRun(runId, o);
+      printState(state);
+      process.exit(state.status === 'completed' ? 0 : 2);
+    },
+  );
+const providers = program.command('providers').description('model providers from the catalog');
+providers
+  .command('list')
+  .description('list providers and whether they are configured')
+  .option('--configured', 'only configured providers')
+  .action((o: { configured?: boolean }) => providersListCommand(o));
+providers
+  .command('test')
+  .argument('<id>')
+  .description('make one short call to a provider')
+  .option('--model <m>', 'model to test (default: the first catalog model)')
+  .action(async (id: string, o: { model?: string }) =>
+    process.exit(await providersTestCommand(id, o)),
+  );
+program
+  .command('models')
+  .description('show how each org role resolves to a model')
+  .requiredOption('--org <dir>', 'org repo directory')
+  .action((o: { org: string }) => modelsCommand(o));
 program
   .command('runs')
   .requiredOption('--org <dir>')

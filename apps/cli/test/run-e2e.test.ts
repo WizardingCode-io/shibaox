@@ -13,18 +13,25 @@ const sample = fileURLToPath(new URL('../../../examples/sample-repo', import.met
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), 'e2e-'));
   scaffoldOrg(dir);
+  // The template gate also has a `jev` check, which needs TYPESAFE_API_KEY; keep the code check only.
+  writeFileSync(
+    join(dir, 'org/gates/tests.yaml'),
+    'gate: tests\nchecks:\n  - { name: unit-tests, type: code, command: "npm test", timeout_ms: 120000 }\n',
+  );
   const project = join(dir, 'project');
   cpSync(sample, project, { recursive: true });
-  return { org: join(dir, 'org'), project, db: join(dir, 'events.db') };
+  // An empty env keeps these runs hermetic: no provider or Jev key leaks in from the shell.
+  return { org: join(dir, 'org'), project, db: join(dir, 'events.db'), env: {} };
 }
 
 describe('shibaox run (mock adapter)', () => {
   it('completes hello-feature against the sample repo', async () => {
-    const { org, project, db } = setup();
+    const { org, project, db, env } = setup();
     const state = await runWorkflow('hello-feature', {
       org,
       project,
       db,
+      env,
       input: 'add /health',
       adapter: 'mock',
       human: new AutoApproveHuman(),
@@ -35,7 +42,7 @@ describe('shibaox run (mock adapter)', () => {
     expect(state.nodes.judge?.choice).toBe('ship');
   });
   it('fails after retries when the sample tests are broken', async () => {
-    const { org, project, db } = setup();
+    const { org, project, db, env } = setup();
     writeFileSync(
       join(project, 'math.test.js'),
       "import { test } from 'node:test'; test('x', () => { throw new Error('broken'); });\n",
@@ -44,6 +51,7 @@ describe('shibaox run (mock adapter)', () => {
       org,
       project,
       db,
+      env,
       input: 'x',
       adapter: 'mock',
       human: new AutoApproveHuman(),
@@ -54,11 +62,12 @@ describe('shibaox run (mock adapter)', () => {
     expect(state.lastGateReport?.checks[0]?.evidence).toContain('broken');
   });
   it('pauses on a tiny budget', async () => {
-    const { org, project, db } = setup();
+    const { org, project, db, env } = setup();
     const state = await runWorkflow('hello-feature', {
       org,
       project,
       db,
+      env,
       input: 'x',
       adapter: 'mock',
       budget: 0.000001,
@@ -68,11 +77,12 @@ describe('shibaox run (mock adapter)', () => {
     expect(state.status).toBe('paused_budget');
   });
   it('defers the human when not interactive, then resume approves and completes', async () => {
-    const { org, project, db } = setup();
+    const { org, project, db, env } = setup();
     const waiting = await runWorkflow('hello-feature', {
       org,
       project,
       db,
+      env,
       input: 'add /health',
       adapter: 'mock',
       human: new DeferHuman(),
@@ -83,6 +93,7 @@ describe('shibaox run (mock adapter)', () => {
     const stillWaiting = await resumeRun(waiting.runId, {
       org,
       db,
+      env,
       human: new DeferHuman(),
       log: () => {},
     });
@@ -90,6 +101,7 @@ describe('shibaox run (mock adapter)', () => {
     const done = await resumeRun(waiting.runId, {
       org,
       db,
+      env,
       human: new AutoApproveHuman(),
       log: () => {},
     });
@@ -97,11 +109,12 @@ describe('shibaox run (mock adapter)', () => {
     expect(done.nodes.ship?.status).toBe('completed');
   });
   it('uses the org per-run budget when --budget is not given', async () => {
-    const { org, project, db } = setup();
+    const { org, project, db, env } = setup();
     const state = await runWorkflow('hello-feature', {
       org,
       project,
       db,
+      env,
       input: 'x',
       adapter: 'mock',
       human: new AutoApproveHuman(),

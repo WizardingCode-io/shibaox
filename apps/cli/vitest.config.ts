@@ -1,16 +1,19 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
+const src = (p: string) => fileURLToPath(new URL(`../../packages/${p}`, import.meta.url));
+
 export default defineConfig({
   resolve: {
     alias: {
-      '@shibaox/core': fileURLToPath(new URL('../../packages/core/src/index.ts', import.meta.url)),
-      '@shibaox/persistence-sqlite': fileURLToPath(
-        new URL('../../packages/persistence-sqlite/src/index.ts', import.meta.url),
-      ),
-      '@shibaox/schemas': fileURLToPath(
-        new URL('../../packages/schemas/src/index.ts', import.meta.url),
-      ),
+      '@shibaox/core': src('core/src/index.ts'),
+      '@shibaox/persistence-sqlite': src('persistence-sqlite/src/index.ts'),
+      '@shibaox/schemas': src('schemas/src/index.ts'),
+      '@shibaox/providers/testing': src('providers/src/testing/fake-openai.ts'),
+      '@shibaox/providers': src('providers/src/index.ts'),
+      '@shibaox/jev/testing': src('jev/src/testing/fake-jev.ts'),
+      '@shibaox/jev': src('jev/src/index.ts'),
+      '@shibaox/adapter-direct': src('adapter-direct/src/index.ts'),
     },
   },
   test: { include: ['test/**/*.test.ts'], testTimeout: 15_000 },

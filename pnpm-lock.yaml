@@ -23,12 +23,21 @@ importers:
 
   apps/cli:
     dependencies:
+      '@shibaox/adapter-direct':
+        specifier: workspace:*
+        version: link:../../packages/adapter-direct
       '@shibaox/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@shibaox/jev':
+        specifier: workspace:*
+        version: link:../../packages/jev
       '@shibaox/persistence-sqlite':
         specifier: workspace:*
         version: link:../../packages/persistence-sqlite
+      '@shibaox/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@shibaox/schemas':
         specifier: workspace:*
         version: link:../../packages/schemas

@@ -12,8 +12,11 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
+    "@shibaox/adapter-direct": "workspace:*",
     "@shibaox/core": "workspace:*",
+    "@shibaox/jev": "workspace:*",
     "@shibaox/persistence-sqlite": "workspace:*",
+    "@shibaox/providers": "workspace:*",
     "@shibaox/schemas": "workspace:*",
     "commander": "^15.0.0"
   },

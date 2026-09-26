@@ -5,11 +5,15 @@ budgets:
   per_run_usd: 5
 teams: [engineering]
 `,
-  'org/models.yaml': `providers:
-  anthropic: { api_key_env: ANTHROPIC_API_KEY }
+  'org/models.yaml': `# Model refs are <provider>/<model>; see \`shibaox providers list\` for the catalog.
+# anthropic/... uses ANTHROPIC_API_KEY. With a Claude subscription instead of an API key,
+# use anthropic-subscription/<model> (e.g. anthropic-subscription/claude-sonnet-5): it runs
+# through the Claude Code runtime (phase 1B-2), not through the direct adapter.
+# Local models: ollama/<model> (Ollama on :11434) or lmstudio/<model> (LM Studio on :1234).
+providers: {}
 tiers:
-  strong: claude-opus-5-5
-  cheap: claude-haiku-4-5
+  strong: anthropic/claude-sonnet-5
+  cheap: ollama/llama3.2
   decision: jev-latest
 roles: {}
 gates: {}
@@ -42,6 +46,7 @@ system_prompt: prompts/backend.md
   'org/gates/tests.yaml': `gate: tests
 checks:
   - { name: unit-tests, type: code, command: "npm test", timeout_ms: 120000 }
+  - { name: spec, type: jev, question: "The outputs implement the request", threshold: 0.8 }
 `,
   'org/workflows/hello-feature.yaml': `workflow: hello-feature
 team: engineering
