@@ -223,6 +223,16 @@ importers:
         specifier: ^26.6.2
         version: 26.6.2
 
+  packages/workspace:
+    dependencies:
+      '@shibaox/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.2
+        version: 26.6.2
+
 packages:
 
   '@ai-sdk/alibaba@2.0.56':
