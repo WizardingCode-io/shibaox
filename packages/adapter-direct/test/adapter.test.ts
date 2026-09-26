@@ -137,6 +137,22 @@ describe('DirectAdapter', () => {
     expect(text).toContain('not allowed');
     expect(text).toContain('"exitCode":0');
   });
+  it('does not treat the read/write capability tools as runnable programs', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI((req, turn) =>
+      turn === 0
+        ? { toolCalls: [{ name: 'run_command', args: { command: 'write root' } }] }
+        : { content: (req.messages.at(-1) as { content: string }).content },
+    );
+    const adapter = new DirectAdapter({
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    const r = await collectRun(adapter, jobFor(ws, ['read', 'write', 'echo']), ctx());
+    expect(String((r.output as { text: string }).text)).toContain(
+      'command \\"write\\" is not allowed',
+    );
+  });
   it('refuses shell chaining, substitution and redirection even after an allowed program', async () => {
     const ws = mkdtempSync(join(tmpdir(), 'ws-'));
     const cmds = [

@@ -129,7 +129,8 @@ export function buildTools(a: ToolArgs): ToolSet {
         return { error };
       }
     };
-  const allowed = new Set(a.role.tools);
+  // `read`/`write` in role.tools are capabilities (file tools), never runnable programs
+  const allowed = new Set(a.role.tools.filter((t) => t !== 'read' && t !== 'write'));
   const readOnly = a.role.capabilities.includes('read-only');
   const graphQuery = a.graphQuery;
   return {
