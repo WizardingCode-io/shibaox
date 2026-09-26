@@ -20,7 +20,7 @@ opencode onde são genéricas e desenhando os ecrãs do shibaox de raiz.
 | Ecrã principal | Sessão de run como conversa (opção B), com home tipo opencode (logo + prompt). A lista de runs vive na sidebar. |
 | Primitivas | Copiadas do opencode com atribuição MIT em `apps/tui/THIRD_PARTY.md`: animation, one-cell-motion, subcell, masked-text, shimmer-text, fade-in-text, tab-pulse (funções), toast, dialog, delayed-presence, marquee, layout helpers. Adaptadas ao mínimo (tema e config do shibaox). |
 | Tema | Formato semântico do opencode (escalas de tonalidade + tokens `text`/`background`/`border`/`feedback`/`action`), um único tema `shibaox` gerado dos tokens do design system. Resolver próprio, reduzido (sem v1, sem syntax de markdown além do necessário). |
-| Teclas | `@opentui/keymap` (bindings com scopes) em vez de `useKeyboard` global. |
+| Teclas | Scopes próprios (`context/keys.tsx`: pilha `dialog > prompt > pane > global`) sobre `useKeyboard` do `@opentui/solid`. O pacote `@opentui/keymap` fica para uma fase posterior (o opencode envolve-o em 470 linhas próprias). |
 | Fronteira | O Bun importa apenas `@shibaox/daemon/client` e `@shibaox/core` (tipos). O teste de fronteira mantém-se. |
 | Daemon | Ganha `GET /runs/:id/diff` (diff do worktree do run). Nada mais muda no daemon. |
 | Rato | Suportado: clicar em runs, tabs, toasts e diálogos; hover; scroll na conversa; redimensionar a sidebar. |
@@ -31,7 +31,7 @@ opencode onde são genéricas e desenhando os ecrãs do shibaox de raiz.
 
 ```
 apps/tui/
-  package.json           @opentui/core, @opentui/solid, @opentui/keymap, solid-js, opentui-spinner, fuzzysort
+  package.json           @opentui/core, @opentui/solid, solid-js, opentui-spinner, fuzzysort
   bunfig.toml            [test] root = "test"
   THIRD_PARTY.md         atribuição MIT do opencode para os ficheiros copiados
   src/main.tsx           entrada Bun (mesmos argumentos da 2A-2: dashboard|stream <runId> --socket --home --version --cwd)
@@ -39,7 +39,7 @@ apps/tui/
   src/theme/             shibaox.json, resolve.ts (escalas → tokens RGBA), context.tsx (useTheme, surface)
   src/motion/            animation.ts, one-cell-motion.ts, subcell.ts, masked-text.ts, shimmer-text.tsx, fade-in-text.tsx, pulse.ts, spinner.tsx
   src/ui/                dialog.tsx, toast.tsx, border.ts, layout.ts, marquee.ts, delayed-presence.ts
-  src/context/           client.tsx, data.tsx (stores + poller), route.tsx, keymap.tsx, prefs.tsx, exit.tsx
+  src/context/           client.tsx, data.tsx (stores + poller), route.tsx, keys.tsx, prefs.tsx, exit.tsx
   src/routes/home.tsx    logo + prompt
   src/routes/session/    index.tsx (frame), timeline.tsx, node-card.tsx, tool-line.tsx, gate-card.tsx, decide-card.tsx, summary-card.tsx, approval-bar.tsx, diff.tsx
   src/component/         logo.tsx, tabs.tsx, sidebar.tsx, footer.tsx, prompt/ (input + autocomplete), command-palette.tsx, reconnecting.tsx, help.tsx
