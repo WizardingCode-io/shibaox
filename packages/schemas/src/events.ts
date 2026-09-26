@@ -42,6 +42,10 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     workflowSnapshot: WorkflowSchema.optional(),
     adapter: z.string().optional(),
     workspaceMode: z.enum(['inplace', 'worktree']).optional(),
+    /** The main checkout the run was started for (the worktree's source for `worktree` runs). */
+    project: z.string().optional(),
+    /** The run's worktree branch (`worktree` runs only). */
+    branch: z.string().optional(),
   }),
   z.object({ ...node, type: z.literal('NodeStarted') }),
   z.object({

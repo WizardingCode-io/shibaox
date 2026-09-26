@@ -44,6 +44,10 @@ export interface RunState {
   workspace: string;
   adapter?: string;
   workspaceMode?: 'inplace' | 'worktree';
+  /** Main checkout of the project (recorded since phase 1B-2; absent in older runs). */
+  project?: string;
+  /** Worktree branch of a `worktree` run (recorded since phase 1B-2). */
+  branch?: string;
   status: RunStatus;
   nodes: Record<string, NodeState>;
   spentUsd: number;

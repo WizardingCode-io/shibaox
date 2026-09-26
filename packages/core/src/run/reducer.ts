@@ -135,6 +135,8 @@ export function reduce(state: RunState | undefined, event: RunEvent, idx: number
       workspace: event.workspace,
       adapter: event.adapter,
       workspaceMode: event.workspaceMode,
+      project: event.project,
+      branch: event.branch,
       status: 'running',
       nodes: {},
       spentUsd: 0,

@@ -60,6 +60,8 @@ export class RunEngine {
     budgetUsd?: number;
     adapter?: string;
     workspaceMode?: 'inplace' | 'worktree';
+    project?: string;
+    branch?: string;
   }): Promise<RunState> {
     const workflowSnapshot = this.resolveFromOrg(opts.workflow);
     const runId = (this.deps.newRunId ?? randomUUID)();
@@ -74,6 +76,8 @@ export class RunEngine {
       workflowSnapshot,
       adapter: opts.adapter,
       workspaceMode: opts.workspaceMode,
+      project: opts.project,
+      branch: opts.branch,
     });
     return this.drive(runId);
   }

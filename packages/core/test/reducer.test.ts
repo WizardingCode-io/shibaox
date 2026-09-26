@@ -22,6 +22,13 @@ describe('replay', () => {
     expect(s.pendingHumans).toEqual([]);
   });
 
+  it('keeps the project and branch recorded at RunCreated', () => {
+    const s = replay([{ ...created, project: '/p', branch: 'shibaox/r1' } as RunEvent]);
+    expect(s.project).toBe('/p');
+    expect(s.branch).toBe('shibaox/r1');
+    expect(replay([created]).project).toBeUndefined();
+  });
+
   it('tracks node lifecycle, attempts and cost', () => {
     const s = replay([
       created,

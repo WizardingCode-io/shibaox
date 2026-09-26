@@ -183,11 +183,17 @@ export async function prepareGraph(args: {
 }
 
 /**
- * For a `worktree` run, the main project and the worktree directory: the workspace is
- * `<project>/.shibaox/worktrees/<runId>[/<subdir>]`.
+ * For a `worktree` run, the main project and the worktree directory
+ * (`<project>/.shibaox/worktrees/<runId>`). Uses the `project` recorded at `RunCreated`; older
+ * runs fall back to parsing the workspace (`<project>/.shibaox/worktrees/<runId>[/<subdir>]`).
  */
-function worktreeOf(state: RunState): { project: string; path: string } | undefined {
+export function worktreeOf(state: RunState): { project: string; path: string } | undefined {
   if (state.workspaceMode !== 'worktree') return undefined;
+  if (state.project)
+    return {
+      project: state.project,
+      path: join(state.project, '.shibaox', 'worktrees', state.runId),
+    };
   const marker = `${sep}.shibaox${sep}worktrees${sep}${state.runId}`;
   const i = state.workspace.lastIndexOf(marker);
   if (i <= 0) return undefined;
@@ -199,7 +205,7 @@ function worktreeOf(state: RunState): { project: string; path: string } | undefi
 
 /** The main project of a run (not its worktree). */
 export function projectOf(state: RunState): string {
-  return worktreeOf(state)?.project ?? state.workspace;
+  return state.project ?? worktreeOf(state)?.project ?? state.workspace;
 }
 
 /** The project's name for vault paths (a safe identifier). */
@@ -252,7 +258,7 @@ export async function finishRun(
 /** Where a `worktree` run lives (kept for the user to review and merge), printed at the end. */
 export function logWorktree(state: RunState, log: (l: string) => void): void {
   const wt = worktreeOf(state);
-  if (wt) log(`worktree: ${wt.path} (branch shibaox/${state.runId})`);
+  if (wt) log(`worktree: ${wt.path} (branch ${state.branch ?? `shibaox/${state.runId}`})`);
 }
 
 /** Path prefix of `project` inside its git repository (`''` at the top level). */
@@ -320,6 +326,8 @@ export async function runWorkflow(workflow: string, opts: RunOptions): Promise<R
       budgetUsd,
       adapter,
       workspaceMode: ws.mode,
+      project,
+      branch: ws.branch,
     });
     await finishRun(store, org, state, { ...opts, adapter });
     logWorktree(state, logOf(opts));

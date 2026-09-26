@@ -12,7 +12,7 @@ import { loadOrg } from '@shibaox/schemas';
 import { afterEach, describe, expect, it } from 'vitest';
 import { scaffoldOrg } from '../src/commands/init.js';
 import { resumeRun } from '../src/commands/resume.js';
-import { runWorkflow } from '../src/commands/run.js';
+import { projectOf, runWorkflow } from '../src/commands/run.js';
 import { worktreeList, worktreeRemove } from '../src/commands/worktree.js';
 import { buildRuntime } from '../src/wiring.js';
 
@@ -292,6 +292,59 @@ describe('vault and worktrees', () => {
     lines.length = 0;
     await worktreeList({ project }, (l) => lines.push(l));
     expect(lines).toEqual(['no run worktrees']);
+  });
+
+  it('records the project and branch of a worktree run and prefers them over path parsing', async () => {
+    const { org, project, db } = setup();
+    const git = (...a: string[]) => execFileSync('git', a, { cwd: project, stdio: 'ignore' });
+    git('init', '-q', '-b', 'main');
+    git('add', '-A');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--no-gpg-sign', '-m', 'i');
+    const lines: string[] = [];
+    const state = await runWorkflow('hello-feature', {
+      org,
+      project,
+      db,
+      input: 'x',
+      env: {},
+      human: new AutoApproveHuman(),
+      log: (l) => lines.push(l),
+    });
+    const store = new SqliteEventStore(db);
+    const created = (await store.read(state.runId))[0];
+    store.close();
+    expect(created).toMatchObject({
+      type: 'RunCreated',
+      project,
+      branch: `shibaox/${state.runId}`,
+    });
+    expect(state.project).toBe(project);
+    expect(state.branch).toBe(`shibaox/${state.runId}`);
+    expect(projectOf(state)).toBe(project);
+    const wt = join(project, '.shibaox', 'worktrees', state.runId);
+    expect(lines).toContain(`worktree: ${wt} (branch shibaox/${state.runId})`);
+    // a recorded project wins even when the workspace path does not follow the layout
+    expect(projectOf({ ...state, workspace: '/elsewhere/ws' })).toBe(project);
+    // old runs (no project/branch recorded) still resolve from the workspace path
+    const old = { ...state, project: undefined, branch: undefined };
+    expect(projectOf(old)).toBe(project);
+    expect(projectOf({ ...old, workspaceMode: 'inplace' as const })).toBe(state.workspace);
+  });
+
+  it('inplace runs record the project and no branch', async () => {
+    const { org, project, db } = setup();
+    const state = await runWorkflow('hello-feature', {
+      org,
+      project,
+      db,
+      input: 'x',
+      env: {},
+      workspace: 'inplace',
+      human: new AutoApproveHuman(),
+      log: () => {},
+    });
+    expect(state.project).toBe(project);
+    expect(state.branch).toBeUndefined();
   });
 
   it('falls back to inplace when the project is an untracked subfolder of a repo', async () => {
