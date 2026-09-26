@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { isTerminal, type RunState, replay } from '@shibaox/core';
 import { SqliteEventStore } from '@shibaox/persistence-sqlite';
@@ -11,6 +12,7 @@ import {
   logWorktree,
   prepareGraph,
   projectOf,
+  worktreeOf,
 } from './run.js';
 
 export interface ResumeOptions extends EngineOptions {
@@ -32,6 +34,11 @@ export async function resumeRun(runId: string, opts: ResumeOptions): Promise<Run
   try {
     const events = await store.read(runId);
     const prior = events.length > 0 ? replay(events) : undefined;
+    const wt = prior && !isTerminal(prior.status) ? worktreeOf(prior) : undefined;
+    if (wt && !existsSync(wt.path))
+      throw new Error(
+        `cannot resume run ${runId}: its worktree ${wt.path} no longer exists (see: shibaox worktree list)`,
+      );
     const recorded = isAdapterId(prior?.adapter) ? prior?.adapter : undefined;
     const adapter = opts.adapter ?? recorded ?? effectiveAdapter(undefined, org);
     const workflow = prior && (prior.workflowSnapshot ?? org.workflows[prior.workflow]);

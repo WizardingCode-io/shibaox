@@ -347,6 +347,31 @@ describe('vault and worktrees', () => {
     expect(state.branch).toBeUndefined();
   });
 
+  it('resume refuses a worktree run whose worktree was removed', async () => {
+    const { org, project, db } = setup();
+    const git = (...a: string[]) => execFileSync('git', a, { cwd: project, stdio: 'ignore' });
+    git('init', '-q', '-b', 'main');
+    git('add', '-A');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--no-gpg-sign', '-m', 'i');
+    const waiting = await runWorkflow('hello-feature', {
+      org,
+      project,
+      db,
+      input: 'x',
+      env: {},
+      human: { ask: async (r) => (r.nodeId === 'ship' ? { deferred: true } : { approved: true }) },
+      log: () => {},
+    });
+    expect(waiting.status).toBe('waiting_human');
+    await worktreeRemove(waiting.runId, { project, deleteBranch: true }, () => {});
+    const wt = join(project, '.shibaox', 'worktrees', waiting.runId);
+    await expect(
+      resumeRun(waiting.runId, { org, db, env: {}, human: new AutoApproveHuman(), log: () => {} }),
+    ).rejects.toThrow(
+      `cannot resume run ${waiting.runId}: its worktree ${wt} no longer exists (see: shibaox worktree list)`,
+    );
+  });
+
   it('falls back to inplace when the project is an untracked subfolder of a repo', async () => {
     const { dir, org, db } = setup();
     const gitAt = (cwd: string, ...a: string[]) => execFileSync('git', a, { cwd, stdio: 'ignore' });
