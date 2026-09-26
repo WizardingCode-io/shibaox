@@ -65,3 +65,5 @@ export class SqliteEventStore implements EventStore {
     this.db.close();
   }
 }
+export * from './outbox.js';
+export * from './schedules.js';
