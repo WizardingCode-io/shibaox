@@ -51,6 +51,9 @@ export async function worktreePreflight(
   return { ok: true };
 }
 
+/** Entries added to the repository's `info/exclude`: run state and the knowledge graph. */
+export const EXCLUDED = ['.shibaox/', 'graphify-out/'];
+
 async function ensureExcluded(project: string): Promise<void> {
   const commonDir = (await git(project, ['rev-parse', '--git-common-dir'])).trim();
   const gitCommonDir = resolve(project, commonDir);
@@ -58,8 +61,13 @@ async function ensureExcluded(project: string): Promise<void> {
   const exclude = join(infoDir, 'exclude');
   if (!existsSync(infoDir)) mkdirSync(infoDir, { recursive: true });
   const current = existsSync(exclude) ? readFileSync(exclude, 'utf8') : '';
-  if (!current.split('\n').includes('.shibaox/'))
-    appendFileSync(exclude, `${current.endsWith('\n') || current === '' ? '' : '\n'}.shibaox/\n`);
+  const lines = current.split('\n');
+  const missing = EXCLUDED.filter((e) => !lines.includes(e));
+  if (missing.length > 0)
+    appendFileSync(
+      exclude,
+      `${current.endsWith('\n') || current === '' ? '' : '\n'}${missing.map((e) => `${e}\n`).join('')}`,
+    );
 }
 
 export async function createRunWorkspace(args: {

@@ -36,7 +36,9 @@ describe('run workspaces', () => {
     expect(ws.path).toBe(join(project, '.shibaox', 'worktrees', 'r1'));
     writeFileSync(join(ws.path, 'b.txt'), 'b\n');
     expect(existsSync(join(project, 'b.txt'))).toBe(false);
-    expect(readFileSync(join(project, '.git', 'info', 'exclude'), 'utf8')).toContain('.shibaox/');
+    const exclude = readFileSync(join(project, '.git', 'info', 'exclude'), 'utf8');
+    expect(exclude).toContain('.shibaox/\n');
+    expect(exclude).toContain('graphify-out/\n');
     const diff = await diffRunWorkspace(ws.path);
     expect(diff).toContain('b.txt');
     const list = await listRunWorkspaces(project);

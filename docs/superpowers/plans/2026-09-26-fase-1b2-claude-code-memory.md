@@ -22,7 +22,7 @@
 
 ## Review Focus
 
-1. O adaptador Claude Code nunca pode permitir uma ação de `approval_required` (push, deploy) sem a resposta do `HumanHandler`; sem TTY a run fica `waiting_human`, não avança. Teste na Task 2.
+1. O adaptador Claude Code nunca pode permitir uma ação de `approval_required` (push, deploy) sem a resposta do `HumanHandler`; sem TTY a aprovação é adiada e a tarefa termina com erro `approval pending for <categoria>`, pelo que a run fica `failed` (decisão aceite na revisão; a fila persistente de aprovações vem com o control plane), nunca avança sem aprovação. Teste na Task 2.
 2. Um run em worktree nunca escreve no checkout principal do projeto; se o projeto não é um repo git, a CLI recusa `--workspace worktree` com mensagem clara. Teste na Task 1.
 3. O vault writer nunca escreve fora da pasta do vault nem sobrescreve notas humanas: notas do sistema vivem em `90-system/runs/` e `10-projects/<proj>/runs/`; colisão de nome acrescenta sufixo. Teste na Task 3.
 4. Falha do graphify (não instalado, sem `uv`, extração falhou) degrada para "sem grafo" com aviso, nunca falha o run. Teste na Task 3.

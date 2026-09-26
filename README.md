@@ -275,8 +275,8 @@ provider) stops it with `cannot start: ...`.
 `run --workspace worktree|inplace` picks where tasks work. The default is `worktree` when
 the project is a git repository, else `inplace`. A worktree run gets its own checkout at
 `<project>/.shibaox/worktrees/<runId>` on a new branch `shibaox/<runId>` created from the
-project's `HEAD` (uncommitted changes in the project are not in it; `.shibaox/` is added
-to `.git/info/exclude`). The main checkout is never touched. If the project is a
+project's `HEAD` (uncommitted changes in the project are not in it; `.shibaox/` and
+`graphify-out/` are added to `.git/info/exclude`). The main checkout is never touched. If the project is a
 subdirectory of a larger repository, tasks run in the same subdirectory of the worktree.
 A worktree needs a commit, and a subdirectory project must be tracked at `HEAD`: when
 the worktree default cannot be used the run prints `warn: <reason>; running in place`
