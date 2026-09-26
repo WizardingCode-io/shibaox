@@ -3,6 +3,7 @@ import type { RunState } from '@shibaox/core';
 import type { ScheduleRow } from '@shibaox/persistence-sqlite';
 import type { InboxItem } from './inbox.js';
 import type { RunSummaryPlus, SubmitRequest } from './run-manager.js';
+import type { DiffResult } from './runs/diff.js';
 import type { Envelope, Health } from './server.js';
 
 export type { Envelope, Health } from './server.js';
@@ -104,6 +105,10 @@ export class DaemonClient {
   }
   getRun(id: string): Promise<RunState> {
     return this.json('GET', `/runs/${encodeURIComponent(id)}`);
+  }
+  /** The run's checkout diff against HEAD (404 `no_workspace` once the directory is gone). */
+  diff(id: string): Promise<DiffResult> {
+    return this.json('GET', `/runs/${encodeURIComponent(id)}/diff`);
   }
   cancel(id: string): Promise<RunState> {
     return this.json('POST', `/runs/${encodeURIComponent(id)}/cancel`);

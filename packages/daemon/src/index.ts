@@ -9,6 +9,7 @@ export * from './home.js';
 export * from './inbox.js';
 export * from './inline.js';
 export * from './run-manager.js';
+export * from './runs/diff.js';
 export * from './runs/graph.js';
 export * from './runs/notes.js';
 export * from './runs/workspace.js';

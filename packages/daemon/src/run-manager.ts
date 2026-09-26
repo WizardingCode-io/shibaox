@@ -19,6 +19,7 @@ import { loadOrg, type Org, type Workflow } from '@shibaox/schemas';
 import { createRunWorkspace, type WorkspaceMode } from '@shibaox/workspace';
 import type { DaemonConfig } from './config.js';
 import type { InboxAnswer, InboxItem, InboxService } from './inbox.js';
+import { type DiffResult, diffWorkspace } from './runs/diff.js';
 import { type GraphMode, prepareGraph } from './runs/graph.js';
 import { finishRun } from './runs/notes.js';
 import { assertProjectDir, gitPrefix, workspaceMode, worktreeOf } from './runs/workspace.js';
@@ -237,6 +238,12 @@ export class RunManager {
     const events = await this.opts.store.read(runId);
     if (events.length === 0) throw new Error(`run ${runId} not found`);
     return replay(events);
+  }
+
+  /** The run's checkout diff against HEAD; `undefined` when the workspace directory is gone. */
+  async diff(runId: string): Promise<DiffResult | undefined> {
+    const state = await this.state(runId);
+    return diffWorkspace(state.workspace);
   }
 
   async list(filter: { status?: RunStatus; orgRoot?: string } = {}): Promise<RunSummaryPlus[]> {

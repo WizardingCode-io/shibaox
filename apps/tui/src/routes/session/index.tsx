@@ -2,6 +2,7 @@ import { type MouseEvent, TextAttributes } from '@opentui/core';
 import { useTerminalDimensions } from '@opentui/solid';
 import { createEffect, createMemo, createSignal, type JSX, onCleanup, Show } from 'solid-js';
 import { Confirm } from '../../component/dialogs/confirm.js';
+import { DiffDialog } from '../../component/dialogs/diff.js';
 import { Footer } from '../../component/footer.js';
 import { Sidebar } from '../../component/sidebar.js';
 import { useCommands } from '../../context/commands.js';
@@ -116,7 +117,9 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
     if (status() === 'paused_budget') void data.actions.resume(props.runId);
     else toast.show({ message: 'Nothing to resume', variant: 'info' });
   };
+  const diff = () => dialog.open(() => <DiffDialog runId={props.runId} />);
   const unregister = useCommands().register([
+    { id: 'diff', label: 'Diff of the run', keys: 'd', run: diff },
     {
       id: 'sidebar',
       label: 'Toggle sidebar',
@@ -152,6 +155,10 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
     }
     if (key.name === 'r') {
       resume();
+      return true;
+    }
+    if (key.name === 'd' && pending().length === 0) {
+      diff();
       return true;
     }
     return false;

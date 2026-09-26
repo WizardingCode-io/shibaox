@@ -1,5 +1,12 @@
 import type { RunState } from '@shibaox/core';
-import type { Envelope, Health, InboxItem, RunSummaryPlus, SubmitRequest } from '@shibaox/daemon';
+import type {
+  DiffResult,
+  Envelope,
+  Health,
+  InboxItem,
+  RunSummaryPlus,
+  SubmitRequest,
+} from '@shibaox/daemon';
 import { DaemonHttpError } from '@shibaox/daemon/client';
 import type { DaemonClientLike } from '../context/client.js';
 
@@ -28,8 +35,8 @@ export class FakeDaemonClient implements DaemonClientLike {
   submitResult: { runId: string; warnings: string[] } = { runId: 'new-run', warnings: [] };
   /** Frames every new `events()` of that run starts with (the daemon's history replay). */
   history = new Map<string, Envelope[]>();
-  /** Diff results by run id (Task 13); a missing entry is a 404 `no_workspace`. */
-  diffs = new Map<string, unknown>();
+  /** Diff results by run id; a missing entry is a 404 `no_workspace`. */
+  diffs = new Map<string, DiffResult>();
   private readonly streams = new Map<string, Stream>();
 
   private record(method: string, args: unknown[]): void {
@@ -91,6 +98,13 @@ export class FakeDaemonClient implements DaemonClientLike {
   async submitRun(req: SubmitRequest): Promise<{ runId: string; warnings: string[] }> {
     this.record('submitRun', [req]);
     return this.submitResult;
+  }
+
+  async diff(id: string): Promise<DiffResult> {
+    this.record('diff', [id]);
+    const d = this.diffs.get(id);
+    if (!d) throw new DaemonHttpError(404, 'no_workspace', 'The run workspace is gone');
+    return d;
   }
 
   events(

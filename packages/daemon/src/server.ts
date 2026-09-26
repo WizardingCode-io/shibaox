@@ -221,6 +221,12 @@ export class DaemonServer {
     const runGet = param(/^\/runs\/([^/]+)$/);
     if (runGet !== undefined && method === 'GET')
       return send(res, 200, await this.deps.runs.state(runGet));
+    const runDiff = param(/^\/runs\/([^/]+)\/diff$/);
+    if (runDiff !== undefined && method === 'GET') {
+      const d = await this.deps.runs.diff(runDiff);
+      if (!d) throw new HttpError(404, 'no_workspace', 'The run workspace is gone');
+      return send(res, 200, d);
+    }
     const runEvents = param(/^\/runs\/([^/]+)\/events$/);
     if (runEvents !== undefined && method === 'GET') return this.stream(req, res, runEvents, url);
     const runCancel = param(/^\/runs\/([^/]+)\/cancel$/);
