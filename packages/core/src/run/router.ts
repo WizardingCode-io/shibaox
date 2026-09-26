@@ -42,8 +42,13 @@ export function resolveModel(args: {
   const { provider, model } = splitRef(ref);
   const p = args.providers.find((x) => x.id === provider);
   if (!p) throw new Error(`unknown provider "${provider}" in model ref "${ref}"`);
-  if (p.via_runtime)
+  if (p.via_runtime) {
+    if (args.defaultAdapter === 'direct')
+      throw new Error(
+        `provider "${provider}" is only reachable via runtime "${p.via_runtime}"; it cannot run directly`,
+      );
     return { resolution: { kind: 'runtime', runtime: p.via_runtime, model }, warnings };
+  }
   if (!p.configured)
     throw new Error(
       `provider "${provider}" is not configured (run: shibaox providers test ${provider})`,

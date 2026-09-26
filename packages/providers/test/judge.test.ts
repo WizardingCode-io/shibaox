@@ -75,4 +75,19 @@ describe('LeadDecider', () => {
     });
     expect(r.choice).toBe('rework');
   });
+
+  it('fails instead of guessing when the model returns no structured decision', async () => {
+    fake = await startFakeOpenAI(() => ({ content: 'not json at all' }));
+    const d = new LeadDecider(new LlmClient(reg(fake.baseURL)), 'fake/m');
+    await expect(
+      d.decide({
+        runId: 'r',
+        nodeId: 'judge',
+        by: 'team-leader',
+        question: 'Ready?',
+        options: ['ship', 'rework'],
+        context: { input: {}, previousOutputs: {} },
+      }),
+    ).rejects.toThrow();
+  });
 });

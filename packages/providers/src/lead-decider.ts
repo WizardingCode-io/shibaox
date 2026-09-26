@@ -22,10 +22,10 @@ export class LeadDecider implements Decider {
       ],
       output: schema,
     });
-    const choice = r.output?.choice ?? first;
+    if (!r.output) throw new Error('lead decider returned no structured decision');
     return {
-      choice,
-      confidence: r.output ? 1 : 0,
+      choice: r.output.choice,
+      confidence: 1,
       cost: {
         usd: r.cost ?? 0,
         inputTokens: r.usage.inputTokens,

@@ -63,6 +63,20 @@ describe('resolveModel', () => {
     expect(b.resolution.kind).toBe('direct');
     expect(b.warnings[0]).toContain('prefers runtime "claude-code"');
   });
+  it('the direct flag rejects a via_runtime provider, but that provider still resolves via runtime without the flag', () => {
+    const role = RoleSchema.parse({ role: 'researcher' });
+    expect(() =>
+      resolveModel({ role, models, providers, runtimes, defaultAdapter: 'direct' }),
+    ).toThrow(
+      /anthropic-subscription.*only reachable via runtime "claude-code".*cannot run directly/,
+    );
+    const r = resolveModel({ role, models, providers, runtimes });
+    expect(r.resolution).toEqual({
+      kind: 'runtime',
+      runtime: 'claude-code',
+      model: 'claude-sonnet-5',
+    });
+  });
   it('the CLI adapter flag wins', () => {
     expect(
       resolveModel({
