@@ -1,5 +1,6 @@
 import type { RunState } from '@shibaox/core';
 import type { Envelope, Health, InboxItem, RunSummaryPlus, SubmitRequest } from '@shibaox/daemon';
+import { createContext, type JSX, type ParentProps, useContext } from 'solid-js';
 
 /** The subset of the daemon client the dashboard uses; the fake implements it in tests. */
 export interface DaemonClientLike {
@@ -18,4 +19,16 @@ export interface DaemonClientLike {
   cancel(id: string): Promise<RunState>;
   resume(id: string, o?: { budgetUsd?: number }): Promise<RunState>;
   submitRun(req: SubmitRequest): Promise<{ runId: string; warnings: string[] }>;
+}
+
+const Context = createContext<DaemonClientLike>();
+
+export function ClientProvider(props: ParentProps<{ client: DaemonClientLike }>): JSX.Element {
+  return <Context.Provider value={props.client}>{props.children}</Context.Provider>;
+}
+
+export function useClient(): DaemonClientLike {
+  const c = useContext(Context);
+  if (!c) throw new Error('useClient outside ClientProvider');
+  return c;
 }

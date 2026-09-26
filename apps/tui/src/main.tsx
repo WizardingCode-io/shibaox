@@ -1,7 +1,7 @@
 /**
- * The Bun entry the CLI spawns:
- *   bun apps/tui/src/main.tsx dashboard --socket <path> --home <dir> --version <v> [--cwd <dir>]
- *   bun apps/tui/src/main.tsx stream <runId> --socket <path> --home <dir>
+ * The Bun entry the CLI spawns (from the apps/tui root, with @opentui/solid/preload):
+ *   bun --preload @opentui/solid/preload src/main.tsx dashboard --socket <path> --home <dir> --version <v> [--cwd <dir>]
+ *   bun --preload @opentui/solid/preload src/main.tsx stream <runId> --socket <path> --home <dir>
  */
 import { DaemonClient } from '@shibaox/daemon/client';
 import { runDashboard, runStream } from './app.js';
@@ -34,7 +34,11 @@ if (mode === 'dashboard') {
     console.error('usage: main.tsx stream <runId> ...');
     process.exit(2);
   }
-  const r = await runStream(client, runId, { home, cwd: arg('cwd') });
+  const r = await runStream(client, runId, {
+    version: arg('version') ?? '0.0.0',
+    home,
+    cwd: arg('cwd'),
+  });
   if (r.message) console.log(r.message);
   process.exit(r.code);
 }

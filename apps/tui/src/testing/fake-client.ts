@@ -1,7 +1,7 @@
 import type { RunState } from '@shibaox/core';
 import type { Envelope, Health, InboxItem, RunSummaryPlus, SubmitRequest } from '@shibaox/daemon';
 import { DaemonHttpError } from '@shibaox/daemon/client';
-import type { DaemonClientLike } from '../client.js';
+import type { DaemonClientLike } from '../context/client.js';
 
 interface Stream {
   queue: Envelope[];
@@ -28,6 +28,8 @@ export class FakeDaemonClient implements DaemonClientLike {
   submitResult: { runId: string; warnings: string[] } = { runId: 'new-run', warnings: [] };
   /** Frames every new `events()` of that run starts with (the daemon's history replay). */
   history = new Map<string, Envelope[]>();
+  /** Diff results by run id (Task 13); a missing entry is a 404 `no_workspace`. */
+  diffs = new Map<string, unknown>();
   private readonly streams = new Map<string, Stream>();
 
   private record(method: string, args: unknown[]): void {

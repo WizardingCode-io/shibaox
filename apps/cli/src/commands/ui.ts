@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runCommand } from '@shibaox/core';
 import { homePaths } from '@shibaox/daemon';
@@ -13,8 +13,11 @@ export const NO_BUN_MESSAGE =
 export const NO_TUI_MESSAGE =
   'The dashboard files are missing (apps/tui). Reinstall shibaox, or use: shibaox runs';
 
-/** The Bun entry of the terminal UI (a sibling package in the monorepo layout). */
-export const TUI_ENTRY = fileURLToPath(new URL('../../../tui/src/main.tsx', import.meta.url));
+/** The terminal UI package root (a sibling package in the monorepo layout) and its Bun entry. */
+export const TUI_ROOT = fileURLToPath(new URL('../../../tui/', import.meta.url));
+export const TUI_ENTRY = join(TUI_ROOT, 'src/main.tsx');
+/** Bun flags before the entry: the Solid JSX transform for the OpenTUI app. */
+export const TUI_ARGS = ['--preload', '@opentui/solid/preload'] as const;
 export const MIN_BUN = [1, 3] as const;
 
 /** Bun 1.3 or later on the PATH. */
@@ -43,9 +46,9 @@ const ENV_KEYS = [
 const ENV_PREFIXES = ['LC_', 'SHIBAOX_'];
 
 /**
- * How the TUI is spawned: from its own directory (never the user's project, whose bunfig.toml
- * preloads and .env would run inside it) and with only the env the terminal UI needs (no
- * provider keys: it talks to the daemon over the socket).
+ * How the TUI is spawned: from its own package root (never the user's project, whose bunfig.toml
+ * preloads and .env would run inside it; ours carries the Solid preload) and with only the env
+ * the terminal UI needs (no provider keys: it talks to the daemon over the socket).
  */
 export function tuiSpawnOptions(env: NodeJS.ProcessEnv = process.env): {
   cwd: string;
@@ -55,7 +58,7 @@ export function tuiSpawnOptions(env: NodeJS.ProcessEnv = process.env): {
   for (const [k, v] of Object.entries(env))
     if (v !== undefined && (ENV_KEYS.includes(k) || ENV_PREFIXES.some((p) => k.startsWith(p))))
       out[k] = v;
-  return { cwd: dirname(TUI_ENTRY), env: out };
+  return { cwd: TUI_ROOT, env: out };
 }
 
 /** Sequences that put a terminal back after a full-screen app died without cleaning up. */
@@ -68,7 +71,10 @@ export const TERMINAL_RESTORE =
  */
 export function spawnTui(args: string[]): Promise<number> {
   return new Promise((resolve, reject) => {
-    const child = spawn('bun', [TUI_ENTRY, ...args], { stdio: 'inherit', ...tuiSpawnOptions() });
+    const child = spawn('bun', [...TUI_ARGS, TUI_ENTRY, ...args], {
+      stdio: 'inherit',
+      ...tuiSpawnOptions(),
+    });
     const forward = (sig: NodeJS.Signals) => () => child.kill(sig);
     const onTerm = forward('SIGTERM');
     const onHup = forward('SIGHUP');

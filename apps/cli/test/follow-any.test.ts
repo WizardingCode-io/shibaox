@@ -56,7 +56,7 @@ describe('followAny (terminal path)', () => {
 
 describe('tuiSpawnOptions', () => {
   it('spawns from the tui directory with a trimmed env', async () => {
-    const { tuiSpawnOptions, TUI_ENTRY } = await import('../src/commands/ui.js');
+    const { tuiSpawnOptions, TUI_ROOT, TUI_ARGS } = await import('../src/commands/ui.js');
     const o = tuiSpawnOptions({
       PATH: '/bin',
       HOME: '/h',
@@ -65,7 +65,9 @@ describe('tuiSpawnOptions', () => {
       LC_ALL: 'C',
       TERM: 'xterm',
     });
-    expect(o.cwd).toBe(TUI_ENTRY.replace(/\/main\.tsx$/, ''));
+    expect(o.cwd).toBe(TUI_ROOT);
+    expect(TUI_ROOT.endsWith('/apps/tui/')).toBe(true);
+    expect(TUI_ARGS).toEqual(['--preload', '@opentui/solid/preload']);
     expect(o.env).toEqual({
       PATH: '/bin',
       HOME: '/h',

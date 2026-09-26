@@ -22,5 +22,5 @@ export default defineConfig({
       '@shibaox/workspace': src('workspace/src/index.ts'),
     },
   },
-  test: { include: ['test/**/*.test.ts'], testTimeout: 20_000 },
+  test: { include: ['test-vitest/**/*.test.ts'], testTimeout: 20_000 },
 });

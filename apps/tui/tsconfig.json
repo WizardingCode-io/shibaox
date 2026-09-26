@@ -3,12 +3,12 @@
   "compilerOptions": {
     "rootDir": ".",
     "noEmit": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "@opentui/react",
+    "jsx": "preserve",
+    "jsxImportSource": "@opentui/solid",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "types": ["bun", "node"],
     "allowImportingTsExtensions": true
   },
-  "include": ["src", "test-bun"]
+  "include": ["src", "test", "test-vitest"]
 }

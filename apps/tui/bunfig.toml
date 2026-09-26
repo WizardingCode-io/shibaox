@@ -1,2 +1,5 @@
+preload = ["@opentui/solid/preload"]
+
 [test]
-root = "test-bun"
+root = "test"
+preload = ["@opentui/solid/preload"]
