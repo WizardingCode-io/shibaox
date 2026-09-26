@@ -104,8 +104,9 @@ export function Prompt(props: {
     }
     if (kind === 'choice') {
       // no value or a partial one: the highlighted choice is the value
-      const chosen =
-        s && s.insert.startsWith(`/${parsed.command} `) ? parsePromptCommand(s.insert) : undefined;
+      const chosen = s?.insert.startsWith(`/${parsed.command} `)
+        ? parsePromptCommand(s.insert)
+        : undefined;
       const cmd = chosen?.arg ? chosen : parsed;
       if (!cmd.arg) return;
       set('');

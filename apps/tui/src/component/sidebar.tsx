@@ -1,38 +1,18 @@
 import { TextAttributes } from '@opentui/core';
-import type { InboxItem, RunSummaryPlus } from '@shibaox/daemon';
+import type { InboxItem } from '@shibaox/daemon';
 import { createMemo, createSignal, For, type JSX, Show } from 'solid-js';
+import { useConfig } from '../context/config.js';
 import { useData } from '../context/data.js';
 import { useKeys } from '../context/keys.js';
-import { age, money, shortId } from '../model/format.js';
-import { statusOf } from '../model/status.js';
+import { duration, money, shortId } from '../model/format.js';
+import { tilde } from '../routes/home.js';
 import { pendingFor } from '../routes/session/approval-bar.js';
+import { requestText } from '../routes/session/request.js';
 import { useTheme } from '../theme/context.js';
 import { useDialog } from '../ui/dialog.js';
 import { marqueeText } from '../ui/marquee.js';
 import { useToast } from '../ui/toast.js';
 import { Confirm } from './dialogs/confirm.js';
-
-type Group = 'Today' | 'Yesterday' | 'Earlier';
-
-const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-
-/** Runs grouped by the day they were created, newest first. */
-export function groupRuns(
-  runs: RunSummaryPlus[],
-  now = Date.now(),
-): { group: Group; runs: RunSummaryPlus[] }[] {
-  const today = dayKey(new Date(now));
-  const yesterday = dayKey(new Date(now - 24 * 3600_000));
-  const groups = new Map<Group, RunSummaryPlus[]>();
-  for (const r of [...runs].sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
-    const key = dayKey(new Date(r.createdAt));
-    const g: Group = key === today ? 'Today' : key === yesterday ? 'Yesterday' : 'Earlier';
-    groups.set(g, [...(groups.get(g) ?? []), r]);
-  }
-  return (['Today', 'Yesterday', 'Earlier'] as Group[])
-    .filter((g) => groups.has(g))
-    .map((g) => ({ group: g, runs: groups.get(g) ?? [] }));
-}
 
 function Title(props: { text: string }): JSX.Element {
   const theme = useTheme();
@@ -45,7 +25,16 @@ function Title(props: { text: string }): JSX.Element {
   );
 }
 
-/** Runs by day, the pending inbox, and the current run's files and costs. */
+const NODE_MARK: Record<string, string> = {
+  completed: '✓',
+  passed: '✓',
+  running: '·',
+  waiting: '▲',
+  failed: '✗',
+  gate_failed: '✗',
+};
+
+/** The current run at a glance: request, context, nodes as a checklist, files, and what needs you. */
 export function Sidebar(props: {
   runId: string;
   width: number;
@@ -53,25 +42,45 @@ export function Sidebar(props: {
   onFocusBack: () => void;
 }): JSX.Element {
   const data = useData();
+  const config = useConfig();
   const theme = useTheme().surface('sidebar');
   const dialog = useDialog();
   const toast = useToast();
-  const groups = createMemo(() => groupRuns(data.state.runs));
-  // the cursor walks the runs, then the Needs-you items
-  const rows = createMemo<({ run: RunSummaryPlus } | { item: InboxItem })[]>(() => [
-    ...groups().flatMap((g) => g.runs.map((run) => ({ run }))),
-    ...data.state.inbox.map((item) => ({ item })),
-  ]);
-  const selectedRow = () => rows()[Math.min(cursor(), Math.max(0, rows().length - 1))];
+  const state = () => data.state.states[props.runId];
+  const summary = () => data.state.runs.find((r) => r.runId === props.runId);
+  const cards = data.timeline(props.runId);
+  const inner = () => Math.max(8, props.width - 2);
+
+  const nodes = createMemo(() => {
+    const wf = state()?.workflowSnapshot;
+    const st = state()?.nodes ?? {};
+    const ids = wf ? Object.keys(wf.nodes) : Object.keys(st);
+    return ids.map((id) => ({ id, status: st[id]?.status ?? 'pending' }));
+  });
+  const done = () =>
+    nodes().filter((n) => n.status === 'completed' || n.status === 'passed').length;
+  const files = createMemo(() => {
+    const out = new Set<string>();
+    for (const c of cards()) {
+      if (c.kind === 'node') for (const b of c.blocks) if (b.kind === 'file') out.add(b.path);
+      if (c.kind === 'summary') for (const f of c.files) out.add(f);
+    }
+    return [...out];
+  });
+  const elapsed = () => {
+    const created = summary()?.createdAt;
+    if (!created) return undefined;
+    const from = Date.parse(created);
+    const terminal = ['completed', 'failed', 'cancelled'].includes(summary()?.status ?? '');
+    const to = terminal ? Date.parse(summary()?.updatedAt ?? created) : Date.now();
+    return Number.isFinite(from) && Number.isFinite(to)
+      ? duration(Math.max(0, to - from))
+      : undefined;
+  };
+  const items = createMemo(() => pendingFor(data.state.inbox, props.runId));
   const [cursor, setCursor] = createSignal(0);
-  const selected = () => {
-    const r = selectedRow();
-    return r && 'run' in r ? r.run : undefined;
-  };
-  const selectedItem = () => {
-    const r = selectedRow();
-    return r && 'item' in r ? r.item : undefined;
-  };
+  const selectedItem = () => items()[Math.min(cursor(), Math.max(0, items().length - 1))];
+
   /** Answers like the approval bar: a command approval asks y first. */
   const answer = (item: InboxItem, approved: boolean) => {
     if (approved && item.kind === 'approval') {
@@ -89,43 +98,21 @@ export function Sidebar(props: {
     }
     void data.actions.answer(item.id, approved);
   };
-  const cards = data.timeline(props.runId);
-  const files = createMemo(() => {
-    const out = new Set<string>();
-    for (const c of cards()) {
-      if (c.kind === 'node') for (const b of c.blocks) if (b.kind === 'file') out.add(b.path);
-      if (c.kind === 'summary') for (const f of c.files) out.add(f);
-    }
-    return [...out];
-  });
-  const costs = createMemo(() =>
-    cards().flatMap((c) =>
-      c.kind === 'node' && c.costUsd !== undefined ? [{ nodeId: c.nodeId, usd: c.costUsd }] : [],
-    ),
-  );
-  const inner = () => Math.max(8, props.width - 2);
 
   useKeys('pane', (key) => {
     if (!props.focused || key.ctrl || key.meta) return false;
-    const n = rows().length;
     switch (key.name) {
       case 'j':
       case 'down':
-        if (cursor() < n - 1) setCursor((c) => c + 1);
+        if (cursor() < items().length - 1) setCursor((c) => c + 1);
         return true;
       case 'k':
       case 'up':
         if (cursor() > 0) setCursor((c) => c - 1);
         return true;
-      case 'return': {
-        const r = selected() ?? selectedItem();
-        if (r) data.openRun(r.runId);
-        return true;
-      }
       case 'a':
       case 'd': {
-        const r = selected();
-        const item = selectedItem() ?? (r ? pendingFor(data.state.inbox, r.runId)[0] : undefined);
+        const item = selectedItem();
         if (item) answer(item, key.name === 'a');
         else toast.show({ message: 'Nothing waiting', variant: 'info' });
         return true;
@@ -135,11 +122,6 @@ export function Sidebar(props: {
     }
   });
 
-  const rowColor = (r: RunSummaryPlus) => {
-    const f = statusOf({ status: r.status }).feedback;
-    return f === 'muted' ? theme.text.muted : theme.text.feedback[f];
-  };
-
   return (
     <box
       width={props.width}
@@ -147,97 +129,99 @@ export function Sidebar(props: {
       height="100%"
       flexDirection="column"
       backgroundColor={theme.background.base}
-      paddingLeft={1}
+      paddingLeft={2}
       paddingRight={1}
+      paddingTop={1}
     >
-      <Title text="Runs" />
-      <For each={groups()}>
-        {(g) => (
-          <box flexDirection="column" flexShrink={0}>
+      <text fg={theme.text.base} attributes={TextAttributes.BOLD} wrapMode="word">
+        {marqueeText(requestText(state()?.input) || (summary()?.workflow ?? ''), inner() * 3, 0)}
+      </text>
+      <Title text="Context" />
+      <text
+        fg={theme.text.muted}
+        wrapMode="none"
+      >{`${money(state()?.spentUsd ?? summary()?.spentUsd ?? 0)} spent`}</text>
+      <text
+        fg={theme.text.muted}
+        wrapMode="none"
+      >{`${done()} of ${nodes().length} nodes done`}</text>
+      <Show when={elapsed()}>
+        <text fg={theme.text.muted} wrapMode="none">
+          {elapsed() ?? ''}
+        </text>
+      </Show>
+      <Title text="Nodes" />
+      <For each={nodes()}>
+        {(n) => (
+          <box height={1} flexShrink={0}>
+            <text
+              fg={
+                n.status === 'running'
+                  ? theme.text.action.primary.selected
+                  : n.status === 'failed' || n.status === 'gate_failed'
+                    ? theme.text.feedback.error
+                    : n.status === 'pending'
+                      ? theme.text.muted
+                      : theme.text.base
+              }
+              wrapMode="none"
+            >
+              {`[${NODE_MARK[n.status] ?? ' '}] ${n.id}`}
+            </text>
+          </box>
+        )}
+      </For>
+      <Show when={files().length > 0}>
+        <Title text="Files" />
+        <For each={files()}>
+          {(f) => (
             <box height={1} flexShrink={0}>
-              <text fg={theme.text.muted} wrapMode="none">
-                {g.group}
+              <text fg={theme.text.base} wrapMode="none">
+                {marqueeText(`± ${f}`, inner(), 0)}
               </text>
             </box>
-            <For each={g.runs}>
-              {(r) => (
-                <box
-                  height={1}
-                  flexShrink={0}
-                  flexDirection="row"
-                  backgroundColor={
-                    props.focused && selected()?.runId === r.runId
-                      ? theme.background.action.primary.selected
-                      : undefined
-                  }
-                  onMouseUp={() => data.openRun(r.runId)}
-                >
-                  <text
-                    fg={rowColor(r)}
-                    wrapMode="none"
-                  >{`${statusOf({ status: r.status }).symbol} `}</text>
-                  <text fg={theme.text.base} wrapMode="none">
-                    {marqueeText(`${shortId(r.runId)} ${r.workflow}`, inner() - 8, 0)}
-                  </text>
-                  <box flexGrow={1} />
-                  <text fg={theme.text.muted} wrapMode="none">
-                    {age(r.createdAt)}
-                  </text>
-                </box>
-              )}
-            </For>
-          </box>
-        )}
-      </For>
-      <Title text={`Needs you (${data.state.inbox.length})`} />
-      <For each={data.state.inbox}>
-        {(i) => (
-          <box
-            height={1}
-            flexShrink={0}
-            backgroundColor={
-              props.focused && selectedItem()?.id === i.id
-                ? theme.background.action.primary.selected
-                : undefined
-            }
-            onMouseUp={() => data.openRun(i.runId)}
-          >
-            <text fg={theme.text.feedback.warning} wrapMode="none">
-              {marqueeText(`▲ ${shortId(i.runId)} · ${i.prompt}`, inner(), 0)}
-            </text>
-          </box>
-        )}
-      </For>
-      <Title text="This run" />
-      <Show when={files().length === 0 && costs().length === 0}>
-        <box height={1} flexShrink={0}>
-          <text fg={theme.text.muted}>nothing yet</text>
-        </box>
+          )}
+        </For>
       </Show>
-      <For each={files()}>
-        {(f) => (
-          <box height={1} flexShrink={0}>
-            <text fg={theme.text.base} wrapMode="none">
-              {marqueeText(`± ${f}`, inner(), 0)}
-            </text>
-          </box>
-        )}
-      </For>
-      <For each={costs()}>
-        {(c) => (
-          <box height={1} flexShrink={0}>
-            <text fg={theme.text.muted} wrapMode="none">{`${c.nodeId} ${money(c.usd)}`}</text>
-          </box>
-        )}
-      </For>
+      <Show when={items().length > 0}>
+        <Title text={`Needs you (${items().length})`} />
+        <For each={items()}>
+          {(i) => (
+            <box
+              height={1}
+              flexShrink={0}
+              backgroundColor={
+                props.focused && selectedItem()?.id === i.id
+                  ? theme.background.action.primary.selected
+                  : undefined
+              }
+            >
+              <text fg={theme.text.feedback.warning} wrapMode="none">
+                {marqueeText(`▲ ${i.prompt}`, inner(), 0)}
+              </text>
+            </box>
+          )}
+        </For>
+      </Show>
       <box flexGrow={1} />
       <Show when={props.focused}>
         <box height={1} flexShrink={0}>
           <text fg={theme.text.muted} wrapMode="none">
-            j/k select · enter open · a/d answer · tab back
+            {items().length > 0 ? 'j/k select · a/d answer · tab back' : 'tab back'}
           </text>
         </box>
       </Show>
+      <box height={1} flexShrink={0}>
+        <text fg={theme.text.muted} wrapMode="none">
+          {marqueeText(tilde(state()?.project ?? state()?.workspace ?? config.cwd), inner(), 0)}
+        </text>
+      </box>
+      <box height={1} flexShrink={0} marginBottom={1}>
+        <text fg={theme.text.muted} wrapMode="none">
+          <span style={{ fg: theme.text.feedback.success }}>● </span>
+          {`shibaox ${config.version} · ${shortId(props.runId)}`}
+        </text>
+      </box>
     </box>
   );
 }

@@ -78,15 +78,7 @@ export function ApprovalBar(props: { runId: string }): JSX.Element {
   };
 
   return (
-    <box
-      height={2}
-      flexShrink={0}
-      flexDirection="column"
-      width="100%"
-      backgroundColor={theme.background.feedback.warning}
-      paddingLeft={1}
-      paddingRight={1}
-    >
+    <box height={2} flexShrink={0} flexDirection="column" width="100%">
       <Show
         when={mode() === 'note'}
         fallback={
@@ -123,8 +115,8 @@ export function ApprovalBar(props: { runId: string }): JSX.Element {
             onInput={setNote}
             onSubmit={() => answer(true, note())}
             flexGrow={1}
-            backgroundColor={theme.background.feedback.warning}
-            focusedBackgroundColor={theme.background.feedback.warning}
+            backgroundColor={theme.background.raised.base}
+            focusedBackgroundColor={theme.background.raised.base}
             textColor={theme.text.base}
             cursorColor={theme.text.feedback.warning}
           />

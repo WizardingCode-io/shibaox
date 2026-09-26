@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import { testRender } from '@opentui/solid';
 import { scaffoldOrg } from '@shibaox/daemon';
 import { App } from '../src/app.js';
@@ -105,7 +105,7 @@ test('slash commands autocomplete and change the context; enter submits and open
       lastAdapter: 'direct',
       lastWorkflow: 'hello-feature',
     });
-    expect(f).toContain('new-run · ');
+    expect(f).toContain('new-run'); // the run's tab and status box
   } finally {
     m.done();
   }

@@ -115,7 +115,7 @@ test('ctrl+k opens the command palette and runs the chosen command', async () =>
   const m = await mount({ open: ['aaaa1111-x'] });
   try {
     let f = await m.frame();
-    expect(f).toContain('Needs you (0)'); // the sidebar is open at 160 columns
+    expect(f).toContain('Context'); // the sidebar is open at 160 columns
     f = await m.key('k', { ctrl: true });
     expect(f).toContain('New run');
     expect(f).toContain('ctrl+n');
@@ -124,7 +124,7 @@ test('ctrl+k opens the command palette and runs the chosen command', async () =>
     await m.key('return');
     f = await m.frame();
     expect(f).not.toContain('Toggle sidebar');
-    expect(f).not.toContain('Needs you (0)');
+    expect(f).not.toContain('Context');
   } finally {
     m.done();
   }

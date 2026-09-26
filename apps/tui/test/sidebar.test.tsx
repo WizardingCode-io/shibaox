@@ -11,14 +11,13 @@ import { FakeDaemonClient } from '../src/testing/fake-client.js';
 
 const settle = (ms = 40) => new Promise((r) => setTimeout(r, ms));
 const today = new Date().toISOString();
-const yesterday = new Date(Date.now() - 26 * 3600_000).toISOString();
-const run = (runId: string, status: string, createdAt: string) =>
+const run = (runId: string, status: string) =>
   ({
     runId,
     workflow: 'hello-feature',
     status,
-    createdAt,
-    updatedAt: createdAt,
+    createdAt: today,
+    updatedAt: today,
     spentUsd: 0.1,
   }) as never;
 const state = (runId: string, status: string): RunState =>
@@ -28,18 +27,41 @@ const state = (runId: string, status: string): RunState =>
     workflowSnapshot: {
       workflow: 'hello-feature',
       start: 'analyse',
-      nodes: { analyse: { type: 'task', role: 'analyst' } },
+      nodes: {
+        analyse: { type: 'task', role: 'analyst', next: 'implement' },
+        implement: { type: 'task', role: 'backend', next: 'qa' },
+        qa: {
+          type: 'gate',
+          gates: ['tests'],
+          on_pass: 'ship',
+          on_fail: 'implement',
+          max_retries: 3,
+        },
+        ship: { type: 'human', action: 'ship' },
+      },
     },
-    input: {},
+    input: { spec: 'add a health endpoint' },
     workspace: '/w',
+    adapter: 'mock',
     status,
-    nodes: { analyse: { status: 'completed', attempts: 1, approvals: {} } },
+    nodes: {
+      analyse: { status: 'completed', attempts: 1, approvals: {} },
+      implement: { status: 'running', attempts: 1, approvals: {} },
+    },
     spentUsd: 0.1,
     budgetWarned: false,
-    pendingHumans:
-      status === 'waiting_human' ? [{ nodeId: 'ship', action: 'ship', prompt: 'Ship?' }] : [],
+    pendingHumans: [],
     pendingApprovals: [],
-  }) as RunState;
+  }) as unknown as RunState;
+const human: InboxItem = {
+  id: 'human:aaaa1111-x:ship' as never,
+  kind: 'human',
+  runId: 'aaaa1111-x',
+  nodeId: 'ship',
+  at: today,
+  prompt: 'Ship it?',
+  detail: { action: 'ship' },
+};
 const approval: InboxItem = {
   id: 'approval:a9' as never,
   kind: 'approval',
@@ -49,15 +71,6 @@ const approval: InboxItem = {
   prompt: 'git push origin main',
   detail: { role: 'backend', program: 'git', category: 'push' },
 };
-const human: InboxItem = {
-  id: 'human:bbbb2222-x:ship' as never,
-  kind: 'human',
-  runId: 'bbbb2222-x',
-  nodeId: 'ship',
-  at: today,
-  prompt: 'Ship?',
-  detail: { action: 'ship' },
-};
 const rt = (nodeId: string, seq: number, event: Record<string, unknown>): Envelope =>
   ({
     kind: 'runtime',
@@ -66,16 +79,12 @@ const rt = (nodeId: string, seq: number, event: Record<string, unknown>): Envelo
     event: { runId: 'aaaa1111-x', nodeId, seq, at: 'x', event },
   }) as unknown as Envelope;
 
-async function mount(o: { width?: number; height?: number } = {}) {
+async function mount(o: { width?: number; height?: number; inbox?: InboxItem[] } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'tui-sidebar-'));
   const client = new FakeDaemonClient();
-  client.runs = [
-    run('aaaa1111-x', 'running', today),
-    run('bbbb2222-x', 'waiting_human', yesterday),
-  ];
+  client.runs = [run('aaaa1111-x', 'running')];
   client.states.set('aaaa1111-x', state('aaaa1111-x', 'running'));
-  client.states.set('bbbb2222-x', state('bbbb2222-x', 'waiting_human'));
-  client.inboxItems = [human];
+  client.inboxItems = o.inbox ?? [];
   client.history.set('aaaa1111-x', [
     {
       kind: 'run',
@@ -85,21 +94,6 @@ async function mount(o: { width?: number; height?: number } = {}) {
     } as unknown as Envelope,
     rt('analyse', 2, { type: 'file_changed', path: 'src/a.ts' }),
     rt('analyse', 3, { type: 'file_changed', path: 'src/b.ts' }),
-    {
-      kind: 'run',
-      seq: 4,
-      cursor: '4:0',
-      event: {
-        runId: 'aaaa1111-x',
-        at: 'x',
-        seq: 4,
-        type: 'NodeCompleted',
-        nodeId: 'analyse',
-        output: {},
-        summary: '',
-        cost: { usd: 0.1 },
-      },
-    } as unknown as Envelope,
   ]);
   let hooks: AppHooks | undefined;
   const setup = await testRender(
@@ -147,63 +141,41 @@ async function mount(o: { width?: number; height?: number } = {}) {
   };
 }
 
-test('the sidebar lists runs by day, the inbox and this run, on wide terminals only', async () => {
+test('the sidebar shows the request, context, nodes as a checklist and files, on wide terminals only', async () => {
   const m = await mount();
   try {
     let f = await m.frame();
-    expect(f).toContain('Runs');
-    expect(f).toContain('Today');
-    expect(f).toContain('Yesterday');
-    expect(f).toContain('bbbb2222');
-    expect(f).toContain('Needs you (1)');
-    expect(f).toContain('This run');
-    expect(f).toContain('src/a.ts');
-    expect(f).toContain('analyse $0.1000');
-    m.setup.resize(120, 30);
+    expect(f).toContain('add a health endpoint');
+    expect(f).toContain('Context');
+    expect(f).toContain('$0.1000 spent');
+    expect(f).toContain('1 of 4 nodes done');
+    expect(f).toContain('[✓] analyse');
+    expect(f).toContain('[·] implement');
+    expect(f).toContain('[ ] qa');
+    expect(f).toContain('± src/a.ts');
+    expect(f).toContain('shibaox 0.0.1 · aaaa1111');
+    m.setup.resize(110, 30);
     f = await m.frame();
-    expect(f).not.toContain('Needs you (1)');
+    expect(f).not.toContain('[✓] analyse');
     f = await m.key('b', { ctrl: true });
-    expect(f).toContain('Needs you (1)');
+    expect(f).toContain('[✓] analyse');
     expect(loadPrefs(m.dir).sidebar).toBe('auto');
     f = await m.key('b', { ctrl: true });
-    expect(f).not.toContain('Needs you (1)');
+    expect(f).not.toContain('[✓] analyse');
     expect(loadPrefs(m.dir).sidebar).toBe('hide');
   } finally {
     m.done();
   }
 });
 
-test('tab focuses the sidebar: j/k select a run, enter opens it, a answers its pending item', async () => {
-  const m = await mount();
+test('Needs-you items are selectable in the sidebar: a on a command approval asks y first; nothing waiting says so', async () => {
+  const m = await mount({ inbox: [human, approval] });
   try {
     await m.frame();
     let f = await m.key('tab');
-    f = await m.key('j');
-    f = await m.key('return');
-    expect(m.hooks.data.state.active).toBe('bbbb2222-x');
-    expect(m.hooks.data.state.open).toEqual(['aaaa1111-x', 'bbbb2222-x']);
-    await m.key('a');
-    expect(m.client.calls.find((c) => c.method === 'answer')?.args[0]).toBe(
-      'human:bbbb2222-x:ship',
-    );
-    f = await m.key('tab');
-    expect(f).toContain('Runs');
-  } finally {
-    m.done();
-  }
-});
-
-test('Needs-you items are selectable: a on a command approval asks y first; a on a run with nothing waiting says so', async () => {
-  const m = await mount();
-  try {
-    m.client.inboxItems = [human, approval];
-    await settle(1100);
-    await m.frame();
-    await m.key('tab');
-    // rows: Today aaaa1111, Yesterday bbbb2222, then the two Needs-you items
-    let f = await m.key('j');
-    f = await m.key('j');
-    f = await m.key('j');
+    expect(f).toContain('Needs you (2)');
+    f = await m.key('j'); // the approval is second in the run's list? no: approvals come first, so j moves to the human
+    f = await m.key('k');
     f = await m.key('a');
     expect(f).toContain('Approve git push origin main? (y/n)');
     expect(m.client.calls.filter((c) => c.method === 'answer')).toHaveLength(0);
@@ -212,11 +184,7 @@ test('Needs-you items are selectable: a on a command approval asks y first; a on
     m.client.inboxItems = [];
     await settle(1100);
     await m.frame();
-    await m.key('k');
-    await m.key('k');
-    await m.key('k');
     f = await m.key('a');
-    // the "Approved" toast may still be up: the notice then queues behind it
     expect(f.includes('Nothing waiting') || f.includes('+1 more')).toBe(true);
     expect(m.client.calls.filter((c) => c.method === 'answer')).toHaveLength(1);
   } finally {
@@ -228,7 +196,7 @@ test('dragging the handle resizes the sidebar and remembers the width', async ()
   const m = await mount();
   try {
     const f = await m.frame();
-    const row = f.split('\n').findIndex((l) => l.includes('Needs you (1)'));
+    const row = f.split('\n').findIndex((l) => l.includes('Context'));
     const x = 160 - 42 - 1;
     await m.setup.mockMouse.drag(x, row, x - 17, row);
     await m.frame();
@@ -238,13 +206,13 @@ test('dragging the handle resizes the sidebar and remembers the width', async ()
   }
 });
 
-test('resizing from 160 to 80 columns collapses rail and sidebar without overflow', async () => {
+test('resizing from 160 to 80 columns hides the sidebar without overflow', async () => {
   const m = await mount();
   try {
     await m.frame();
     m.setup.resize(80, 24);
     const f = await m.frame();
-    expect(f).not.toContain('Needs you (1)');
+    expect(f).not.toContain('[✓] analyse');
     expect(f.split('\n').filter((l) => l.includes('⌂'))).toHaveLength(1);
     for (const line of f.split('\n')) expect(line.length).toBeLessThanOrEqual(80);
     expect(f.split('\n').at(-2)).toContain('enter expand');

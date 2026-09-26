@@ -3,7 +3,7 @@ import { useTerminalDimensions } from '@opentui/solid';
 import { createEffect, createMemo, createSignal, type JSX, onCleanup, Show } from 'solid-js';
 import { Confirm } from '../../component/dialogs/confirm.js';
 import { DiffDialog } from '../../component/dialogs/diff.js';
-import { Footer } from '../../component/footer.js';
+import { type KeyHint, KeyHints } from '../../component/footer.js';
 import { Sidebar } from '../../component/sidebar.js';
 import { useCommands } from '../../context/commands.js';
 import { useData } from '../../context/data.js';
@@ -16,23 +16,50 @@ import { useMotion } from '../../motion/config.js';
 import { ShimmerText } from '../../motion/shimmer-text.js';
 import { useTheme } from '../../theme/context.js';
 import { useDialog } from '../../ui/dialog.js';
-import {
-  clampSidebarWidth,
-  RAIL_WIDTH,
-  railVertical,
-  SIDEBAR_WIDTH,
-  sidebarAuto,
-} from '../../ui/layout.js';
+import { clampSidebarWidth, SIDEBAR_WIDTH, sidebarAuto } from '../../ui/layout.js';
 import { createPaneResize } from '../../ui/pane-resize.js';
 import { useToast } from '../../ui/toast.js';
 import { ApprovalBar, pendingFor } from './approval-bar.js';
 import { Timeline } from './timeline.js';
 
-export const SESSION_KEYS =
-  'enter expand · d diff · c cancel · r resume · ctrl+b sidebar · ctrl+o runs · ? help';
-export const STREAM_KEYS = 'enter expand · d diff · c cancel · q quit';
+export const SESSION_HINTS: KeyHint[] = [
+  { key: 'enter', label: 'expand' },
+  { key: 'd', label: 'diff' },
+  { key: 'tab', label: 'sidebar' },
+  { key: 'ctrl+n', label: 'home' },
+  { key: '?', label: 'help' },
+];
+export const STREAM_HINTS: KeyHint[] = [
+  { key: 'enter', label: 'expand' },
+  { key: 'd', label: 'diff' },
+  { key: 'q', label: 'quit' },
+];
 
-/** One run as a conversation: header, timeline, the approval bar or key hints, and the sidebar. */
+const DOTS = ['·', '·', '·', '·', '·', '·'];
+const DOT_MS = 120;
+
+/** The dotted progress of a working run (the reference's `······` under the prompt). */
+function Dots(props: { active: boolean }): JSX.Element {
+  const theme = useTheme();
+  const motion = useMotion();
+  const [head, setHead] = createSignal(0);
+  createEffect(() => {
+    if (!props.active || !motion()) return;
+    const t = setInterval(() => setHead((h) => (h + 1) % (DOTS.length + 2)), DOT_MS);
+    onCleanup(() => clearInterval(t));
+  });
+  const glyphs = () =>
+    DOTS.map((_, i) => (props.active && motion() && Math.abs(i - head()) <= 1 ? '▪' : '·')).join(
+      '',
+    );
+  return (
+    <text fg={props.active ? theme.text.action.primary.selected : theme.text.muted} wrapMode="none">
+      {glyphs()}
+    </text>
+  );
+}
+
+/** One run as a conversation: request, cards, the status box (or the approval bar), and the sidebar. */
 export function SessionFrame(props: { runId: string; single?: boolean }): JSX.Element {
   const data = useData();
   const theme = useTheme();
@@ -50,6 +77,7 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
   const status = () =>
     data.state.ended[props.runId] ?? state()?.status ?? summary()?.status ?? 'queued';
   const look = () => statusOf({ status: status() });
+  const working = () => status() === 'running';
   const spent = () => state()?.spentUsd ?? summary()?.spentUsd ?? 0;
   const elapsed = () => {
     const created = summary()?.createdAt;
@@ -62,20 +90,34 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
       ? duration(Math.max(0, to - from))
       : undefined;
   };
+  const activeNode = () => {
+    const nodes = state()?.nodes ?? {};
+    return Object.entries(nodes).find(
+      ([, n]) => n.status === 'running' || n.status === 'waiting',
+    )?.[0];
+  };
   const color = () => {
     const f = look().feedback;
     return f === 'muted' ? theme.text.muted : theme.text.feedback[f];
   };
   const pending = createMemo(() => pendingFor(data.state.inbox, props.runId));
+  const detail = () => {
+    const parts = [money(spent())];
+    const e = elapsed();
+    if (e) parts.push(e);
+    parts.push(summary()?.workflow ?? state()?.workflow ?? '');
+    if (state()?.adapter) parts.push(state()?.adapter ?? '');
+    parts.push(shortId(props.runId));
+    return parts.filter(Boolean).join(' · ');
+  };
 
   // sidebar: automatic on wide terminals, toggled with ctrl+b, resizable with the mouse
-  const rail = () => (props.single ? 0 : railVertical(dimensions().width) ? RAIL_WIDTH : 0);
-  const area = () => dimensions().width - rail();
+  const area = () => dimensions().width;
   const [openedByKey, setOpenedByKey] = createSignal<boolean | undefined>(undefined);
   const sidebarVisible = createMemo(() => {
     if (props.single) return false;
     if (openedByKey() !== undefined) return openedByKey() as boolean;
-    return prefs.data.sidebar !== 'hide' && sidebarAuto(dimensions().width, rail());
+    return prefs.data.sidebar !== 'hide' && sidebarAuto(dimensions().width, 0);
   });
   const resize = createPaneResize({
     value: () => prefs.data.sidebarWidth ?? SIDEBAR_WIDTH,
@@ -149,7 +191,7 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
       return true;
     }
     if (focus() !== 'conversation') return false;
-    if (key.name === 'c' && !key.ctrl) {
+    if (key.name === 'c') {
       cancel();
       return true;
     }
@@ -163,6 +205,11 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
     }
     return false;
   });
+  const hints = () => {
+    const base = props.single ? STREAM_HINTS : SESSION_HINTS;
+    if (status() === 'paused_budget') return [{ key: 'r', label: 'resume' }, ...base];
+    return base;
+  };
 
   return (
     <box
@@ -174,38 +221,84 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
       onMouseUp={resize.onMouseUp}
     >
       <box flexDirection="column" flexGrow={1} height="100%">
+        <Timeline runId={props.runId} focused={focus() === 'conversation'} />
+        <box flexDirection="row" width="100%" flexShrink={0} paddingLeft={2} paddingRight={2}>
+          <box
+            width={1}
+            flexShrink={0}
+            backgroundColor={
+              pending().length > 0
+                ? theme.text.feedback.warning
+                : theme.text.action.primary.selected
+            }
+          />
+          <box
+            flexGrow={1}
+            flexDirection="column"
+            paddingLeft={2}
+            paddingRight={2}
+            paddingTop={1}
+            paddingBottom={1}
+            backgroundColor={theme.background.raised.base}
+          >
+            <Show
+              when={pending().length > 0}
+              fallback={
+                <>
+                  <box height={1} flexShrink={0} flexDirection="row">
+                    <Show
+                      when={working()}
+                      fallback={
+                        <text
+                          fg={color()}
+                          attributes={TextAttributes.BOLD}
+                          wrapMode="none"
+                        >{`${look().symbol} ${look().word}`}</text>
+                      }
+                    >
+                      <ShimmerText
+                        fg={color()}
+                        shimmer={theme.text.base}
+                        attributes={TextAttributes.BOLD}
+                        wrapMode="none"
+                      >
+                        {`${look().symbol} ${look().word}`}
+                      </ShimmerText>
+                    </Show>
+                    <text fg={theme.text.muted} wrapMode="none">
+                      {activeNode() ? ` · ${activeNode()}` : ''}
+                    </text>
+                  </box>
+                  <box height={1} flexShrink={0}>
+                    <text fg={theme.text.muted} wrapMode="none">
+                      {detail()}
+                    </text>
+                  </box>
+                </>
+              }
+            >
+              <ApprovalBar runId={props.runId} />
+            </Show>
+          </box>
+        </box>
         <box
           height={1}
           flexShrink={0}
           flexDirection="row"
-          paddingLeft={1}
-          paddingRight={1}
-          backgroundColor={theme.background.raised.base}
+          paddingLeft={2}
+          paddingRight={2}
+          width="100%"
         >
-          <text fg={theme.text.base} attributes={TextAttributes.BOLD} wrapMode="none">
-            {`${shortId(props.runId)} · ${summary()?.workflow ?? state()?.workflow ?? ''} · `}
-          </text>
-          <Show
-            when={status() === 'running'}
-            fallback={<text fg={color()} wrapMode="none">{`${look().symbol} ${look().word}`}</text>}
-          >
-            <ShimmerText
-              fg={color()}
-              shimmer={theme.text.base}
-              wrapMode="none"
-            >{`${look().symbol} ${look().word}`}</ShimmerText>
-          </Show>
+          <Dots active={working()} />
           <text fg={theme.text.muted} wrapMode="none">
-            {` · ${money(spent())}${elapsed() ? ` · ${elapsed()}` : ''}`}
+            {'  '}
           </text>
+          <Show when={working() || status() === 'waiting_human' || status() === 'waiting_approval'}>
+            <KeyHints hints={[{ key: 'c', label: 'cancel' }]} />
+          </Show>
+          <box flexGrow={1} flexShrink={0} width={2} />
+          <KeyHints hints={hints()} />
         </box>
-        <Timeline runId={props.runId} focused={focus() === 'conversation'} />
-        <Show
-          when={pending().length > 0}
-          fallback={<Footer left="" right={props.single ? STREAM_KEYS : SESSION_KEYS} />}
-        >
-          <ApprovalBar runId={props.runId} />
-        </Show>
       </box>
       <Show when={sidebarWidth() > 0}>
         <box

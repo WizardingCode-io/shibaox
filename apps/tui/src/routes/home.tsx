@@ -1,4 +1,4 @@
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import { useTerminalDimensions } from '@opentui/solid';
 import { loadOrg, OrgLoadError } from '@shibaox/schemas';
 import { createEffect, createMemo, createSignal, type JSX, on, Show } from 'solid-js';

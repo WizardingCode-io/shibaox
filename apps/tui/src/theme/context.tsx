@@ -1,5 +1,12 @@
 import { SyntaxStyle } from '@opentui/core';
-import { createContext, createMemo, type JSX, type ParentProps, useContext } from 'solid-js';
+import {
+  createContext,
+  createMemo,
+  type JSX,
+  onCleanup,
+  type ParentProps,
+  useContext,
+} from 'solid-js';
 import { type ResolvedTheme, resolveTheme, syntaxStyles } from './resolve.js';
 import shibaox from './shibaox.json' with { type: 'json' };
 
@@ -15,6 +22,8 @@ const Context = createContext<{ theme: ResolvedTheme; syntax: () => SyntaxStyle 
 export function ThemeProvider(props: ParentProps<{ theme?: ResolvedTheme }>): JSX.Element {
   const theme = props.theme ?? defaultTheme();
   const syntax = createMemo(() => SyntaxStyle.fromStyles(syntaxStyles(theme)));
+  // a native handle: release it with the provider (tests mount many)
+  onCleanup(() => syntax().destroy());
   return <Context.Provider value={{ theme, syntax }}>{props.children}</Context.Provider>;
 }
 

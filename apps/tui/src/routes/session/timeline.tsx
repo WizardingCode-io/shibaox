@@ -24,6 +24,10 @@ import {
   NodeCard,
   SummaryCard,
 } from './cards.js';
+import { RequestBlock } from './request.js';
+
+/** How many cards the screen mounts at once (the model keeps up to 5000). */
+export const RENDER_LIMIT = 300;
 
 /** Ids of the rows the cursor can land on: card headers and tool lines, in reading order. */
 export function selectableRows(cards: Card[]): string[] {
@@ -53,7 +57,16 @@ export function Timeline(props: {
   const data = useData();
   const theme = useTheme();
   const dimensions = useTerminalDimensions();
-  const cards = data.timeline(props.runId);
+  const all = data.timeline(props.runId);
+  // only the newest cards are mounted: every card costs native renderables (spinner, fade-in,
+  // markdown); older ones fold into the "earlier" line until the run is opened in the diff/log
+  const cards = createMemo<Card[]>(() => {
+    const list = all();
+    if (list.length <= RENDER_LIMIT) return list;
+    const dropped = list.slice(0, list.length - RENDER_LIMIT);
+    const earlier = dropped.reduce((n, c) => n + (c.kind === 'earlier' ? c.count : 1), 0);
+    return [{ kind: 'earlier', key: 'earlier', count: earlier }, ...list.slice(-RENDER_LIMIT)];
+  });
   const rows = createMemo(() => selectableRows(cards()));
   const [cursor, setCursor] = createSignal(0);
   const [expanded, setExpanded] = createSignal(new Set<string>(), { equals: false });
@@ -173,8 +186,9 @@ export function Timeline(props: {
         },
       }}
       horizontalScrollbarOptions={{ visible: false }}
-      contentOptions={{ flexDirection: 'column', paddingTop: 1, paddingRight: 1 }}
+      contentOptions={{ flexDirection: 'column', paddingTop: 1, paddingLeft: 2, paddingRight: 2 }}
     >
+      <RequestBlock runId={props.runId} />
       <For each={cards()}>
         {(card) => (
           <Switch>
