@@ -15,7 +15,7 @@ const Context = createContext<{ register(e: Entry): () => void }>();
 
 /**
  * One keyboard listener for the whole app, dispatched by scope: ctrl+q exits always; an open
- * dialog is modal (only the newest dialog handler sees keys); otherwise the newest prompt, then
+ * dialog is modal (only dialog handlers see keys, newest first); otherwise the newest prompt, then
  * the newest pane, then every global handler (newest first) until one consumes the key.
  * ctrl+c exits unless a prompt handler consumes it (clearing its text) or a dialog is open.
  */
@@ -24,10 +24,9 @@ export function KeysProvider(props: ParentProps<{ onExit: (code: number) => void
   const last = (scope: Scope) => [...entries].reverse().find((e) => e.scope === scope);
   useKeyboard((key) => {
     if (key.ctrl && key.name === 'q') return props.onExit(0);
-    const dialog = last('dialog');
-    if (dialog) {
-      // modal: every key (ctrl+c included) belongs to the dialog; esc closes it, ctrl+q quits
-      dialog.handler(key);
+    if (entries.some((e) => e.scope === 'dialog')) {
+      // modal: every key (ctrl+c included) belongs to the open dialogs, newest handler first
+      for (const e of [...entries].reverse()) if (e.scope === 'dialog' && e.handler(key)) return;
       return;
     }
     const prompt = last('prompt');
