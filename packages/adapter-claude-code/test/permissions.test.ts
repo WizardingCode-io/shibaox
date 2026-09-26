@@ -74,6 +74,50 @@ describe('classifyToolRequest', () => {
     ])
       expect(classifyToolRequest('Bash', { command }), command).toBe('forbidden');
   });
+  it('refuses unquoted brace, glob and tilde expansion in gated commands', () => {
+    for (const command of [
+      'git {push,origin}',
+      'git pu?h',
+      'git [p]ush',
+      'git pu*',
+      'git ~/x',
+      'kubectl {apply,-f,x}',
+      'helm {upgrade,x,y}',
+    ])
+      expect(classifyToolRequest('Bash', { command }), command).toBe('forbidden');
+    expect(classifyToolRequest('Bash', { command: 'git commit -m "fix {a,b}"' })).toBe('other');
+    expect(classifyToolRequest('Bash', { command: "git log --format='%H [x]'" })).toBe('other');
+  });
+  it('gates every mutating deploy verb', () => {
+    for (const command of [
+      'railway up',
+      'vercel ./dir',
+      'vercel --prod',
+      'vercel --yes',
+      'fly launch',
+      'flyctl deploy',
+      'kubectl patch deploy x',
+      'kubectl -n prod scale deploy x --replicas=0',
+      'kubectl set image deploy/x a=b',
+      'terraform import a b',
+      'terraform state rm x',
+      'heroku container:release web',
+      'heroku releases:rollback',
+      'wrangler deploy',
+    ])
+      expect(classifyToolRequest('Bash', { command }), command).toBe('deploy');
+    for (const command of [
+      'vercel env ls',
+      'vercel ls',
+      'vercel logs x',
+      'vercel --help',
+      'kubectl get pods',
+      'terraform plan',
+      'fly status',
+      'railway logs',
+    ])
+      expect(classifyToolRequest('Bash', { command }), command).toBe('other');
+  });
 });
 
 describe('buildCanUseTool', () => {

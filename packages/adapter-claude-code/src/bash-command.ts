@@ -8,19 +8,42 @@ export type BashAnalysis =
 
 export const COMPOUND_REASON = 'compound commands are not allowed; run one command per call';
 
-/** Deploy-capable programs and the verbs that make an invocation a deploy. */
+/** Deploy-capable programs and the verbs (positional arguments) that make an invocation mutate. */
 export const DEPLOY_VERBS: Record<string, string[]> = {
-  vercel: ['deploy', 'publish'],
-  fly: ['deploy', 'publish'],
-  flyctl: ['deploy', 'publish'],
-  netlify: ['deploy', 'publish'],
-  heroku: ['deploy', 'publish'],
-  railway: ['deploy', 'publish'],
+  vercel: ['deploy', 'redeploy', 'promote', 'rollback', 'alias', 'remove', 'rm'],
+  fly: ['launch', 'deploy'],
+  flyctl: ['launch', 'deploy'],
+  netlify: ['deploy'],
+  heroku: ['deploy', 'container:push', 'container:release', 'releases:rollback'],
+  railway: ['up', 'deploy'],
   wrangler: ['deploy', 'publish'],
-  kubectl: ['apply', 'rollout', 'delete'],
-  terraform: ['apply', 'destroy'],
+  kubectl: ['apply', 'create', 'replace', 'patch', 'scale', 'set', 'edit', 'delete', 'rollout'],
+  terraform: ['apply', 'destroy', 'import', 'state'],
   helm: ['install', 'upgrade', 'uninstall', 'rollback'],
 };
+/** vercel subcommands that do not deploy; any other invocation of `vercel` deploys a directory. */
+const VERCEL_READ_ONLY = [
+  'env',
+  'ls',
+  'list',
+  'logs',
+  'inspect',
+  'whoami',
+  'login',
+  'logout',
+  'help',
+  'pull',
+  'link',
+  'dev',
+  'build',
+  'domains',
+  'dns',
+  'certs',
+  'projects',
+  'project',
+  'teams',
+  'switch',
+];
 /** Programs that never get a blanket allow rule: every call goes through `canUseTool`. */
 export const GATED_PROGRAMS = ['git', ...Object.keys(DEPLOY_VERBS)];
 
@@ -41,7 +64,7 @@ const HELP = ['--help', '-h', '--version', '-v'];
 
 interface Token {
   text: string;
-  /** Contains `$` outside single quotes (the shell would expand it). */
+  /** The shell would expand it: `$` outside single quotes, or an unquoted `{ * ? [` or leading `~`. */
   expands: boolean;
 }
 
@@ -50,10 +73,12 @@ function tokenize(command: string): Token[] | undefined {
   const tokens: Token[] = [];
   let cur: Token | undefined;
   let quote: "'" | '"' | undefined;
-  const push = (ch: string, expandable: boolean) => {
+  const push = (ch: string, expandable: boolean, unquoted = false) => {
     cur ??= { text: '', expands: false };
+    const starts = cur.text === '';
     cur.text += ch;
     if (ch === '$' && expandable) cur.expands = true;
+    if (unquoted && ('{*?['.includes(ch) || (ch === '~' && starts))) cur.expands = true;
   };
   for (let i = 0; i < command.length; i++) {
     const ch = command[i] as string;
@@ -71,7 +96,7 @@ function tokenize(command: string): Token[] | undefined {
     else if (/\s/.test(ch)) {
       if (cur) tokens.push(cur);
       cur = undefined;
-    } else push(ch, true);
+    } else push(ch, true, true);
   }
   if (quote) return undefined;
   if (cur) tokens.push(cur);
@@ -139,8 +164,11 @@ export function analyseBashCommand(command: string): BashAnalysis {
     const positional = words.filter((w) => !w.startsWith('-'));
     const deploys =
       positional.some((w) => verbs.includes(w)) ||
-      // `vercel` / `vercel --prod` deploy the current directory.
-      (program === 'vercel' && positional.length === 0 && !words.some((w) => HELP.includes(w)));
+      // `vercel`, `vercel ./dir`, `vercel --prod` deploy; only its read-only subcommands do not.
+      (program === 'vercel' &&
+        (positional.length === 0
+          ? !words.some((w) => HELP.includes(w))
+          : !VERCEL_READ_ONLY.includes(positional[0] as string)));
     return { ok: true, program, category: deploys ? 'deploy' : 'other' };
   }
   return { ok: true, program, category: 'other' };

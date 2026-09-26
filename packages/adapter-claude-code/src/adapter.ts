@@ -43,6 +43,7 @@ const ENV_KEYS = [
   'LANG',
   'TERM',
   'CLAUDE_CONFIG_DIR',
+  'SSH_AUTH_SOCK',
 ];
 const ENV_PREFIXES = ['LC_', 'ANTHROPIC_', 'CLAUDE_CODE_'];
 

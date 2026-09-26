@@ -172,6 +172,8 @@ describe('ClaudeCodeAdapter', () => {
   it('passes only a minimal env to the subprocess', async () => {
     const prev = process.env.OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = 'sk-secret';
+    const prevSock = process.env.SSH_AUTH_SOCK;
+    process.env.SSH_AUTH_SOCK = '/tmp/agent.sock';
     try {
       const q = fakeQuery(() => [msg.init(), msg.success('x')]);
       await collectRun(
@@ -183,9 +185,12 @@ describe('ClaudeCodeAdapter', () => {
       expect(env).not.toHaveProperty('OPENAI_API_KEY');
       expect(env.PATH).toBe(process.env.PATH);
       expect(env.CLAUDE_AGENT_SDK_CLIENT_APP).toBe('shibaox');
+      expect(env.SSH_AUTH_SOCK).toBe(process.env.SSH_AUTH_SOCK);
     } finally {
       if (prev === undefined) delete process.env.OPENAI_API_KEY;
       else process.env.OPENAI_API_KEY = prev;
+      if (prevSock === undefined) delete process.env.SSH_AUTH_SOCK;
+      else process.env.SSH_AUTH_SOCK = prevSock;
     }
   });
   it('passes the output schema as a json_schema output format', async () => {
