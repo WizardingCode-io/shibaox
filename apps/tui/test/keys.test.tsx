@@ -30,7 +30,7 @@ test('scopes: a dialog is modal, prompt precedes pane precedes global, ctrl+q al
         </box>
       </KeysProvider>
     ),
-    { width: 40, height: 6 },
+    { width: 40, height: 6, exitOnCtrlC: false },
   );
   try {
     await setup.mockInput.pressKey('j');
@@ -78,7 +78,7 @@ test('ctrl+c exits when no prompt consumes it', async () => {
         <Layer scope="pane" log={[]} />
       </KeysProvider>
     ),
-    { width: 40, height: 6 },
+    { width: 40, height: 6, exitOnCtrlC: false },
   );
   try {
     await setup.mockInput.pressKey('c', { ctrl: true });

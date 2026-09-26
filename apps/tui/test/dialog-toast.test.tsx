@@ -47,7 +47,7 @@ async function mount() {
         <Probe />
       </Wrap>
     ),
-    { width: 80, height: 20 },
+    { width: 80, height: 20, exitOnCtrlC: false },
   );
   const frame = async () => {
     await settle();
@@ -133,7 +133,7 @@ test('the reconnecting overlay waits 2 s before covering the page', async () => 
         <Reconnecting since={since} />
       </Wrap>
     ),
-    { width: 60, height: 12 },
+    { width: 60, height: 12, exitOnCtrlC: false },
   );
   try {
     setSince(Date.now());

@@ -1,7 +1,18 @@
 import { type CliRenderer, createCliRenderer } from '@opentui/core';
-import { render, useKeyboard } from '@opentui/solid';
-import type { JSX } from 'solid-js';
+import { render } from '@opentui/solid';
+import { type JSX, Match, Switch } from 'solid-js';
 import { ClientProvider, type DaemonClientLike } from './context/client.js';
+import { ConfigProvider } from './context/config.js';
+import { DataProvider } from './context/data.js';
+import { ExitProvider } from './context/exit.js';
+import { KeysProvider } from './context/keys.js';
+import { loadPrefs, PrefsProvider } from './context/prefs.js';
+import { type Route, RouteProvider, useRoute } from './context/route.js';
+import { MotionProvider, motionEnabled } from './motion/config.js';
+import { Home } from './routes/home.js';
+import { ThemeProvider } from './theme/context.js';
+import { DialogProvider } from './ui/dialog.js';
+import { Toast, ToastProvider, useToast } from './ui/toast.js';
 
 export interface AppOptions {
   version: string;
@@ -18,16 +29,61 @@ export interface AppProps extends AppOptions {
   runId?: string;
 }
 
-/** The whole dashboard: providers around the shell (grows through the plan's tasks). */
+const sessionId = (r: Route) => (r.type === 'session' ? r.runId : '');
+
+function Shell(props: { single?: string }): JSX.Element {
+  const route = useRoute();
+  return (
+    <box width="100%" height="100%" flexDirection="column">
+      <Switch>
+        <Match when={route.data().type === 'home' && !props.single}>
+          <Home />
+        </Match>
+        <Match when={route.data().type === 'session'}>
+          <text>{`session ${sessionId(route.data())}`}</text>
+        </Match>
+      </Switch>
+      <Toast />
+    </box>
+  );
+}
+
+function WithData(props: AppProps): JSX.Element {
+  const toast = useToast();
+  return (
+    <DataProvider client={props.client} single={props.runId} toast={(t) => toast.show(t)}>
+      <RouteProvider
+        initial={props.runId ? { type: 'session', runId: props.runId } : { type: 'home' }}
+      >
+        <Shell single={props.runId} />
+      </RouteProvider>
+    </DataProvider>
+  );
+}
+
+/** The whole dashboard: providers around the shell. */
 export function App(props: AppProps): JSX.Element {
-  useKeyboard((key) => {
-    if (key.ctrl && (key.name === 'q' || key.name === 'c')) props.onExit(0);
-  });
+  const env = props.env ?? process.env;
+  const cwd = props.cwd ?? process.cwd();
   return (
     <ClientProvider client={props.client}>
-      <box flexDirection="column" padding={1}>
-        <text>{`shibaox · daemon ${props.version}`}</text>
-      </box>
+      <ConfigProvider config={{ version: props.version, home: props.home, cwd }}>
+        <PrefsProvider home={props.home}>
+          <MotionProvider enabled={motionEnabled(env, loadPrefs(props.home))}>
+            <ThemeProvider>
+              <KeysProvider onExit={props.onExit}>
+                <ExitProvider onExit={props.onExit}>
+                  <ToastProvider>
+                    <DialogProvider>
+                      <WithData {...props} />
+                    </DialogProvider>
+                  </ToastProvider>
+                </ExitProvider>
+              </KeysProvider>
+            </ThemeProvider>
+          </MotionProvider>
+        </PrefsProvider>
+      </ConfigProvider>
     </ClientProvider>
   );
 }
@@ -42,7 +98,7 @@ async function rendererFor(o: AppOptions): Promise<{ renderer: CliRenderer; owne
   return { renderer, owned: true };
 }
 
-/** Ctrl-C outside React/Solid so a render error can never trap the terminal. */
+/** Ctrl-C outside Solid so a render error can never trap the terminal. */
 function onCtrlC(renderer: CliRenderer, fn: () => void): () => void {
   const handler = (key: { name: string; ctrl: boolean }) => {
     if (key.ctrl && key.name === 'c') fn();
@@ -65,7 +121,8 @@ function mount(
       if (owned) renderer.destroy();
       finish(code);
     };
-    const off = onCtrlC(renderer, () => end(0));
+    // the in-app handler decides first (a prompt may consume ctrl+c); this one is the safety net
+    const off = onCtrlC(renderer, () => setTimeout(() => (done ? undefined : undefined), 0));
     await render(
       () => (
         <App

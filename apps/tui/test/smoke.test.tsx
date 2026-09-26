@@ -18,12 +18,12 @@ test('the app draws the daemon title and ctrl+q exits with 0', async () => {
         onExit={(c) => exits.push(c)}
       />
     ),
-    { width: 80, height: 20 },
+    { width: 80, height: 20, exitOnCtrlC: false },
   );
   try {
     await settle();
     await setup.renderOnce();
-    expect(setup.captureCharFrame()).toContain('shibaox · daemon 0.0.1');
+    expect(setup.captureCharFrame()).toContain('daemon 0.0.1');
     await setup.mockInput.pressKey('q', { ctrl: true });
     await settle();
     expect(exits).toEqual([0]);

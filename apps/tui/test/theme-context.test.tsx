@@ -15,7 +15,7 @@ test('ThemeProvider gives components the resolved theme and a syntax style', asy
         <Probe />
       </ThemeProvider>
     ),
-    { width: 40, height: 5 },
+    { width: 40, height: 5, exitOnCtrlC: false },
   );
   try {
     await setup.renderOnce();

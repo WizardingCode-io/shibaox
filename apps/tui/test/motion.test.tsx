@@ -38,7 +38,7 @@ async function frameWith(motion: boolean) {
         </MotionProvider>
       </ThemeProvider>
     ),
-    { width: 40, height: 8 },
+    { width: 40, height: 8, exitOnCtrlC: false },
   );
   try {
     await new Promise((r) => setTimeout(r, 60));
