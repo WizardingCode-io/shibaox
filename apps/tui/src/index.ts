@@ -1,4 +1,12 @@
 export type { DaemonClientLike } from './client.js';
+export * from './components/AgentStatus.js';
+export * from './components/RunDetail.js';
+export * from './components/RunList.js';
+export * from './components/StreamView.js';
+export * from './components/TitleBar.js';
+export * from './components/Toast.js';
+export * from './components/ToolCallLine.js';
+export * from './hooks.js';
 export * from './poll.js';
 export * from './store.js';
 export * from './stream.js';
