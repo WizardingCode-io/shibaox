@@ -47,7 +47,10 @@ class FadeInTextRenderable extends MaskedTextRenderable {
   }
 
   override render(buffer: OptimizedBuffer, deltaTime: number): void {
-    if (!this._enabled || this.elapsed >= DURATION) return super.render(buffer, deltaTime);
+    if (!this._enabled || this.elapsed >= DURATION) {
+      super.render(buffer, deltaTime);
+      return;
+    }
     if (
       !this.visible ||
       this.isDestroyed ||

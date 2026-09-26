@@ -47,6 +47,8 @@ export function DataProvider(
     single?: string;
     /** Where the poller's toasts go (the shell passes `useToast().show`). */
     toast?: (t: PollerToast) => void;
+    /** Where stream failures and malformed frames are noted. */
+    log?: (line: string) => void;
   }>,
 ): JSX.Element {
   const [state, set] = createStore<DataState>(initialData());
@@ -67,6 +69,7 @@ export function DataProvider(
     set,
     get: () => state,
     toast: (t) => props.toast?.(t),
+    log: props.log,
     open: openRun,
     now: props.now,
     intervals: props.intervals,
@@ -86,10 +89,18 @@ export function DataProvider(
   const timeline = (runId: string): Accessor<Card[]> => {
     let memo = timelines.get(runId);
     if (!memo) {
-      const created = runWithOwner(owner, () =>
-        createMemo(() => reduceTimeline(state.states[runId], state.frames[runId] ?? [])),
-      );
-      memo = created ?? (() => reduceTimeline(state.states[runId], state.frames[runId] ?? []));
+      // a malformed frame must never take the screen down: keep the last good cards and log
+      let last: Card[] = [];
+      const reduce = (): Card[] => {
+        try {
+          last = reduceTimeline(state.states[runId], state.frames[runId] ?? []);
+        } catch (e) {
+          props.log?.(`timeline ${runId}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+        return last;
+      };
+      const created = runWithOwner(owner, () => createMemo(reduce));
+      memo = created ?? reduce;
       timelines.set(runId, memo);
     }
     return memo;

@@ -47,7 +47,10 @@ describe('followAny (terminal path)', () => {
       followAny(client, 'nope', {}, out, {
         tty: true,
         bunAvailable: async () => true,
-        spawnTui: async () => (spawned++, 0),
+        spawnTui: async () => {
+          spawned++;
+          return 0;
+        },
       }),
     ).rejects.toThrow('run nope not found');
     expect(spawned).toBe(0);

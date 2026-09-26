@@ -144,30 +144,41 @@ channels:
 
 ## Dashboard
 
-`shibaox` with no command (or `shibaox ui`) opens an interactive dashboard over the daemon.
-It is an [OpenTUI](https://opentui.com) app (`apps/tui`) and runs under [Bun](https://bun.sh)
+`shibaox` with no command (or `shibaox ui`) opens the dashboard over the daemon. It is an
+[OpenTUI](https://opentui.com) + Solid app (`apps/tui`) and runs under [Bun](https://bun.sh)
 1.3 or later (checked by the CLI, which spawns it for you); without Bun the CLI says so and
-the text commands keep working. `pnpm test` also needs Bun for the dashboard's own tests. The dashboard shows:
-runs on the left with a status word (`Working`, `Needs you`, `Queued`, `Done`, `Failed`,
-`Paused`, `Cancelled`), the selected run on the right with its nodes and live stream (agent text, tool
-calls with their duration, subagents indented), and a banner at the top whenever something
-waits for you. It needs an interactive terminal of at least 60×15; below 100 columns it shows
-one pane at a time (`tab` switches).
+the text commands keep working. `pnpm test` also needs Bun for the dashboard's own tests. It
+needs an interactive terminal of at least 60×15.
 
-Keys: `j/k` select (or scroll the detail once it has focus; scrolling back to the bottom
-turns auto-scroll on again) · `enter` focus the detail · `tab` switch panes · `a`/`d`
-approve or deny the first inbox item (an approval asks `y` first; `n` adds a note, `i`
-lists them all) · `N` new run · `c` cancel · `r` resume · `f` active/all · `?` help · `q` or
-Ctrl-C quit (the daemon keeps running). The new-run form reads the workflows of the org
-(`./org` when it exists), always starts with the current directory as the project, and
-remembers the last org, adapter and workspace in `~/.shibaox/ui.json`. `SHIBAOX_NO_MOTION=1`
-freezes the working indicator.
+**Home** shows the logo and a prompt: type what the team should do and press `enter` to
+start a run. `/` commands set the context and autocomplete: `/workflow <name>` (from the
+org), `/project <dir>`, `/org <dir>`, `/adapter mock|claude-code|direct`, `/budget <usd>`,
+`/workspace inplace|worktree`. The org defaults to `./org`, the project to the current
+directory; the last org, adapter and workflow are remembered in `~/.shibaox/ui.json`. The
+footer shows the daemon, how many runs are working or queued, and how many things need you.
+
+**A run** opens as a tab and reads like a conversation: one card per node (task, gate,
+decision, human step) with the agent's text in Markdown, tool calls (`> Read src/a.ts · 7 ms
+· done`, `enter` shows input and output), touched files, gate checks, the decision and its
+confidence, and a summary at the end (status, cost, duration, files changed, branch). While
+the run waits for you, the bottom of the screen asks: `a` approves, `d` denies, `n` adds a
+note (a command approval asks `y` first). Runs that end or start waiting in another tab make
+their tab pulse until you open it. The sidebar (automatic from 120 columns, `ctrl+b`) lists
+runs by day, the pending inbox, and the files and costs of the current run; drag its edge
+with the mouse to resize it.
+
+Keys: `ctrl+n` home · `ctrl+o` open a run · `ctrl+k` command palette · `ctrl+]`/`ctrl+p`
+next/previous tab · `ctrl+w` close tab · `ctrl+b` sidebar · `?` help · `ctrl+q` quit (the
+daemon keeps running). In a run: `j/k` move, `enter` expand, `g`/`G` top/follow, `d` diff of
+the run's checkout (`GET /runs/:id/diff`), `c` cancel, `r` resume, `tab` sidebar. Runs that
+the daemon no longer streams (older than the last 50 finished) still show their nodes from
+the run state. `SHIBAOX_NO_MOTION=1` (or `"animations": false` in `ui.json`) turns every
+animation off.
 
 In an interactive terminal with Bun installed, `shibaox run` (without `--detach`) and
-`shibaox follow` show the same live stream and answer approvals in place; without a TTY,
-without Bun, or with `--json`, they print plain lines as before. When the run ends, the
-terminal stream closes and the run's final state is printed. The daemon keeps the (trimmed)
-stream of the last 50 finished runs, so the dashboard still shows what happened.
+`shibaox follow` show the same run view; without a TTY, without Bun, or with `--json`, they
+print plain lines as before. When the run ends, the view closes and the run's final state is
+printed; `q` leaves it running in the daemon.
 
 ## Providers
 
@@ -432,7 +443,7 @@ Deleting the file deletes the run history. Run worktrees live under
 | `packages/workspace` | git worktree per run: create, list, remove, diff |
 | `packages/memory` | vault run/decision notes, `Graphify` runner and MCP config |
 | `packages/daemon` | the local daemon: run manager (queue, restart recovery), inbox, socket API + client, channels, schedules, and the runtime wiring |
-| `apps/tui` | the OpenTUI dashboard and live stream (Bun; `runDashboard`, `runStream`), a pure client of the daemon socket API |
+| `apps/tui` | the OpenTUI + Solid dashboard (Bun; `runDashboard`, `runStream`), a pure client of the daemon socket API; motion and dialog primitives adapted from opencode (MIT, see `apps/tui/THIRD_PARTY.md`) |
 | `apps/cli` | `shibaox [ui] / init / doctor / daemon / run / follow / runs / replay / resume / cancel / inbox / approve / deny / schedule / providers / models / graph / worktree` |
 | `examples/sample-repo` | a tiny Node project used by the sample workflow and the e2e tests |
 | `docs/superpowers/specs` | the design spec |

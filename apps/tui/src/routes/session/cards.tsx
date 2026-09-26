@@ -39,7 +39,7 @@ function feedbackColor(theme: ReturnType<typeof useTheme>, f: Feedback | 'muted'
   return f === 'muted' ? theme.text.muted : theme.text.feedback[f];
 }
 
-function Symbol(props: { status: string }): JSX.Element {
+function StatusSymbol(props: { status: string }): JSX.Element {
   const theme = useTheme();
   const look = () => nodeLook(props.status);
   return (
@@ -50,7 +50,6 @@ function Symbol(props: { status: string }): JSX.Element {
       <OneCellSpinner
         animation={WORK_SPINNERS['block-soft-sweep']}
         color={theme.text.feedback.running}
-        still="●"
       />
       <text> </text>
     </Show>
@@ -91,7 +90,7 @@ export function NodeCard(props: {
   return (
     <box flexDirection="column" width="100%" flexShrink={0} marginBottom={1}>
       <Row selected={props.selectedRow === headerId()} ref={(el) => props.rowRef(headerId(), el)}>
-        <Symbol status={props.card.status} />
+        <StatusSymbol status={props.card.status} />
         <FadeInText fg={theme.text.base} attributes={TextAttributes.BOLD} wrapMode="none">
           {header()}
         </FadeInText>
@@ -214,7 +213,7 @@ export function GateCard(props: {
   return (
     <box flexDirection="column" width="100%" flexShrink={0} marginBottom={1}>
       <Row selected={props.selected} ref={(el) => props.rowRef(id(), el)}>
-        <Symbol status={props.card.status} />
+        <StatusSymbol status={props.card.status} />
         <FadeInText fg={theme.text.base} attributes={TextAttributes.BOLD} wrapMode="none">
           {`${props.card.nodeId} · gate${props.card.attempts > 1 ? ` · attempt ${props.card.attempts}` : ''}`}
         </FadeInText>
@@ -257,7 +256,7 @@ export function DecideCard(props: {
   return (
     <box flexDirection="column" width="100%" flexShrink={0} marginBottom={1}>
       <Row selected={props.selected} ref={(el) => props.rowRef(id(), el)}>
-        <Symbol status={props.card.status} />
+        <StatusSymbol status={props.card.status} />
         <FadeInText fg={theme.text.base} attributes={TextAttributes.BOLD} wrapMode="none">
           {line()}
         </FadeInText>

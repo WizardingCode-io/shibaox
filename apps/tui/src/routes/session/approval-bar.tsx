@@ -25,7 +25,6 @@ export function ApprovalBar(props: { runId: string }): JSX.Element {
   const item = () => items()[0];
   const [mode, setMode] = createSignal<'idle' | 'confirm' | 'note'>('idle');
   const [note, setNote] = createSignal('');
-  let input: InputRenderable | undefined;
 
   const answer = (approved: boolean, text?: string) => {
     const i = item();
@@ -119,10 +118,7 @@ export function ApprovalBar(props: { runId: string }): JSX.Element {
             {'Note · '}
           </text>
           <input
-            ref={(r: InputRenderable) => {
-              input = r;
-              r.focus();
-            }}
+            ref={(r: InputRenderable) => r.focus()}
             focused
             onInput={setNote}
             onSubmit={() => answer(true, note())}

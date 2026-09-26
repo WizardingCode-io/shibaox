@@ -68,7 +68,7 @@ function color(root: Json, value: Json | undefined, ref: string, depth = 0): RGB
   return RGBA.fromHex(value);
 }
 
-function build(root: Json, get: (path: string) => RGBA): ResolvedTheme {
+function build(get: (path: string) => RGBA): ResolvedTheme {
   const feedback = (prefix: string): Record<Feedback, RGBA> =>
     Object.fromEntries(FEEDBACK.map((f) => [f, get(`${prefix}.${f}`)])) as Record<Feedback, RGBA>;
   const theme: ResolvedTheme = {
@@ -148,7 +148,7 @@ export function resolveTheme(json: unknown): ResolvedTheme {
     }
     return c;
   };
-  return build(root, get);
+  return build(get);
 }
 
 /** What the markdown, code and diff renderables ask a `SyntaxStyle` for. */

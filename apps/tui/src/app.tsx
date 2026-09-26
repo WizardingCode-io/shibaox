@@ -29,6 +29,7 @@ export interface AppOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   renderer?: CliRenderer;
+  log?: (line: string) => void;
 }
 
 /** What tests and the stream entry get from a mounted app. */
@@ -44,6 +45,8 @@ export interface AppProps extends AppOptions {
   /** Stream mode: the run reached a terminal status. */
   onEnded?: (status: string) => void;
   onMount?: (hooks: AppHooks) => void;
+  /** Where stream failures and malformed frames are noted (`~/.shibaox/tui.log`). */
+  log?: (line: string) => void;
 }
 
 /** Tabs rail, the active tab's screen (home or a run), overlays and toasts. */
@@ -154,7 +157,12 @@ function Hooks(props: {
 function WithData(props: AppProps): JSX.Element {
   const toast = useToast();
   return (
-    <DataProvider client={props.client} single={props.runId} toast={(t) => toast.show(t)}>
+    <DataProvider
+      client={props.client}
+      single={props.runId}
+      toast={(t) => toast.show(t)}
+      log={props.log}
+    >
       <RouteProvider
         initial={props.runId ? { type: 'session', runId: props.runId } : { type: 'home' }}
       >
@@ -244,6 +252,7 @@ function mount(
           cwd={o.cwd}
           env={o.env}
           runId={o.runId}
+          log={o.log}
           onExit={(code) => end({ code })}
           onEnded={(status) => end({ code: status === 'completed' ? 0 : 2, ended: status })}
           onMount={() => {

@@ -27,6 +27,8 @@ export interface PollerOptions {
   toast: (t: PollerToast) => void;
   /** Opens a run's tab (the toast's Open action). */
   open?: (runId: string) => void;
+  /** Where stream failures and malformed frames are noted (`~/.shibaox/tui.log`). */
+  log?: (line: string) => void;
   now?: () => number;
   intervals?: Partial<PollerIntervals>;
 }
@@ -57,6 +59,7 @@ export class Poller {
   private readonly get: () => DataState;
   private readonly toast: (t: PollerToast) => void;
   private readonly open: (runId: string) => void;
+  private readonly log: (line: string) => void;
   private readonly now: () => number;
   private readonly intervals: PollerIntervals;
   private tickTimer: NodeJS.Timeout | undefined;
@@ -73,6 +76,7 @@ export class Poller {
     this.get = o.get;
     this.toast = o.toast;
     this.open = o.open ?? (() => undefined);
+    this.log = o.log ?? (() => undefined);
     this.now = o.now ?? (() => Date.now());
     this.intervals = { ...DEFAULTS, ...o.intervals };
   }
@@ -228,8 +232,10 @@ export class Poller {
           return;
         }
       }
-    } catch {
+    } catch (e) {
       // aborted, or the daemon went away: the poll loop notices and reopens
+      if (!controller.signal.aborted)
+        this.log(`stream ${runId}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 

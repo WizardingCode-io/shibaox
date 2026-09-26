@@ -40,7 +40,10 @@ class ShimmerTextRenderable extends MaskedTextRenderable {
   }
 
   override render(buffer: OptimizedBuffer, deltaTime: number): void {
-    if (!this._enabled) return super.render(buffer, deltaTime);
+    if (!this._enabled) {
+      super.render(buffer, deltaTime);
+      return;
+    }
     if (
       !this.visible ||
       this.isDestroyed ||
