@@ -1,5 +1,5 @@
 import type { Cost } from '@shibaox/schemas';
-import { type Questions, type SystemOneResult, TypeSafeClient } from '@typesafe-ai/sdk';
+import { noul, type Questions, type SystemOneResult, TypeSafeClient } from '@typesafe-ai/sdk';
 
 export const JEV_INPUT_USD_PER_M = 0.042;
 export type { Questions };
@@ -44,6 +44,23 @@ export class JevClient {
       cost: (usage.inputTokens / 1_000_000) * JEV_INPUT_USD_PER_M,
     };
   }
+}
+
+/**
+ * Adapts `client.fanOut` to the `fanOut` shape of core's `selectCapabilities`: every
+ * question becomes a `noul` question and only the `noul` of each answer is returned.
+ */
+export function noulFanOut(client: JevClient) {
+  return async (
+    state: string,
+    questions: Record<string, { instructions: string }>,
+  ): Promise<Record<string, { noul?: number }>> => {
+    const qs = Object.fromEntries(
+      Object.entries(questions).map(([k, q]) => [k, noul(q.instructions)]),
+    );
+    const r = await client.fanOut(state, qs);
+    return r.answers as Record<string, { noul?: number }>;
+  };
 }
 
 export function gateByConfidence(

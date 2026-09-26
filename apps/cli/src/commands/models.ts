@@ -3,8 +3,8 @@ import { resolveModel } from '@shibaox/core';
 import { loadCatalog, ProviderRegistry } from '@shibaox/providers';
 import { loadOrg, type Org } from '@shibaox/schemas';
 
-/** Runtimes that exist in phase 1B-1 (the Claude Code adapter comes in 1B-2). */
-export const AVAILABLE_RUNTIMES = ['mock', 'direct'];
+/** Runtimes shibaox can run tasks on. */
+export const AVAILABLE_RUNTIMES = ['mock', 'direct', 'claude-code'];
 
 /** How each org role resolves to a model; a role that cannot resolve prints `!! <reason>`. */
 export function formatModels(org: Org, reg: ProviderRegistry): string[] {

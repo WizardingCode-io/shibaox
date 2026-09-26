@@ -4,14 +4,17 @@ export const ORG_TEMPLATE: Record<string, string> = {
 budgets:
   per_run_usd: 5
 teams: [engineering]
-# Runtime adapter for task nodes: mock (default, no model calls) or direct (real models,
-# see models.yaml). \`shibaox run --adapter\` overrides it.
+# Runtime adapter for task nodes: mock (default, no model calls), direct (real models,
+# see models.yaml) or claude-code (Claude Code for anthropic-subscription/... roles, direct
+# for the rest). \`shibaox run --adapter\` overrides it.
 # adapter: direct
+# Obsidian vault for run and decision notes (relative to this directory).
+vault: ../vault
 `,
   'org/models.yaml': `# Model refs are <provider>/<model>; see \`shibaox providers list\` for the catalog.
 # anthropic/... uses ANTHROPIC_API_KEY. With a Claude subscription instead of an API key,
 # use anthropic-subscription/<model> (e.g. anthropic-subscription/claude-sonnet-5): it runs
-# through the Claude Code runtime (phase 1B-2), not through the direct adapter.
+# through the Claude Code runtime (adapter: claude-code), not through the direct adapter.
 # Local models: ollama/<model> (Ollama on :11434) or lmstudio/<model> (LM Studio on :1234).
 providers: {}
 tiers:
@@ -41,7 +44,7 @@ system_prompt: prompts/analyst.md
   'org/roles/backend.yaml': `role: backend
 description: Implements the change with tests.
 model_tier: strong
-tools: [git, node, pnpm]
+tools: [read, write, git, node, npm, pnpm]
 permissions:
   approval_required: [push, deploy]
 system_prompt: prompts/backend.md

@@ -23,6 +23,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@shibaox/adapter-claude-code':
+        specifier: workspace:*
+        version: link:../../packages/adapter-claude-code
       '@shibaox/adapter-direct':
         specifier: workspace:*
         version: link:../../packages/adapter-direct
@@ -32,6 +35,9 @@ importers:
       '@shibaox/jev':
         specifier: workspace:*
         version: link:../../packages/jev
+      '@shibaox/memory':
+        specifier: workspace:*
+        version: link:../../packages/memory
       '@shibaox/persistence-sqlite':
         specifier: workspace:*
         version: link:../../packages/persistence-sqlite
@@ -41,6 +47,9 @@ importers:
       '@shibaox/schemas':
         specifier: workspace:*
         version: link:../../packages/schemas
+      '@shibaox/workspace':
+        specifier: workspace:*
+        version: link:../../packages/workspace
       commander:
         specifier: ^15.0.0
         version: 15.0.0

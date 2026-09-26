@@ -1,15 +1,19 @@
-import { appendFileSync, cpSync, mkdtempSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { appendFileSync, cpSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fakeQuery, msg } from '@shibaox/adapter-claude-code/testing';
 import { AutoApproveHuman, MemoryEventStore } from '@shibaox/core';
 import { SqliteEventStore } from '@shibaox/persistence-sqlite';
 import type { ProviderEntry } from '@shibaox/providers';
+import { startFakeOpenAI } from '@shibaox/providers/testing';
 import { loadOrg } from '@shibaox/schemas';
 import { describe, expect, it } from 'vitest';
 import { scaffoldOrg } from '../src/commands/init.js';
 import { resumeRun } from '../src/commands/resume.js';
 import { runWorkflow } from '../src/commands/run.js';
+import { worktreeList, worktreeRemove } from '../src/commands/worktree.js';
 import { buildRuntime } from '../src/wiring.js';
 
 const sample = fileURLToPath(new URL('../../../examples/sample-repo', import.meta.url));
@@ -152,5 +156,135 @@ describe('adapter selection and start checks', () => {
     expect(warned).toContain('model "fake/m" has no pricing: budget cannot be enforced for it');
     const noBudget = buildRuntime(common).warnings;
     expect(noBudget.some((w) => w.includes('no pricing'))).toBe(false);
+  });
+});
+
+const pricedFake = (baseURL: string): ProviderEntry => ({
+  ...unpricedFake,
+  base_url: baseURL,
+  pricing: { m: { input_per_m: 1, output_per_m: 1 } },
+});
+
+describe('claude-code adapter routing', () => {
+  it('runs subscription roles on Claude Code and the rest direct', async () => {
+    const { org, project, db } = setup();
+    writeFileSync(
+      join(org, 'models.yaml'),
+      'tiers: { strong: anthropic-subscription/claude-sonnet-5, cheap: fake/m }\n',
+    );
+    const llm = await startFakeOpenAI(() => ({
+      toolCalls: [{ name: 'finish', args: { output: { files: [] }, summary: 'analysed' } }],
+    }));
+    try {
+      const q = fakeQuery(() => [msg.success('implemented')]);
+      const lines: string[] = [];
+      const state = await runWorkflow('hello-feature', {
+        org,
+        project,
+        db,
+        input: 'x',
+        adapter: 'claude-code',
+        queryFn: q,
+        env: {},
+        extraProviders: [pricedFake(llm.baseURL)],
+        human: new AutoApproveHuman(),
+        log: (l) => lines.push(l),
+      });
+      expect(state.status).toBe('completed');
+      expect(lines).toContain('  analyst → fake/m');
+      expect(lines).toContain('  backend → claude-code (claude-sonnet-5)');
+      expect(state.nodes.analyse?.summary).toBe('analysed');
+      expect(q.calls.map((c) => c.prompt.split('\n')[0])).toEqual([
+        'Task: Implement the request. Keep tests green.',
+      ]);
+    } finally {
+      await llm.close();
+    }
+  });
+
+  it('refuses to start when a role routes to an unavailable runtime', async () => {
+    const { org, project, db } = setup();
+    writeFileSync(
+      join(org, 'models.yaml'),
+      'tiers: { strong: openai-codex-subscription/gpt-5-codex, cheap: anthropic-subscription/claude-haiku-4-5 }\n',
+    );
+    await expect(
+      runWorkflow('hello-feature', {
+        org,
+        project,
+        db,
+        input: 'x',
+        adapter: 'claude-code',
+        queryFn: fakeQuery(() => []),
+        env: {},
+        log: () => {},
+      }),
+    ).rejects.toThrow(/^cannot start: role "backend" → role backend resolved to runtime codex/);
+    expect(await runCount(db)).toBe(0);
+  });
+
+  it('refuses to start when a direct role of a claude-code run is not configured', async () => {
+    const { org, project, db } = setup();
+    writeFileSync(
+      join(org, 'models.yaml'),
+      'tiers: { strong: anthropic-subscription/claude-sonnet-5, cheap: openai/gpt-5-mini }\n',
+    );
+    await expect(
+      runWorkflow('hello-feature', {
+        org,
+        project,
+        db,
+        input: 'x',
+        adapter: 'claude-code',
+        env: {},
+        log: () => {},
+      }),
+    ).rejects.toThrow(/cannot start: role "analyst" → provider "openai" is not configured/);
+  });
+});
+
+describe('vault and worktrees', () => {
+  it('warns once when no vault is configured', async () => {
+    const { org, project, db } = setup();
+    writeFileSync(join(org, 'org.yaml'), 'organization: my-org\nteams: [engineering]\n');
+    const lines: string[] = [];
+    await runWorkflow('hello-feature', {
+      org,
+      project,
+      db,
+      input: 'x',
+      env: {},
+      human: new AutoApproveHuman(),
+      log: (l) => lines.push(l),
+    });
+    expect(lines.filter((l) => l.includes('no vault'))).toEqual([
+      'warn: no vault in org.yaml: run notes are not written',
+    ]);
+  });
+
+  it('worktree list and rm manage the run worktrees', async () => {
+    const { org, project, db } = setup();
+    const git = (...a: string[]) => execFileSync('git', a, { cwd: project, stdio: 'ignore' });
+    git('init', '-q', '-b', 'main');
+    git('add', '-A');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--no-gpg-sign', '-m', 'i');
+    const state = await runWorkflow('hello-feature', {
+      org,
+      project,
+      db,
+      input: 'x',
+      env: {},
+      human: new AutoApproveHuman(),
+      log: () => {},
+    });
+    expect(state.workspaceMode).toBe('worktree');
+    const lines: string[] = [];
+    await worktreeList({ project }, (l) => lines.push(l));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain(`shibaox/${state.runId}`);
+    await worktreeRemove(state.runId, { project, deleteBranch: true }, () => {});
+    lines.length = 0;
+    await worktreeList({ project }, (l) => lines.push(l));
+    expect(lines).toEqual(['no run worktrees']);
   });
 });

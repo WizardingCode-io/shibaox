@@ -1,6 +1,6 @@
 import { choice, noul, score } from '@typesafe-ai/sdk';
 import { afterEach, describe, expect, it } from 'vitest';
-import { gateByConfidence, JevClient } from '../src/index.js';
+import { gateByConfidence, JevClient, noulFanOut } from '../src/index.js';
 import { startFakeJev } from '../src/testing/fake-jev.js';
 
 let fake: Awaited<ReturnType<typeof startFakeJev>> | undefined;
@@ -49,5 +49,17 @@ describe('gateByConfidence', () => {
     expect(gateByConfidence(0.9, 0.8)).toBe('pass');
     expect(gateByConfidence(0.6, 0.8)).toBe('escalate');
     expect(gateByConfidence(0.3, 0.8)).toBe('fail');
+  });
+});
+
+describe('noulFanOut', () => {
+  it('asks noul questions and returns only the noul per key', async () => {
+    fake = await startFakeJev((req) =>
+      Object.fromEntries(Object.keys(req.questions).map((k) => [k, { type: 'noul', noul: 0.9 }])),
+    );
+    const fanOut = noulFanOut(new JevClient({ apiKey: 'k', baseURL: fake.baseURL }));
+    const r = await fanOut('req', { a: { instructions: 'needs a' } });
+    expect(r.a?.noul).toBeCloseTo(0.9);
+    expect(fake.requests[0]?.questions.a?.type).toBe('noul');
   });
 });

@@ -12,12 +12,15 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
+    "@shibaox/adapter-claude-code": "workspace:*",
     "@shibaox/adapter-direct": "workspace:*",
     "@shibaox/core": "workspace:*",
     "@shibaox/jev": "workspace:*",
+    "@shibaox/memory": "workspace:*",
     "@shibaox/persistence-sqlite": "workspace:*",
     "@shibaox/providers": "workspace:*",
     "@shibaox/schemas": "workspace:*",
+    "@shibaox/workspace": "workspace:*",
     "commander": "^15.0.0"
   },
   "devDependencies": {

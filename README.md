@@ -71,7 +71,9 @@ shibaox run hello-feature --org ./org --project ./project --input "add /health"
 (human)`. In an interactive terminal the `ship` node asks `Approve the push? (y/n)`.
 Without a TTY (CI, `< /dev/null`) the question is deferred: the run stops with
 `status=waiting_human` and exit code 2. Other useful flags: `--budget <usd>` (defaults to
-`budgets.per_run_usd` in `org/org.yaml`) and `--db <path>`.
+`budgets.per_run_usd` in `org/org.yaml`), `--db <path>`, `--workspace` and `--graph` (see
+[Worktrees](#worktrees) and [Memory](#memory-vault--graphify)). The copied project is not a
+git repository, so this run works in place; in a git repository it runs in a worktree.
 
 ```sh
 # 4. List runs, then replay one run's event log and its derived state.
@@ -131,14 +133,16 @@ gates:
   judge: anthropic/claude-haiku-4-5          # optional model for judge checks (default: strong)
 ```
 
-`anthropic-subscription/...` runs through the Claude Code runtime, which arrives in phase
-1B-2; with the direct adapter it fails with a clear message.
+`anthropic-subscription/...` runs through the Claude Code runtime (`--adapter claude-code`,
+see [Claude Code runtime](#claude-code-runtime)); with the direct adapter it fails with a
+clear message.
 
-`shibaox run` and `resume` use the adapter from `--adapter mock|direct`, else `adapter:` in
-`org/org.yaml`, else **mock**: provider keys in the environment never switch a run to real
+`shibaox run` uses the adapter from `--adapter mock|direct|claude-code`, else `adapter:` in
+`org/org.yaml`, else **mock**; `resume` keeps the adapter the run started with unless
+`--adapter` is given: provider keys in the environment never switch a run to real
 models on their own. With `mock` no provider model is called (no LLM judge or lead; `decide`
 nodes use Jev when `TYPESAFE_API_KEY` is set, else pick `ship`). Every run prints
-`adapter=<id>`; with `direct` it also prints `<role> → <model>` for each task role and
+`adapter=<id>`; with `direct` or `claude-code` it also prints `<role> → <target>` for each task role and
 refuses to start (`cannot start: role "<role>" → <reason>`, before any event is stored) when
 a role cannot resolve to a configured model.
 
@@ -180,11 +184,95 @@ still run arbitrary code with your user's permissions (a `package.json` script, 
 until it exits or hits its timeout. Run the direct adapter on projects and machines where
 that is acceptable.
 
+## Claude Code runtime
+
+`--adapter claude-code` (or `adapter: claude-code` in `org.yaml`) runs task nodes through
+Claude Code via the Claude Agent SDK. It keeps the org's routing: a role whose model is
+`anthropic-subscription/<model>`, or `anthropic/<model>` for a role whose `runtime` is
+`claude-code` (the default), runs in Claude Code with that model; any other role (for
+example `ollama/...`) still runs on the direct adapter. Every role is resolved before the run
+starts, and one that cannot run (a runtime other than Claude Code, an unconfigured
+provider) stops it with `cannot start: ...`.
+
+- **Subscription vs API key.** `anthropic-subscription/...` uses the login of the `claude`
+  CLI (`claude` must be installed and signed in); no key is read by shibaox. With
+  `anthropic/...` the Claude Code process gets `ANTHROPIC_API_KEY` from the environment.
+  The Claude Code process only inherits `PATH`, `HOME`, locale/terminal variables,
+  `SSH_AUTH_SOCK` and `ANTHROPIC_*`/`CLAUDE_CODE_*`; other secrets stay in shibaox.
+- **Tools.** A role's `tools:` map to Claude Code permissions: `read` → Read/Glob/Grep,
+  `write` → Edit/Write, any other name → `Bash(<name> *)`. Everything else is denied,
+  and always denied are `rm -rf`, `WebFetch` and `WebSearch`. Compound shell commands
+  (`;`, `&&`, pipes, substitutions) are refused. `git` and deploy tools (`vercel`, `fly`,
+  `kubectl`, `terraform`, ...) never get a blanket allow: every call is checked, and a push
+  or deploy is refused unless the role lists it in `permissions.approval_required` and a
+  human approves it at that moment.
+- **`approval_required` without a TTY.** Approvals are asked through the terminal. Without
+  a TTY the question is deferred, and a Claude Code task that needs a push/deploy approval
+  **fails** (`approval pending for push: ...`): Claude Code cannot wait across processes in
+  this phase. Run interactively, or keep approval-gated actions out of Claude Code tasks
+  (for example, leave the push to a `human` node).
+- Settings files (`~/.claude`, project `.claude/`) are not loaded; the role prompt from
+  `system_prompt` is appended to Claude Code's own system prompt. Spend reported by Claude
+  Code counts against the run budget, and the remaining budget caps each task.
+
+## Worktrees
+
+`run --workspace worktree|inplace` picks where tasks work. The default is `worktree` when
+the project is a git repository, else `inplace`. A worktree run gets its own checkout at
+`<project>/.shibaox/worktrees/<runId>` on a new branch `shibaox/<runId>` created from the
+project's `HEAD` (uncommitted changes in the project are not in it; `.shibaox/` is added
+to `.git/info/exclude`). The main checkout is never touched. If the project is a
+subdirectory of a larger repository, tasks run in the same subdirectory of the worktree.
+
+Worktrees are kept after the run (the run prints `worktree: <path> (branch
+shibaox/<runId>)`): review, commit and merge the branch yourself, then clean up:
+
+```sh
+shibaox worktree list --project ./project
+shibaox worktree rm <runId> --project ./project [--delete-branch]
+```
+
+## Memory (vault + graphify)
+
+**Vault.** `vault:` in `org.yaml` (relative to the org directory; `shibaox init` writes
+`vault: ../vault`) points at an Obsidian vault. When a `run` or `resume` ends (`completed`,
+`failed` or `cancelled`), shibaox writes `10-projects/<project>/runs/<date>-<runId8>.md`
+(status, adapter, spend, nodes, last gate report, timeline) and one
+`90-system/decisions/<date>-<runId8>-<node>.md` per `decide` node, and prints `note:
+<path>`. Notes are never overwritten. Without `vault:` the run prints one warning.
+
+**graphify.** A code knowledge graph of the project, built with
+[graphify](https://pypi.org/project/graphifyy/) (installed with `uv tool install graphifyy`;
+`graph build` tries this itself when `uv` is present):
+
+```sh
+shibaox graph build --project ./project      # writes ./project/graphify-out/graph.json
+shibaox graph update --project ./project     # after code changes
+shibaox graph query "where is add defined?" --project ./project
+```
+
+`run --graph auto` (the default) uses `graphify-out/graph.json` when it exists and never
+builds it: direct roles get a `graph_query` tool, and Claude Code roles get the graphify
+MCP server (`mcp__graphify__*`), which needs graphify's Python (a warning is printed and
+the MCP is skipped when it cannot be found). `--graph off` disables both.
+
+## Autorouting
+
+Once per run, shibaox matches the org's catalog (`org/catalog/*.yaml` entries of type
+`skill`, `plugin`, `mcp` or `tool`) against the first task role of the workflow and prints
+`autoroute: attach=[...] ambiguous=[...]`. Without `TYPESAFE_API_KEY` the match is by tags
+(entries sharing a tag with the role's name, capabilities, tools or team roles are
+attached; the others are ambiguous). With the key (and a non-mock adapter) Jev scores each
+candidate and attaches those at 0.8 or more. In this phase the result gates the graphify
+MCP: when the catalog lists `graphify-mcp`, the MCP is attached only if autorouting
+attaches it; without such an entry it is attached whenever the graph exists.
+
 ## Where state lives
 
 Events are stored in `<org>/.shibaox/events.db` (SQLite, WAL mode) unless `--db` points
 elsewhere. `shibaox init` writes `org/.gitignore` with `.shibaox/`, so the database is
-never committed with the org repo. Deleting the file deletes the run history.
+never committed with the org repo. Deleting the file deletes the run history. Run
+worktrees live under `<project>/.shibaox/worktrees/`, run notes in the vault.
 
 ## Layout
 
@@ -196,6 +284,9 @@ never committed with the org repo. Deleting the file deletes the run history.
 | `packages/providers` | provider catalog, `ProviderRegistry`, `LlmClient`, judge check runner, lead decider |
 | `packages/jev` | Jev client, `JevDecider`, `jev` check runner |
 | `packages/adapter-direct` | `DirectAdapter`: AI SDK agent loop with workspace-scoped tools |
-| `apps/cli` | `shibaox init / doctor / run / runs / replay / resume / providers / models` |
+| `packages/adapter-claude-code` | `ClaudeCodeAdapter`: Claude Agent SDK runtime, role tool rules, human approvals |
+| `packages/workspace` | git worktree per run: create, list, remove, diff |
+| `packages/memory` | vault run/decision notes, `Graphify` runner and MCP config |
+| `apps/cli` | `shibaox init / doctor / run / runs / replay / resume / providers / models / graph / worktree` |
 | `examples/sample-repo` | a tiny Node project used by the sample workflow and the e2e tests |
 | `docs/superpowers/specs` | the design spec |
