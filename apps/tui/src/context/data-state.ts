@@ -1,5 +1,5 @@
 import type { RunState, RunStatus } from '@shibaox/core';
-import type { Envelope, Health, InboxItem, RunSummaryPlus } from '@shibaox/daemon';
+import type { Health, InboxItem, RunSummaryPlus } from '@shibaox/daemon';
 
 /** Everything the screens read; fed by the Poller and by user actions. */
 export interface DataState {
@@ -10,7 +10,8 @@ export interface DataState {
   runs: RunSummaryPlus[];
   inbox: InboxItem[];
   states: Record<string, RunState>;
-  frames: Record<string, Envelope[]>;
+  /** Bumped whenever a run's frames change (the frames themselves live outside the store). */
+  versions: Record<string, number>;
   ended: Record<string, RunStatus>;
   /** Open tabs (run ids) in order; `active` undefined means the home tab. */
   open: string[];
@@ -24,7 +25,7 @@ export const initialData = (): DataState => ({
   runs: [],
   inbox: [],
   states: {},
-  frames: {},
+  versions: {},
   ended: {},
   open: [],
   unread: {},

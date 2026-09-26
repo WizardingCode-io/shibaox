@@ -40,6 +40,15 @@ const state = (runId: string, status: string): RunState =>
       status === 'waiting_human' ? [{ nodeId: 'ship', action: 'ship', prompt: 'Ship?' }] : [],
     pendingApprovals: [],
   }) as RunState;
+const approval: InboxItem = {
+  id: 'approval:a9' as never,
+  kind: 'approval',
+  runId: 'aaaa1111-x',
+  nodeId: 'implement',
+  at: today,
+  prompt: 'git push origin main',
+  detail: { role: 'backend', program: 'git', category: 'push' },
+};
 const human: InboxItem = {
   id: 'human:bbbb2222-x:ship' as never,
   kind: 'human',
@@ -179,6 +188,37 @@ test('tab focuses the sidebar: j/k select a run, enter opens it, a answers its p
     );
     f = await m.key('tab');
     expect(f).toContain('Runs');
+  } finally {
+    m.done();
+  }
+});
+
+test('Needs-you items are selectable: a on a command approval asks y first; a on a run with nothing waiting says so', async () => {
+  const m = await mount();
+  try {
+    m.client.inboxItems = [human, approval];
+    await settle(1100);
+    await m.frame();
+    await m.key('tab');
+    // rows: Today aaaa1111, Yesterday bbbb2222, then the two Needs-you items
+    let f = await m.key('j');
+    f = await m.key('j');
+    f = await m.key('j');
+    f = await m.key('a');
+    expect(f).toContain('Approve git push origin main? (y/n)');
+    expect(m.client.calls.filter((c) => c.method === 'answer')).toHaveLength(0);
+    await m.key('y');
+    expect(m.client.calls.find((c) => c.method === 'answer')?.args[0]).toBe('approval:a9');
+    m.client.inboxItems = [];
+    await settle(1100);
+    await m.frame();
+    await m.key('k');
+    await m.key('k');
+    await m.key('k');
+    f = await m.key('a');
+    // the "Approved" toast may still be up: the notice then queues behind it
+    expect(f.includes('Nothing waiting') || f.includes('+1 more')).toBe(true);
+    expect(m.client.calls.filter((c) => c.method === 'answer')).toHaveLength(1);
   } finally {
     m.done();
   }

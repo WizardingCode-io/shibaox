@@ -84,9 +84,10 @@ describe('reduceTimeline', () => {
     expect(card.costUsd).toBe(0.001);
     expect(card.tools).toBe(1);
     expect(card.blocks).toEqual([
-      { kind: 'text', text: 'Looking at the repo.' },
+      { kind: 'text', key: 'text:0', text: 'Looking at the repo.' },
       {
         kind: 'tool',
+        key: 'tool:t1',
         id: 't1',
         name: 'Read',
         summary: 'src/a.ts',
@@ -95,7 +96,7 @@ describe('reduceTimeline', () => {
         ms: 7,
         status: 'done',
       },
-      { kind: 'file', path: 'src/a.ts' },
+      { kind: 'file', key: 'file:2', path: 'src/a.ts' },
     ]);
   });
 
@@ -187,7 +188,7 @@ describe('reduceTimeline', () => {
     }
     const s = state({ workflowSnapshot: { workflow: 'w', start: 'n0', nodes } as never });
     const cards = reduceTimeline(s, frames);
-    expect(cards[0]).toEqual({ kind: 'earlier', count: 100 });
+    expect(cards[0]).toEqual({ kind: 'earlier', key: 'earlier', count: 100 });
     expect(cards).toHaveLength(CARD_LIMIT + 1);
   });
 

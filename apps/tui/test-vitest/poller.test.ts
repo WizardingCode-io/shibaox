@@ -51,14 +51,20 @@ function setup() {
     action?: { label: string; run: () => void };
   }[] = [];
   const now = { t: 1_000_000 };
+  const frames = new Map<string, Envelope[]>();
+  const sink = {
+    reset: (id: string) => frames.set(id, []),
+    append: (id: string, b: Envelope[]) => frames.set(id, [...(frames.get(id) ?? []), ...b]),
+  };
   const poller = new Poller({
     client,
     set,
     get: () => data,
+    frames: sink,
     toast: (t) => toasts.push(t),
     now: () => now.t,
   });
-  return { client, data, set, poller, toasts, now };
+  return { client, data, set, poller, toasts, now, frames };
 }
 
 describe('Poller', () => {
@@ -113,8 +119,8 @@ describe('Poller', () => {
     s.client.pushFrame('a', frame('a', 1, { type: 'NodeStarted', nodeId: 'x' }));
     s.client.pushFrame('b', frame('b', 1, { type: 'NodeStarted', nodeId: 'y' }));
     await flush();
-    expect(s.data.frames.a?.map((f) => f.seq)).toEqual([1]);
-    expect(s.data.frames.b?.map((f) => f.seq)).toEqual([1]);
+    expect(s.frames.get('a')?.map((f) => f.seq)).toEqual([1]);
+    expect(s.frames.get('b')?.map((f) => f.seq)).toEqual([1]);
     s.poller.unsubscribe('a');
     await flush();
     expect(s.client.openStreams()).toEqual(['b']);
@@ -145,6 +151,44 @@ describe('Poller', () => {
       reopened.map((c) => [c.args[0], (c.args[1] as { since?: string }).since]),
     );
     expect(since).toEqual({ a: '7:0', b: undefined, c: '3:0' });
+    s.poller.stop();
+  });
+
+  it('a stream that drops without an end frame is reopened with its cursor on the next tick', async () => {
+    const s = setup();
+    s.poller.start();
+    await s.poller.tick();
+    s.poller.subscribe('a');
+    await flush();
+    s.client.pushFrame('a', frame('a', 4, { type: 'NodeStarted', nodeId: 'x' }));
+    await flush();
+    s.client.closeStream('a'); // the daemon restarted between two polls
+    await flush();
+    expect(s.client.openStreams()).toEqual([]);
+    await s.poller.tick();
+    await flush();
+    expect(s.client.openStreams()).toEqual(['a']);
+    const last = s.client.calls.filter((c) => c.method === 'events').at(-1);
+    expect((last?.args[1] as { since?: string } | undefined)?.since).toBe('4:0');
+    s.poller.stop();
+  });
+
+  it('actions do not call the client while the daemon is unreachable', async () => {
+    const s = setup();
+    s.poller.start();
+    await s.poller.tick();
+    s.client.failing = true;
+    await s.poller.tick();
+    s.client.failing = false; // the calls would succeed, but the UI knows the daemon as down
+    const before = s.client.calls.length;
+    await s.poller.answer('h1' as never, true);
+    await s.poller.cancel('a');
+    await s.poller.resume('a');
+    expect(
+      await s.poller.submit({ orgRoot: '/o', project: '/p', workflow: 'w', input: 'x' }),
+    ).toBeUndefined();
+    expect(s.client.calls.length).toBe(before);
+    expect(s.toasts.at(-1)).toMatchObject({ message: 'Daemon unreachable', variant: 'info' });
     s.poller.stop();
   });
 

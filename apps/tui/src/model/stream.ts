@@ -2,10 +2,12 @@ import type { NodeStatus, RunState, RunStatus } from '@shibaox/core';
 import type { Envelope } from '@shibaox/daemon';
 import type { WorkflowNode } from '@shibaox/schemas';
 
+/** `key` is stable across reductions so the screen can reconcile instead of remounting. */
 export type Block =
-  | { kind: 'text'; text: string; parentId?: string }
+  | { kind: 'text'; key: string; text: string; parentId?: string }
   | {
       kind: 'tool';
+      key: string;
       id: string;
       name: string;
       summary: string;
@@ -15,11 +17,12 @@ export type Block =
       status: 'running' | 'done' | 'error';
       parentId?: string;
     }
-  | { kind: 'file'; path: string };
+  | { kind: 'file'; key: string; path: string };
 
 export type Card =
   | {
       kind: 'node';
+      key: string;
       nodeId: string;
       type: 'task' | 'code';
       role?: string;
@@ -34,6 +37,7 @@ export type Card =
     }
   | {
       kind: 'gate';
+      key: string;
       nodeId: string;
       status: NodeStatus;
       checks: { name: string; passed: boolean; ms?: number; message?: string }[];
@@ -41,19 +45,28 @@ export type Card =
       report?: string;
       attempts: number;
     }
-  | { kind: 'decide'; nodeId: string; status: NodeStatus; choice?: string; confidence?: number }
+  | {
+      kind: 'decide';
+      key: string;
+      nodeId: string;
+      status: NodeStatus;
+      choice?: string;
+      confidence?: number;
+    }
   | {
       kind: 'human';
+      key: string;
       nodeId: string;
       prompt: string;
       action?: string;
       pending: boolean;
       answer?: { approved: boolean; note?: string; via?: string; at: string };
     }
-  | { kind: 'error'; nodeId?: string; message: string }
-  | { kind: 'earlier'; count: number }
+  | { kind: 'error'; key: string; nodeId?: string; message: string }
+  | { kind: 'earlier'; key: string; count: number }
   | {
       kind: 'summary';
+      key: string;
       status: RunStatus;
       costUsd: number;
       durationMs?: number;
@@ -146,6 +159,7 @@ function newCard(state: RunState | undefined, nodeId: string): Card {
     case 'gate':
       return {
         kind: 'gate',
+        key: `card:${nodeId}`,
         nodeId,
         status,
         attempts,
@@ -154,10 +168,11 @@ function newCard(state: RunState | undefined, nodeId: string): Card {
         report: st?.report ? failures(st.report.checks) : undefined,
       };
     case 'decide':
-      return { kind: 'decide', nodeId, status, choice: st?.choice };
+      return { kind: 'decide', key: `card:${nodeId}`, nodeId, status, choice: st?.choice };
     case 'human':
       return {
         kind: 'human',
+        key: `card:${nodeId}`,
         nodeId,
         prompt: def.prompt ?? def.action,
         action: def.action,
@@ -166,6 +181,7 @@ function newCard(state: RunState | undefined, nodeId: string): Card {
     default:
       return {
         kind: 'node',
+        key: `card:${nodeId}`,
         nodeId,
         type: def?.type === 'code' ? 'code' : 'task',
         role: def?.type === 'task' ? def.role : undefined,
@@ -316,8 +332,12 @@ export function reduceTimeline(state: RunState | undefined, frames: Envelope[]):
         const text = rt.text as string;
         const parentId = rt.parentToolUseId as string | undefined;
         const last = c.blocks.at(-1);
+        const key = `text:${c.blocks.length}`;
         if (last?.kind === 'text' && last.parentId === parentId) last.text += text;
-        else c.blocks.push(parentId ? { kind: 'text', text, parentId } : { kind: 'text', text });
+        else
+          c.blocks.push(
+            parentId ? { kind: 'text', key, text, parentId } : { kind: 'text', key, text },
+          );
         break;
       }
       case 'tool_use': {
@@ -325,6 +345,7 @@ export function reduceTimeline(state: RunState | undefined, frames: Envelope[]):
         const parentId = rt.parentToolUseId as string | undefined;
         c.blocks.push({
           kind: 'tool',
+          key: `tool:${id}`,
           id,
           name: rt.name as string,
           summary: summarizeInput(rt.input),
@@ -353,10 +374,15 @@ export function reduceTimeline(state: RunState | undefined, frames: Envelope[]):
       }
       case 'file_changed':
         files.add(rt.path as string);
-        c.blocks.push({ kind: 'file', path: rt.path as string });
+        c.blocks.push({ kind: 'file', key: `file:${c.blocks.length}`, path: rt.path as string });
         break;
       case 'error':
-        cards.push({ kind: 'error', nodeId: env.nodeId, message: rt.message as string });
+        cards.push({
+          kind: 'error',
+          key: `error:${cards.length}`,
+          nodeId: env.nodeId,
+          message: rt.message as string,
+        });
         break;
       default:
         break;
@@ -376,6 +402,7 @@ export function reduceTimeline(state: RunState | undefined, frames: Envelope[]):
     const status: RunStatus = state?.status ?? 'completed';
     cards.push({
       kind: 'summary',
+      key: 'summary',
       status,
       costUsd: state?.spentUsd ?? 0,
       durationMs:
@@ -388,7 +415,7 @@ export function reduceTimeline(state: RunState | undefined, frames: Envelope[]):
 
   if (cards.length > CARD_LIMIT) {
     const drop = cards.length - CARD_LIMIT;
-    return [{ kind: 'earlier', count: drop }, ...cards.slice(drop)];
+    return [{ kind: 'earlier', key: 'earlier', count: drop }, ...cards.slice(drop)];
   }
   return cards;
 }

@@ -156,6 +156,15 @@ export class FakeDaemonClient implements DaemonClientLike {
     s.wake?.();
   }
 
+  /** Ends the live `events()` iterator of `runId` without an `end` frame (a dropped connection). */
+  closeStream(runId: string): void {
+    const s = this.streams.get(runId);
+    if (!s) return;
+    s.closed = true;
+    this.streams.delete(runId);
+    s.wake?.();
+  }
+
   /** Run ids with a live `events()` iterator. */
   openStreams(): string[] {
     return [...this.streams.entries()].filter(([, s]) => !s.closed).map(([id]) => id);

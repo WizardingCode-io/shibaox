@@ -1,5 +1,5 @@
 import { TextAttributes } from '@opentui/core';
-import type { RunSummaryPlus } from '@shibaox/daemon';
+import type { InboxItem, RunSummaryPlus } from '@shibaox/daemon';
 import { createMemo, createSignal, For, type JSX, Show } from 'solid-js';
 import { useData } from '../context/data.js';
 import { useKeys } from '../context/keys.js';
@@ -7,7 +7,10 @@ import { age, money, shortId } from '../model/format.js';
 import { statusOf } from '../model/status.js';
 import { pendingFor } from '../routes/session/approval-bar.js';
 import { useTheme } from '../theme/context.js';
+import { useDialog } from '../ui/dialog.js';
 import { marqueeText } from '../ui/marquee.js';
+import { useToast } from '../ui/toast.js';
+import { Confirm } from './dialogs/confirm.js';
 
 type Group = 'Today' | 'Yesterday' | 'Earlier';
 
@@ -51,10 +54,41 @@ export function Sidebar(props: {
 }): JSX.Element {
   const data = useData();
   const theme = useTheme().surface('sidebar');
+  const dialog = useDialog();
+  const toast = useToast();
   const groups = createMemo(() => groupRuns(data.state.runs));
-  const flat = createMemo(() => groups().flatMap((g) => g.runs));
+  // the cursor walks the runs, then the Needs-you items
+  const rows = createMemo<({ run: RunSummaryPlus } | { item: InboxItem })[]>(() => [
+    ...groups().flatMap((g) => g.runs.map((run) => ({ run }))),
+    ...data.state.inbox.map((item) => ({ item })),
+  ]);
+  const selectedRow = () => rows()[Math.min(cursor(), Math.max(0, rows().length - 1))];
   const [cursor, setCursor] = createSignal(0);
-  const selected = () => flat()[Math.min(cursor(), Math.max(0, flat().length - 1))];
+  const selected = () => {
+    const r = selectedRow();
+    return r && 'run' in r ? r.run : undefined;
+  };
+  const selectedItem = () => {
+    const r = selectedRow();
+    return r && 'item' in r ? r.item : undefined;
+  };
+  /** Answers like the approval bar: a command approval asks y first. */
+  const answer = (item: InboxItem, approved: boolean) => {
+    if (approved && item.kind === 'approval') {
+      dialog.open(() => (
+        <Confirm
+          message={`Approve ${item.prompt}?`}
+          onYes={() => {
+            dialog.close();
+            void data.actions.answer(item.id, true);
+          }}
+          onNo={() => dialog.close()}
+        />
+      ));
+      return;
+    }
+    void data.actions.answer(item.id, approved);
+  };
   const cards = data.timeline(props.runId);
   const files = createMemo(() => {
     const out = new Set<string>();
@@ -73,7 +107,7 @@ export function Sidebar(props: {
 
   useKeys('pane', (key) => {
     if (!props.focused || key.ctrl || key.meta) return false;
-    const n = flat().length;
+    const n = rows().length;
     switch (key.name) {
       case 'j':
       case 'down':
@@ -84,15 +118,16 @@ export function Sidebar(props: {
         if (cursor() > 0) setCursor((c) => c - 1);
         return true;
       case 'return': {
-        const r = selected();
+        const r = selected() ?? selectedItem();
         if (r) data.openRun(r.runId);
         return true;
       }
       case 'a':
       case 'd': {
         const r = selected();
-        const item = r ? pendingFor(data.state.inbox, r.runId)[0] : undefined;
-        if (item) void data.actions.answer(item.id, key.name === 'a');
+        const item = selectedItem() ?? (r ? pendingFor(data.state.inbox, r.runId)[0] : undefined);
+        if (item) answer(item, key.name === 'a');
+        else toast.show({ message: 'Nothing waiting', variant: 'info' });
         return true;
       }
       default:
@@ -157,7 +192,16 @@ export function Sidebar(props: {
       <Title text={`Needs you (${data.state.inbox.length})`} />
       <For each={data.state.inbox}>
         {(i) => (
-          <box height={1} flexShrink={0}>
+          <box
+            height={1}
+            flexShrink={0}
+            backgroundColor={
+              props.focused && selectedItem()?.id === i.id
+                ? theme.background.action.primary.selected
+                : undefined
+            }
+            onMouseUp={() => data.openRun(i.runId)}
+          >
             <text fg={theme.text.feedback.warning} wrapMode="none">
               {marqueeText(`▲ ${shortId(i.runId)} · ${i.prompt}`, inner(), 0)}
             </text>

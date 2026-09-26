@@ -5,7 +5,7 @@ import type { SetStoreFunction } from 'solid-js/store';
 import { RUN_EVENT_REFRESH } from '../model/stream.js';
 import type { Feedback } from '../theme/resolve.js';
 import type { DaemonClientLike } from './client.js';
-import { type DataState, FRAME_LIMIT } from './data-state.js';
+import type { DataState } from './data-state.js';
 
 export interface PollerIntervals {
   fast: number;
@@ -20,10 +20,17 @@ export interface PollerToast {
   action?: { label: string; run: () => void };
 }
 
+/** Where the frames of a run go: a plain array per run, outside the reactive store. */
+export interface FrameSink {
+  reset(runId: string): void;
+  append(runId: string, batch: Envelope[]): void;
+}
+
 export interface PollerOptions {
   client: DaemonClientLike;
   set: SetStoreFunction<DataState>;
   get: () => DataState;
+  frames: FrameSink;
   toast: (t: PollerToast) => void;
   /** Opens a run's tab (the toast's Open action). */
   open?: (runId: string) => void;
@@ -40,6 +47,8 @@ interface Sub {
   /** Frames received but not yet written to the store (flushed every FLUSH_MS). */
   pending: Envelope[];
   flushTimer?: NodeJS.Timeout;
+  /** The stream closed without an `end` frame (daemon restart, socket error): reopen on the next tick. */
+  broken?: boolean;
 }
 
 const DEFAULTS: PollerIntervals = { fast: 500, normal: 1000, slow: 5000, health: 5000 };
@@ -57,6 +66,7 @@ export class Poller {
   private readonly client: DaemonClientLike;
   private readonly set: SetStoreFunction<DataState>;
   private readonly get: () => DataState;
+  private readonly frames: FrameSink;
   private readonly toast: (t: PollerToast) => void;
   private readonly open: (runId: string) => void;
   private readonly log: (line: string) => void;
@@ -74,6 +84,7 @@ export class Poller {
     this.client = o.client;
     this.set = o.set;
     this.get = o.get;
+    this.frames = o.frames;
     this.toast = o.toast;
     this.open = o.open ?? (() => undefined);
     this.log = o.log ?? (() => undefined);
@@ -122,7 +133,7 @@ export class Poller {
       this.set('unreachableSince', undefined);
       this.set('runs', runs);
       this.set('inbox', inbox);
-      if (wasDown) for (const sub of [...this.subs.values()]) this.reopen(sub);
+      for (const sub of [...this.subs.values()]) if (wasDown || sub.broken) this.reopen(sub);
     } catch {
       if (this.get().reachable) {
         this.set('reachable', false);
@@ -169,13 +180,7 @@ export class Poller {
     if (sub.pending.length === 0) return;
     const batch = sub.pending;
     sub.pending = [];
-    this.set('frames', sub.runId, (frames = []) => {
-      const all =
-        frames.length + batch.length > FRAME_LIMIT
-          ? [...frames, ...batch].slice(-FRAME_LIMIT)
-          : [...frames, ...batch];
-      return all;
-    });
+    this.frames.append(sub.runId, batch);
   }
 
   private queue(sub: Sub, env: Envelope): void {
@@ -199,9 +204,10 @@ export class Poller {
   private async consume(sub: Sub): Promise<void> {
     const { runId, controller } = sub;
     const mine = () => this.subs.get(runId) === sub && !controller.signal.aborted;
+    let ended = false;
     // a fresh subscription replays the history: start the run's frames over, and show the
     // run's nodes right away instead of waiting for its first event
-    if (!sub.cursor) this.set('frames', runId, []);
+    if (!sub.cursor) this.frames.reset(runId);
     await this.refreshRun(runId);
     if (!mine()) return;
     try {
@@ -216,6 +222,7 @@ export class Poller {
         }
         if (env.kind === 'run' && RUN_EVENT_REFRESH.has(env.event.type)) this.refreshSoon(runId);
         if (env.kind === 'end') {
+          ended = true;
           this.flush(sub);
           await this.refreshRun(runId);
           this.set('ended', runId, env.status);
@@ -236,7 +243,17 @@ export class Poller {
       // aborted, or the daemon went away: the poll loop notices and reopens
       if (!controller.signal.aborted)
         this.log(`stream ${runId}: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      // closed without an end frame while still ours: the next successful tick reopens it
+      if (!ended && mine()) sub.broken = true;
     }
+  }
+
+  /** While the daemon is known as down, actions only say so (no call, no error toast). */
+  private down(): boolean {
+    if (this.get().reachable) return false;
+    this.toast({ message: 'Daemon unreachable', variant: 'info' });
+    return true;
   }
 
   private refreshSoon(runId: string): void {
@@ -285,6 +302,7 @@ export class Poller {
   }
 
   async answer(id: InboxId, approved: boolean, note?: string): Promise<void> {
+    if (this.down()) return;
     try {
       await this.client.answer(id, { approved, note, via: 'cli' });
       this.toast({ message: approved ? 'Approved' : 'Denied', variant: 'success' });
@@ -295,6 +313,7 @@ export class Poller {
   }
 
   async cancel(runId: string): Promise<void> {
+    if (this.down()) return;
     try {
       this.setState(await this.client.cancel(runId));
       this.toast({ message: `Run ${runId.slice(0, 8)} cancelled`, variant: 'success' });
@@ -305,6 +324,7 @@ export class Poller {
   }
 
   async resume(runId: string, budgetUsd?: number): Promise<void> {
+    if (this.down()) return;
     try {
       this.setState(await this.client.resume(runId, { budgetUsd }));
       this.toast({ message: `Run ${runId.slice(0, 8)} resumed`, variant: 'success' });
@@ -316,6 +336,7 @@ export class Poller {
 
   /** Submits a run; returns its id, or undefined on failure (toast shown). */
   async submit(req: SubmitRequest): Promise<string | undefined> {
+    if (this.down()) return undefined;
     try {
       const { runId, warnings } = await this.client.submitRun(req);
       const note = warnings.length ? ` (${warnings.join('; ')})` : '';

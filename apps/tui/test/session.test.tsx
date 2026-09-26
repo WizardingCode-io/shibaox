@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { testRender } from '@opentui/solid';
 import type { RunState } from '@shibaox/core';
 import type { Envelope } from '@shibaox/daemon';
-import { App } from '../src/app.js';
+import { App, type AppHooks } from '../src/app.js';
 import { CARD_LIMIT } from '../src/model/stream.js';
 import { FakeDaemonClient } from '../src/testing/fake-client.js';
 
@@ -86,6 +86,7 @@ async function mount(o: {
   client.states.set('r1', o.state);
   client.history.set('r1', o.history);
   const exits: number[] = [];
+  let hooks: AppHooks | undefined;
   const setup = await testRender(
     () => (
       <App
@@ -96,6 +97,9 @@ async function mount(o: {
         cwd="/tmp"
         env={{ SHIBAOX_NO_MOTION: '1' }}
         onExit={(c) => exits.push(c)}
+        onMount={(h) => {
+          hooks = h;
+        }}
       />
     ),
     { width: o.width ?? 100, height: o.height ?? 30, exitOnCtrlC: false },
@@ -112,7 +116,8 @@ async function mount(o: {
     else await setup.mockInput.pressKey(k);
     return frame();
   };
-  return { client, setup, frame, key, exits, done: () => setup.renderer.destroy() };
+  if (!hooks) throw new Error('hooks missing');
+  return { client, setup, frame, key, exits, hooks, done: () => setup.renderer.destroy() };
 }
 
 test('a running task shows its text, tool calls and header; enter expands a tool', async () => {
@@ -256,5 +261,39 @@ test('a 40 kB text block renders and the timeline caps at 5000 cards', async () 
     expect(f).toContain('… 100 earlier');
   } finally {
     m2.done();
+  }
+});
+
+test('streaming frames keep the cards and blocks the same objects (no remount per batch)', async () => {
+  const m = await mount({
+    state: state('r1'),
+    history: [
+      ev({ type: 'NodeStarted', nodeId: 'analyse' }),
+      rt('analyse', { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'src/a.ts' } }),
+      rt('analyse', { type: 'tool_result', id: 't1', name: 'Read', output: 'ok', durationMs: 7 }),
+      rt('analyse', { type: 'text', text: 'Start ' }),
+    ],
+  });
+  try {
+    await m.frame();
+    const before = m.hooks.data.timeline('r1')();
+    const card = before[0];
+    expect(card?.kind).toBe('node');
+    const tool = card?.kind === 'node' ? card.blocks[0] : undefined;
+    for (let i = 0; i < 100; i++)
+      m.client.pushFrame('r1', rt('analyse', { type: 'text', text: `word${i} ` }));
+    await settle(400);
+    await m.frame();
+    const after = m.hooks.data.timeline('r1')();
+    expect(after[0]).toBe(card);
+    expect(after[0]?.kind === 'node' ? after[0].blocks[0] : undefined).toBe(tool);
+    expect(
+      after[0]?.kind === 'node'
+        ? after[0].blocks[1]?.kind === 'text' && after[0].blocks[1].text
+        : '',
+    ).toContain('word99');
+    expect(m.hooks.data.frameCount('r1')).toBe(104);
+  } finally {
+    m.done();
   }
 });

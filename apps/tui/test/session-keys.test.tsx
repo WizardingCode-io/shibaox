@@ -172,6 +172,28 @@ test('c confirms before cancelling; r only resumes a paused run; d without a pen
   }
 });
 
+test('typing a note never reaches the session shortcuts (c, y, j, ?)', async () => {
+  const m = await mount({ inbox: [human] });
+  try {
+    await m.frame();
+    let f = await m.key('n');
+    expect(f).toContain('Note');
+    await m.setup.mockInput.typeText('could you retry?');
+    await settle();
+    f = await m.frame();
+    expect(f).not.toContain('Cancel run');
+    expect(f).not.toContain('Keys');
+    expect(m.client.calls.some((c) => c.method === 'cancel')).toBe(false);
+    await m.key('return');
+    expect(m.answers().at(-1)?.args).toEqual([
+      'human:r1:ship',
+      { approved: true, note: 'could you retry?', via: 'cli' },
+    ]);
+  } finally {
+    m.done();
+  }
+});
+
 test('r resumes a paused run', async () => {
   const m = await mount({ inbox: [], status: 'paused_budget' });
   try {

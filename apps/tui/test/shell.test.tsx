@@ -112,6 +112,22 @@ test('ctrl+] and ctrl+p cycle tabs, ctrl+w closes the active one, ctrl+n goes ho
   }
 });
 
+test('closing a tab releases its frames and timeline', async () => {
+  const m = await mount({ open: ['aaaa1111-x', 'bbbb2222-x'] });
+  try {
+    await m.frame();
+    expect(m.hooks.data.frameCount('aaaa1111-x')).toBe(0);
+    const t = m.hooks.data.timeline('aaaa1111-x');
+    m.hooks.data.closeRun('aaaa1111-x');
+    await m.frame();
+    expect(m.hooks.data.frameCount('aaaa1111-x')).toBeUndefined();
+    expect(m.hooks.data.timeline('aaaa1111-x')).not.toBe(t);
+    expect(m.client.openStreams()).toEqual(['bbbb2222-x']);
+  } finally {
+    m.done();
+  }
+});
+
 test('a background run that ends marks its tab until it is opened; clicking a tab activates it', async () => {
   const m = await mount({ open: ['aaaa1111-x', 'bbbb2222-x'] });
   try {

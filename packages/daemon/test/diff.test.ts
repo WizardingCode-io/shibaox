@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { DaemonClient, DaemonHttpError } from '../src/client.js';
 import { Daemon } from '../src/daemon.js';
 import { homePaths } from '../src/home.js';
-import { diffWorkspace } from '../src/runs/diff.js';
+import { diffWorkspace, worktreeBase } from '../src/runs/diff.js';
 import { scaffoldOrg } from '../src/templates.js';
 
 const tmp: string[] = [];
@@ -61,6 +61,26 @@ describe('diffWorkspace', () => {
     const big = await diffWorkspace(dir, { maxChars: 100_000 });
     expect(big?.truncated).toBe(true);
     expect(big?.patch.length).toBeLessThanOrEqual(100_000 + 20);
+  });
+});
+
+describe('worktree runs', () => {
+  it('diffs against the fork point so committed work on the run branch shows', async () => {
+    const dir = repo();
+    const git = (cwd: string, ...args: string[]) =>
+      execFileSync('git', args, { cwd, stdio: 'pipe' }).toString();
+    const wt = join(dir, '.shibaox', 'worktrees', 'run-1');
+    git(dir, 'worktree', 'add', '-q', '-b', 'shibaox/run-1', wt);
+    writeFileSync(join(wt, 'a.ts'), 'export const a = 5;\n');
+    git(wt, 'commit', '-q', '-am', 'agent work');
+    writeFileSync(join(wt, 'c.ts'), 'export const c = 1;\n');
+    const base = await worktreeBase(wt, dir);
+    expect(base).toBe(git(dir, 'rev-parse', 'HEAD').trim());
+    const d = await diffWorkspace(wt, { base });
+    expect(d?.base).toBe(base);
+    expect(d?.files.map((f) => `${f.status} ${f.path}`)).toEqual(['modified a.ts', 'added c.ts']);
+    expect(d?.patch).toContain('+export const a = 5;');
+    expect(await diffWorkspace(wt)).toMatchObject({ files: [{ path: 'c.ts', status: 'added' }] }); // HEAD only sees the uncommitted file
   });
 });
 
