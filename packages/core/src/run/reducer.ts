@@ -105,15 +105,22 @@ function applyEvent(s: RunState, event: NonCreatedEvent, idx: number): RunState 
       };
     }
     case 'NodeCompleted':
+      // a finished attempt closes its session: a rework starts fresh with the gate report
       return withNode(s, event.nodeId, {
         status: 'completed',
         finishedIdx: idx,
         output: event.output,
         summary: event.summary,
+        sessionId: undefined,
       });
     case 'NodeFailed':
       return {
-        ...withNode(s, event.nodeId, { status: 'failed', finishedIdx: idx, error: event.error }),
+        ...withNode(s, event.nodeId, {
+          status: 'failed',
+          finishedIdx: idx,
+          error: event.error,
+          sessionId: undefined,
+        }),
         status: 'failed',
         error: `${event.nodeId}: ${event.error}`,
       };

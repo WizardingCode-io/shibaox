@@ -1,9 +1,12 @@
+import { createHash } from 'node:crypto';
 import { AlreadyResolvedError, type InboxAnswer, type InboxId, type InboxItem } from '../inbox.js';
 import type { Channel } from './types.js';
 
 export interface TelegramOptions {
   token: string;
   chatId: number;
+  /** Resolves a callback token to the inbox item it stands for (after a restart). */
+  lookup?: (token: string) => Promise<InboxId | undefined>;
   /** `https://api.telegram.org/bot` by default; tests point it at a fake. */
   apiBase?: string;
   fetch?: typeof fetch;
@@ -11,6 +14,10 @@ export interface TelegramOptions {
   /** Long-polling wait (default 30 s; 0 for tests). */
   pollTimeoutSeconds?: number;
 }
+
+/** `callback_data` is limited to 64 bytes: a short, deterministic token stands for the item. */
+export const inboxToken = (id: string): string =>
+  createHash('sha256').update(id).digest('hex').slice(0, 16);
 
 const escapeHtml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -39,6 +46,9 @@ export function telegramChannel(o: TelegramOptions): Channel {
   const base = `${o.apiBase ?? 'https://api.telegram.org/bot'}${o.token}`;
   const doFetch = o.fetch ?? fetch;
   const messages = new Map<string, { messageId: number; text: string }>();
+  const tokens = new Map<string, InboxId>();
+  const resolveToken = async (t: string): Promise<InboxId | undefined> =>
+    tokens.get(t) ?? (await o.lookup?.(t));
   let answer: ((id: InboxId, a: { approved: boolean; note?: string }) => Promise<void>) | undefined;
   let polling: AbortController | undefined;
   let offset = 0;
@@ -69,14 +79,15 @@ export function telegramChannel(o: TelegramOptions): Channel {
       await api('answerCallbackQuery', { callback_query_id: cb.id, text: 'Not allowed' });
       return;
     }
-    const m = /^(approve|deny):(.+)$/.exec(cb.data ?? '');
-    if (!m || !answer) {
+    const m = /^(approve|deny):([0-9a-f]{16})$/.exec(cb.data ?? '');
+    const id = m ? await resolveToken(m[2] as string) : undefined;
+    if (!m || !answer || !id) {
       await api('answerCallbackQuery', { callback_query_id: cb.id, text: 'Unknown action' });
       return;
     }
     const approved = m[1] === 'approve';
     try {
-      await answer(m[2] as InboxId, { approved });
+      await answer(id, { approved });
       await api('answerCallbackQuery', {
         callback_query_id: cb.id,
         text: approved ? 'Approved' : 'Denied',
@@ -84,7 +95,7 @@ export function telegramChannel(o: TelegramOptions): Channel {
     } catch (e) {
       const text =
         e instanceof AlreadyResolvedError ? 'Already answered' : 'Could not record the answer';
-      o.log(`[telegram] answer for ${m[2]} failed: ${e instanceof Error ? e.message : String(e)}`);
+      o.log(`[telegram] answer for ${id} failed: ${e instanceof Error ? e.message : String(e)}`);
       await api('answerCallbackQuery', { callback_query_id: cb.id, text });
     }
   }
@@ -117,6 +128,8 @@ export function telegramChannel(o: TelegramOptions): Channel {
     id: 'telegram',
     async notify(item) {
       const text = telegramText(item);
+      const token = inboxToken(item.id);
+      tokens.set(token, item.id);
       const r = await api<{ message_id: number }>('sendMessage', {
         chat_id: o.chatId,
         text,
@@ -124,8 +137,8 @@ export function telegramChannel(o: TelegramOptions): Channel {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: 'Approve', callback_data: `approve:${item.id}` },
-              { text: 'Deny', callback_data: `deny:${item.id}` },
+              { text: 'Approve', callback_data: `approve:${token}` },
+              { text: 'Deny', callback_data: `deny:${token}` },
             ],
           ],
         },

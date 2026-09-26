@@ -14,11 +14,24 @@ export interface Health {
   channels: string[];
 }
 
-/** One SSE frame: a persisted run event, a runtime event, or the end of a terminal run. */
+/**
+ * One SSE frame: a persisted run event (`seq` = its 1-based index in the run), a runtime
+ * event (`seq` = its per-run runtime sequence), or the end of a terminal run. `cursor`
+ * (`<runIdx>:<runtimeSeq>`) is the position after the frame: pass it as `since` to resume.
+ */
 export type Envelope =
-  | { kind: 'run'; seq: number; event: StoredEvent }
-  | { kind: 'runtime'; seq: number; event: RuntimeEnvelope }
-  | { kind: 'end'; seq: number; status: RunStatus };
+  | { kind: 'run'; seq: number; cursor: string; event: StoredEvent }
+  | { kind: 'runtime'; seq: number; cursor: string; event: RuntimeEnvelope }
+  | { kind: 'end'; seq: number; cursor: string; status: RunStatus };
+
+/** Parses a cursor (`<runIdx>:<runtimeSeq>`, or a bare run index); anything else is the start. */
+export function parseCursor(raw: string | undefined | null): { run: number; runtime: number } {
+  if (!raw) return { run: 0, runtime: 0 };
+  const [a, b] = raw.split(':');
+  const run = Number(a) || 0;
+  const runtime = Number(b) || 0;
+  return { run: Math.max(0, run), runtime: Math.max(0, runtime) };
+}
 
 export interface SchedulesApi {
   list(): ScheduleRow[];
@@ -48,7 +61,6 @@ export class HttpError extends Error {
   }
 }
 
-const RUNTIME_SEQ_BASE = 1_000_000;
 const MAX_BODY = 1_000_000;
 const TEXT_LIMIT = 4096;
 
@@ -300,31 +312,26 @@ export class DaemonServer {
     throw new HttpError(404, 'not_found', `no route for ${method} ${path}`);
   }
 
-  /** History first (run events since `since`, then the runtime buffer), then live until the run ends. */
+  /** History first (run events after the cursor, then the runtime buffer), then live until the run ends. */
   private async stream(
     req: IncomingMessage,
     res: ServerResponse,
     runId: string,
     url: URL,
   ): Promise<void> {
-    const events = await this.deps.store.read(runId);
-    if (events.length === 0) throw new HttpError(404, 'not_found', `run ${runId} not found`);
     const header = req.headers['last-event-id'];
-    const since =
-      Number(url.searchParams.get('since') ?? (typeof header === 'string' ? header : 0)) || 0;
-    res.writeHead(200, {
-      'content-type': 'text/event-stream',
-      'cache-control': 'no-cache',
-      connection: 'keep-alive',
-    });
+    const since = parseCursor(
+      url.searchParams.get('since') ?? (typeof header === 'string' ? header : undefined),
+    );
+    let runIdx = 0;
+    let runtimeSeq = 0;
     let closed = false;
-    const write = (env: Envelope) => {
+    let replaying = true;
+    const pendingLive: (() => void)[] = [];
+    const cursor = () => `${runIdx}:${runtimeSeq}`;
+    const emit = (env: Envelope) => {
       if (closed) return;
-      res.write(`id: ${env.seq}\nevent: ${env.kind}\ndata: ${JSON.stringify(env)}\n\n`);
-    };
-    const end = (status: RunStatus) => {
-      write({ kind: 'end', seq: RUNTIME_SEQ_BASE * 2, status });
-      finish();
+      res.write(`id: ${env.cursor}\nevent: ${env.kind}\ndata: ${JSON.stringify(env)}\n\n`);
     };
     let offStore = () => {};
     let offRuntime = () => {};
@@ -335,11 +342,10 @@ export class DaemonServer {
       offRuntime();
       res.end();
     };
-    req.on('close', finish);
-
-    // subscribe before replaying history so nothing between the read and the subscription is lost
-    const pendingLive: Envelope[] = [];
-    let replaying = true;
+    const end = (status: RunStatus) => {
+      emit({ kind: 'end', seq: 0, cursor: cursor(), status });
+      finish();
+    };
     const endIfTerminal = () => {
       void this.deps.runs.state(runId).then(
         (st) => {
@@ -348,36 +354,57 @@ export class DaemonServer {
         () => undefined,
       );
     };
+    const writeRun = (e: StoredEvent) => {
+      runIdx++;
+      if (runIdx > since.run) emit({ kind: 'run', seq: runIdx, cursor: cursor(), event: e });
+    };
+    const writeRuntime = (e: RuntimeEnvelope) => {
+      runtimeSeq = e.seq;
+      if (e.seq > since.runtime)
+        emit({ kind: 'runtime', seq: e.seq, cursor: cursor(), event: trimRuntime(e) });
+    };
+    // subscribe before reading history so nothing appended in between is lost; live frames
+    // wait until the history is out (duplicates are dropped by seq)
+    let lastSeqSeen = 0;
     offStore = this.deps.store.subscribe((e) => {
       if (e.runId !== runId) return;
-      const env: Envelope = { kind: 'run', seq: e.seq, event: e };
-      if (replaying) pendingLive.push(env);
-      else {
-        write(env);
+      const deliver = () => {
+        if (e.seq <= lastSeqSeen) return;
+        lastSeqSeen = e.seq;
+        writeRun(e);
         endIfTerminal();
-      }
+      };
+      if (replaying) pendingLive.push(deliver);
+      else deliver();
     });
     offRuntime = this.deps.runs.onRuntimeEvent((e) => {
       if (e.runId !== runId) return;
-      const env: Envelope = {
-        kind: 'runtime',
-        seq: RUNTIME_SEQ_BASE + e.seq,
-        event: trimRuntime(e),
+      const deliver = () => {
+        if (e.seq <= runtimeSeq) return;
+        writeRuntime(e);
       };
-      if (replaying) pendingLive.push(env);
-      else write(env);
+      if (replaying) pendingLive.push(deliver);
+      else deliver();
     });
-    const runSince = since >= RUNTIME_SEQ_BASE ? Number.POSITIVE_INFINITY : since;
-    const runtimeSince = since >= RUNTIME_SEQ_BASE ? since - RUNTIME_SEQ_BASE : 0;
-    let last = 0;
-    for (const e of events) {
-      last = e.seq;
-      if (e.seq > runSince) write({ kind: 'run', seq: e.seq, event: e });
+    const events = await this.deps.store.read(runId);
+    if (events.length === 0) {
+      offStore();
+      offRuntime();
+      throw new HttpError(404, 'not_found', `run ${runId} not found`);
     }
-    for (const e of this.deps.runs.runtimeEvents(runId, runtimeSince))
-      write({ kind: 'runtime', seq: RUNTIME_SEQ_BASE + e.seq, event: trimRuntime(e) });
+    res.writeHead(200, {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-cache',
+      connection: 'keep-alive',
+    });
+    req.on('close', finish);
+    for (const e of events) {
+      lastSeqSeen = e.seq;
+      writeRun(e);
+    }
+    for (const e of this.deps.runs.runtimeEvents(runId)) writeRuntime(e);
     replaying = false;
-    for (const env of pendingLive) if (env.kind !== 'run' || env.seq > last) write(env);
+    for (const deliver of pendingLive) deliver();
     if (url.searchParams.get('history') === '1') {
       // replay: the history and the current status, never waiting for the run to end
       const st = await this.deps.runs.state(runId);

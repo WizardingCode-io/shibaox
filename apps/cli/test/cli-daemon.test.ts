@@ -26,7 +26,7 @@ interface Result {
 async function setup(extra: ConstructorParameters<typeof Daemon>[0] = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'cli-d-'));
   tmpDirs.push(dir);
-  const home = homePaths({ SHIBAOX_HOME: join(dir, 'home') });
+  const home = extra.home ?? homePaths({ SHIBAOX_HOME: join(dir, 'home') });
   const project = join(dir, 'proj');
   cpSync(sample, project, { recursive: true });
   const daemon = new Daemon({
@@ -45,7 +45,15 @@ async function setup(extra: ConstructorParameters<typeof Daemon>[0] = {}) {
       execFile(
         process.execPath,
         [bin, ...args],
-        { env: { PATH: process.env.PATH ?? '', SHIBAOX_HOME: home.root, HOME: dir } },
+        {
+          // never auto-start a real daemon from the tests: the in-process one must answer
+          env: {
+            PATH: process.env.PATH ?? '',
+            SHIBAOX_HOME: home.root,
+            HOME: dir,
+            SHIBAOX_NO_AUTOSTART: '1',
+          },
+        },
         (err, stdout, stderr) =>
           resolve({
             code: (err as { code?: number } | null)?.code ?? 0,
@@ -56,7 +64,7 @@ async function setup(extra: ConstructorParameters<typeof Daemon>[0] = {}) {
     });
   const init = await cli('init', dir);
   expect(init.code).toBe(0);
-  return { dir, org: join(dir, 'org'), project, cli, daemon };
+  return { dir, org: join(dir, 'org'), project, cli, daemon, home };
 }
 
 const lines = (s: string) => s.trim().split('\n').filter(Boolean);
@@ -174,10 +182,11 @@ describe('shibaox CLI against a daemon', () => {
   it('schedule add/list/rm round-trip', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cli-d-'));
     tmpDirs.push(dir);
-    const { org, project, cli } = await setup({
+    const { org, project, cli, home } = await setup({
       store: undefined,
       home: homePaths({ SHIBAOX_HOME: join(dir, 'home2') }),
     });
+    expect(home.root).toBe(join(dir, 'home2'));
     const added = await cli(
       'schedule',
       'add',

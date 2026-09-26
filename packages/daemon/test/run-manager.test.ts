@@ -270,6 +270,117 @@ describe('RunManager', () => {
     await vi.waitFor(async () => expect((await m.state('q1')).status).toBe('waiting_human'));
   });
 
+  it('start() recovers two interrupted runs and executes each exactly once', async () => {
+    const s = setup();
+    const store = new MemoryEventStore();
+    for (const runId of ['r1', 'r2']) {
+      await store.append({
+        type: 'RunCreated',
+        runId,
+        at: 'x',
+        workflow: 'hello-feature',
+        input: { spec: 'x' },
+        workspace: s.project,
+        adapter: 'mock',
+        workspaceMode: 'inplace',
+        project: s.project,
+        orgRoot: s.orgRoot,
+      });
+      await store.append({ type: 'RunStarted', runId, at: 'x' });
+    }
+    const { manager: m } = manager(store);
+    await m.start();
+    for (const runId of ['r1', 'r2']) {
+      await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('waiting_human'));
+      const starts = (await store.read(runId)).filter((e) => e.type === 'NodeStarted');
+      expect(starts.map((e) => e.nodeId)).toEqual(['analyse', 'implement', 'qa', 'judge', 'ship']);
+    }
+  });
+
+  it('a run of another org starts while the head waits on its org limit', async () => {
+    const a = setup();
+    const b = setup();
+    const store = new MemoryEventStore();
+    const gates = new Map<string, () => void>();
+    const { manager: m } = manager(store, {
+      mockScript: (job: TaskJob) =>
+        new Promise((resolve) => {
+          gates.set(job.runId, () => resolve({ output: {}, summary: 'ok' }));
+        }),
+    });
+    writeFileSync(
+      join(a.orgRoot, 'org.yaml'),
+      'organization: a\nbudgets: { per_run_usd: 5 }\nteams: [engineering]\nmax_concurrent_runs: 1\n',
+    );
+    await submitMock(m, a, 'inplace');
+    const a2 = await submitMock(m, a, 'inplace');
+    const b1 = await submitMock(m, b, 'inplace');
+    await vi.waitFor(() => expect(gates.has(b1.runId)).toBe(true));
+    expect((await m.state(a2.runId)).status).toBe('queued');
+    expect(m.active()).toEqual({ running: 2, queued: 1, waiting: 0 });
+  });
+
+  it('stop() without force aborts live runs after the grace period without cancelling them', async () => {
+    const s = setup();
+    const store = new MemoryEventStore();
+    let aborted = false;
+    const { manager: m } = manager(store, {
+      mockScript: (_job: TaskJob, ctx: { signal: AbortSignal }) =>
+        new Promise(() => {
+          ctx.signal.addEventListener('abort', () => {
+            aborted = true;
+          });
+        }),
+    });
+    const { runId } = await submitMock(m, s, 'inplace');
+    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('running'));
+    await m.stop({ force: false, graceMs: 10 });
+    expect(aborted).toBe(true);
+    expect(m.active().running).toBe(0);
+    expect((await m.state(runId)).status).toBe('running'); // recovered on the next start
+  });
+
+  it('start() skips a run whose org directory is gone and logs it', async () => {
+    const s = setup();
+    const store = new MemoryEventStore();
+    await store.append({
+      type: 'RunCreated',
+      runId: 'gone',
+      at: 'x',
+      workflow: 'hello-feature',
+      input: { spec: 'x' },
+      workspace: s.project,
+      adapter: 'mock',
+      workspaceMode: 'inplace',
+      project: s.project,
+      orgRoot: join(s.dir, 'missing-org'),
+    });
+    await store.append({ type: 'RunStarted', runId: 'gone', at: 'x' });
+    await store.append({ type: 'NodeStarted', runId: 'gone', nodeId: 'implement', at: 'x' });
+    await store.append({
+      type: 'ToolApprovalRequested',
+      runId: 'gone',
+      nodeId: 'implement',
+      at: 'x',
+      approvalId: 'g1',
+      role: 'backend',
+      tool: 'Bash',
+      program: 'git',
+      category: 'push',
+      command: 'git push',
+      argvHash: 'h',
+    });
+    const logs: string[] = [];
+    const { manager: m, inbox } = manager(store, { log: (l: string) => logs.push(l) });
+    await expect(m.start()).resolves.toBeUndefined();
+    // suspended without needing the org; the missing org only surfaces when the run continues
+    expect((await m.state('gone')).nodes.implement?.status).toBe('pending');
+    await inbox.answer('approval:g1', { approved: true, via: 'cli' });
+    await vi.waitFor(() =>
+      expect(logs.some((l) => l.includes('gone') && l.includes('missing-org'))).toBe(true),
+    );
+  });
+
   it('resume refuses when the worktree was removed', async () => {
     const s = setup({ git: true });
     const store = new MemoryEventStore();

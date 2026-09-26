@@ -138,13 +138,13 @@ export class DaemonClient {
     return this.json('POST', '/shutdown', o);
   }
 
-  /** SSE frames of a run, from `since` (a frame `seq`), until the run ends or `signal` aborts. */
+  /** SSE frames of a run, after `since` (a frame `cursor`), until the run ends or `signal` aborts. */
   async *events(
     id: string,
-    o: { since?: number; signal?: AbortSignal; historyOnly?: boolean } = {},
+    o: { since?: string; signal?: AbortSignal; historyOnly?: boolean } = {},
   ): AsyncIterable<Envelope> {
     const q = new URLSearchParams();
-    if (o.since) q.set('since', String(o.since));
+    if (o.since) q.set('since', o.since);
     if (o.historyOnly) q.set('history', '1');
     const qs = q.toString();
     const path = `/runs/${encodeURIComponent(id)}/events${qs ? `?${qs}` : ''}`;
@@ -161,9 +161,12 @@ export class DaemonClient {
         const chunks: Buffer[] = [];
         res.on('data', (c: Buffer) => chunks.push(c));
         res.on('end', () => {
-          const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as {
-            error?: { code?: string; message?: string };
-          };
+          let body: { error?: { code?: string; message?: string } } = {};
+          try {
+            body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as typeof body;
+          } catch {
+            // a non-JSON error body: keep the status only
+          }
           failure = new DaemonHttpError(
             res.statusCode ?? 0,
             body.error?.code ?? 'error',

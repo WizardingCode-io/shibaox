@@ -134,6 +134,11 @@ channels:
   telegram: { bot_token_env: SHIBAOX_TELEGRAM_TOKEN, chat_id: 123456789 }
 ```
 
+- **Environment.** The daemon keeps the environment of the shell that started it: provider
+  keys, `TYPESAFE_API_KEY` and the Telegram token are read once, at start. After exporting or
+  changing a key, restart it (`shibaox daemon stop && shibaox daemon start --detach`).
+  `shibaox doctor` warns when the running daemon lacks a channel your shell could provide.
+
 `shibaox doctor` reports the daemon (and whether it is older than the CLI), Telegram
 (`getMe` with the configured token) and the `claude` login.
 

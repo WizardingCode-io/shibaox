@@ -213,3 +213,67 @@ describe('engine phase 2A', () => {
     off();
   });
 });
+
+describe('engine phase 2A: sessions and approvals after the final review', () => {
+  it('a rework after a completed attempt starts a fresh session (no resumeSessionId)', async () => {
+    const store = new MemoryEventStore();
+    const jobs: TaskJob[] = [];
+    let calls = 0;
+    const engine = new RunEngine(
+      deps(
+        store,
+        adapter((job) => {
+          jobs.push(job);
+          return [
+            { type: 'session', runtime: 'claude-code', sessionId: `s${++calls}` },
+            { type: 'result', output: 1, summary: 'ok' },
+          ];
+        }),
+      ),
+    );
+    const runId = await engine.create({ workflow: 'wf', input: {}, workspace: '/w' });
+    await engine.run(runId);
+    // simulate a gate rework: the completed node runs again
+    await store.append({ type: 'NodeStarted', runId, nodeId: 'impl', at: 'x' });
+    const state = await engine.state(runId);
+    expect(state.nodes.impl?.sessionId).toBeUndefined();
+    expect(jobs[0]?.resumeSessionId).toBeUndefined();
+  });
+
+  it('an answer that lands after the timeout but before the task reports suspends and re-runs the node', async () => {
+    const store = new MemoryEventStore();
+    const jobs: TaskJob[] = [];
+    let calls = 0;
+    const engine = new RunEngine(
+      deps(
+        store,
+        adapter(async (job) => {
+          jobs.push(job);
+          if (++calls !== 1) return [{ type: 'result', output: 1, summary: 'done' }];
+          await store.append(approvalRequested(job.runId));
+          // the human answers while the SDK is still being interrupted
+          await store.append({
+            type: 'ToolApprovalResolved',
+            runId: job.runId,
+            nodeId: 'impl',
+            at: 'y',
+            approvalId: 'a1',
+            approved: true,
+            via: 'cli',
+          });
+          return [
+            { type: 'session', runtime: 'claude-code', sessionId: 's1' },
+            { type: 'error', message: 'p', reason: 'approval_pending', approvalId: 'a1' },
+          ];
+        }),
+      ),
+    );
+    const runId = await engine.create({ workflow: 'wf', input: {}, workspace: '/w' });
+    const state = await engine.run(runId);
+    expect(state.status).toBe('completed');
+    const types = (await store.read(runId)).map((e) => e.type);
+    expect(types).toContain('NodeSuspended');
+    expect(types).not.toContain('NodeFailed');
+    expect(jobs[1]).toMatchObject({ resumeSessionId: 's1', approvedCommands: { h1: true } });
+  });
+});

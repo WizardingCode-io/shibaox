@@ -88,7 +88,7 @@ describe('daemon server and client', () => {
     expect(inbox).toMatchObject([{ id: `human:${runId}:ship`, kind: 'human' }]);
     await client.answer(inbox[0]?.id ?? '', { approved: true });
     const rest = await collect(
-      client.events(runId, { since: seen.length }),
+      client.events(runId, { since: seen.at(-1)?.cursor }),
       (e) => e.kind === 'end',
     );
     expect(rest.at(-1)).toMatchObject({ kind: 'end', status: 'completed' });

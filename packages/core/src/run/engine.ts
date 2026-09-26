@@ -221,6 +221,12 @@ export class RunEngine {
     return this.state(runId);
   }
 
+  /** Aborts a run's tasks without recording anything (the log stays as it is). */
+  abort(runId: string, reason: string): void {
+    this.controllerFor(runId).abort(new Error(reason));
+    this.releaseController(runId);
+  }
+
   async listRuns(): Promise<RunSummary[]> {
     return this.deps.store.listRuns();
   }
@@ -590,11 +596,15 @@ export class RunEngine {
       }
     } catch (e) {
       if (e instanceof AdapterError && e.reason === 'approval_pending') {
-        // only an approval the inbox recorded can be answered later; otherwise the task fails
+        // only an approval the inbox recorded can be answered later; otherwise the task fails.
+        // One already answered (the human beat the interruption) suspends too: the node then
+        // re-runs at once with the answer in `approvedCommands`.
         const now = await this.state(runId);
+        const known = now.nodes[nodeId]?.approvals ?? {};
         const pending = now.pendingApprovals.filter((p) => p.nodeId === nodeId);
-        const approvalId = (pending.find((p) => p.approvalId === e.approvalId) ?? pending[0])
-          ?.approvalId;
+        const approvalId =
+          (e.approvalId && known[e.approvalId] ? e.approvalId : undefined) ??
+          pending[0]?.approvalId;
         if (approvalId) {
           await this.emit({
             type: 'NodeSuspended',

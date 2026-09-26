@@ -90,8 +90,10 @@ export class RunManager {
   private readonly prepared = new Map<string, Prepared>();
   private readonly buffer = new RuntimeBuffer();
   private readonly listeners = new Set<(e: RuntimeEnvelope) => void>();
+  private readonly starting = new Set<string>();
   private readonly now: () => string;
   private stopping = false;
+  private pumping = false;
 
   constructor(private readonly opts: RunManagerOptions) {
     this.now = opts.now ?? (() => new Date().toISOString());
@@ -149,13 +151,19 @@ export class RunManager {
   /** Recovers the runs left by a previous daemon process. */
   async start(): Promise<void> {
     for (const run of await this.opts.store.listRuns()) {
-      if (run.status === 'queued') this.enqueue({ runId: run.runId, action: 'run', settle: [] });
-      else if (run.status === 'running')
-        this.enqueue({ runId: run.runId, action: 'resume', settle: [] });
-      else if (run.status === 'waiting_approval') {
-        // the task process is gone: its nodes become re-runnable, keeping their session ids
-        const state = await this.state(run.runId);
-        await this.lightEngine(state).suspend(run.runId);
+      try {
+        if (run.status === 'queued') this.enqueue({ runId: run.runId, action: 'run', settle: [] });
+        else if (run.status === 'running')
+          this.enqueue({ runId: run.runId, action: 'resume', settle: [] });
+        else if (run.status === 'waiting_approval') {
+          // the task process is gone: its nodes become re-runnable, keeping their session ids
+          await this.lightEngine().suspend(run.runId);
+        }
+      } catch (e) {
+        // one broken run (org directory gone, unreadable log) never stops the daemon
+        this.opts.log(
+          `[daemon] run ${run.runId} not recovered: ${e instanceof Error ? e.message : String(e)}`,
+        );
       }
     }
   }
@@ -169,15 +177,20 @@ export class RunManager {
     while (this.live.size > 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
     for (const [runId, a] of [...this.live]) {
       if (o.force) await a.engine.cancel(runId, 'daemon stopped').catch(() => undefined);
+      // past the grace period the task is aborted but the log stays `running`: the next
+      // daemon start recovers it (interrupted nodes re-run)
+      else a.engine.abort(runId, 'daemon stopped');
       this.live.delete(runId);
     }
+    this.prepared.clear();
   }
 
   async cancel(runId: string): Promise<RunState> {
     const a = this.live.get(runId);
     const idx = this.queue.findIndex((p) => p.runId === runId);
     if (idx >= 0) this.queue.splice(idx, 1);
-    const engine = a?.engine ?? this.lightEngine(await this.state(runId));
+    this.prepared.delete(runId);
+    const engine = a?.engine ?? this.lightEngine();
     const state = await engine.cancel(runId, 'cancelled by the user');
     if (a) {
       // a task that ignores the abort signal must not hold the slot
@@ -290,44 +303,60 @@ export class RunManager {
     return n;
   }
 
+  /**
+   * Starts every queued run the limits allow. Entries are claimed synchronously (removed
+   * from the queue before any await) so re-entrant pumps never start the same run twice;
+   * an entry whose org is full goes back to the queue.
+   */
   private pump(): void {
-    if (this.stopping) return;
-    for (let i = 0; i < this.queue.length; ) {
-      if (this.live.size >= this.opts.config.max_concurrent_runs) return;
-      const p = this.queue[i] as Pending;
-      void this.startPending(p, i).then((started) => {
-        if (started) this.pump();
-      });
-      // startPending removes the entry when it starts; otherwise skip it (org limit)
-      i++;
-      return;
+    if (this.stopping || this.pumping) return;
+    this.pumping = true;
+    try {
+      const candidates = [...this.queue];
+      for (const p of candidates) {
+        if (this.live.size + this.starting.size >= this.opts.config.max_concurrent_runs) return;
+        if (this.starting.has(p.runId)) continue;
+        this.dequeue(p);
+        this.starting.add(p.runId);
+        void this.startPending(p).then((outcome) => {
+          this.starting.delete(p.runId);
+          // an org-limited entry waits for a run to finish; pumping again now would spin
+          if (outcome !== 'org-full') this.pump();
+        });
+      }
+    } finally {
+      this.pumping = false;
     }
   }
 
-  /** Starts one queued run if its org has capacity; `false` leaves it queued. */
-  private async startPending(p: Pending, _index: number): Promise<boolean> {
+  /** Starts one claimed run if its org has capacity; otherwise re-queues it. */
+  private async startPending(p: Pending): Promise<'started' | 'failed' | 'org-full'> {
     let state: RunState;
     let prepared: Prepared;
     try {
       state = await this.state(p.runId);
       prepared = this.prepared.get(p.runId) ?? (await this.rebuild(state));
     } catch (e) {
-      this.dequeue(p);
       for (const s of p.settle) s.reject(e);
       this.opts.log(
         `[daemon] run ${p.runId} cannot start: ${e instanceof Error ? e.message : String(e)}`,
       );
-      return true;
+      return 'failed';
     }
+    if (this.stopping) return 'failed';
     const orgRoot = state.orgRoot ?? prepared.org.root;
     const limit = prepared.org.org.max_concurrent_runs ?? ORG_DEFAULT_CONCURRENCY;
-    if (this.runningOfOrg(orgRoot) >= limit) return false;
-    this.dequeue(p);
+    if (this.runningOfOrg(orgRoot) >= limit) {
+      // keep the engine for the next pump; the run stays queued in the log
+      this.prepared.set(p.runId, prepared);
+      if (!this.queue.some((q) => q.runId === p.runId)) this.queue.push(p);
+      return 'org-full';
+    }
     this.prepared.delete(p.runId);
     const token = {};
     this.live.set(p.runId, { orgRoot, engine: prepared.engine, token });
     void this.execute(p, prepared, token);
-    return true;
+    return 'started';
   }
 
   private dequeue(p: Pending): void {
@@ -366,7 +395,14 @@ export class RunManager {
   private async rebuild(state: RunState): Promise<Prepared> {
     if (!state.orgRoot)
       throw new Error(`run ${state.runId} has no org recorded (started before phase 2A)`);
-    const org = loadOrg(state.orgRoot);
+    let org: Org;
+    try {
+      org = loadOrg(state.orgRoot);
+    } catch (e) {
+      throw new Error(
+        `cannot load the org at ${state.orgRoot}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
     const adapter = isAdapterId(state.adapter) ? state.adapter : effectiveAdapter(undefined, org);
     const workflow = state.workflowSnapshot ?? org.workflows[state.workflow];
     const project = state.project ?? state.workspace;
@@ -446,22 +482,19 @@ export class RunManager {
   }
 
   /** An engine that only needs the event log (suspend/cancel without adapters). */
-  private lightEngine(state: RunState): RunEngine {
-    const org = state.orgRoot ? loadOrg(state.orgRoot) : undefined;
+  private lightEngine(): RunEngine {
     return new RunEngine({
       store: this.opts.store,
-      org:
-        org ??
-        ({
-          root: '',
-          org: { organization: '', budgets: {}, teams: [] },
-          teams: {},
-          roles: {},
-          workflows: {},
-          gates: {},
-          models: { providers: {}, tiers: {}, roles: {}, gates: {} },
-          catalog: {},
-        } as unknown as Org),
+      org: {
+        root: '',
+        org: { organization: '', budgets: {}, teams: [] },
+        teams: {},
+        roles: {},
+        workflows: {},
+        gates: {},
+        models: { providers: {}, tiers: {}, roles: {}, gates: {} },
+        catalog: {},
+      } as unknown as Org,
       adapters: {},
       decider: new ScriptedDecider({}),
       human: this.opts.inbox,

@@ -1,5 +1,5 @@
 import { createInterface } from 'node:readline/promises';
-import type { DaemonClient, Envelope } from '@shibaox/daemon';
+import { type DaemonClient, DaemonHttpError, type Envelope } from '@shibaox/daemon';
 import { exitCodeFor, formatState, type Out } from '../output.js';
 
 const short = (id: string) => id.slice(0, 8);
@@ -59,7 +59,7 @@ export function formatEnvelope(e: Envelope): string | undefined {
 export async function followRun(
   client: DaemonClient,
   runId: string,
-  o: { since?: number; signal?: AbortSignal; interactive?: boolean },
+  o: { since?: string; signal?: AbortSignal; interactive?: boolean },
   out: Out,
 ): Promise<number> {
   const interactive = o.interactive ?? Boolean(process.stdin.isTTY && !out.json);
@@ -83,6 +83,9 @@ export async function followRun(
             : `approval:${e.event.approvalId}`;
         const prompt =
           e.event.type === 'HumanRequested' ? e.event.prompt : `Allow ${e.event.command}?`;
+        // history replays old requests too: only ask about what is still open
+        const open = (await client.inbox()).some((i) => i.id === id);
+        if (!open) continue;
         if (interactive) {
           const rl = createInterface({ input: process.stdin, output: process.stdout });
           try {
@@ -90,6 +93,11 @@ export async function followRun(
               .trim()
               .toLowerCase();
             await client.answer(id, { approved: answer === 'y' || answer === 'yes', via: 'cli' });
+          } catch (err) {
+            // answered elsewhere (Telegram, another terminal) while the prompt was open
+            if (err instanceof DaemonHttpError && err.status === 409)
+              out.line('Already answered elsewhere; following on.');
+            else throw err;
           } finally {
             rl.close();
           }

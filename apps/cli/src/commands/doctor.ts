@@ -98,6 +98,16 @@ async function telegramLine(): Promise<CheckLine> {
   const token = process.env[tg.bot_token_env];
   if (!token)
     return { name: 'telegram', ok: false, detail: `${tg.bot_token_env} not set`, required: false };
+  // the daemon read the env when it started: a token exported later is not there yet
+  const running = await new DaemonClient(paths.socket).health().catch(() => undefined);
+  if (running && !running.channels.includes('telegram'))
+    return {
+      name: 'telegram',
+      ok: false,
+      detail:
+        'configured here, but the running daemon started without the token: restart it (shibaox daemon stop && shibaox daemon start --detach)',
+      required: false,
+    };
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/getMe`);
     const json = (await res.json()) as { ok?: boolean; result?: { username?: string } };

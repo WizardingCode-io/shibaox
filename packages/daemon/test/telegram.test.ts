@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { telegramChannel } from '../src/channels/telegram.js';
+import { inboxToken, telegramChannel } from '../src/channels/telegram.js';
 import type { InboxItem } from '../src/inbox.js';
 
 interface Call {
@@ -93,8 +93,8 @@ describe('telegram channel', () => {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: 'Approve', callback_data: 'approve:approval:a1' },
-            { text: 'Deny', callback_data: 'deny:approval:a1' },
+            { text: 'Approve', callback_data: `approve:${inboxToken('approval:a1')}` },
+            { text: 'Deny', callback_data: `deny:${inboxToken('approval:a1')}` },
           ],
         ],
       },
@@ -104,6 +104,18 @@ describe('telegram channel', () => {
     expect(String(sent[0]?.body.text)).toContain('<code>git push origin main</code>');
     expect(String(sent[1]?.body.text)).toContain('Decision needed');
     expect(String(sent[1]?.body.text)).toContain('Ship it?');
+    // Telegram limits callback_data to 64 bytes, whatever the inbox id length
+    const long: InboxItem = {
+      ...human,
+      id: `human:${'x'.repeat(36)}:approve-deploy-to-production`,
+    };
+    await channel.notify(long);
+    const last = fake.calls.at(-1);
+    const markup = last?.body.reply_markup as
+      | { inline_keyboard: { callback_data: string }[][] }
+      | undefined;
+    const kb = markup?.inline_keyboard[0];
+    for (const b of kb ?? []) expect(Buffer.byteLength(b.callback_data)).toBeLessThanOrEqual(64);
   });
 
   it('a callback from the configured chat answers the item and acknowledges', async () => {
@@ -121,7 +133,7 @@ describe('telegram channel', () => {
     });
     await channel.notify(approval);
     await channel.start?.();
-    fake.push(callback(1, 7, 'approve:approval:a1'));
+    fake.push(callback(1, 7, `approve:${inboxToken('approval:a1')}`));
     await vi.waitFor(() => expect(answers).toEqual([['approval:a1', { approved: true }]]));
     await vi.waitFor(() =>
       expect(fake?.calls.find((c) => c.method === 'answerCallbackQuery')?.body).toMatchObject({
@@ -130,7 +142,7 @@ describe('telegram channel', () => {
       }),
     );
     // the same update is not delivered twice (offset advances)
-    fake.push(callback(2, 7, 'deny:approval:a1'));
+    fake.push(callback(2, 7, `deny:${inboxToken('approval:a1')}`));
     await vi.waitFor(() => expect(answers).toHaveLength(2));
     expect(answers[1]).toEqual(['approval:a1', { approved: false }]);
   });
@@ -150,7 +162,7 @@ describe('telegram channel', () => {
       answers.push([id, a]);
     });
     await channel.start?.();
-    fake.push(callback(1, 999, 'approve:approval:a1'));
+    fake.push(callback(1, 999, `approve:${inboxToken('approval:a1')}`));
     await vi.waitFor(() =>
       expect(logs.some((l) => l.includes('ignored callback from chat 999'))).toBe(true),
     );
@@ -172,7 +184,7 @@ describe('telegram channel', () => {
     expect(String(edit?.body.text)).toContain('Approved via cli');
   });
 
-  it('an answer that fails as already resolved acknowledges "Already answered"', async () => {
+  it('an answer that fails as already resolved acknowledges "Already answered" (token via lookup after a restart)', async () => {
     fake = await fakeTelegram();
     channel = telegramChannel({
       token: 't',
@@ -180,13 +192,14 @@ describe('telegram channel', () => {
       apiBase: fake.apiBase,
       log: () => {},
       pollTimeoutSeconds: 0,
+      lookup: async (t) => (t === inboxToken('approval:a1') ? 'approval:a1' : undefined),
     });
     const { AlreadyResolvedError } = await import('../src/inbox.js');
     channel.onAnswer?.(async (id) => {
       throw new AlreadyResolvedError(id);
     });
     await channel.start?.();
-    fake.push(callback(1, 7, 'approve:approval:a1'));
+    fake.push(callback(1, 7, `approve:${inboxToken('approval:a1')}`));
     await vi.waitFor(() =>
       expect(fake?.calls.find((c) => c.method === 'answerCallbackQuery')?.body).toMatchObject({
         text: 'Already answered',

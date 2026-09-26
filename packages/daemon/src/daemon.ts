@@ -6,11 +6,11 @@ import { OutboxRepo, SchedulesRepo, SqliteEventStore } from '@shibaox/persistenc
 import type { ProviderEntry } from '@shibaox/providers';
 import { macosChannel } from './channels/macos.js';
 import { OutboxWorker } from './channels/outbox.js';
-import { telegramChannel } from './channels/telegram.js';
+import { inboxToken, telegramChannel } from './channels/telegram.js';
 import type { Channel } from './channels/types.js';
 import { type DaemonConfig, loadDaemonConfig } from './config.js';
 import { type HomePaths, homePaths } from './home.js';
-import { InboxService } from './inbox.js';
+import { type InboxId, InboxService } from './inbox.js';
 import { RunManager } from './run-manager.js';
 import { Scheduler } from './scheduler.js';
 import { DaemonServer, type Health, type SchedulesApi } from './server.js';
@@ -58,7 +58,12 @@ export class Daemon {
     this.store = opts.store ?? new SqliteEventStore(this.paths.db);
     this.version = opts.version ?? '0.0.0';
     const log = opts.log ?? ((l: string) => console.log(l));
-    this.channels = opts.channels ?? defaultChannels(this.config, opts.env ?? process.env, log);
+    this.channels =
+      opts.channels ??
+      defaultChannels(this.config, opts.env ?? process.env, log, async (token) => {
+        const items = await this.inbox.list();
+        return items.find((i) => inboxToken(i.id) === token)?.id;
+      });
     // with a SQLite store the outbox persists retries; an injected store delivers directly
     this.outbox =
       this.store instanceof SqliteEventStore && this.channels.length > 0
@@ -161,13 +166,14 @@ export function defaultChannels(
   config: DaemonConfig,
   env: NodeJS.ProcessEnv,
   log: (line: string) => void,
+  lookup?: (token: string) => Promise<InboxId | undefined>,
 ): Channel[] {
   const out: Channel[] = [];
   if (process.platform === 'darwin' && config.channels.macos.enabled) out.push(macosChannel());
   const tg = config.channels.telegram;
   if (tg) {
     const token = env[tg.bot_token_env];
-    if (token) out.push(telegramChannel({ token, chatId: tg.chat_id, log }));
+    if (token) out.push(telegramChannel({ token, chatId: tg.chat_id, log, lookup }));
     else log(`warn: telegram is configured but ${tg.bot_token_env} is not set: channel disabled`);
   }
   return out;

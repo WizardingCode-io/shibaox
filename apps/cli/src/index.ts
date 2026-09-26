@@ -98,8 +98,8 @@ program
   .command('follow')
   .argument('<runId>')
   .description('print a run as it progresses')
-  .option('--since <n>', 'start after frame n', (v) => Number(v))
-  .action(async function (this: Command, runId: string, o: { since?: number }) {
+  .option('--since <cursor>', 'start after this frame cursor (see --json output)')
+  .action(async function (this: Command, runId: string, o: { since?: string }) {
     const client = await connect();
     const ac = new AbortController();
     process.once('SIGINT', () => ac.abort());
