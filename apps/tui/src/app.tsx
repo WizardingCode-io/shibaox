@@ -1,5 +1,5 @@
 import { type CliRenderer, createCliRenderer } from '@opentui/core';
-import { render, useKeyboard, useRenderer } from '@opentui/solid';
+import { render, useKeyboard } from '@opentui/solid';
 import type { JSX } from 'solid-js';
 import { ClientProvider, type DaemonClientLike } from './context/client.js';
 
@@ -102,7 +102,9 @@ export function runStream(
       resolve({
         code,
         message:
-          code === 0 ? `Run ${runId} keeps running. Follow it with: shibaox follow ${runId}` : undefined,
+          code === 0
+            ? `Run ${runId} keeps running. Follow it with: shibaox follow ${runId}`
+            : undefined,
       }),
     ).then((stop) => o.signal?.addEventListener('abort', stop, { once: true }));
   });

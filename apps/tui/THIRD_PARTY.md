@@ -4,7 +4,10 @@ Files marked `// Adapted from opencode (MIT) — https://github.com/anomalyco/op
 copied from the opencode v2 terminal UI (`packages/tui`) and adapted to shibaox. They are
 distributed under the MIT license below.
 
-Adapted files: (none yet)
+Adapted files: `src/motion/animation.ts`, `src/motion/one-cell-motion.ts`, `src/motion/subcell.ts`,
+`src/motion/pulse.ts`, `src/motion/masked-text.ts`, `src/motion/shimmer-text.tsx`,
+`src/motion/fade-in-text.tsx`, `src/motion/spinner.tsx`, `src/ui/delayed-presence.ts`,
+`src/ui/marquee.ts`.
 
 ```
 MIT License

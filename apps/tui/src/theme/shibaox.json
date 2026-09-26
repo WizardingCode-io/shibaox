@@ -1,30 +1,159 @@
 {
   "name": "shibaox",
   "hue": {
-    "neutral": { "100": "#fbf6ef", "200": "#f7ede2", "300": "#d9cdbf", "400": "#b9a694", "500": "#7e6856", "600": "#33271e", "700": "#271d16", "800": "#1e1611", "900": "#140e0a" },
-    "interactive": { "100": "#ffc79a", "200": "#ffa15c", "300": "#ff9142", "400": "#db6716", "500": "#a94a0a", "600": "#3b2213", "700": "#2c1a10", "800": "#22130b", "900": "#170c07" },
-    "green": { "100": "#a8e4bf", "200": "#6acb8e", "300": "#4fb374", "400": "#3a9459", "500": "#266e43", "600": "#12301e", "700": "#0e2617", "800": "#0a1c11", "900": "#06120b" },
-    "red": { "100": "#ffb3bc", "200": "#ff7a8a", "300": "#e85a6c", "400": "#c42840", "500": "#961d31", "600": "#3d1219", "700": "#300e14", "800": "#230a0e", "900": "#160609" },
-    "yellow": { "100": "#f8dc8f", "200": "#f2c150", "300": "#d9a52e", "400": "#b5861a", "500": "#8a5e00", "600": "#35290a", "700": "#2a2008", "800": "#1f1806", "900": "#140f04" },
-    "blue": { "100": "#b4caf9", "200": "#86aef5", "300": "#5f8fe6", "400": "#2a63c4", "500": "#1f4a92", "600": "#16264a", "700": "#111e3a", "800": "#0c162b", "900": "#080e1c" },
-    "cyan": { "100": "#b0e6f0", "200": "#7fd3e6", "300": "#58b8cf", "400": "#3a97ad", "500": "#2a7185", "600": "#123038", "700": "#0e262c", "800": "#0a1c21", "900": "#061215" },
-    "purple": { "100": "#dcc6ff", "200": "#c9a6ff", "300": "#ad83f0", "400": "#8b5cd6", "500": "#6a41a8", "600": "#2b1b48", "700": "#22153a", "800": "#19102b", "900": "#100a1c" },
-    "orange": { "100": "#ffc79a", "200": "#ff9142", "300": "#f2842b", "400": "#db6716", "500": "#a94a0a", "600": "#3b2213", "700": "#2c1a10", "800": "#22130b", "900": "#170c07" }
+    "neutral": {
+      "100": "#fbf6ef",
+      "200": "#f7ede2",
+      "300": "#d9cdbf",
+      "400": "#b9a694",
+      "500": "#7e6856",
+      "600": "#33271e",
+      "700": "#271d16",
+      "800": "#1e1611",
+      "900": "#140e0a"
+    },
+    "interactive": {
+      "100": "#ffc79a",
+      "200": "#ffa15c",
+      "300": "#ff9142",
+      "400": "#db6716",
+      "500": "#a94a0a",
+      "600": "#3b2213",
+      "700": "#2c1a10",
+      "800": "#22130b",
+      "900": "#170c07"
+    },
+    "green": {
+      "100": "#a8e4bf",
+      "200": "#6acb8e",
+      "300": "#4fb374",
+      "400": "#3a9459",
+      "500": "#266e43",
+      "600": "#12301e",
+      "700": "#0e2617",
+      "800": "#0a1c11",
+      "900": "#06120b"
+    },
+    "red": {
+      "100": "#ffb3bc",
+      "200": "#ff7a8a",
+      "300": "#e85a6c",
+      "400": "#c42840",
+      "500": "#961d31",
+      "600": "#3d1219",
+      "700": "#300e14",
+      "800": "#230a0e",
+      "900": "#160609"
+    },
+    "yellow": {
+      "100": "#f8dc8f",
+      "200": "#f2c150",
+      "300": "#d9a52e",
+      "400": "#b5861a",
+      "500": "#8a5e00",
+      "600": "#35290a",
+      "700": "#2a2008",
+      "800": "#1f1806",
+      "900": "#140f04"
+    },
+    "blue": {
+      "100": "#b4caf9",
+      "200": "#86aef5",
+      "300": "#5f8fe6",
+      "400": "#2a63c4",
+      "500": "#1f4a92",
+      "600": "#16264a",
+      "700": "#111e3a",
+      "800": "#0c162b",
+      "900": "#080e1c"
+    },
+    "cyan": {
+      "100": "#b0e6f0",
+      "200": "#7fd3e6",
+      "300": "#58b8cf",
+      "400": "#3a97ad",
+      "500": "#2a7185",
+      "600": "#123038",
+      "700": "#0e262c",
+      "800": "#0a1c21",
+      "900": "#061215"
+    },
+    "purple": {
+      "100": "#dcc6ff",
+      "200": "#c9a6ff",
+      "300": "#ad83f0",
+      "400": "#8b5cd6",
+      "500": "#6a41a8",
+      "600": "#2b1b48",
+      "700": "#22153a",
+      "800": "#19102b",
+      "900": "#100a1c"
+    },
+    "orange": {
+      "100": "#ffc79a",
+      "200": "#ff9142",
+      "300": "#f2842b",
+      "400": "#db6716",
+      "500": "#a94a0a",
+      "600": "#3b2213",
+      "700": "#2c1a10",
+      "800": "#22130b",
+      "900": "#170c07"
+    }
   },
   "text": {
     "base": "$hue.neutral.200",
     "muted": "$hue.neutral.400",
-    "action": { "primary": { "base": "$text.base", "focused": "$hue.neutral.900", "selected": "$hue.interactive.200", "disabled": "$hue.neutral.500" } },
-    "feedback": { "error": "$hue.red.200", "warning": "$hue.yellow.200", "success": "$hue.green.200", "info": "$hue.cyan.200", "running": "$hue.blue.200" }
+    "action": {
+      "primary": {
+        "base": "$text.base",
+        "focused": "$hue.neutral.900",
+        "selected": "$hue.interactive.200",
+        "disabled": "$hue.neutral.500"
+      }
+    },
+    "feedback": {
+      "error": "$hue.red.200",
+      "warning": "$hue.yellow.200",
+      "success": "$hue.green.200",
+      "info": "$hue.cyan.200",
+      "running": "$hue.blue.200"
+    }
   },
   "background": {
     "base": "$hue.neutral.900",
     "raised": { "base": "$hue.neutral.800", "high": "$hue.neutral.700", "max": "$hue.neutral.600" },
-    "action": { "primary": { "hovered": "$hue.neutral.700", "focused": "$hue.interactive.200", "selected": "$hue.neutral.600" } },
-    "feedback": { "error": "$hue.red.600", "warning": "$hue.yellow.600", "success": "$hue.green.600", "info": "$hue.cyan.600", "running": "$hue.blue.600" }
+    "action": {
+      "primary": {
+        "hovered": "$hue.neutral.700",
+        "focused": "$hue.interactive.200",
+        "selected": "$hue.neutral.600"
+      }
+    },
+    "feedback": {
+      "error": "$hue.red.600",
+      "warning": "$hue.yellow.600",
+      "success": "$hue.green.600",
+      "info": "$hue.cyan.600",
+      "running": "$hue.blue.600"
+    }
   },
   "border": { "base": "$hue.neutral.600" },
   "scrollbar": { "base": "$hue.neutral.600" },
-  "diff": { "added": "$hue.green.200", "removed": "$hue.red.200", "addedBg": "$hue.green.600", "removedBg": "$hue.red.600" },
-  "syntax": { "keyword": "$hue.interactive.200", "string": "$hue.green.200", "comment": "$hue.neutral.400", "function": "$hue.blue.200", "type": "$hue.cyan.200", "number": "$hue.yellow.200", "heading": "$hue.interactive.200", "link": "$hue.cyan.200" }
+  "diff": {
+    "added": "$hue.green.200",
+    "removed": "$hue.red.200",
+    "addedBg": "$hue.green.600",
+    "removedBg": "$hue.red.600"
+  },
+  "syntax": {
+    "keyword": "$hue.interactive.200",
+    "string": "$hue.green.200",
+    "comment": "$hue.neutral.400",
+    "function": "$hue.blue.200",
+    "type": "$hue.cyan.200",
+    "number": "$hue.yellow.200",
+    "heading": "$hue.interactive.200",
+    "link": "$hue.cyan.200"
+  }
 }

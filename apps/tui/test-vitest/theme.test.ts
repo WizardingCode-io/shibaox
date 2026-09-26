@@ -1,7 +1,7 @@
 import { RGBA } from '@opentui/core';
 import { describe, expect, it } from 'vitest';
-import shibaox from '../src/theme/shibaox.json' with { type: 'json' };
 import { resolveTheme, syntaxStyles } from '../src/theme/resolve.js';
+import shibaox from '../src/theme/shibaox.json' with { type: 'json' };
 
 describe('resolveTheme', () => {
   it('resolves hex and $ references into RGBA tokens', () => {

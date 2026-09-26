@@ -113,13 +113,13 @@ function build(root: Json, get: (path: string) => RGBA): ResolvedTheme {
       SyntaxToken,
       RGBA
     >,
-    surface: (name) => raise(theme, name),
+    surface: () => raise(theme),
   };
   return theme;
 }
 
 /** Re-resolves the theme on a raised surface: each background level moves one step up. */
-function raise(base: ResolvedTheme, _name: SurfaceName): ResolvedTheme {
+function raise(base: ResolvedTheme): ResolvedTheme {
   const theme: ResolvedTheme = {
     ...base,
     background: {
@@ -131,7 +131,7 @@ function raise(base: ResolvedTheme, _name: SurfaceName): ResolvedTheme {
         max: base.background.raised.max,
       },
     },
-    surface: (name) => raise(theme, name),
+    surface: () => raise(theme),
   };
   return theme;
 }
