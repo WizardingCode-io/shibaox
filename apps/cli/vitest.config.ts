@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@shibaox/core': src('core/src/index.ts'),
+      '@shibaox/daemon': src('daemon/src/index.ts'),
       '@shibaox/persistence-sqlite': src('persistence-sqlite/src/index.ts'),
       '@shibaox/schemas': src('schemas/src/index.ts'),
       '@shibaox/providers/testing': src('providers/src/testing/fake-openai.ts'),

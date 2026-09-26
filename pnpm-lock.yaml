@@ -32,6 +32,9 @@ importers:
       '@shibaox/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@shibaox/daemon':
+        specifier: workspace:*
+        version: link:../../packages/daemon
       '@shibaox/jev':
         specifier: workspace:*
         version: link:../../packages/jev
@@ -117,15 +120,33 @@ importers:
 
   packages/daemon:
     dependencies:
+      '@shibaox/adapter-claude-code':
+        specifier: workspace:*
+        version: link:../adapter-claude-code
+      '@shibaox/adapter-direct':
+        specifier: workspace:*
+        version: link:../adapter-direct
       '@shibaox/core':
         specifier: workspace:*
         version: link:../core
+      '@shibaox/jev':
+        specifier: workspace:*
+        version: link:../jev
+      '@shibaox/memory':
+        specifier: workspace:*
+        version: link:../memory
       '@shibaox/persistence-sqlite':
         specifier: workspace:*
         version: link:../persistence-sqlite
+      '@shibaox/providers':
+        specifier: workspace:*
+        version: link:../providers
       '@shibaox/schemas':
         specifier: workspace:*
         version: link:../schemas
+      '@shibaox/workspace':
+        specifier: workspace:*
+        version: link:../workspace
       yaml:
         specifier: ^2.9.1
         version: 2.9.1

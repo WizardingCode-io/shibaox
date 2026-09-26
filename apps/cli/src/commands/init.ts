@@ -1,18 +1,6 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { ORG_TEMPLATE } from '../templates.js';
+import { scaffoldOrg } from '@shibaox/daemon';
 
-export function scaffoldOrg(dir: string): string[] {
-  const created: string[] = [];
-  for (const [rel, content] of Object.entries(ORG_TEMPLATE)) {
-    const file = join(dir, rel);
-    if (existsSync(file)) continue;
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, content);
-    created.push(rel);
-  }
-  return created;
-}
+export { scaffoldOrg };
 
 export function initCommand(dir: string): void {
   const created = scaffoldOrg(dir);

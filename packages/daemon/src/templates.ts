@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
 export const ORG_TEMPLATE: Record<string, string> = {
   'org/.gitignore': '.shibaox/\n',
   'org/org.yaml': `organization: my-org
@@ -77,3 +80,16 @@ nodes:
   'vault/30-knowledge/.gitkeep': '',
   'vault/90-system/.gitkeep': '',
 };
+
+/** Writes the org/vault template files that do not exist yet; returns the created paths. */
+export function scaffoldOrg(dir: string): string[] {
+  const created: string[] = [];
+  for (const [rel, content] of Object.entries(ORG_TEMPLATE)) {
+    const file = join(dir, rel);
+    if (existsSync(file)) continue;
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, content);
+    created.push(rel);
+  }
+  return created;
+}

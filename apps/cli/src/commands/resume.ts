@@ -49,7 +49,7 @@ export async function resumeRun(runId: string, opts: ResumeOptions): Promise<Run
           workflow,
           request: String(prior.input.spec ?? ''),
           adapter,
-          opts,
+          opts: { ...opts, log: opts.log ?? ((l: string) => console.log(l)) },
         })
       : undefined;
     // same adapter rules as `run`: resolve the run's own workflow up front
@@ -61,7 +61,11 @@ export async function resumeRun(runId: string, opts: ResumeOptions): Promise<Run
     );
     const state = await engine.resume(runId, { budgetUsd: opts.budget });
     if (prior && !isTerminal(prior.status))
-      await finishRun(store, org, state, { ...opts, adapter });
+      await finishRun(store, org, state, {
+        ...opts,
+        log: opts.log ?? ((l: string) => console.log(l)),
+        adapter,
+      });
     logWorktree(state, opts.log ?? ((l: string) => console.log(l)));
     return state;
   } finally {

@@ -21,9 +21,15 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@shibaox/adapter-claude-code": "workspace:*",
+    "@shibaox/adapter-direct": "workspace:*",
     "@shibaox/core": "workspace:*",
+    "@shibaox/jev": "workspace:*",
+    "@shibaox/memory": "workspace:*",
     "@shibaox/persistence-sqlite": "workspace:*",
+    "@shibaox/providers": "workspace:*",
     "@shibaox/schemas": "workspace:*",
+    "@shibaox/workspace": "workspace:*",
     "yaml": "^2.9.1",
     "zod": "^4.6.5"
   },

@@ -15,6 +15,7 @@
     "@shibaox/adapter-claude-code": "workspace:*",
     "@shibaox/adapter-direct": "workspace:*",
     "@shibaox/core": "workspace:*",
+    "@shibaox/daemon": "workspace:*",
     "@shibaox/jev": "workspace:*",
     "@shibaox/memory": "workspace:*",
     "@shibaox/persistence-sqlite": "workspace:*",
