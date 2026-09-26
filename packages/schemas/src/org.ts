@@ -10,5 +10,7 @@ export const OrgFileSchema = z.object({
     })
     .default({}),
   teams: z.array(Id).default([]),
+  /** Runtime adapter for task nodes when `--adapter` is not passed (default: mock). */
+  adapter: z.enum(['mock', 'direct']).optional(),
 });
 export type OrgFile = z.infer<typeof OrgFileSchema>;

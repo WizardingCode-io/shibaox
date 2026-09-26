@@ -20,7 +20,7 @@ import {
   type ProviderEntry,
   ProviderRegistry,
 } from '@shibaox/providers';
-import type { Org } from '@shibaox/schemas';
+import type { Org, Role, Workflow } from '@shibaox/schemas';
 import { AVAILABLE_RUNTIMES } from './commands/models.js';
 
 export type AdapterId = 'mock' | 'direct';
@@ -30,8 +30,12 @@ export interface RuntimeOptions {
   store: EventStore;
   human: HumanHandler;
   log: (line: string) => void;
-  /** Explicit adapter; when omitted, `direct` if the `strong` tier is usable, else `mock`. */
+  /** Explicit adapter (`--adapter`); else `adapter:` in org.yaml; else `mock`. */
   adapter?: AdapterId;
+  /** Workflow about to run/resume: with `direct`, its task roles are resolved up front. */
+  workflow?: Workflow;
+  /** Effective run budget; with `direct`, unpriced models produce a warning. */
+  budgetUsd?: number;
   env?: NodeJS.ProcessEnv;
   /** Providers added to the built-in catalog (tests, local overrides). */
   extraProviders?: ProviderEntry[];
@@ -60,6 +64,12 @@ function unusable(registry: ProviderRegistry, ref: string | undefined): string |
 /**
  * The single place that assembles adapters, check runners and the decider for
  * `run` and `resume`, from the org's models.yaml and the environment.
+ *
+ * The adapter is `--adapter`, else `adapter:` in org.yaml, else `mock`; it is
+ * never picked silently from the keys in the environment. With `mock`, no
+ * provider model is called (no LLM judge, no lead decider). With `direct`,
+ * every task role of the workflow must resolve to a usable model or this
+ * throws `cannot start: ...` before any event is written.
  */
 export function buildRuntime(o: RuntimeOptions) {
   const env = o.env ?? process.env;
@@ -71,33 +81,51 @@ export function buildRuntime(o: RuntimeOptions) {
   }));
   const warnings: string[] = [];
   const llm = new LlmClient(registry);
+  const adapter: AdapterId = o.adapter ?? o.org.org.adapter ?? 'mock';
+  const direct = adapter === 'direct';
 
-  const strongRef = o.org.models.tiers.strong;
-  const strongProblem = unusable(registry, strongRef);
-  const strongOk = strongRef !== undefined && strongProblem === undefined;
-  const adapter: AdapterId = o.adapter ?? (strongOk ? 'direct' : 'mock');
-  if (!o.adapter && adapter === 'mock')
-    warnings.push(
-      `no usable model for tier "strong" (${strongRef ?? 'unset'}: ${strongProblem}); using the mock adapter (set models.yaml and provider keys)`,
-    );
-  else if (adapter === 'direct' && !strongOk)
-    warnings.push(`tier "strong" (${strongRef ?? 'unset'}) is not usable: ${strongProblem}`);
-
-  const resolveRef = (job: TaskJob): string => {
+  const resolveRoleRef = (role: Role, warn: (w: string) => void): string => {
     const r = resolveModel({
-      role: job.role,
+      role,
       models: o.org.models,
       providers: routerProviders,
       runtimes: AVAILABLE_RUNTIMES,
       defaultAdapter: 'direct',
     });
-    for (const w of r.warnings) o.log(`warn: ${w}`);
+    for (const w of r.warnings) warn(w);
     if (r.resolution.kind !== 'direct')
       throw new Error(
-        `role ${job.role.role} resolved to runtime ${r.resolution.runtime}, not available in phase 1B-1`,
+        `role ${role.role} resolved to runtime ${r.resolution.runtime}, not available in phase 1B-1`,
       );
     return r.resolution.ref;
   };
+  const resolveRef = (job: TaskJob): string => resolveRoleRef(job.role, (w) => o.log(`warn: ${w}`));
+
+  o.log(`adapter=${adapter}`);
+  const usedRefs = new Set<string>();
+  if (direct && o.workflow) {
+    const roles = new Set<string>();
+    for (const node of Object.values(o.workflow.nodes))
+      if (node.type === 'task') roles.add(node.role);
+    for (const name of roles) {
+      let ref: string;
+      try {
+        const role = o.org.roles[name];
+        if (!role) throw new Error(`role "${name}" is not defined`);
+        ref = resolveRoleRef(role, () => {});
+        registry.model(ref);
+      } catch (err) {
+        throw new Error(
+          `cannot start: role "${name}" → ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      usedRefs.add(ref);
+      o.log(`  ${name} → ${ref}`);
+    }
+  }
+
+  const strongRef = o.org.models.tiers.strong;
+  const strongOk = direct && strongRef !== undefined && unusable(registry, strongRef) === undefined;
 
   const jevKey = env.TYPESAFE_API_KEY;
   const jev = jevKey
@@ -105,9 +133,10 @@ export function buildRuntime(o: RuntimeOptions) {
     : undefined;
   const judgeRef = o.org.models.gates.judge ?? strongRef;
   const judge =
-    judgeRef && unusable(registry, judgeRef) === undefined
+    direct && judgeRef && unusable(registry, judgeRef) === undefined
       ? judgeCheckRunner(llm, judgeRef)
       : undefined;
+  if (judge && judgeRef) usedRefs.add(judgeRef);
   const checkRunners: CheckRunners = {
     ...defaultCheckRunners(),
     ...(judge ? { judge } : {}),
@@ -115,12 +144,27 @@ export function buildRuntime(o: RuntimeOptions) {
   };
   const usesJev = Object.values(o.org.gates).some((g) => g.checks.some((c) => c.type === 'jev'));
   if (!jev && usesJev) warnings.push('TYPESAFE_API_KEY not set: jev checks will fail');
+  const usesJudge = Object.values(o.org.gates).some((g) =>
+    g.checks.some((c) => c.type === 'judge'),
+  );
+  if (!judge && usesJudge)
+    warnings.push(
+      direct
+        ? `no usable judge model (${judgeRef ?? 'unset'}): judge checks will fail`
+        : 'judge checks need the direct adapter: they will fail with the mock adapter',
+    );
   const lead: Decider | undefined =
     strongOk && strongRef ? new LeadDecider(llm, strongRef) : undefined;
+  if (lead && strongRef) usedRefs.add(strongRef);
   const decider: Decider = jev
     ? new JevDecider(jev, { threshold: 0.8, fallback: lead })
     : (lead ?? new ScriptedDecider({}, 'ship'));
   if (!jev && !lead) warnings.push('no decider model configured: decide nodes always pick "ship"');
+
+  if (direct && o.budgetUsd !== undefined)
+    for (const ref of usedRefs)
+      if (registry.estimateCost(ref, { inputTokens: 1, outputTokens: 1 }) === undefined)
+        warnings.push(`model "${ref}" has no pricing: budget cannot be enforced for it`);
 
   const engine = new RunEngine({
     store: o.store,

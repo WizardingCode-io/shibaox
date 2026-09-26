@@ -38,7 +38,7 @@ program
   .addOption(
     new Option(
       '--adapter <id>',
-      'runtime adapter (default: direct when the strong tier has a configured provider, else mock)',
+      'runtime adapter (default: `adapter:` in org.yaml, else mock)',
     ).choices(['mock', 'direct']),
   )
   .option('--budget <usd>', 'budget in USD (default: org budgets.per_run_usd)', parseBudget)

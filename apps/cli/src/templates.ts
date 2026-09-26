@@ -4,6 +4,9 @@ export const ORG_TEMPLATE: Record<string, string> = {
 budgets:
   per_run_usd: 5
 teams: [engineering]
+# Runtime adapter for task nodes: mock (default, no model calls) or direct (real models,
+# see models.yaml). \`shibaox run --adapter\` overrides it.
+# adapter: direct
 `,
   'org/models.yaml': `# Model refs are <provider>/<model>; see \`shibaox providers list\` for the catalog.
 # anthropic/... uses ANTHROPIC_API_KEY. With a Claude subscription instead of an API key,

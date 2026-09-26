@@ -132,9 +132,15 @@ gates:
 ```
 
 `anthropic-subscription/...` runs through the Claude Code runtime, which arrives in phase
-1B-2; with the direct adapter it fails with a clear message. `shibaox run` picks the
-direct adapter when the `strong` tier resolves to a configured provider, and the mock
-adapter (with a `warn:` line) otherwise; `--adapter mock|direct` forces one.
+1B-2; with the direct adapter it fails with a clear message.
+
+`shibaox run` and `resume` use the adapter from `--adapter mock|direct`, else `adapter:` in
+`org/org.yaml`, else **mock**: provider keys in the environment never switch a run to real
+models on their own. With `mock` no provider model is called (no LLM judge or lead; `decide`
+nodes use Jev when `TYPESAFE_API_KEY` is set, else pick `ship`). Every run prints
+`adapter=<id>`; with `direct` it also prints `<role> → <model>` for each task role and
+refuses to start (`cannot start: role "<role>" → <reason>`, before any event is stored) when
+a role cannot resolve to a configured model.
 
 ### Local models
 
@@ -147,7 +153,13 @@ shibaox providers test ollama --model qwen2.5-coder:7b
 shibaox run hello-feature --org ./org --project ./project --input "..." --adapter direct
 ```
 
-Local models have no pricing in the catalog, so their runs report `spent=$0`.
+### Costs and budgets
+
+Spend is estimated from token usage and the catalog `pricing` (USD per million tokens,
+indicative: verify against the vendor). Failed attempts count too. Models without pricing,
+including local ones, report `$0`, so **a budget cannot stop them**: with `--budget` or
+`budgets.per_run_usd` set, the direct adapter prints `warn: model "<ref>" has no pricing:
+budget cannot be enforced for it` for each such model.
 
 ### Tool safety
 

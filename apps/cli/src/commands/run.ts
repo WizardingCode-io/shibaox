@@ -3,12 +3,12 @@ import { join, resolve } from 'node:path';
 import type { EventStore, HumanHandler, RunEngine, RunState } from '@shibaox/core';
 import { SqliteEventStore } from '@shibaox/persistence-sqlite';
 import type { ProviderEntry } from '@shibaox/providers';
-import { loadOrg, type Org } from '@shibaox/schemas';
+import { loadOrg, type Org, type Workflow } from '@shibaox/schemas';
 import { TerminalHuman } from '../terminal-human.js';
 import { type AdapterId, buildRuntime } from '../wiring.js';
 
 export interface EngineOptions {
-  /** Runtime adapter; when omitted, `direct` if the strong tier is usable, else `mock`. */
+  /** Runtime adapter; when omitted, `adapter:` in org.yaml, else `mock`. */
   adapter?: AdapterId;
   human?: HumanHandler;
   log?: (line: string) => void;
@@ -32,8 +32,17 @@ export function dbPath(orgDir: string, override?: string): string {
   return path;
 }
 
-/** The engine shared by `run` and `resume`, built by `buildRuntime`; prints its warnings. */
-export function buildEngine(store: EventStore, org: Org, opts: EngineOptions): RunEngine {
+/**
+ * The engine shared by `run` and `resume`, built by `buildRuntime`; prints its
+ * warnings. Throws `cannot start: ...` (before any event is written) when the
+ * direct adapter cannot resolve a task role of `run.workflow`.
+ */
+export function buildEngine(
+  store: EventStore,
+  org: Org,
+  opts: EngineOptions,
+  run: { workflow?: Workflow; budgetUsd?: number } = {},
+): RunEngine {
   const log = opts.log ?? ((l: string) => console.log(l));
   const { engine, warnings } = buildRuntime({
     org,
@@ -41,6 +50,8 @@ export function buildEngine(store: EventStore, org: Org, opts: EngineOptions): R
     human: opts.human ?? new TerminalHuman(),
     log,
     adapter: opts.adapter,
+    workflow: run.workflow,
+    budgetUsd: run.budgetUsd,
     env: opts.env,
     extraProviders: opts.extraProviders,
   });
@@ -60,11 +71,15 @@ export async function runWorkflow(workflow: string, opts: RunOptions): Promise<R
   assertProjectDir(workspace);
   const store = new SqliteEventStore(dbPath(orgDir, opts.db));
   try {
-    return await buildEngine(store, org, opts).start({
+    const budgetUsd = opts.budget ?? org.org.budgets.per_run_usd;
+    return await buildEngine(store, org, opts, {
+      workflow: org.workflows[workflow],
+      budgetUsd,
+    }).start({
       workflow,
       input: { spec: opts.input },
       workspace,
-      budgetUsd: opts.budget ?? org.org.budgets.per_run_usd,
+      budgetUsd,
     });
   } finally {
     store.close();
