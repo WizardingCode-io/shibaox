@@ -1,0 +1,35 @@
+{
+  "name": "@shibaox/tui",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/fake-client.d.ts",
+      "import": "./dist/testing/fake-client.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@shibaox/core": "workspace:*",
+    "@shibaox/daemon": "workspace:*",
+    "@shibaox/schemas": "workspace:*",
+    "ink": "^7.1.1",
+    "react": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "@types/react": "^19.2.0",
+    "ink-testing-library": "^4.0.0"
+  }
+}
