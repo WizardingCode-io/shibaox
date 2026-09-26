@@ -177,7 +177,7 @@ Canto superior direito, bordas laterais `┃`, fila com "+N more", pausa em hove
 opcional (`› Open`): run terminou/falhou em segundo plano (ação abre a tab), "Already
 answered elsewhere" (409), erros de ação, daemon de volta.
 
-## 5. Teclas (keymap com scopes)
+## 5. Teclas (scopes)
 
 Globais: `ctrl+q` sair; `ctrl+c` no prompt limpa o texto, fora do prompt sai (o daemon
 continua os runs); `ctrl+n` home/novo run; `ctrl+o` runs; `ctrl+k` palette; `ctrl+b`
