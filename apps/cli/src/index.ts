@@ -4,7 +4,6 @@ import { Command, InvalidArgumentError, Option } from 'commander';
 import { connect } from './client.js';
 import { daemonStart, daemonStatus, daemonStop } from './commands/daemon.js';
 import { doctorCommand } from './commands/doctor.js';
-import { followRun } from './commands/follow.js';
 import { graphBuild, graphQuery, graphUpdate } from './commands/graph.js';
 import { answerCommand, inboxCommand } from './commands/inbox.js';
 import { initCommand } from './commands/init.js';
@@ -12,12 +11,14 @@ import { modelsCommand } from './commands/models.js';
 import { providersListCommand, providersTestCommand } from './commands/providers.js';
 import {
   cancelCommand,
+  followAny,
   replayCommand,
   resumeCommand,
   runCommand,
   runsCommand,
 } from './commands/run.js';
 import { scheduleAdd, scheduleList, scheduleRemove, scheduleRun } from './commands/schedule.js';
+import { uiCommand } from './commands/ui.js';
 import { worktreeList, worktreeRemove } from './commands/worktree.js';
 import { makeOut } from './output.js';
 import { CLI_VERSION } from './version.js';
@@ -42,7 +43,13 @@ const program = new Command()
   .name('shibaox')
   .description('Agent OS over coding runtimes')
   .version(CLI_VERSION)
-  .option('--json', 'one JSON object per line instead of text');
+  .option('--json', 'one JSON object per line instead of text')
+  .action(async () => exitWith(await uiCommand()));
+
+program
+  .command('ui')
+  .description('the interactive dashboard (also: shibaox with no command)')
+  .action(async () => exitWith(await uiCommand()));
 
 program
   .command('init')
@@ -103,7 +110,7 @@ program
     const client = await connect();
     const ac = new AbortController();
     process.once('SIGINT', () => ac.abort());
-    exitWith(await followRun(client, runId, { since: o.since, signal: ac.signal }, out(this)));
+    exitWith(await followAny(client, runId, { since: o.since, signal: ac.signal }, out(this)));
   });
 program
   .command('resume')

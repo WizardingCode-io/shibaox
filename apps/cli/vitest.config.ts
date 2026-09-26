@@ -8,6 +8,7 @@ export default defineConfig({
     alias: {
       '@shibaox/core': src('core/src/index.ts'),
       '@shibaox/daemon': src('daemon/src/index.ts'),
+      '@shibaox/tui': fileURLToPath(new URL('../tui/src/index.ts', import.meta.url)),
       '@shibaox/persistence-sqlite': src('persistence-sqlite/src/index.ts'),
       '@shibaox/schemas': src('schemas/src/index.ts'),
       '@shibaox/providers/testing': src('providers/src/testing/fake-openai.ts'),

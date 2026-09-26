@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import type { AdapterId, GraphMode } from '@shibaox/daemon';
+import { renderStream } from '@shibaox/tui';
 import type { WorkspaceMode } from '@shibaox/workspace';
 import { connect } from '../client.js';
 import { exitCodeFor, formatState, type Out } from '../output.js';
@@ -41,10 +42,22 @@ export async function runCommand(
   const onSigint = () => ac.abort();
   process.once('SIGINT', onSigint);
   try {
-    return await followRun(client, runId, { signal: ac.signal }, out);
+    return await followAny(client, runId, { signal: ac.signal }, out);
   } finally {
     process.off('SIGINT', onSigint);
   }
+}
+
+/** The Ink stream in an interactive terminal; the plain text stream otherwise or with --json. */
+export async function followAny(
+  client: Parameters<typeof followRun>[0],
+  runId: string,
+  o: { since?: string; signal?: AbortSignal },
+  out: Out,
+): Promise<number> {
+  if (!out.json && process.stdout.isTTY && process.stdin.isTTY)
+    return renderStream(client, runId, { since: o.since, signal: o.signal, env: process.env });
+  return followRun(client, runId, o, out);
 }
 
 export async function resumeCommand(
@@ -56,7 +69,7 @@ export async function resumeCommand(
   const state = await client.resume(runId, { budgetUsd: o.budget });
   out.line(`run ${runId} resumed (${state.status})`);
   out.obj({ runId, status: state.status });
-  return followRun(client, runId, {}, out);
+  return followAny(client, runId, {}, out);
 }
 
 export async function cancelCommand(runId: string, out: Out): Promise<number> {

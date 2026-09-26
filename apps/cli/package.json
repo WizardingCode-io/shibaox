@@ -21,6 +21,7 @@
     "@shibaox/persistence-sqlite": "workspace:*",
     "@shibaox/providers": "workspace:*",
     "@shibaox/schemas": "workspace:*",
+    "@shibaox/tui": "workspace:*",
     "@shibaox/workspace": "workspace:*",
     "commander": "^15.0.0"
   },

@@ -50,6 +50,9 @@ importers:
       '@shibaox/schemas':
         specifier: workspace:*
         version: link:../../packages/schemas
+      '@shibaox/tui':
+        specifier: workspace:*
+        version: link:../tui
       '@shibaox/workspace':
         specifier: workspace:*
         version: link:../../packages/workspace

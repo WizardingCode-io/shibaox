@@ -208,6 +208,16 @@ describe('shibaox CLI against a daemon', () => {
     expect((await cli('schedule', 'list')).stdout).toContain('No schedules.');
   });
 
+  it('the dashboard refuses without a TTY and points at runs', async () => {
+    const { cli } = await setup();
+    const bare = await cli();
+    expect(bare.code).toBe(1);
+    expect(bare.stderr).toContain('The dashboard needs an interactive terminal. Try: shibaox runs');
+    const ui = await cli('ui');
+    expect(ui.code).toBe(1);
+    expect(ui.stderr).toContain('interactive terminal');
+  });
+
   it('a missing daemon that cannot be started is a clear error', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cli-d-'));
     tmpDirs.push(dir);
