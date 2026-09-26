@@ -79,6 +79,7 @@ export class RunEngine {
       project: opts.project,
       branch: opts.branch,
     });
+    await this.emit({ type: 'RunStarted', runId, at: this.now() });
     return this.drive(runId);
   }
 

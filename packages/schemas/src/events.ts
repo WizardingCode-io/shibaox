@@ -46,6 +46,42 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     project: z.string().optional(),
     /** The run's worktree branch (`worktree` runs only). */
     branch: z.string().optional(),
+    /** The org directory the run was submitted with (recorded since phase 2A). */
+    orgRoot: z.string().optional(),
+  }),
+  z.object({ ...base, type: z.literal('RunStarted') }),
+  z.object({
+    ...node,
+    type: z.literal('SessionStarted'),
+    runtime: z.string(),
+    sessionId: z.string(),
+  }),
+  z.object({
+    ...node,
+    type: z.literal('ToolApprovalRequested'),
+    approvalId: z.string(),
+    role: z.string(),
+    tool: z.literal('Bash'),
+    program: z.string(),
+    category: z.enum(['push', 'deploy']),
+    command: z.string(),
+    argvHash: z.string(),
+  }),
+  z.object({
+    ...node,
+    type: z.literal('ToolApprovalResolved'),
+    approvalId: z.string(),
+    approved: z.boolean(),
+    note: z.string().optional(),
+    via: z.enum(['cli', 'telegram', 'api', 'auto']),
+  }),
+  z.object({
+    ...node,
+    type: z.literal('NodeSuspended'),
+    sessionId: z.string().optional(),
+    approvalId: z.string(),
+    /** What the suspended attempt cost (counted by the reducer like any other cost). */
+    cost: CostSchema.optional(),
   }),
   z.object({ ...node, type: z.literal('NodeStarted') }),
   z.object({

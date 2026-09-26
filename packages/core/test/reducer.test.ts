@@ -14,9 +14,9 @@ const created: RunEvent = {
 };
 
 describe('replay', () => {
-  it('starts running with no nodes', () => {
+  it('starts queued with no nodes', () => {
     const s = replay([created]);
-    expect(s.status).toBe('running');
+    expect(s.status).toBe('queued');
     expect(s.nodes).toEqual({});
     expect(s.spentUsd).toBe(0);
     expect(s.pendingHumans).toEqual([]);
@@ -261,7 +261,7 @@ describe('replay', () => {
     expect(s.status).toBe('paused_budget');
     expect(s.spentUsd).toBeCloseTo(1.2);
     expect(s.error).toBeUndefined();
-    expect(s.nodes.a).toEqual({ status: 'pending', attempts: 1, error: undefined });
+    expect(s.nodes.a).toEqual({ status: 'pending', attempts: 1, error: undefined, approvals: {} });
     // pure and replay-deterministic
     expect(replay(events)).toEqual(s);
     const resumed = replay([...events, { type: 'RunResumed', runId: 'r1', at, budgetUsd: 5 }]);
@@ -277,14 +277,17 @@ describe('replay', () => {
   });
 
   it('budget warning flags budgetWarned without pausing the run; RunResumed clears it', () => {
+    const runStarted: RunEvent = { type: 'RunStarted', runId: 'r1', at };
     const s = replay([
       created,
+      runStarted,
       { type: 'BudgetWarning', runId: 'r1', at, spentUsd: 0.9, limitUsd: 1 },
     ]);
     expect(s.budgetWarned).toBe(true);
     expect(s.status).toBe('running');
     const s2 = replay([
       created,
+      runStarted,
       { type: 'BudgetWarning', runId: 'r1', at, spentUsd: 0.9, limitUsd: 1 },
       { type: 'RunResumed', runId: 'r1', at },
     ]);

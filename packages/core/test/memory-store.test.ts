@@ -27,7 +27,7 @@ describe('MemoryEventStore', () => {
     expect((await store.read('a')).map((x) => x.type)).toEqual(['RunCreated', 'RunCompleted']);
     const runs = await store.listRuns();
     expect(runs.find((r) => r.runId === 'a')?.status).toBe('completed');
-    expect(runs.find((r) => r.runId === 'b')?.status).toBe('running');
+    expect(runs.find((r) => r.runId === 'b')?.status).toBe('queued');
   });
 
   it('validates events on append like the SQLite store', async () => {

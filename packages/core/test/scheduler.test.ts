@@ -41,7 +41,10 @@ const done = (nodeId: string): RunEvent => ({
 
 describe('readyNodes', () => {
   it('starts with the start node', () => {
-    expect(readyNodes(replay([created]), wf)).toEqual(['a']);
+    expect(readyNodes(replay([created, { type: 'RunStarted', runId: 'r', at }]), wf)).toEqual([
+      'a',
+    ]);
+    expect(readyNodes(replay([created]), wf)).toEqual([]);
   });
   it('follows next after completion', () => {
     expect(readyNodes(replay([created, started('a'), done('a')]), wf)).toEqual(['p']);
