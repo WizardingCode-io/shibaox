@@ -200,16 +200,61 @@ provider) stops it with `cannot start: ...`.
   key in your shell is not billed. With `anthropic/...` the Claude Code process gets
   `ANTHROPIC_API_KEY` from the environment. Each task prints
   `claude-code ready: model=<model> apiKeySource=<source> ...`, where `apiKeySource` is what
-  Claude Code reports it authenticated with (`none` means the subscription login). The
+  Claude Code reports it authenticated with (for a subscription role it should never be
+  `ANTHROPIC_API_KEY`). The
   Claude Code process only inherits `PATH`, `HOME`, locale/terminal variables,
   `SSH_AUTH_SOCK` and `ANTHROPIC_*`/`CLAUDE_CODE_*`; other secrets stay in shibaox.
 - **Tools.** A role's `tools:` map to Claude Code permissions: `read` → Read/Glob/Grep,
-  `write` → Edit/Write, any other name → `Bash(<name> *)`. Everything else is denied,
-  and always denied are `rm -rf`, `WebFetch` and `WebSearch`. Compound shell commands
-  (`;`, `&&`, pipes, substitutions) are refused. `git` and deploy tools (`vercel`, `fly`,
-  `kubectl`, `terraform`, ...) never get a blanket allow: every call is checked, and a push
-  or deploy is refused unless the role lists it in `permissions.approval_required` and a
-  human approves it at that moment.
+  `write` → Edit/Write/MultiEdit/NotebookEdit, any other name → `Bash(<name> *)`. File
+  tools get no blanket allow: each call is allowed only when its path (`file_path`,
+  `notebook_path` or `path`, the working directory when absent) resolves, through
+  symlinks, inside the task's working directory; `~`, `..` and absolute paths elsewhere
+  are denied, Glob/Grep patterns may not be absolute or contain `..`, and writes under
+  `.git` are denied. Everything else is denied, and always denied are `rm -rf`,
+  `WebFetch` and `WebSearch`. Compound shell commands (`;`, `&&`, pipes, substitutions)
+  are refused.
+- **Push and deploy.** `git` and the deploy programs below never get a blanket allow:
+  every call is classified, and a push or deploy is refused unless the role lists it in
+  `permissions.approval_required` and a human approves it at that moment. Gated programs
+  must be called by bare name (`./git`, `/usr/bin/git` are refused) and without shell
+  expansion. Deploy verbs (anywhere among the positional arguments):
+
+  | Program | Deploy verbs |
+  | --- | --- |
+  | `vercel` | `deploy`, `redeploy`, `promote`, `rollback`, `alias`, `remove`, `rm`; also bare `vercel`, `vercel <dir>` and `vercel --prod` (anything but its read-only subcommands) |
+  | `fly`, `flyctl` | `launch`, `deploy` |
+  | `netlify` | `deploy` |
+  | `heroku` | `deploy`, `container:push`, `container:release`, `releases:rollback` |
+  | `railway` | `up`, `deploy` |
+  | `wrangler` | `deploy`, `publish` |
+  | `kubectl` | `apply`, `create`, `replace`, `patch`, `scale`, `set`, `edit`, `delete`, `rollout` |
+  | `terraform` | `apply`, `destroy`, `import`, `state` |
+  | `helm` | `install`, `upgrade`, `uninstall`, `rollback` |
+  | `npm`, `pnpm`, `yarn` | `publish`, `unpublish`, `dist-tag`, `deprecate` |
+  | `docker` | `push` |
+
+  `gh` is not gated: a role that lists it can create releases or merge PRs without
+  approval. git pushes are `git push`, `git send-pack`, `git subtree push` and
+  `git lfs push`. The git classifier fails closed: unknown global options, `-c`,
+  `--config-env`, `git config` writes (only `--get*`/`--list`/`get`/`list` are allowed),
+  subcommand options that run programs (`--exec`, `--upload-pack`, `--receive-pack`,
+  `--template`, `--config`, `rebase -x`, `submodule foreach`, `bisect run`, ...),
+  subcommands it does not know (including aliases) and `GIT_*` environment prefixes
+  (other than `GIT_AUTHOR_*`/`GIT_COMMITTER_*`) are refused.
+- **An allowlist, not a sandbox.** The classifier only sees the command line. An allowed
+  interpreter or script runner is a full bypass: `node -e`, `npm run <script>`, a
+  `package.json` script, `make`, or any script the task writes can run `git push` or a
+  deploy without approval. git config, hook and alias tricks on the command line are
+  refused, but Claude Code's Bash tool snapshots your shell rc files, so anything they
+  export (including secrets) can reach the task's shell. Only list programs you would let
+  the model run unattended, and run Claude Code tasks on machines where that is
+  acceptable.
+- **Subscription-only orgs.** `decide` nodes and `judge` checks call a model directly, and
+  `anthropic-subscription/...` is only reachable through Claude Code. In an org whose
+  models are all subscription models, `decide` nodes fall back to always choosing `ship`
+  (the default path in the `shibaox init` template; a `decide` node without a `ship`
+  option fails; Jev decides instead when `TYPESAFE_API_KEY` is set) and `judge` checks
+  cannot run (they fail), until phase 2.
 - **`approval_required` without a TTY.** Approvals are asked through the terminal. Without
   a TTY the question is deferred, and a Claude Code task that needs a push/deploy approval
   **fails** (`approval pending for push: ...`): Claude Code cannot wait across processes in
