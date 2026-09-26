@@ -151,9 +151,10 @@ the text commands keep working. `pnpm test` also needs Bun for the dashboard's o
 needs an interactive terminal of at least 60×15.
 
 **Home** shows the logo and a prompt: type what the team should do and press `enter` to
-start a run. `/` commands set the context and autocomplete: `/workflow <name>` (from the
-org), `/project <dir>`, `/org <dir>`, `/adapter mock|claude-code|direct`, `/budget <usd>`,
-`/workspace inplace|worktree`. The org defaults to `./org`, the project to the current
+start a run. `/` commands set the context shown inside the prompt: `/workflow`, `/adapter`
+and `/workspace` step into a list to pick from (`enter` takes the highlighted value),
+`/project <dir>`, `/org <dir>` and `/budget <usd>` take a value, `/runs` and `/help` open
+their dialogs. The org defaults to `./org`, the project to the current
 directory; the last org, adapter and workflow are remembered in `~/.shibaox/ui.json`. The
 footer shows the daemon, how many runs are working or queued, and how many things need you.
 
@@ -163,9 +164,9 @@ decision, human step) with the agent's text in Markdown, tool calls (`> Read src
 confidence, and a summary at the end (status, cost, duration, files changed, branch). While
 the run waits for you, the bottom of the screen asks: `a` approves, `d` denies, `n` adds a
 note (a command approval asks `y` first). Runs that end or start waiting in another tab make
-their tab pulse until you open it. The sidebar (automatic from 120 columns, `ctrl+b`) lists
-runs by day, the pending inbox, and the files and costs of the current run; drag its edge
-with the mouse to resize it.
+their tab pulse until you open it. The sidebar (automatic from 120 columns, `ctrl+b`) shows
+the run's request, its cost and progress, the nodes as a checklist, the files it touched and
+what needs you; drag its edge with the mouse to resize it. The runs picker is `ctrl+o`.
 
 Keys: `ctrl+n` home · `ctrl+o` open a run · `ctrl+k` command palette · `ctrl+]`/`ctrl+p`
 next/previous tab · `ctrl+w` close tab · `ctrl+b` sidebar · `?` help · `ctrl+q` quit (the
