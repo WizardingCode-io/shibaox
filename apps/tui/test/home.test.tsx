@@ -110,17 +110,70 @@ test('slash commands autocomplete and change the context; enter submits and open
   }
 });
 
-test('an unknown org blocks submit; ctrl+c clears the text first and exits when empty', async () => {
+test('a command chosen from the list applies on enter; free-text commands ask for their value; /runs and /help open dialogs', async () => {
+  const m = await mount();
+  try {
+    await m.frame();
+    // /workflow + tab + enter picks the highlighted workflow instead of complaining
+    await m.type('/workflow');
+    await m.setup.mockInput.pressTab();
+    await m.frame();
+    await m.setup.mockInput.pressEnter();
+    let f = await m.frame();
+    expect(f).not.toContain('required');
+    expect(f).toContain('hello-feature');
+    // /adapter + enter steps into its values; down + enter picks the second one
+    await m.type('/adapter');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).not.toContain('must be');
+    expect(f).toContain('› /adapter');
+    await m.setup.mockInput.pressArrow('down');
+    await m.frame();
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).toContain('adapter claude-code');
+    // a free-text command keeps the prompt open with a hint, no red error
+    await m.type('/project');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).not.toContain('required');
+    expect(f).toContain('directory');
+    expect(f).toContain('› /project');
+    // a bad value shows the error, and typing again clears it
+    await m.type(' /nope/nothing');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).toContain('Project not found');
+    f = await m.type('x');
+    expect(f).not.toContain('Project not found');
+    await m.setup.mockInput.pressKey('c', { ctrl: true });
+    await m.frame();
+    // /runs and /help open their dialogs
+    await m.type('/runs');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).toContain('type to filter');
+    await m.setup.mockInput.pressEscape();
+    await m.frame();
+    await m.type('/help');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).toContain('Keys');
+  } finally {
+    m.done();
+  }
+});
+
+test('an unknown org is refused and the current one stays; ctrl+c clears the text first and exits when empty', async () => {
   const m = await mount();
   try {
     await m.type('/org /nope/nothing');
     await m.setup.mockInput.pressEnter();
     let f = await m.frame();
     expect(f).toContain('Org not found');
+    expect(f).toContain(`org ${basename(m.dir)}/org`); // the valid org stays
     await m.type('do it');
-    await m.setup.mockInput.pressEnter();
-    await m.frame();
-    expect(m.client.calls.some((c) => c.method === 'submitRun')).toBe(false);
     await m.setup.mockInput.pressKey('c', { ctrl: true });
     f = await m.frame();
     expect(f).not.toContain('do it');

@@ -1,4 +1,4 @@
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -29,18 +29,21 @@ describe('prompt commands', () => {
     expect(completeCommand('hello', { workflows: [] })).toEqual([]);
   });
   it('applies commands with validation', () => {
+    expect(applyPromptCommand(ctx, { command: 'project', arg: '~' }, { cwd: '/x' })).toMatchObject({
+      project: homedir(),
+    });
+    expect(
+      applyPromptCommand(ctx, { command: 'project', arg: '.' }, { cwd: tmpdir() }),
+    ).toMatchObject({ project: tmpdir() });
+    expect(
+      applyPromptCommand(ctx, { command: 'project', arg: '/nope/nothing' }, { cwd: '/x' }),
+    ).toEqual({ error: 'Project not found: /nope/nothing' });
     expect(applyPromptCommand(ctx, { command: 'budget', arg: 'abc' }, { cwd: '/x' })).toEqual({
       error: 'Budget must be a number',
     });
     expect(applyPromptCommand(ctx, { command: 'budget', arg: '5' }, { cwd: '/x' })).toMatchObject({
       budgetUsd: 5,
     });
-    expect(
-      applyPromptCommand(ctx, { command: 'project', arg: '~/x' }, { cwd: '/x' }),
-    ).toMatchObject({ project: join(homedir(), 'x') });
-    expect(
-      applyPromptCommand(ctx, { command: 'project', arg: 'rel' }, { cwd: '/base' }),
-    ).toMatchObject({ project: '/base/rel' });
     expect(applyPromptCommand(ctx, { command: 'adapter', arg: 'nope' }, { cwd: '/x' })).toEqual({
       error: 'Adapter must be one of mock, claude-code, direct',
     });

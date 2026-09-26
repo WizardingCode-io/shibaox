@@ -1,7 +1,9 @@
 import { basename, join } from 'node:path';
 import { useTerminalDimensions } from '@opentui/solid';
 import { loadOrg, OrgLoadError } from '@shibaox/schemas';
-import { createMemo, createSignal, type JSX, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, type JSX, on, Show } from 'solid-js';
+import { HelpDialog } from '../component/dialogs/help.js';
+import { RunsDialog } from '../component/dialogs/runs.js';
 import { Footer } from '../component/footer.js';
 import { Logo } from '../component/logo.js';
 import { Prompt, type PromptRef } from '../component/prompt/index.js';
@@ -14,11 +16,13 @@ import {
   ADAPTERS,
   type Adapter,
   applyPromptCommand,
+  COMMAND_HINT,
   type PromptCommand,
   type PromptContext,
   toSubmitRequest,
 } from '../model/prompt-commands.js';
 import { useTheme } from '../theme/context.js';
+import { useDialog } from '../ui/dialog.js';
 import { useToast } from '../ui/toast.js';
 
 export const PLACEHOLDERS = [
@@ -55,6 +59,7 @@ export function Home(): JSX.Element {
   const prefs = usePrefs();
   const route = useRoute();
   const toast = useToast();
+  const dialog = useDialog();
   const dimensions = useTerminalDimensions();
   let prompt: PromptRef | undefined;
   const [ctx, setCtx] = createSignal<PromptContext>({
@@ -64,19 +69,29 @@ export function Home(): JSX.Element {
     workflow: prefs.data.lastWorkflow,
   });
   const org = createMemo(() => orgInfo(ctx().org));
+  // a closed dialog gives the keyboard back to the prompt
+  createEffect(
+    on(dialog.depth, (d) => {
+      if (d === 0) setTimeout(() => prompt?.focus(), 0);
+    }, { defer: true }),
+  );
   const [error, setError] = createSignal<string | undefined>();
+  const [hint, setHint] = createSignal<string | undefined>();
   // the first workflow of the org when none was picked yet
   const workflow = () => ctx().workflow ?? org().workflows[0];
 
   const onCommand = (cmd: PromptCommand) => {
     setError(undefined);
-    if (cmd.command === 'help' || cmd.command === 'runs') return;
+    setHint(undefined);
+    if (cmd.command === 'help') return dialog.open(() => <HelpDialog />);
+    if (cmd.command === 'runs') return dialog.open(() => <RunsDialog />);
     const next = applyPromptCommand(ctx(), cmd, { cwd: config.cwd });
     if ('error' in next) return setError(next.error);
     setCtx(next);
   };
   const onSubmit = async (text: string) => {
     setError(undefined);
+    setHint(undefined);
     if (org().error) return setError(org().error);
     const wf = workflow();
     if (!wf) return setError('Pick a workflow first: /workflow <name>');
@@ -124,16 +139,21 @@ export function Home(): JSX.Element {
             workflows={org().workflows}
             onSubmit={(t) => void onSubmit(t)}
             onCommand={onCommand}
+            onInput={() => {
+              setError(undefined);
+              setHint(undefined);
+            }}
+            onNeedValue={(c) => setHint(COMMAND_HINT[c])}
           />
           <box flexShrink={0} paddingLeft={2} width="100%">
             <text fg={theme.text.muted} wrapMode="word">
               {contextLine()}
             </text>
           </box>
-          <Show when={notice()}>
+          <Show when={notice() ?? hint()}>
             <box height={1} flexShrink={0} paddingLeft={2}>
-              <text fg={theme.text.feedback.error} wrapMode="none">
-                {notice() ?? ''}
+              <text fg={notice() ? theme.text.feedback.error : theme.text.muted} wrapMode="none">
+                {notice() ?? hint() ?? ''}
               </text>
             </box>
           </Show>

@@ -2,6 +2,7 @@ import type { InputRenderable } from '@opentui/core';
 import { createEffect, createMemo, createSignal, type JSX, onCleanup, Show } from 'solid-js';
 import { useKeys } from '../../context/keys.js';
 import {
+  COMMAND_KIND,
   completeCommand,
   type PromptCommand,
   parsePromptCommand,
@@ -30,6 +31,10 @@ export function Prompt(props: {
   workflows: string[];
   onSubmit(text: string): void;
   onCommand(cmd: PromptCommand): void;
+  /** The text changed (the screen clears its notices). */
+  onInput?(text: string): void;
+  /** A free-text command was entered without its value: the screen shows what to type. */
+  onNeedValue?(cmd: PromptCommand['command']): void;
 }): JSX.Element {
   const theme = useTheme();
   const motion = useMotion();
@@ -70,23 +75,44 @@ export function Prompt(props: {
   };
   const submit = () => {
     if (props.disabled) return;
-    let value = text().trim();
+    const value = text().trim();
     if (!value) return;
-    if (value.startsWith('/')) {
-      // a partial argument takes the highlighted suggestion (`/workflow hel` → hello-feature)
-      const s = suggestions()[selected()];
-      if (s && s.insert.trim() !== value && s.insert.startsWith(value.split(/\s+/)[0] ?? '')) {
-        const parsed = parsePromptCommand(value);
-        if (!parsed || (parsed.arg && s.insert.trim() !== value)) value = s.insert.trim();
-      }
-      const cmd = parsePromptCommand(value);
-      if (cmd) {
-        set('');
-        props.onCommand(cmd);
-        return;
-      }
+    if (!value.startsWith('/')) return props.onSubmit(value);
+    const s = suggestions()[selected()];
+    const parsed = parsePromptCommand(value);
+    if (!parsed) {
+      // only the command name so far: enter takes the highlighted command
+      if (s) set(s.insert);
+      return;
     }
-    props.onSubmit(value);
+    const kind = COMMAND_KIND[parsed.command];
+    if (kind === 'action') {
+      set('');
+      props.onCommand(parsed);
+      return;
+    }
+    if (!parsed.arg && !value.endsWith(' ') && text() === value) {
+      // `/adapter` + enter: step into its values (a list to pick from, or a hint of what to type)
+      set(`/${parsed.command} `);
+      if (kind === 'text') props.onNeedValue?.(parsed.command);
+      return;
+    }
+    if (kind === 'choice') {
+      // no value or a partial one: the highlighted choice is the value
+      const chosen =
+        s && s.insert.startsWith(`/${parsed.command} `) ? parsePromptCommand(s.insert) : undefined;
+      const cmd = chosen?.arg ? chosen : parsed;
+      if (!cmd.arg) return;
+      set('');
+      props.onCommand(cmd);
+      return;
+    }
+    if (!parsed.arg) {
+      props.onNeedValue?.(parsed.command);
+      return;
+    }
+    set('');
+    props.onCommand(parsed);
   };
 
   useKeys('prompt', (key) => {
@@ -137,7 +163,10 @@ export function Prompt(props: {
             }}
             focused={!props.disabled}
             placeholder={props.placeholders[placeholder()] ?? ''}
-            onInput={setText}
+            onInput={(v: string) => {
+              setText(v);
+              props.onInput?.(v);
+            }}
             onSubmit={submit}
             flexGrow={1}
             backgroundColor={theme.background.raised.base}

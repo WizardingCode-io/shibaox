@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import type { SubmitRequest } from '@shibaox/daemon';
@@ -27,6 +28,30 @@ export const COMMANDS = [
   'help',
 ] as const;
 export type CommandName = (typeof COMMANDS)[number];
+
+/** How each command takes its value: from a list, as free text, or none (it acts at once). */
+export const COMMAND_KIND: Record<CommandName, 'choice' | 'text' | 'action'> = {
+  workflow: 'choice',
+  adapter: 'choice',
+  workspace: 'choice',
+  project: 'text',
+  org: 'text',
+  budget: 'text',
+  runs: 'action',
+  help: 'action',
+};
+
+/** What to ask for when a free-text command is entered without its value. */
+export const COMMAND_HINT: Record<CommandName, string> = {
+  workflow: 'pick a workflow of the org',
+  adapter: 'pick an adapter: mock, claude-code or direct',
+  workspace: 'pick inplace or worktree',
+  project: 'type the project directory and press enter',
+  org: 'type the org directory and press enter',
+  budget: 'type the budget in USD and press enter',
+  runs: 'open a run',
+  help: 'show the keys',
+};
 export interface PromptCommand {
   command: CommandName;
   arg: string;
@@ -89,12 +114,18 @@ export function applyPromptCommand(
     case 'workflow':
       if (!cmd.arg) return { error: 'Workflow name is required' };
       return { ...ctx, workflow: cmd.arg };
-    case 'project':
+    case 'project': {
       if (!cmd.arg) return { error: 'Project directory is required' };
-      return { ...ctx, project: dir(cmd.arg) };
-    case 'org':
+      const p = dir(cmd.arg);
+      if (!existsSync(p)) return { error: `Project not found: ${p}` };
+      return { ...ctx, project: p };
+    }
+    case 'org': {
       if (!cmd.arg) return { error: 'Org directory is required' };
-      return { ...ctx, org: dir(cmd.arg) };
+      const p = dir(cmd.arg);
+      if (!existsSync(p)) return { error: `Org not found: ${p}` };
+      return { ...ctx, org: p };
+    }
     case 'adapter': {
       const a = ADAPTERS.find((x) => x === cmd.arg);
       if (!a) return { error: `Adapter must be one of ${ADAPTERS.join(', ')}` };
