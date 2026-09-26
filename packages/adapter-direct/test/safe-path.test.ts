@@ -20,4 +20,18 @@ describe('safePath', () => {
     symlinkSync(outside, join(ws, 'links/out'));
     expect(() => safePath(ws, 'links/out/secret')).toThrow(/escapes workspace/);
   });
+  it('write mode refuses any .git segment (case-insensitive), including via a symlink', () => {
+    const w = mkdtempSync(join(tmpdir(), 'ws-'));
+    mkdirSync(join(w, '.git'));
+    expect(() => safePath(w, '.git/config', { write: true })).toThrow(
+      'path ".git/config" targets .git',
+    );
+    expect(() => safePath(w, 'sub/.GIT/hooks/x', { write: true })).toThrow(/targets \.git/);
+    symlinkSync(join(w, '.git'), join(w, 'g'));
+    expect(() => safePath(w, 'g/config', { write: true })).toThrow(/targets \.git/);
+    expect(safePath(w, '.gitignore', { write: true })).toBe(join(w, '.gitignore'));
+    expect(safePath(w, 'a/.github/x.yml', { write: true })).toBe(join(w, 'a/.github/x.yml'));
+    // read mode is unchanged
+    expect(safePath(w, '.git/config')).toBe(join(w, '.git/config'));
+  });
 });

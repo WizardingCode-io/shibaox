@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runCommand } from '../src/index.js';
+import { runArgv, runCommand } from '../src/index.js';
 
 describe('runCommand', () => {
   it('captures stdout and exit code', async () => {
@@ -41,5 +41,39 @@ describe('runCommand', () => {
     } finally {
       delete process.env.SHIBAOX_CODE_SECRET;
     }
+  });
+});
+
+describe('runArgv', () => {
+  it('runs without a shell: $HOME and operators stay literal', async () => {
+    const r = await runArgv({
+      argv: ['echo', '$HOME', ';', 'ls'],
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+    });
+    expect(r.stdout.trim()).toBe('$HOME ; ls');
+    expect(r.exitCode).toBe(0);
+  });
+  it('kills a hanging program on timeout and honours inheritEnv: false', async () => {
+    const t = await runArgv({ argv: ['sleep', '5'], cwd: process.cwd(), timeoutMs: 200 });
+    expect(t.timedOut).toBe(true);
+    const e = await runArgv({
+      argv: ['env'],
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+      inheritEnv: false,
+      env: { ONLY: '1', PATH: process.env.PATH ?? '' },
+    });
+    expect(e.stdout).toContain('ONLY=1');
+    expect(e.stdout).not.toContain('HOME=');
+  });
+  it('reports a missing program without rejecting', async () => {
+    const r = await runArgv({
+      argv: ['definitely-not-a-program-xyz'],
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+    });
+    expect(r.exitCode).toBeNull();
+    expect(r.stderr).toContain('ENOENT');
   });
 });

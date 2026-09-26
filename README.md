@@ -152,11 +152,21 @@ Local models have no pricing in the catalog, so their runs report `spent=$0`.
 ### Tool safety
 
 The direct adapter gives a role the tools `list_files`, `read_file`, `write_file`,
-`run_command` and `finish`, confined to the workspace. `run_command` only runs the programs
-listed in the role's `tools:` (for example `[git, node, pnpm]`), without a shell and with a
-scrubbed environment. This is an **allowlist, not a sandbox**: an allowed program such as
-`node` or `pnpm` can still run arbitrary code with your user's permissions. Run it on
-projects and machines where that is acceptable.
+`run_command` and `finish`, confined to the workspace. `write_file` refuses any path with a
+`.git` segment (git config and hooks can run code).
+
+`run_command` only runs the programs listed in the role's `tools:` (for example
+`[git, node, pnpm]`). The command is split into argv and run **without a shell**: single and
+double quotes only group words and are otherwise literal, nothing is expanded (`$VAR`, `~`,
+globs, braces), backslashes and shell operators (`; & | $ < >` and backticks) are refused,
+and arguments that are absolute, start with `~`, contain a `..` segment or name `.git` are
+refused. The child gets a scrubbed environment (`PATH`, `HOME`, `LANG`, `TMPDIR`, `TERM`).
+
+This is an **allowlist, not a sandbox**: an allowed program such as `node` or `pnpm` can
+still run arbitrary code with your user's permissions (a `package.json` script, `node -e`,
+`git` aliases). Cancelling a run does not kill a command that is already running; it runs
+until it exits or hits its timeout. Run the direct adapter on projects and machines where
+that is acceptable.
 
 ## Where state lives
 

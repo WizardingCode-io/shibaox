@@ -244,6 +244,108 @@ describe('DirectAdapter', () => {
     expect(existsSync(join(ws, '..', escapee))).toBe(false);
     expect(existsSync(join(homedir(), escapee))).toBe(false);
   });
+  it('quoting, escaping and braces cannot smuggle a path out of the workspace', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'outer-'));
+    writeFileSync(join(parent, 'secret.txt'), 'SECRET-OUTSIDE-CONTENT');
+    const ws = join(parent, 'ws');
+    mkdirSync(ws);
+    const cmds = [
+      "cat '..'/secret.txt",
+      'cat ".."/secret.txt',
+      'cat .\\./secret.txt',
+      'cat {..,.}/secret.txt',
+      'cat \\/etc/hosts',
+      'cat --file=../secret.txt',
+      'cat -o/etc/hosts',
+    ];
+    fake = await startFakeOpenAI((req, turn) => {
+      if (turn === 0)
+        return { toolCalls: cmds.map((command) => ({ name: 'run_command', args: { command } })) };
+      return {
+        content: (req.messages.slice(-cmds.length) as { content: string }[])
+          .map((m) => m.content)
+          .join('\n'),
+      };
+    });
+    const adapter = new DirectAdapter({
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    const r = await collectRun(adapter, jobFor(ws, ['cat']), ctx());
+    const text = String((r.output as { text: string }).text);
+    expect(text).not.toContain('SECRET-OUTSIDE-CONTENT');
+    expect(text).not.toContain('localhost'); // /etc/hosts was not read
+    expect(text.match(/leaves the workspace/g)).toHaveLength(4);
+    expect(text.match(/backslashes are not allowed/g)).toHaveLength(2);
+  });
+  it('runs commands as argv: quotes group words, nothing is expanded', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    const cmds = ['echo "hello world"', "echo 'a  b' c", 'echo *', 'echo {a,b}'];
+    fake = await startFakeOpenAI((req, turn) => {
+      if (turn === 0)
+        return { toolCalls: cmds.map((command) => ({ name: 'run_command', args: { command } })) };
+      return {
+        content: JSON.stringify(
+          (req.messages.slice(-cmds.length) as { content: string }[]).map((m) => m.content),
+        ),
+      };
+    });
+    const adapter = new DirectAdapter({
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    const r = await collectRun(adapter, jobFor(ws, ['echo']), ctx());
+    const outs = (JSON.parse(String((r.output as { text: string }).text)) as string[]).map(
+      (c) => (JSON.parse(c) as { stdout: string }).stdout,
+    );
+    expect(outs).toEqual(['hello world\n', 'a  b c\n', '*\n', '{a,b}\n']);
+  });
+  it('write_file refuses .git paths (git config/hooks would run code)', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    mkdirSync(join(ws, '.git'));
+    fake = await startFakeOpenAI((req, turn) => {
+      if (turn === 0)
+        return {
+          toolCalls: [
+            {
+              name: 'write_file',
+              args: { path: '.git/config', content: '[core]\n\tfsmonitor = touch pwned\n' },
+            },
+            { name: 'write_file', args: { path: 'sub/.GIT/hooks/x', content: 'x' } },
+            { name: 'write_file', args: { path: '.gitignore', content: 'dist\n' } },
+          ],
+        };
+      return {
+        content: (req.messages.slice(-3) as { content: string }[]).map((m) => m.content).join('\n'),
+      };
+    });
+    const adapter = new DirectAdapter({
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    const r = await collectRun(adapter, jobFor(ws), ctx());
+    const text = String((r.output as { text: string }).text);
+    expect(text.match(/targets \.git/g)).toHaveLength(2);
+    expect(existsSync(join(ws, '.git/config'))).toBe(false);
+    expect(existsSync(join(ws, 'sub'))).toBe(false);
+    expect(readFileSync(join(ws, '.gitignore'), 'utf8')).toBe('dist\n');
+  });
+  it('run_command refuses arguments naming .git', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    mkdirSync(join(ws, '.git'));
+    fake = await startFakeOpenAI((req, turn) => {
+      if (turn === 0)
+        return { toolCalls: [{ name: 'run_command', args: { command: 'touch .git/hooks-x' } }] };
+      return { content: (req.messages.at(-1) as { content: string }).content };
+    });
+    const adapter = new DirectAdapter({
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    const r = await collectRun(adapter, jobFor(ws, ['touch']), ctx());
+    expect(String((r.output as { text: string }).text)).toContain('targets .git');
+    expect(existsSync(join(ws, '.git/hooks-x'))).toBe(false);
+  });
   it('errors when maxSteps runs out without finish', async () => {
     const ws = mkdtempSync(join(tmpdir(), 'ws-'));
     fake = await startFakeOpenAI(() => ({

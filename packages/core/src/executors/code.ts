@@ -15,14 +15,39 @@ export interface CommandResult {
   timedOut: boolean;
 }
 
+export interface ArgvOptions extends Omit<CommandOptions, 'command'> {
+  /** Program and arguments; spawned directly, without a shell (no expansion, no operators). */
+  argv: string[];
+}
+
+/** Runs `command` through a shell (gate `code` checks and `code` nodes: trusted org config). */
 export function runCommand(opts: CommandOptions): Promise<CommandResult> {
+  return spawnAndCollect(opts.command, [], true, opts);
+}
+
+/** Runs `argv[0]` with `argv.slice(1)` without a shell; same timeout, kill and env semantics. */
+export function runArgv(opts: ArgvOptions): Promise<CommandResult> {
+  const [program, ...args] = opts.argv;
+  if (!program)
+    return Promise.resolve({ exitCode: null, stdout: '', stderr: 'empty argv', timedOut: false });
+  return spawnAndCollect(program, args, false, opts);
+}
+
+function spawnAndCollect(
+  program: string,
+  args: string[],
+  shell: boolean,
+  opts: Omit<CommandOptions, 'command'>,
+): Promise<CommandResult> {
   return new Promise((resolve) => {
-    const child = spawn(opts.command, {
+    const options = {
       cwd: opts.cwd,
-      shell: true,
+      shell,
       env: opts.inheritEnv === false ? { ...opts.env } : { ...process.env, ...opts.env },
       detached: process.platform !== 'win32',
-    });
+    };
+    // never pass an args array together with shell: true (Node DEP0190)
+    const child = shell ? spawn(program, options) : spawn(program, args, options);
     let stdout = '';
     let stderr = '';
     let timedOut = false;
