@@ -1,5 +1,6 @@
 import {
   generateText,
+  hasToolCall,
   isStepCount,
   type LanguageModel,
   type ModelMessage,
@@ -15,6 +16,8 @@ export interface GenerateArgs {
   messages: ModelMessage[];
   tools?: ToolSet;
   maxSteps?: number;
+  /** Stop the agent loop right after any of these tools is called (in addition to maxSteps). */
+  stopOnTools?: string[];
   output?: z.ZodType;
   signal?: AbortSignal;
 }
@@ -34,7 +37,9 @@ export async function generate<T = unknown>(args: GenerateArgs): Promise<Generat
     system: args.system,
     messages: args.messages,
     tools: args.tools,
-    stopWhen: isStepCount(args.maxSteps ?? 1),
+    stopWhen: args.stopOnTools?.length
+      ? [isStepCount(args.maxSteps ?? 1), hasToolCall(...args.stopOnTools)]
+      : isStepCount(args.maxSteps ?? 1),
     abortSignal: args.signal,
     output: args.output ? Output.object({ schema: args.output }) : undefined,
   });

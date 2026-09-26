@@ -55,6 +55,30 @@ describe('LlmClient over an OpenAI-compatible fake', () => {
     await fake.close();
   });
 
+  it('stops the loop as soon as a stopOnTools tool is called', async () => {
+    fake = await startFakeOpenAI(() => ({ toolCalls: [{ name: 'done', args: {} }] }));
+    const client = new LlmClient(new ProviderRegistry([entryFor(fake.baseURL)], {}));
+    let calls = 0;
+    const r = await client.generate('fake/m', {
+      messages: [{ role: 'user', content: 'go' }],
+      tools: {
+        done: tool({
+          inputSchema: z.object({}),
+          execute: async () => {
+            calls++;
+            return { ok: true };
+          },
+        }),
+      },
+      maxSteps: 5,
+      stopOnTools: ['done'],
+    });
+    expect(calls).toBe(1);
+    expect(r.steps).toBe(1);
+    expect(fake.requests).toHaveLength(1);
+    await fake.close();
+  });
+
   it('returns a validated object with output', async () => {
     fake = await startFakeOpenAI(() => ({ content: '{"passed": true, "evidence": "ok"}' }));
     const client = new LlmClient(new ProviderRegistry([entryFor(fake.baseURL)], {}));
