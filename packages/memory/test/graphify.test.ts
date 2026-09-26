@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { runArgv } from '@shibaox/core';
 import { describe, expect, it } from 'vitest';
@@ -51,6 +51,21 @@ describe('Graphify (fake exec)', () => {
     ).toBe(true);
     expect(r.ok).toBe(false); // no graph.json was produced by the fake
     expect(r.message).toContain('graph.json');
+  });
+  it('resolves a relative project to an absolute path for both argv and cwd', async () => {
+    const calls: { argv: string[]; cwd: string }[] = [];
+    const g = new Graphify({
+      exec: async ({ argv, cwd }) => {
+        calls.push({ argv, cwd });
+        return { exitCode: 0, stdout: '', stderr: '', timedOut: false };
+      },
+    });
+    await g.build('relative/dir');
+    const abs = resolve('relative/dir');
+    expect(calls).toHaveLength(1);
+    const [call] = calls;
+    expect(call?.cwd).toBe(abs);
+    expect(call?.argv).toContain(abs);
   });
   it('mcpServerConfig points python at graphify.serve', () => {
     expect(

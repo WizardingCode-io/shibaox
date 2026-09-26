@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { runArgv } from '@shibaox/core';
 
 /** `<project>/graphify-out/graph.json`, where `graphify extract`/`update` write the graph. */
@@ -73,13 +73,14 @@ export class Graphify {
 
   /** `graphify extract <project> --code-only`; `graphJson` is set when the file was produced. */
   async build(project: string): Promise<{ ok: boolean; graphJson?: string; message: string }> {
-    const r = await this.run(['graphify', 'extract', project, '--code-only'], project);
+    const abs = resolve(project);
+    const r = await this.run(['graphify', 'extract', abs, '--code-only'], abs);
     if (r.exitCode !== 0)
       return {
         ok: false,
         message: `graphify extract failed: ${(r.stderr || r.stdout).slice(-500)}`,
       };
-    const graphJson = graphJsonPath(project);
+    const graphJson = graphJsonPath(abs);
     return existsSync(graphJson)
       ? { ok: true, graphJson, message: 'graph built' }
       : { ok: false, message: `graphify extract finished but ${graphJson} was not produced` };
@@ -87,7 +88,8 @@ export class Graphify {
 
   /** `graphify update <project>`. */
   async update(project: string): Promise<{ ok: boolean; message: string }> {
-    const r = await this.run(['graphify', 'update', project], project);
+    const abs = resolve(project);
+    const r = await this.run(['graphify', 'update', abs], abs);
     return r.exitCode === 0
       ? { ok: true, message: 'graph updated' }
       : { ok: false, message: `graphify update failed: ${(r.stderr || r.stdout).slice(-500)}` };
@@ -95,17 +97,10 @@ export class Graphify {
 
   /** `graphify query "<question>" --graph <graph.json> --budget <budget>`. */
   async query(project: string, question: string, budget = 1500): Promise<string> {
+    const abs = resolve(project);
     const r = await this.run(
-      [
-        'graphify',
-        'query',
-        question,
-        '--graph',
-        graphJsonPath(project),
-        '--budget',
-        String(budget),
-      ],
-      project,
+      ['graphify', 'query', question, '--graph', graphJsonPath(abs), '--budget', String(budget)],
+      abs,
       120_000,
     );
     return r.exitCode === 0

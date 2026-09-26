@@ -134,6 +134,9 @@ importers:
       '@types/node':
         specifier: ^26.6.2
         version: 26.6.2
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
 
   packages/persistence-sqlite:
     dependencies:

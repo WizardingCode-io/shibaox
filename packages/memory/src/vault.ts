@@ -14,6 +14,20 @@ export function ensureVault(root: string): void {
   for (const dir of VAULT_FOLDERS) mkdirSync(join(root, dir), { recursive: true });
 }
 
+const SAFE_ID_RE = /^[A-Za-z0-9._-]+$/;
+
+/**
+ * Guards identifiers (project names, node ids) that are interpolated into a
+ * vault-relative path: rejects anything outside `[A-Za-z0-9._-]` (which rules
+ * out `/`, so no path segment can be smuggled in) and any value containing
+ * `..` (so a value like `..` alone can't walk up a directory either).
+ */
+function assertSafeId(kind: string, value: string): void {
+  if (!SAFE_ID_RE.test(value) || value.includes('..')) {
+    throw new Error(`invalid ${kind} "${value}"`);
+  }
+}
+
 function inside(root: string, p: string): boolean {
   const r = relative(root, p);
   return r === '' || (r !== '..' && !r.startsWith(`..${sep}`) && !isAbsolute(r));
@@ -58,14 +72,34 @@ export function safeVaultPath(vault: string, rel: string): string {
   return target;
 }
 
-function uniquePath(dir: string, base: string, ext: string): string {
-  let candidate = join(dir, `${base}${ext}`);
-  for (let n = 2; existsSync(candidate); n++) candidate = join(dir, `${base}-${n}${ext}`);
+/**
+ * Builds `<relDir>/<base><ext>`, `<relDir>/<base>-2<ext>`, … under `vault`,
+ * returning the first that doesn't already exist. Every candidate — including
+ * the numbered suffixes — is routed through `safeVaultPath` so a boundary
+ * escape can never slip through via a later suffix either.
+ */
+function uniqueSafePath(vault: string, relDir: string, base: string, ext: string): string {
+  let rel = join(relDir, `${base}${ext}`);
+  let candidate = safeVaultPath(vault, rel);
+  for (let n = 2; existsSync(candidate); n++) {
+    rel = join(relDir, `${base}-${n}${ext}`);
+    candidate = safeVaultPath(vault, rel);
+  }
   return candidate;
 }
 
 function escapeCell(value: string): string {
   return value.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+}
+
+/**
+ * Renders a frontmatter scalar: strings are JSON-quoted (which YAML's
+ * double-quoted flow scalar syntax accepts) so a `: `, `"` or embedded
+ * newline in a run/workflow/project name or summary can never break the
+ * line-oriented frontmatter; numbers and booleans are written bare.
+ */
+function yamlScalar(value: string | number | boolean): string {
+  return typeof value === 'string' ? JSON.stringify(value) : String(value);
 }
 
 function nodeCell(nodeType: string | undefined, ns: NodeState): string {
@@ -135,28 +169,29 @@ export function writeRunNote(args: {
   adapter: string;
 }): { path: string } {
   const { vault, project, state, events, workflow, adapter } = args;
+  assertSafeId('project', project);
   ensureVault(vault);
   const startedAt = events[0]?.at ?? new Date().toISOString();
   const finishedAt = events.at(-1)?.at ?? startedAt;
   const date = startedAt.slice(0, 10);
   const runId8 = state.runId.slice(0, 8);
-  const dir = safeVaultPath(vault, join('10-projects', project, 'runs'));
-  mkdirSync(dir, { recursive: true });
-  const path = uniquePath(dir, `${date}-${runId8}`, '.md');
+  const relDir = join('10-projects', project, 'runs');
+  mkdirSync(safeVaultPath(vault, relDir), { recursive: true });
+  const path = uniqueSafePath(vault, relDir, `${date}-${runId8}`, '.md');
 
   const frontmatter = [
     '---',
     'type: run',
-    `run_id: ${state.runId}`,
-    `project: ${project}`,
-    `workflow: ${workflow.workflow}`,
-    `status: ${state.status}`,
-    `adapter: ${adapter}`,
-    `spent_usd: ${state.spentUsd}`,
-    `started_at: ${startedAt}`,
-    `finished_at: ${finishedAt}`,
+    `run_id: ${yamlScalar(state.runId)}`,
+    `project: ${yamlScalar(project)}`,
+    `workflow: ${yamlScalar(workflow.workflow)}`,
+    `status: ${yamlScalar(state.status)}`,
+    `adapter: ${yamlScalar(adapter)}`,
+    `spent_usd: ${yamlScalar(state.spentUsd)}`,
+    `started_at: ${yamlScalar(startedAt)}`,
+    `finished_at: ${yamlScalar(finishedAt)}`,
     'nodes:',
-    ...Object.keys(state.nodes).map((id) => `  - ${id}`),
+    ...Object.keys(state.nodes).map((id) => `  - ${yamlScalar(id)}`),
     '---',
     '',
   ].join('\n');
@@ -192,31 +227,60 @@ export function writeRunNote(args: {
   return { path };
 }
 
-/** Writes `90-system/decisions/<date>-<runId8>-<nodeId>.md` for a single node's decision. */
+/** The node's own last `DecisionMade`/`HumanResponded` event, when available. */
+function lastDecisionAt(events: StoredEvent[] | undefined, nodeId: string): string | undefined {
+  if (!events) return undefined;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (
+      e &&
+      'nodeId' in e &&
+      e.nodeId === nodeId &&
+      (e.type === 'DecisionMade' || e.type === 'HumanResponded')
+    )
+      return e.at;
+  }
+  return undefined;
+}
+
+/**
+ * Writes `90-system/decisions/<date>-<runId8>-<nodeId>.md` for a single
+ * node's decision. `date` is deterministic, not wall-clock: it comes from
+ * `at` when given, else from the node's own last `DecisionMade`/
+ * `HumanResponded` event in `events` when given, else from `Date.now()` as a
+ * last resort. This makes repeat calls for the same decision resolve to the
+ * same base filename (so a second call is a genuine re-write, suffixed `-2`,
+ * rather than landing on a different day's file).
+ */
 export function writeDecisionNote(args: {
   vault: string;
   project: string;
   state: RunState;
   nodeId: string;
+  at?: string;
+  events?: StoredEvent[];
 }): { path: string } {
-  const { vault, project, state, nodeId } = args;
+  const { vault, project, state, nodeId, events } = args;
+  assertSafeId('project', project);
+  assertSafeId('nodeId', nodeId);
   ensureVault(vault);
   const ns = state.nodes[nodeId];
   if (!ns) throw new Error(`node "${nodeId}" not found in run state`);
-  const date = new Date().toISOString().slice(0, 10);
+  const at = args.at ?? lastDecisionAt(events, nodeId) ?? new Date().toISOString();
+  const date = at.slice(0, 10);
   const runId8 = state.runId.slice(0, 8);
-  const dir = safeVaultPath(vault, join('90-system', 'decisions'));
-  mkdirSync(dir, { recursive: true });
-  const path = uniquePath(dir, `${date}-${runId8}-${nodeId}`, '.md');
+  const relDir = join('90-system', 'decisions');
+  mkdirSync(safeVaultPath(vault, relDir), { recursive: true });
+  const path = uniqueSafePath(vault, relDir, `${date}-${runId8}-${nodeId}`, '.md');
 
   const frontmatter = [
     '---',
     'type: decision',
-    `run_id: ${state.runId}`,
-    `project: ${project}`,
-    `node_id: ${nodeId}`,
-    `status: ${ns.status}`,
-    `choice: ${ns.choice ?? ''}`,
+    `run_id: ${yamlScalar(state.runId)}`,
+    `project: ${yamlScalar(project)}`,
+    `node_id: ${yamlScalar(nodeId)}`,
+    `status: ${yamlScalar(ns.status)}`,
+    `choice: ${yamlScalar(ns.choice ?? '')}`,
     '---',
     '',
   ].join('\n');
