@@ -122,6 +122,19 @@ importers:
         specifier: ^26.6.2
         version: 26.6.2
 
+  packages/memory:
+    dependencies:
+      '@shibaox/core':
+        specifier: workspace:*
+        version: link:../core
+      '@shibaox/schemas':
+        specifier: workspace:*
+        version: link:../schemas
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.2
+        version: 26.6.2
+
   packages/persistence-sqlite:
     dependencies:
       '@shibaox/core':

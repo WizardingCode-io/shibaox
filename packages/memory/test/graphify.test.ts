@@ -1,0 +1,86 @@
+import { execFileSync } from 'node:child_process';
+import { cpSync, existsSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { runArgv } from '@shibaox/core';
+import { describe, expect, it } from 'vitest';
+import { Graphify, graphJsonPath } from '../src/index.js';
+
+type Exec = typeof runArgv;
+const fakeExec =
+  (script: (argv: string[]) => { exitCode: number; stdout?: string; stderr?: string }): Exec =>
+  async ({ argv }) => {
+    const r = script(argv);
+    return {
+      exitCode: r.exitCode,
+      stdout: r.stdout ?? '',
+      stderr: r.stderr ?? '',
+      timedOut: false,
+    };
+  };
+
+describe('Graphify (fake exec)', () => {
+  it('reports not installed and explains how to install when uv is missing', async () => {
+    const g = new Graphify({
+      exec: fakeExec((argv) =>
+        argv[0] === 'graphify'
+          ? { exitCode: 127 }
+          : argv[0] === 'uv'
+            ? { exitCode: 127 }
+            : { exitCode: 0 },
+      ),
+    });
+    expect(await g.isInstalled()).toBe(false);
+    const r = await g.ensureInstalled();
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain('uv tool install graphifyy');
+  });
+  it('build runs extract --code-only and returns the graph path when produced', async () => {
+    const project = mkdtempSync(join(tmpdir(), 'p-'));
+    const calls: string[][] = [];
+    const g = new Graphify({
+      exec: fakeExec((argv) => {
+        calls.push(argv);
+        return { exitCode: 0, stdout: 'ok' };
+      }),
+    });
+    const r = await g.build(project);
+    expect(
+      calls.some((c) => c[0] === 'graphify' && c[1] === 'extract' && c.includes('--code-only')),
+    ).toBe(true);
+    expect(r.ok).toBe(false); // no graph.json was produced by the fake
+    expect(r.message).toContain('graph.json');
+  });
+  it('mcpServerConfig points python at graphify.serve', () => {
+    expect(
+      new Graphify().mcpServerConfig('/p/graphify-out/graph.json', '/usr/bin/python3'),
+    ).toEqual({
+      type: 'stdio',
+      command: '/usr/bin/python3',
+      args: ['-m', 'graphify.serve', '/p/graphify-out/graph.json'],
+    });
+  });
+});
+
+const hasGraphify = (() => {
+  try {
+    execFileSync('graphify', ['--help'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+describe.skipIf(!hasGraphify)('Graphify (real, local AST only)', () => {
+  it('builds a graph for the sample repo and answers a query', async () => {
+    const sample = fileURLToPath(new URL('../../../examples/sample-repo', import.meta.url));
+    const project = mkdtempSync(join(tmpdir(), 'gp-'));
+    cpSync(sample, project, { recursive: true });
+    const g = new Graphify();
+    const r = await g.build(project);
+    expect(r.ok, r.message).toBe(true);
+    expect(existsSync(graphJsonPath(project))).toBe(true);
+    const answer = await g.query(project, 'what does add do?');
+    expect(answer.length).toBeGreaterThan(0);
+  }, 120_000);
+});
