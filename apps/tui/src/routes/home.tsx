@@ -260,6 +260,7 @@ export function Home(): JSX.Element {
             }}
             placeholders={PLACEHOLDERS}
             commands={homeCommands(org().workflows, models() ?? [])}
+            disabled={dialog.depth() > 0}
             onSubmit={(t) => void onSubmit(t)}
             onCommand={onCommand}
             onInput={() => {
