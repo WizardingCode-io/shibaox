@@ -39,6 +39,15 @@ export function KeysDialog(): JSX.Element {
   const [rows, { refetch }] = createResource<KeyRow[]>(() => client.keys().catch(() => []));
   const sorted = createMemo(() => orderKeys(rows() ?? []));
   const [cursor, setCursor] = createSignal(0);
+  /** After a save the list reorders (set keys first): the cursor stays on the same key. */
+  const reload = async () => {
+    const name = selected()?.name;
+    await refetch();
+    if (name) {
+      const i = sorted().findIndex((r) => r.name === name);
+      if (i >= 0) setCursor(i);
+    }
+  };
   const [editing, setEditing] = createSignal<string | undefined>();
   const [value, setValue] = createSignal('');
   const selected = () => sorted()[Math.min(cursor(), Math.max(0, sorted().length - 1))];
@@ -53,7 +62,7 @@ export function KeysDialog(): JSX.Element {
     try {
       await client.setKey(name, v);
       toast.show({ message: `${name} saved in the vault`, variant: 'success' });
-      await refetch();
+      await reload();
     } catch (e) {
       toast.show({
         message: `Could not save ${name}: ${e instanceof Error ? e.message : String(e)}`,
@@ -72,7 +81,7 @@ export function KeysDialog(): JSX.Element {
     }
     await client.unsetKey(r.name).catch(() => undefined);
     toast.show({ message: `${r.name} removed from the vault`, variant: 'info' });
-    await refetch();
+    await reload();
   };
   useKeys('dialog', (key) => {
     if (editing()) return false; // the input owns the keys while a value is typed
