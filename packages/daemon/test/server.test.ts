@@ -66,6 +66,29 @@ async function collect(events: AsyncIterable<Envelope>, until: (e: Envelope) => 
   return out;
 }
 
+describe('models endpoint', () => {
+  it('GET /models lists the catalog refs with whether they are configured', async () => {
+    const s = setup();
+    const { client } = await started(s, { env: { ANTHROPIC_API_KEY: 'k' } });
+    const models = await client.models();
+    const sonnet = models.find((m) => m.ref === 'anthropic/claude-sonnet-5');
+    expect(sonnet).toEqual({
+      ref: 'anthropic/claude-sonnet-5',
+      provider: 'anthropic',
+      model: 'claude-sonnet-5',
+      configured: true,
+    });
+    expect(models.find((m) => m.ref === 'anthropic-subscription/claude-haiku-4-5')).toMatchObject({
+      configured: true,
+      runtime: 'claude-code',
+    });
+    expect(models.find((m) => m.ref === 'openai/gpt-5')).toMatchObject({
+      configured: false,
+      missing: ['OPENAI_API_KEY'],
+    });
+  });
+});
+
 describe('project profile endpoint', () => {
   it('GET /projects/profile profiles a directory and writes the vault note', async () => {
     const s = setup();

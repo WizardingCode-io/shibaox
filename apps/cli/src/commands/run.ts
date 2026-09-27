@@ -17,6 +17,8 @@ export interface RunCommandOptions {
   workspace?: WorkspaceMode;
   graph?: GraphMode;
   budget?: number;
+  /** A model ref (`provider/model`) for every task of the run. */
+  model?: string;
   detach?: boolean;
 }
 
@@ -36,6 +38,7 @@ export async function runCommand(
     workspace: o.workspace,
     budgetUsd: o.budget,
     graph: o.graph,
+    model: o.model,
   });
   for (const w of warnings) out.line(`warn: ${w}`);
   out.line(`run ${runId} queued`);

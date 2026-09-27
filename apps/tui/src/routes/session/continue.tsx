@@ -1,9 +1,12 @@
-import { createEffect, createMemo, type JSX, on } from 'solid-js';
+import { createEffect, createMemo, createResource, type JSX, on } from 'solid-js';
 import { Prompt, type PromptRef } from '../../component/prompt/index.js';
+import { useClient } from '../../context/client.js';
 import { useCommands } from '../../context/commands.js';
+import { useData } from '../../context/data.js';
 import { useKeys } from '../../context/keys.js';
-import type { PromptCommandSpec } from '../../model/prompt-commands.js';
+import { modelCommand, type PromptCommandSpec } from '../../model/prompt-commands.js';
 import { useDialog } from '../../ui/dialog.js';
+import { useToast } from '../../ui/toast.js';
 
 const PLACEHOLDERS = ['Continue… "Now add tests for it"', 'Continue… "/diff shows the changes"'];
 
@@ -13,12 +16,18 @@ const PLACEHOLDERS = ['Continue… "Now add tests for it"', 'Continue… "/diff 
  * `/help`, `/home`…
  */
 export function ContinuePrompt(props: {
+  /** The tab's root run: `/model` applies to its next turns. */
+  runId: string;
   onSubmit(text: string): void;
   onScroll?(lines: number): void;
   footer?: JSX.Element;
 }): JSX.Element {
   const registry = useCommands();
   const dialog = useDialog();
+  const client = useClient();
+  const data = useData();
+  const toast = useToast();
+  const [models] = createResource(() => client.models().catch(() => []));
   let prompt: PromptRef | undefined;
   // a dialog opened from here (diff, help, runs) takes the keys; the prompt gets them back after
   createEffect(
@@ -36,13 +45,14 @@ export function ContinuePrompt(props: {
     const i = ORDER.indexOf(id);
     return i < 0 ? ORDER.length : i;
   };
-  const commands = createMemo<PromptCommandSpec[]>(() =>
-    registry
+  const commands = createMemo<PromptCommandSpec[]>(() => [
+    modelCommand(() => models() ?? []),
+    ...registry
       .commands()
       .filter((c) => c.when?.() ?? true)
       .sort((a, b) => rank(a.id) - rank(b.id))
-      .map((c) => ({ name: c.id, kind: 'action', hint: c.label })),
-  );
+      .map((c) => ({ name: c.id, kind: 'action' as const, hint: c.label })),
+  ]);
   // registered before the prompt mounts: its handler runs after the prompt's, so the arrows
   // scroll the conversation only while no suggestion list is showing
   useKeys('prompt', (key) => {
@@ -62,12 +72,17 @@ export function ContinuePrompt(props: {
       placeholders={PLACEHOLDERS}
       commands={commands()}
       onSubmit={props.onSubmit}
-      onCommand={(cmd) =>
+      onCommand={(cmd) => {
+        if (cmd.command === 'model') {
+          data.setModel(props.runId, cmd.arg);
+          toast.show({ message: `Next turns run on ${cmd.arg}`, variant: 'info' });
+          return;
+        }
         registry
           .commands()
           .find((c) => c.id === cmd.command)
-          ?.run()
-      }
+          ?.run();
+      }}
       footer={props.footer}
     />
   );

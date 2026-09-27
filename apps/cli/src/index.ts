@@ -87,6 +87,10 @@ program
     ).choices(['inplace', 'worktree']),
   )
   .addOption(graphOption())
+  .option(
+    '--model <ref>',
+    'model for every task (provider/model, e.g. anthropic-subscription/claude-sonnet-5)',
+  )
   .option('--budget <usd>', 'budget in USD (default: org budgets.per_run_usd)', parseBudget)
   .option('--detach', 'submit and return without following')
   .action(async function (this: Command, workflow: string, o: Record<string, unknown>) {
@@ -101,6 +105,7 @@ program
           workspace: o.workspace as 'inplace' | 'worktree' | undefined,
           graph: o.graph as GraphMode | undefined,
           budget: o.budget as number | undefined,
+          model: o.model as string | undefined,
           detach: Boolean(o.detach),
         },
         out(this),

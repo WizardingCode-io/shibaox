@@ -253,6 +253,7 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
                   when={!finished() || props.single}
                   fallback={
                     <ContinuePrompt
+                      runId={props.runId}
                       onSubmit={(t) => void data.continueRun(props.runId, t)}
                       onScroll={(n) => timeline?.scrollBy(n)}
                       footer={<ContextLine runId={props.runId} elapsed={elapsed()} />}

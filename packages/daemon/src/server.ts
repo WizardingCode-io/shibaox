@@ -9,6 +9,7 @@ import {
   type StoredEvent,
 } from '@shibaox/core';
 import type { ScheduleRow } from '@shibaox/persistence-sqlite';
+import type { ModelChoice } from '@shibaox/providers';
 import { AlreadyResolvedError, type InboxService, NotFoundError } from './inbox.js';
 import type { RunManager, SubmitRequest } from './run-manager.js';
 import type { RuntimeEnvelope } from './runtime-buffer.js';
@@ -54,6 +55,8 @@ export interface ServerDeps {
   health: () => Health;
   /** The profile of a project directory (with the org's vault note when `orgRoot` is given). */
   profile: (path: string, orgRoot?: string) => ProjectProfile;
+  /** The models of the catalog and whether this daemon can use them. */
+  models: () => ModelChoice[];
   onShutdown: (o: { force?: boolean }) => void;
   log: (line: string) => void;
 }
@@ -210,6 +213,7 @@ export class DaemonServer {
     };
 
     if (method === 'GET' && path === '/health') return send(res, 200, this.deps.health());
+    if (method === 'GET' && path === '/models') return send(res, 200, this.deps.models());
     if (method === 'GET' && path === '/projects/profile') {
       const p = url.searchParams.get('path') ?? '';
       if (!p) throw new HttpError(400, 'bad_request', '"path" is required');

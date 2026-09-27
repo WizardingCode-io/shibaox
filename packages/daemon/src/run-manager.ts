@@ -35,11 +35,13 @@ import {
 } from './runs/workspace.js';
 import {
   type AdapterId,
+  adapterForModel,
   buildRuntime,
   effectiveAdapter,
   type GraphWiring,
   isAdapterId,
   type RuntimeOptions,
+  registryFor,
 } from './runtime.js';
 import { RuntimeBuffer, type RuntimeEnvelope } from './runtime-buffer.js';
 
@@ -60,6 +62,8 @@ export interface SubmitRequest {
   event?: boolean;
   /** Who asked (`schedule:<id>`, `telegram:<chatId>`): the run reports back there when it ends. */
   origin?: string;
+  /** A model ref (`provider/model`) for every task of the run; the adapter follows from it. */
+  model?: string;
 }
 
 export interface RunManagerOptions {
@@ -137,7 +141,12 @@ export class RunManager {
     assertProjectDir(project);
     const wf = org.workflows[req.workflow];
     if (!wf) throw new Error(`workflow "${req.workflow}" is not defined in the org`);
-    const adapter = effectiveAdapter(req.adapter, org);
+    const adapter = req.model
+      ? adapterForModel(
+          req.model,
+          registryFor(this.opts.env ?? process.env, this.opts.extraProviders),
+        )
+      : effectiveAdapter(req.adapter, org);
     const warnings: string[] = [];
     const mode = await workspaceMode(project, req.workspace, (l) => warnings.push(l));
     const budgetUsd = req.budgetUsd ?? org.org.budgets.per_run_usd;
@@ -160,6 +169,7 @@ export class RunManager {
       project,
       workspaceMode: mode,
       origin: req.origin,
+      model: req.model,
       warn: (w) => warnings.push(w),
     });
     const ws = await createRunWorkspace({ project, runId, mode });
@@ -181,6 +191,7 @@ export class RunManager {
       orgRoot,
       parentRunId: req.parentRunId,
       origin: req.origin,
+      model: req.model,
     });
     this.prepared.set(runId, { engine, org, adapter });
     this.enqueue({ runId, action: 'run', settle: [] });
@@ -482,6 +493,7 @@ export class RunManager {
       project,
       workspaceMode: state.workspaceMode,
       origin: state.origin,
+      model: state.model,
       warn: (w) => this.opts.log(`warn: ${w}`),
     });
     return { engine, org, adapter };
@@ -517,11 +529,13 @@ export class RunManager {
       project?: string;
       workspaceMode?: WorkspaceMode;
       origin?: string;
+      model?: string;
       warn: (w: string) => void;
     },
   ): RunEngine {
     const { engine, warnings } = buildRuntime({
       tools: this.taskTools(org, r),
+      model: r.model,
       org,
       store: this.opts.store,
       human: this.opts.inbox,
@@ -565,6 +579,7 @@ export class RunManager {
       project?: string;
       workspaceMode?: WorkspaceMode;
       origin?: string;
+      model?: string;
     },
   ): RuntimeOptions['tools'] {
     const project = r.project;
@@ -610,6 +625,7 @@ export class RunManager {
               parentRunId: r.runId,
               // a dispatched run reports where its parent was asked from
               origin: r.origin,
+              model: r.model,
             });
             return { runId };
           },

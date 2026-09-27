@@ -3,7 +3,7 @@ import type { QueryFn } from '@shibaox/adapter-claude-code';
 import type { EventStore, MockScript } from '@shibaox/core';
 import type { Graphify } from '@shibaox/memory';
 import { OutboxRepo, SchedulesRepo, SqliteEventStore } from '@shibaox/persistence-sqlite';
-import type { ProviderEntry } from '@shibaox/providers';
+import { listModels, type ProviderEntry } from '@shibaox/providers';
 import { type ChatMessage, loadOrg } from '@shibaox/schemas';
 import { macosChannel } from './channels/macos.js';
 import { OutboxWorker } from './channels/outbox.js';
@@ -16,6 +16,7 @@ import { RunManager } from './run-manager.js';
 import { vaultDir } from './runs/notes.js';
 import { profileFor } from './runs/profile.js';
 import { buildRunReport } from './runs/report.js';
+import { registryFor } from './runtime.js';
 import { Scheduler } from './scheduler.js';
 import { DaemonServer, type Health, type SchedulesApi } from './server.js';
 
@@ -161,6 +162,7 @@ export class Daemon {
           vault: opts.vault ?? (orgRoot ? vaultDir(loadOrg(orgRoot), {}) : undefined),
           log: opts.log,
         }),
+      models: () => listModels(registryFor(opts.env ?? process.env, opts.extraProviders)),
       onShutdown: (o) => {
         void this.stop(o);
       },

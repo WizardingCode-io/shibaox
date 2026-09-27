@@ -103,3 +103,33 @@ export class ProviderRegistry {
     );
   }
 }
+
+/** One model a run can be pointed at, with whether this environment can use it. */
+export interface ModelChoice {
+  ref: string;
+  provider: string;
+  model: string;
+  configured: boolean;
+  /** The runtime the provider goes through (`claude-code` for the Claude subscription). */
+  runtime?: string;
+  /** Environment variables missing for the provider. */
+  missing?: string[];
+}
+
+/** Every model the catalog names, with its state in this environment. */
+export function listModels(registry: ProviderRegistry): ModelChoice[] {
+  const out: ModelChoice[] = [];
+  for (const e of registry.list())
+    for (const model of e.models) {
+      const c = registry.isConfigured(e.id);
+      out.push({
+        ref: `${e.id}/${model}`,
+        provider: e.id,
+        model,
+        configured: c.ok,
+        ...(e.via_runtime ? { runtime: e.via_runtime } : {}),
+        ...(c.missing.length > 0 ? { missing: c.missing } : {}),
+      });
+    }
+  return out;
+}

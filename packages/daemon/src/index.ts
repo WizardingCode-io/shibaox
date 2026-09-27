@@ -1,3 +1,4 @@
+export type { ModelChoice } from '@shibaox/providers';
 export * from './channels/macos.js';
 export * from './channels/outbox.js';
 export * from './channels/telegram.js';

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { testRender } from '@opentui/solid';
 import type { ProjectProfile } from '@shibaox/core';
+import type { ModelChoice } from '@shibaox/daemon';
 import { scaffoldOrg } from '@shibaox/daemon';
 import { App } from '../src/app.js';
 import { loadPrefs } from '../src/context/prefs.js';
@@ -17,6 +18,7 @@ async function mount(
     height?: number;
     env?: Record<string, string>;
     profile?: ProjectProfile;
+    models?: ModelChoice[];
   } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'tui-home-'));
@@ -24,6 +26,7 @@ async function mount(
   const home = join(dir, 'home');
   const client = new FakeDaemonClient();
   if (o.profile) client.profiles.set(dir, o.profile);
+  if (o.models) client.modelChoices = o.models;
   const exits: number[] = [];
   const setup = await testRender(
     () => (
@@ -338,5 +341,51 @@ test('opened in the home directory itself, the project is ~/.shibaox/workspace',
   } finally {
     setup.renderer.destroy();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('/model lists the daemon models with their state; the choice travels with the run and is remembered', async () => {
+  const m = await mount({
+    models: [
+      {
+        ref: 'anthropic-subscription/claude-haiku-4-5',
+        provider: 'anthropic-subscription',
+        model: 'claude-haiku-4-5',
+        configured: true,
+        runtime: 'claude-code',
+      },
+      {
+        ref: 'openai/gpt-5',
+        provider: 'openai',
+        model: 'gpt-5',
+        configured: false,
+        missing: ['OPENAI_API_KEY'],
+      },
+    ],
+  });
+  try {
+    let f = await m.type('/model ');
+    expect(f).toContain('anthropic-subscription/claude-haiku-4-5');
+    expect(f).toContain('openai/gpt-5');
+    expect(f).toContain('OPENAI_API_KEY'); // why it cannot be used yet
+    f = await m.type('haiku');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).toContain('model anthropic-subscription/claude-haiku-4-5');
+    expect(f).not.toContain('adapter '); // implied by the model
+    await m.type('olá');
+    await m.setup.mockInput.pressEnter();
+    await m.frame();
+    const req = m.client.calls.find((c) => c.method === 'submitRun')?.args[0] as {
+      model?: string;
+      adapter?: string;
+    };
+    expect(req.model).toBe('anthropic-subscription/claude-haiku-4-5');
+    expect(req.adapter).toBe('claude-code');
+    expect(loadPrefs(m.home)).toMatchObject({
+      lastModel: 'anthropic-subscription/claude-haiku-4-5',
+    });
+  } finally {
+    m.done();
   }
 });

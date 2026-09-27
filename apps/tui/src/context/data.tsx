@@ -36,6 +36,8 @@ export interface Data {
   threadOf(runId: string): string[];
   /** Submits the next turn in the tab of `rootId` (same org, project, workflow and adapter; the conversation so far travels as `messages`). */
   continueRun(rootId: string, text: string, o?: { event?: boolean }): Promise<string | undefined>;
+  /** The model the next turns of the tab run on (`/model`). */
+  setModel(rootId: string, ref: string | undefined): void;
   activate(runId?: string): void;
   nextTab(direction: 1 | -1): void;
   markRead(runId: string): void;
@@ -116,6 +118,7 @@ export function DataProvider(
         ...(reply ? [{ role: 'assistant' as const, content: reply }] : []),
       ];
     });
+    const model = state.models[rootId] ?? previous.model;
     const runId = await poller.submit({
       orgRoot: previous.orgRoot ?? '',
       project: previous.project ?? previous.workspace,
@@ -123,6 +126,8 @@ export function DataProvider(
       input: text,
       messages,
       ...(o.event ? { event: true } : {}),
+      // with a model the daemon derives the adapter from it
+      ...(model ? { model } : {}),
       adapter: previous.adapter as SubmitRequest['adapter'],
       workspace: previous.workspaceMode,
       budgetUsd: previous.budgetUsd,
@@ -258,6 +263,7 @@ export function DataProvider(
     closeRun,
     threadOf,
     continueRun,
+    setModel: (rootId, ref) => set('models', rootId, ref as never),
     activate,
     nextTab,
     markRead: (runId) => set('unread', runId, undefined as never),

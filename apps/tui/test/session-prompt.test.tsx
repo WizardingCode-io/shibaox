@@ -29,8 +29,9 @@ const chatState = (): RunState =>
     pendingApprovals: [],
   }) as unknown as RunState;
 
-async function mount() {
+async function mount(o: { models?: FakeDaemonClient['modelChoices'] } = {}) {
   const client = new FakeDaemonClient();
+  if (o.models) client.modelChoices = o.models;
   client.runs = [
     {
       runId: 'r1',
@@ -152,6 +153,38 @@ test('/cancel is not offered on a finished run', async () => {
     const f = await m.type('/');
     expect(f).not.toContain('/cancel');
     expect(f).toContain('/diff');
+  } finally {
+    m.setup.renderer.destroy();
+  }
+});
+
+test('/model in the run tab sets the model of the next turn and shows it in the context line', async () => {
+  const m = await mount({
+    models: [
+      {
+        ref: 'anthropic-subscription/claude-sonnet-5',
+        provider: 'anthropic-subscription',
+        model: 'claude-sonnet-5',
+        configured: true,
+        runtime: 'claude-code',
+      },
+    ],
+  });
+  try {
+    let f = await m.type('/model son');
+    expect(f).toContain('anthropic-subscription/claude-sonnet-5');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).toContain('anthropic-subscription/claude-sonnet-5');
+    expect(f).toContain('Continue');
+    m.client.submitResult = { runId: 'r2', warnings: [] };
+    await m.type('e agora?');
+    await m.setup.mockInput.pressEnter();
+    await m.frame();
+    const submit = m.client.calls.find((c) => c.method === 'submitRun')?.args[0] as
+      | { model?: string }
+      | undefined;
+    expect(submit?.model).toBe('anthropic-subscription/claude-sonnet-5');
   } finally {
     m.setup.renderer.destroy();
   }

@@ -81,6 +81,8 @@ export interface RunState {
   parentRunId?: string;
   /** Who asked for the run (`schedule:<id>`, `telegram:<chatId>`); absent for the CLI and the dashboard. */
   origin?: string;
+  /** The model ref chosen for the run (`/model` in the dashboard, `--model` in the CLI). */
+  model?: string;
   status: RunStatus;
   nodes: Record<string, NodeState>;
   spentUsd: number;

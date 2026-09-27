@@ -196,6 +196,38 @@ describe('RunManager', () => {
     });
   });
 
+  it('a model chosen for the run overrides the org routing and picks the adapter', async () => {
+    const s = setup(); // org.yaml without adapter (mock by default), tiers on the API provider
+    const store = new MemoryEventStore();
+    const q = fakeQuery(() => [msg.init(), msg.success('ok')]);
+    const { manager: m } = manager(store, { queryFn: q, vault: s.vault });
+    const { runId } = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'chat',
+      input: 'olá',
+      workspace: 'inplace',
+      model: 'anthropic-subscription/claude-haiku-4-5',
+    });
+    const created = (await store.read(runId))[0];
+    expect(created?.type === 'RunCreated' && created.model).toBe(
+      'anthropic-subscription/claude-haiku-4-5',
+    );
+    expect(created?.type === 'RunCreated' && created.adapter).toBe('claude-code');
+    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('completed'));
+    expect(q.calls[0]?.options?.model).toBe('claude-haiku-4-5');
+    await expect(
+      m.submit({
+        orgRoot: s.orgRoot,
+        project: s.project,
+        workflow: 'chat',
+        input: 'x',
+        workspace: 'inplace',
+        model: 'nope/x',
+      }),
+    ).rejects.toThrow(/unknown provider "nope"/);
+  });
+
   it('a claude-code chat run gets the shibaox MCP tools and the project preamble; memory reaches memory roles only', async () => {
     const s = setup({ claudeCode: true });
     const store = new MemoryEventStore();

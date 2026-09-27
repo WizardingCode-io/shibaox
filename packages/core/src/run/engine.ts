@@ -63,6 +63,7 @@ export interface StartOptions {
   orgRoot?: string;
   parentRunId?: string;
   origin?: string;
+  model?: string;
 }
 
 export class RunEngine {
@@ -101,6 +102,7 @@ export class RunEngine {
       orgRoot: opts.orgRoot,
       parentRunId: opts.parentRunId,
       origin: opts.origin,
+      model: opts.model,
     });
     return runId;
   }

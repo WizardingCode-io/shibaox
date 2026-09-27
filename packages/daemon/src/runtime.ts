@@ -40,6 +40,23 @@ export const isAdapterId = (v: unknown): v is AdapterId =>
 export const effectiveAdapter = (explicit: AdapterId | undefined, org: Org): AdapterId =>
   explicit ?? org.org.adapter ?? 'mock';
 
+/** The registry of this environment (the built-in catalog plus extra entries). */
+export const registryFor = (env: NodeJS.ProcessEnv, extra?: ProviderEntry[]): ProviderRegistry =>
+  new ProviderRegistry([...loadCatalog(), ...(extra ?? [])], env);
+
+/** The adapter a chosen model runs through: its provider's runtime, else the direct loop. */
+export function adapterForModel(ref: string, registry: ProviderRegistry): AdapterId {
+  const { provider } = registry.parseRef(ref);
+  const entry = registry.list().find((e) => e.id === provider);
+  if (!entry) throw new Error(`unknown provider "${provider}" in model ref "${ref}"`);
+  if (entry.via_runtime === 'claude-code') return 'claude-code';
+  if (entry.via_runtime)
+    throw new Error(
+      `provider "${provider}" needs runtime "${entry.via_runtime}", which is not available`,
+    );
+  return 'direct';
+}
+
 /** The project's knowledge graph, as wired into the adapters (see `prepareGraph` in run.ts). */
 export interface GraphWiring {
   /** `graph_query` for the direct adapter. */
@@ -61,6 +78,8 @@ export interface RuntimeOptions {
   workflow?: Workflow;
   /** Effective run budget; with `direct`, unpriced models produce a warning. */
   budgetUsd?: number;
+  /** A model ref chosen for the run: every task role runs on it (adapter derived from it). */
+  model?: string;
   env?: NodeJS.ProcessEnv;
   /** Providers added to the built-in catalog (tests, local overrides). */
   extraProviders?: ProviderEntry[];
@@ -151,6 +170,20 @@ export function buildRuntime(o: RuntimeOptions) {
    * roles preferring claude-code run there, the rest run direct).
    */
   const resolveRole = (role: Role, warn: (w: string) => void): ModelResolution => {
+    if (o.model) {
+      // one model for the whole run: the choice made in the dashboard or on the command line
+      const { provider, model } = registry.parseRef(o.model);
+      const entry = registry.list().find((e) => e.id === provider);
+      if (!entry) throw new Error(`unknown provider "${provider}" in model ref "${o.model}"`);
+      if (entry.via_runtime)
+        return { kind: 'runtime', runtime: entry.via_runtime, model, ref: o.model };
+      const c = registry.isConfigured(provider);
+      if (!c.ok)
+        throw new Error(
+          `provider "${provider}" is not configured (missing ${c.missing.join(', ')})`,
+        );
+      return { kind: 'direct', ref: o.model, provider, model };
+    }
     const r = resolveModel({
       role,
       models: o.org.models,

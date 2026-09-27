@@ -26,6 +26,7 @@ import { money, tilde } from '../model/format.js';
 import {
   ADAPTERS,
   type Adapter,
+  adapterForModel,
   applyPromptCommand,
   COMMAND_HINT,
   type CommandName,
@@ -122,7 +123,10 @@ export function Home(): JSX.Element {
     // the org's models decide the runtime: a subscription tier runs through claude-code, an API
     // or local tier through our own agent loop (direct); mock is never the remembered choice
     adapter: ADAPTERS.find((a) => a === prefs.data.lastAdapter && a !== 'mock') ?? 'direct',
+    model: prefs.data.lastModel,
   });
+  // the models a run can be pointed at (`/model`), from the daemon
+  const [models] = createResource(() => client.models().catch(() => []));
   const orgRoot = createMemo(() => ctx().org);
   const org = createMemo(() => orgInfo(orgRoot()));
   // what the project is (stack, tests, size), from the daemon; nothing when it cannot say
@@ -130,9 +134,14 @@ export function Home(): JSX.Element {
     () => ({ project: ctx().project, org: orgRoot() }),
     (k) => client.projectProfile(k.project, k.org).catch(() => undefined),
   );
+  // only the chosen model (not every context change) may move the adapter
+  const chosenModel = createMemo(() => ctx().model);
   createEffect(() => {
-    if (prefs.data.lastAdapter && prefs.data.lastAdapter !== 'mock') return;
-    const adapter = org().subscription ? 'claude-code' : 'direct';
+    // a chosen model decides the adapter; otherwise the org's tiers do (unless remembered)
+    const ref = chosenModel();
+    const chosen = ref ? adapterForModel(ref, models() ?? []) : undefined;
+    if (!chosen && prefs.data.lastAdapter && prefs.data.lastAdapter !== 'mock') return;
+    const adapter = chosen ?? (org().subscription ? 'claude-code' : 'direct');
     setCtx((c) => (c.adapter === adapter ? c : { ...c, adapter }));
   });
   // a closed dialog gives the keyboard back to the prompt
@@ -178,6 +187,7 @@ export function Home(): JSX.Element {
       lastOrg: req.orgRoot,
       lastAdapter: req.adapter === 'mock' ? undefined : (req.adapter as Adapter),
       lastWorkflow: wf,
+      lastModel: req.model,
     });
     prompt?.clear();
     data.openRun(runId);
@@ -195,8 +205,18 @@ export function Home(): JSX.Element {
       <text fg={theme.text.base} wrapMode="none">
         <span style={{ fg: muted }}>workflow </span>
         <span style={{ fg: accent }}>{workflow() ?? '—'}</span>
-        <span style={{ fg: muted }}> adapter </span>
-        {c.adapter}
+        {c.model ? (
+          // a chosen model implies its adapter
+          <>
+            <span style={{ fg: muted }}> model </span>
+            {c.model}
+          </>
+        ) : (
+          <>
+            <span style={{ fg: muted }}> adapter </span>
+            {c.adapter}
+          </>
+        )}
         <span style={{ fg: muted }}> project </span>
         {tilde(c.project, config.env.HOME)}
         {c.workspace ? <span style={{ fg: muted }}>{`   workspace ${c.workspace}`}</span> : ''}
@@ -226,7 +246,7 @@ export function Home(): JSX.Element {
               prompt = r;
             }}
             placeholders={PLACEHOLDERS}
-            commands={homeCommands(org().workflows)}
+            commands={homeCommands(org().workflows, models() ?? [])}
             onSubmit={(t) => void onSubmit(t)}
             onCommand={onCommand}
             onInput={() => {

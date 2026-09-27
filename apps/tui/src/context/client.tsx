@@ -4,6 +4,7 @@ import type {
   Envelope,
   Health,
   InboxItem,
+  ModelChoice,
   RunSummaryPlus,
   SubmitRequest,
 } from '@shibaox/daemon';
@@ -28,6 +29,7 @@ export interface DaemonClientLike {
   submitRun(req: SubmitRequest): Promise<{ runId: string; warnings: string[] }>;
   diff(id: string): Promise<DiffResult>;
   projectProfile(path: string, orgRoot?: string): Promise<ProjectProfile>;
+  models(): Promise<ModelChoice[]>;
 }
 
 const Context = createContext<DaemonClientLike>();

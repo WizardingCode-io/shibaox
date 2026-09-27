@@ -4,6 +4,7 @@ import type {
   Envelope,
   Health,
   InboxItem,
+  ModelChoice,
   RunSummaryPlus,
   SubmitRequest,
 } from '@shibaox/daemon';
@@ -39,6 +40,8 @@ export class FakeDaemonClient implements DaemonClientLike {
   diffs = new Map<string, DiffResult>();
   /** Project profiles by path; a missing entry is a 404 `not_found`. */
   profiles = new Map<string, ProjectProfile>();
+  /** What `/model` offers. */
+  modelChoices: ModelChoice[] = [];
   private readonly streams = new Map<string, Stream>();
 
   private record(method: string, args: unknown[]): void {
@@ -107,6 +110,11 @@ export class FakeDaemonClient implements DaemonClientLike {
     const d = this.diffs.get(id);
     if (!d) throw new DaemonHttpError(404, 'no_workspace', 'The run workspace is gone');
     return d;
+  }
+
+  async models(): Promise<ModelChoice[]> {
+    this.record('models', []);
+    return this.modelChoices;
   }
 
   async projectProfile(path: string, orgRoot?: string): Promise<ProjectProfile> {

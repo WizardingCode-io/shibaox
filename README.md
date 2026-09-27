@@ -182,7 +182,12 @@ needs an interactive terminal of at least 60×15.
 
 **Home** shows the logo and a prompt: type what you want and press `enter`. The org's `chat`
 workflow (the default) talks to the orchestrator (see below); any other workflow starts a
-team run. Under the prompt, one line says what the current project is (`Next.js · React ·
+team run. `/model` lists every model of the providers catalog (`GET /models`: configured
+ones first, the others say which key they miss) and pins one for the run
+(`provider/model`, e.g. `anthropic-subscription/claude-sonnet-5`): every task runs on it,
+the adapter follows from it (a subscription model goes through Claude Code, an API or local
+one through the direct loop), the choice is remembered, and `shibaox run --model <ref>` does
+the same from the command line. In a run tab, `/model` sets the model of the next turns. Under the prompt, one line says what the current project is (`Next.js · React ·
 TypeScript · pnpm test · 412 files`, from `GET /projects/profile`). `/` commands set the context shown inside the prompt: `/workflow`, `/adapter`
 and `/workspace` step into a list to pick from (`enter` takes the highlighted value),
 `/project <dir>`, `/org <dir>` and `/budget <usd>` take a value, `/runs` and `/help` open

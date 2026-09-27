@@ -17,6 +17,8 @@ export interface DataState {
   open: string[];
   /** The runs of each tab, oldest first: a tab continues into follow-up runs. */
   threads: Record<string, string[]>;
+  /** The model chosen with `/model` in a tab, for its next turns. */
+  models: Record<string, string>;
   active?: string;
   /** Runs with something the user has not looked at yet (tab pulse). */
   unread: Record<string, 'done' | 'needs'>;
@@ -31,6 +33,7 @@ export const initialData = (): DataState => ({
   ended: {},
   open: [],
   threads: {},
+  models: {},
   unread: {},
 });
 

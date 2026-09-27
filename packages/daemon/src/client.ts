@@ -1,6 +1,7 @@
 import { request as httpRequest } from 'node:http';
 import type { ProjectProfile, RunState } from '@shibaox/core';
 import type { ScheduleRow } from '@shibaox/persistence-sqlite';
+import type { ModelChoice } from '@shibaox/providers';
 import type { InboxItem } from './inbox.js';
 import type { RunSummaryPlus, SubmitRequest } from './run-manager.js';
 import type { DiffResult } from './runs/diff.js';
@@ -105,6 +106,10 @@ export class DaemonClient {
   }
   getRun(id: string): Promise<RunState> {
     return this.json('GET', `/runs/${encodeURIComponent(id)}`);
+  }
+  /** The models a run can be pointed at (`/model`), with whether the daemon can use them. */
+  models(): Promise<ModelChoice[]> {
+    return this.json('GET', '/models');
   }
   /** What a project directory is (stack, tests, size); 404 when the path does not exist. */
   projectProfile(path: string, orgRoot?: string): Promise<ProjectProfile> {

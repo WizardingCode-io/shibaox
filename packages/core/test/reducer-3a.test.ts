@@ -18,6 +18,9 @@ describe('phase 3A state', () => {
     };
     expect(replay([created]).parentRunId).toBe('p');
     expect(replay([{ ...created, origin: 'schedule:s1' }]).origin).toBe('schedule:s1');
+    expect(replay([{ ...created, model: 'anthropic/claude-sonnet-5' }]).model).toBe(
+      'anthropic/claude-sonnet-5',
+    );
     expect(replay([created]).origin).toBeUndefined();
     expect(replay([{ ...created, parentRunId: undefined }]).parentRunId).toBeUndefined();
   });

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
-import type { SubmitRequest } from '@shibaox/daemon';
+import type { ModelChoice, SubmitRequest } from '@shibaox/daemon';
 import fuzzysort from 'fuzzysort';
 
 export type Adapter = 'mock' | 'claude-code' | 'direct';
@@ -15,9 +15,12 @@ export interface PromptContext {
   adapter: Adapter;
   budgetUsd?: number;
   workspace?: 'inplace' | 'worktree';
+  /** A model ref (`provider/model`) for every task; the adapter follows from it. */
+  model?: string;
 }
 
 export const COMMANDS = [
+  'model',
   'workflow',
   'project',
   'org',
@@ -31,6 +34,7 @@ export type CommandName = (typeof COMMANDS)[number];
 
 /** How each command takes its value: from a list, as free text, or none (it acts at once). */
 export const COMMAND_KIND: Record<CommandName, 'choice' | 'text' | 'action'> = {
+  model: 'choice',
   workflow: 'choice',
   adapter: 'choice',
   workspace: 'choice',
@@ -43,6 +47,7 @@ export const COMMAND_KIND: Record<CommandName, 'choice' | 'text' | 'action'> = {
 
 /** What to ask for when a free-text command is entered without its value. */
 export const COMMAND_HINT: Record<CommandName, string> = {
+  model: 'pick the provider/model for the run',
   workflow: 'pick a workflow of the org',
   adapter: 'pick an adapter: mock, claude-code or direct',
   workspace: 'pick inplace or worktree',
@@ -57,29 +62,71 @@ export interface PromptCommand {
   arg: string;
 }
 
+/** A value a choice command offers, with what to say about it. */
+export interface ValueChoice {
+  value: string;
+  hint?: string;
+}
+
 /** A `/command` a prompt offers: its kind decides what enter does, `values` feed the list. */
 export interface PromptCommandSpec {
   name: string;
   kind: 'choice' | 'text' | 'action';
   hint: string;
-  values?: () => readonly string[];
+  values?: () => readonly (string | ValueChoice)[];
 }
 
-/** The home prompt's commands (the run context), with the org's workflows as values. */
-export function homeCommands(workflows: readonly string[]): PromptCommandSpec[] {
-  return COMMANDS.map((name) => ({
-    name,
-    kind: COMMAND_KIND[name],
-    hint: COMMAND_HINT[name],
-    values:
-      name === 'workflow'
-        ? () => workflows
-        : name === 'adapter'
-          ? () => ADAPTERS
-          : name === 'workspace'
-            ? () => WORKSPACES
-            : undefined,
-  }));
+/** `/model` values: the daemon's models, configured ones first, the others say what they miss. */
+export function modelValues(models: readonly ModelChoice[]): ValueChoice[] {
+  return [...models]
+    .sort((a, b) => Number(b.configured) - Number(a.configured))
+    .map((m) => ({
+      value: m.ref,
+      hint: m.configured
+        ? (m.runtime ?? 'direct')
+        : `needs ${m.missing?.join(', ') || 'configuration'}`,
+    }));
+}
+
+/** The model spec of a `/model` command for both prompts. */
+export function modelCommand(models: () => readonly ModelChoice[]): PromptCommandSpec {
+  return {
+    name: 'model',
+    kind: 'choice',
+    hint: COMMAND_HINT.model,
+    values: () => modelValues(models()),
+  };
+}
+
+/** The home prompt's commands (the run context), with the org's workflows and the models as values. */
+export function homeCommands(
+  workflows: readonly string[],
+  models: readonly ModelChoice[] = [],
+): PromptCommandSpec[] {
+  return COMMANDS.map((name) =>
+    name === 'model'
+      ? modelCommand(() => models)
+      : {
+          name,
+          kind: COMMAND_KIND[name],
+          hint: COMMAND_HINT[name],
+          values:
+            name === 'workflow'
+              ? () => workflows
+              : name === 'adapter'
+                ? () => ADAPTERS
+                : name === 'workspace'
+                  ? () => WORKSPACES
+                  : undefined,
+        },
+  );
+}
+
+/** The adapter a chosen model runs through, from the daemon's list (`claude-code` for a subscription). */
+export function adapterForModel(ref: string, models: readonly ModelChoice[]): Adapter | undefined {
+  const m = models.find((x) => x.ref === ref);
+  if (!m) return undefined;
+  return m.runtime === 'claude-code' ? 'claude-code' : 'direct';
 }
 
 export function parsePromptCommand(
@@ -126,8 +173,14 @@ export function completeCommand(
     }));
   }
   const arg = (m[3] ?? '').trim();
-  const values = byName.get(name)?.values?.() ?? [];
-  return rank(arg, values).map((v) => ({ label: v, insert: `/${name} ${v}` }));
+  const values = (byName.get(name)?.values?.() ?? []).map((v) =>
+    typeof v === 'string' ? { value: v } : v,
+  );
+  const hints = new Map(values.map((v) => [v.value, v.hint]));
+  return rank(
+    arg,
+    values.map((v) => v.value),
+  ).map((v) => ({ label: v, insert: `/${name} ${v}`, hint: hints.get(v) }));
 }
 
 export function expandHome(p: string): string {
@@ -147,6 +200,11 @@ export function applyPromptCommand(
     return isAbsolute(e) ? e : resolve(o.cwd, e);
   };
   switch (cmd.command as CommandName) {
+    case 'model': {
+      if (!/^[a-z0-9][a-z0-9-]*\/\S+$/i.test(cmd.arg))
+        return { error: 'Model must look like provider/model (see /model for the list)' };
+      return { ...ctx, model: cmd.arg };
+    }
     case 'workflow':
       if (!cmd.arg) return { error: 'Workflow name is required' };
       return { ...ctx, workflow: cmd.arg };
@@ -191,5 +249,6 @@ export function toSubmitRequest(ctx: PromptContext, input: string): SubmitReques
     adapter: ctx.adapter,
     workspace: ctx.workspace,
     budgetUsd: ctx.budgetUsd,
+    ...(ctx.model ? { model: ctx.model } : {}),
   };
 }

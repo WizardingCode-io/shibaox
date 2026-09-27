@@ -7,6 +7,8 @@ export interface Prefs {
   lastOrg?: string;
   lastAdapter?: string;
   lastWorkflow?: string;
+  /** The model chosen with `/model` (`provider/model`). */
+  lastModel?: string;
   animations?: boolean;
   sidebarWidth?: number;
   sidebar?: 'auto' | 'hide';
