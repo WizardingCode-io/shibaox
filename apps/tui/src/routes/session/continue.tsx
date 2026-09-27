@@ -1,8 +1,9 @@
-import { createMemo, type JSX } from 'solid-js';
-import { Prompt } from '../../component/prompt/index.js';
+import { createEffect, createMemo, type JSX, on } from 'solid-js';
+import { Prompt, type PromptRef } from '../../component/prompt/index.js';
 import { useCommands } from '../../context/commands.js';
 import { useKeys } from '../../context/keys.js';
 import type { PromptCommandSpec } from '../../model/prompt-commands.js';
+import { useDialog } from '../../ui/dialog.js';
 
 const PLACEHOLDERS = ['Continue… "Now add tests for it"', 'Continue… "/diff shows the changes"'];
 
@@ -17,6 +18,18 @@ export function ContinuePrompt(props: {
   footer?: JSX.Element;
 }): JSX.Element {
   const registry = useCommands();
+  const dialog = useDialog();
+  let prompt: PromptRef | undefined;
+  // a dialog opened from here (diff, help, runs) takes the keys; the prompt gets them back after
+  createEffect(
+    on(
+      dialog.depth,
+      (d) => {
+        if (d === 0) setTimeout(() => prompt?.focus(), 0);
+      },
+      { defer: true },
+    ),
+  );
   // the screen's own commands first, then the shell's
   const ORDER = ['diff', 'cancel', 'resume', 'sidebar', 'home', 'runs', 'help', 'close', 'quit'];
   const rank = (id: string) => {
@@ -41,7 +54,11 @@ export function ContinuePrompt(props: {
   });
   return (
     <Prompt
+      ref={(r) => {
+        prompt = r;
+      }}
       bare
+      disabled={dialog.depth() > 0}
       placeholders={PLACEHOLDERS}
       commands={commands()}
       onSubmit={props.onSubmit}

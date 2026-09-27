@@ -617,6 +617,7 @@ describe('DirectAdapter', () => {
     expect(usage[1]).toMatchObject({
       type: 'usage',
       model: 'fake/m',
+      contextTokens: expect.any(Number),
       outputTokens: expect.any(Number),
     });
     expect(usage[1]).not.toHaveProperty('contextWindow'); // the fake provider has no window

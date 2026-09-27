@@ -53,6 +53,9 @@ describe('LlmClient over an OpenAI-compatible fake', () => {
     });
     expect(r.text).toBe('the sum is 5');
     expect(r.steps).toBe(2);
+    // the last step's prompt is what sits in the context; the total adds every step up
+    expect(r.lastStepInputTokens).toBeGreaterThan(0);
+    expect(r.lastStepInputTokens).toBeLessThan(r.usage.inputTokens);
     expect(fake.requests).toHaveLength(2);
     await fake.close();
   });

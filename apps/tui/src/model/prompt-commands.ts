@@ -97,7 +97,7 @@ export function parsePromptCommand(
 export const SUGGESTIONS = 10;
 
 function rank(query: string, targets: readonly string[]): string[] {
-  if (!query) return [...targets];
+  if (!query) return targets.slice(0, SUGGESTIONS);
   return fuzzysort.go(query, targets, { limit: SUGGESTIONS }).map((r) => r.target);
 }
 

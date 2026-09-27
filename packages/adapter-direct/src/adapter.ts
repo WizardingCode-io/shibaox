@@ -174,7 +174,7 @@ export class DirectAdapter implements RuntimeAdapter {
       yield { type: 'error', message: describeError(settled.e) };
       return;
     }
-    const { usage, text, finishReason, steps } = settled.r;
+    const { usage, text, finishReason, steps, lastStepInputTokens } = settled.r;
     const cost = {
       usd: this.opts.registry.estimateCost(ref, usage) ?? 0,
       inputTokens: usage.inputTokens,
@@ -184,6 +184,7 @@ export class DirectAdapter implements RuntimeAdapter {
     yield {
       type: 'usage',
       model: ref,
+      contextTokens: lastStepInputTokens,
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
       ...(contextWindow ? { contextWindow } : {}),

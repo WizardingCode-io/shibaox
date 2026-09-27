@@ -1,9 +1,9 @@
 import { loadOrg, type Org } from '@shibaox/schemas';
-import { createMemo, createResource, type JSX } from 'solid-js';
+import { createMemo, createResource, For, type JSX } from 'solid-js';
 import { useClient } from '../../context/client.js';
 import { useConfig } from '../../context/config.js';
 import { useData } from '../../context/data.js';
-import { duration, money, tilde, tokens } from '../../model/format.js';
+import { money, tilde, tokens } from '../../model/format.js';
 import { runUsage } from '../../model/stream.js';
 import { useTheme } from '../../theme/context.js';
 
@@ -38,13 +38,14 @@ export function plannedModel(
 
 /** `12% ctx` / `24.0k tokens` from a usage record. */
 export function contextLabel(
-  u: { contextTokens?: number; contextWindow?: number; inputTokens?: number } | undefined,
+  u: { contextTokens?: number; contextWindow?: number } | undefined,
 ): { text: string; ratio?: number } | undefined {
-  if (!u) return undefined;
-  const used = u.contextTokens ?? u.inputTokens;
+  // only what the runtime measured as the context; call totals would overstate it
+  const used = u?.contextTokens;
   if (used === undefined) return undefined;
-  if (u.contextWindow) {
-    const ratio = used / u.contextWindow;
+  const window = u?.contextWindow;
+  if (window) {
+    const ratio = used / window;
     return { text: `${Math.round(ratio * 100)}% ctx`, ratio };
   }
   return { text: `${tokens(used)} tokens` };
@@ -89,64 +90,39 @@ export function ContextLine(props: { runId: string; elapsed?: string }): JSX.Ele
         ? theme.text.feedback.warning
         : theme.text.base;
   };
-  const sep = () => <span style={{ fg: muted }}>{' · '}</span>;
-  return (
-    <text fg={theme.text.base} wrapMode="none" flexShrink={1}>
-      {ctx() ? (
-        <>
-          <span style={{ fg: ctxColor() }}>{ctx()?.text ?? ''}</span>
-          {sep()}
-        </>
-      ) : (
-        ''
-      )}
-      {model() ? (
-        <>
-          {model()}
-          {sep()}
-        </>
-      ) : planned() ? (
-        <>
-          <span style={{ fg: muted }}>{planned() ?? ''}</span>
-          {sep()}
-        </>
-      ) : (
-        ''
-      )}
-      {branch() ? (
-        <>
+  const parts = (): JSX.Element[] => {
+    const out: JSX.Element[] = [];
+    const c = ctx();
+    if (c) out.push(<span style={{ fg: ctxColor() }}>{c.text}</span>);
+    if (model()) out.push(<span>{model() ?? ''}</span>);
+    else if (planned()) out.push(<span style={{ fg: muted }}>{planned() ?? ''}</span>);
+    if (branch())
+      out.push(
+        <span>
           <span style={{ fg: theme.text.action.primary.selected }}>{'⎇ '}</span>
           {branch()}
-          {sep()}
-        </>
-      ) : (
-        ''
-      )}
-      {project() ? tilde(project() ?? '', config.env.HOME) : ''}
-      {org()?.org.organization ? (
-        <>
-          {sep()}
-          <span style={{ fg: muted }}>{org()?.org.organization ?? ''}</span>
-        </>
-      ) : (
-        ''
-      )}
-      {sep()}
-      <span style={{ fg: theme.text.action.primary.selected }}>
-        {summary()?.workflow ?? state()?.workflow ?? ''}
-      </span>
-      {sep()}
-      <span style={{ fg: muted }}>{money(spent())}</span>
-      {props.elapsed ? (
-        <>
-          {sep()}
-          <span style={{ fg: muted }}>{props.elapsed}</span>
-        </>
-      ) : (
-        ''
-      )}
+        </span>,
+      );
+    if (project()) out.push(<span>{tilde(project() ?? '', config.env.HOME)}</span>);
+    const organization = org()?.org.organization;
+    if (organization) out.push(<span style={{ fg: muted }}>{organization}</span>);
+    const workflow = summary()?.workflow ?? state()?.workflow;
+    if (workflow)
+      out.push(<span style={{ fg: theme.text.action.primary.selected }}>{workflow}</span>);
+    out.push(<span style={{ fg: muted }}>{money(spent())}</span>);
+    if (props.elapsed) out.push(<span style={{ fg: muted }}>{props.elapsed}</span>);
+    return out;
+  };
+  return (
+    <text fg={theme.text.base} wrapMode="none" flexShrink={1}>
+      <For each={parts()}>
+        {(part, i) => (
+          <>
+            {i() > 0 ? <span style={{ fg: muted }}>{' · '}</span> : ''}
+            {part}
+          </>
+        )}
+      </For>
     </text>
   );
 }
-
-export { duration };

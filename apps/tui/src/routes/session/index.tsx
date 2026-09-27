@@ -85,7 +85,6 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
     data.state.ended[latest()] ?? state()?.status ?? summary()?.status ?? 'queued';
   const look = () => statusOf({ status: status() });
   const working = () => status() === 'running';
-  const _spent = () => state()?.spentUsd ?? summary()?.spentUsd ?? 0;
   const elapsed = () => {
     const created = summary()?.createdAt;
     const updated = summary()?.updatedAt;
@@ -169,7 +168,7 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
       run: toggleSidebar,
       when: () => !props.single,
     },
-    { id: 'cancel', label: 'Cancel run', keys: 'c', run: cancel },
+    { id: 'cancel', label: 'Cancel run', keys: 'c', run: cancel, when: () => !finished() },
     {
       id: 'resume',
       label: 'Resume run',

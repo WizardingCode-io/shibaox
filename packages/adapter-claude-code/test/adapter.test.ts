@@ -489,14 +489,27 @@ describe('ClaudeCodeAdapter (3A)', () => {
 });
 
 describe('ClaudeCodeAdapter usage', () => {
-  it('reports the model at init and the context tokens and window at the result', async () => {
+  it('reports the model at init and, at the result, the context of the last call (not the session total) with the window', async () => {
     const q = fakeQuery(() => [
       msg.init({ model: 'claude-haiku-4-5' }),
+      // two API calls: the context grows; the result's usage adds both up (20 500 + 30 100)
+      msg.text('thinking', {
+        input_tokens: 100,
+        cache_read_input_tokens: 20_000,
+        cache_creation_input_tokens: 400,
+        output_tokens: 20,
+      }),
+      msg.text('done', {
+        input_tokens: 100,
+        cache_read_input_tokens: 30_000,
+        cache_creation_input_tokens: 0,
+        output_tokens: 30,
+      }),
       msg.success('ok', {
         usage: {
-          input_tokens: 100,
+          input_tokens: 200,
           output_tokens: 50,
-          cache_read_input_tokens: 20_000,
+          cache_read_input_tokens: 50_000,
           cache_creation_input_tokens: 400,
         } as never,
         modelUsage: {
@@ -521,9 +534,9 @@ describe('ClaudeCodeAdapter usage', () => {
     expect(usage[1]).toEqual({
       type: 'usage',
       model: 'claude-haiku-4-5',
-      contextTokens: 20_500,
+      contextTokens: 30_100,
       contextWindow: 200_000,
-      inputTokens: 100,
+      inputTokens: 200,
       outputTokens: 50,
     });
   });

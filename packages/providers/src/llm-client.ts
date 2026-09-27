@@ -27,7 +27,10 @@ export interface GenerateArgs {
 export interface GenerateResult<T = unknown> {
   text: string;
   output?: T;
+  /** Totals over every step of the call. */
   usage: { inputTokens: number; outputTokens: number };
+  /** Input tokens of the last step: what the model's context held at the end. */
+  lastStepInputTokens: number;
   steps: number;
   /** Why the last step ended (e.g. 'stop', 'tool-calls', 'length'). */
   finishReason: FinishReason;
@@ -56,6 +59,7 @@ export async function generate<T = unknown>(args: GenerateArgs): Promise<Generat
       inputTokens: r.usage.inputTokens ?? 0,
       outputTokens: r.usage.outputTokens ?? 0,
     },
+    lastStepInputTokens: r.steps.at(-1)?.usage.inputTokens ?? r.usage.inputTokens ?? 0,
     steps: r.steps.length,
     finishReason: r.finishReason,
   };

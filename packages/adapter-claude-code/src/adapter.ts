@@ -199,6 +199,8 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     const toolNames = new Map<string, string>();
     const toolStarted = new Map<string, number>();
     let model: string | undefined;
+    // the context at the end is the input of the last main-loop API call, not the session total
+    let lastCall: { input: number; cacheRead: number; cacheCreation: number } | undefined;
     try {
       for await (const m of this.queryFn({ prompt, options })) {
         if (m.type === 'system' && m.subtype === 'init') {
@@ -218,6 +220,21 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
               ctx.log(`[claude-code] warning: MCP server ${s.name} ${s.status}`);
         } else if (m.type === 'assistant') {
           const parentToolUseId = m.parent_tool_use_id ?? undefined;
+          const callUsage = (
+            m.message as {
+              usage?: {
+                input_tokens?: number | null;
+                cache_read_input_tokens?: number | null;
+                cache_creation_input_tokens?: number | null;
+              } | null;
+            }
+          ).usage;
+          if (callUsage && !parentToolUseId)
+            lastCall = {
+              input: callUsage.input_tokens ?? 0,
+              cacheRead: callUsage.cache_read_input_tokens ?? 0,
+              cacheCreation: callUsage.cache_creation_input_tokens ?? 0,
+            };
           for (const block of m.message.content) {
             if (block.type === 'text') yield { type: 'text', text: block.text, parentToolUseId };
             else if (block.type === 'tool_use') {
@@ -257,7 +274,8 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
             inputTokens: m.usage.input_tokens,
             outputTokens: m.usage.output_tokens,
           };
-          // how full the context is: the last call's input (fresh + cached) against the window
+          // how full the context is: the last call's input (fresh + cached) against the window;
+          // the result's own usage adds every call up, so it only gives the totals
           const perModel = Object.entries(m.modelUsage ?? {});
           const busiest = perModel.sort(
             (a, b) =>
@@ -266,22 +284,15 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
               (a[1].inputTokens + a[1].cacheReadInputTokens),
           )[0];
           const usedModel = busiest?.[0] ?? model;
-          const u = m.usage as {
-            input_tokens: number;
-            output_tokens: number;
-            cache_read_input_tokens?: number | null;
-            cache_creation_input_tokens?: number | null;
-          };
           yield {
             type: 'usage',
             ...(usedModel ? { model: usedModel } : {}),
-            contextTokens:
-              u.input_tokens +
-              (u.cache_read_input_tokens ?? 0) +
-              (u.cache_creation_input_tokens ?? 0),
+            ...(lastCall
+              ? { contextTokens: lastCall.input + lastCall.cacheRead + lastCall.cacheCreation }
+              : {}),
             ...(busiest?.[1].contextWindow ? { contextWindow: busiest[1].contextWindow } : {}),
-            inputTokens: u.input_tokens,
-            outputTokens: u.output_tokens,
+            inputTokens: m.usage.input_tokens,
+            outputTokens: m.usage.output_tokens,
           };
           if (deferred) yield { ...pending(), cost };
           else if (m.subtype === 'error_max_budget_usd')

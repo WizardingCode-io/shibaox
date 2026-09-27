@@ -42,10 +42,10 @@ export const msg = {
       session_id: 'fake-session',
       ...extra,
     }) as unknown as SDKMessage,
-  text: (text: string) =>
+  text: (text: string, usage?: Record<string, number>) =>
     ({
       type: 'assistant',
-      message: { content: [{ type: 'text', text }] },
+      message: { content: [{ type: 'text', text }], ...(usage ? { usage } : {}) },
     }) as unknown as SDKMessage,
   toolUse: (id: string, name: string, input: unknown, extra: Record<string, unknown> = {}) =>
     ({

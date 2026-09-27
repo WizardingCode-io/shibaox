@@ -126,3 +126,33 @@ test('ctrl+c clears a typed command; plain text still continues the conversation
     m.setup.renderer.destroy();
   }
 });
+
+test('keys pressed inside a dialog opened from the prompt never reach the input, and the prompt gets focus back', async () => {
+  const m = await mount();
+  try {
+    await m.type('/help');
+    await m.setup.mockInput.pressEnter();
+    let f = await m.frame();
+    expect(f).toContain('Keys');
+    await m.type('jk'); // navigation keys of the dialog
+    await m.setup.mockInput.pressEscape();
+    f = await m.frame();
+    expect(f).not.toContain('Keys');
+    expect(f).not.toContain('› jk');
+    f = await m.type('xyz');
+    expect(f).toContain('› xyz'); // the prompt is focused again
+  } finally {
+    m.setup.renderer.destroy();
+  }
+});
+
+test('/cancel is not offered on a finished run', async () => {
+  const m = await mount();
+  try {
+    const f = await m.type('/');
+    expect(f).not.toContain('/cancel');
+    expect(f).toContain('/diff');
+  } finally {
+    m.setup.renderer.destroy();
+  }
+});
