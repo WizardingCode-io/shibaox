@@ -300,12 +300,12 @@ export async function discoverModels(
   for (const e of registry.list()) {
     if (e.kind === 'openrouter' && e.auth?.type === 'api_key') {
       // the whole OpenRouter catalogue once the key is there: the catalog's picks first
-      const catalog = listModels(registry).filter((m) => m.provider === e.id);
       const apiKey = registry.isConfigured(e.id).ok ? registry.envValue(e.auth.env) : undefined;
       const remote = apiKey
         ? await probeOpenRouter(e, apiKey, { fetch: doFetch, timeoutMs: Math.max(timeoutMs, 4000) })
         : undefined;
-      out.push(...catalog);
+      // listed after the probe: the catalog's picks carry the windows the listing just taught
+      out.push(...listModels(registry).filter((m) => m.provider === e.id));
       for (const m of remote ?? [])
         if (!e.models.includes(m.id))
           out.push({

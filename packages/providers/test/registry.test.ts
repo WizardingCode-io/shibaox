@@ -275,6 +275,8 @@ describe('discoverModels (OpenRouter)', () => {
         'openrouter/google/gemini-2.5-flash',
         'openrouter/mistralai/devstral-small',
       ]);
+      // a catalog model gets its window from the same listing, on the first call
+      expect(withKey[0]).toMatchObject({ ref: 'openrouter/openai/gpt-5', contextWindow: 400000 });
       expect(withKey[1]).toMatchObject({
         configured: true,
         contextWindow: 1048576,
