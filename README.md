@@ -101,7 +101,15 @@ needs it starts it in the background and says so; `SHIBAOX_NO_AUTOSTART=1` disab
 shibaox daemon start --detach   # or in the foreground: shibaox daemon start
 shibaox daemon status
 shibaox daemon stop             # waits for active runs; --force cancels them
+shibaox daemon install          # macOS: a launchd agent starts it at login and restarts it
+shibaox daemon uninstall
 ```
+
+- **Service.** `daemon install` writes `~/Library/LaunchAgents/io.shibaox.daemon.plist` and
+  loads it: the daemon starts now and at every login, and launchd restarts it if it exits.
+  The agent runs the CLI through `/bin/zsh -lc`, so it gets the environment of your login
+  shell (provider keys, the Telegram token); nothing is copied into the plist. `daemon stop`
+  says when launchd will start it again; `daemon status` and `doctor` show the service.
 
 - **Files.** `daemon.sock` (0600, HTTP JSON + SSE, no authentication: only your user reaches
   it), `daemon.pid`, `daemon.log`, `daemon.yaml`, `events.db` (one SQLite database for every
@@ -123,6 +131,17 @@ shibaox daemon stop             # waits for active runs; --force cancels them
 - **Schedules.** `shibaox schedule add "0 9 * * 1-5" hello-feature --org ./org --project
   ./project --input "daily check"`, `schedule list|rm|run`. A schedule whose previous run is
   still active is skipped (logged).
+- **Reports.** A run asked for by a schedule or from Telegram carries an `origin`
+  (`schedule:<id>`, `telegram:<chatId>`; runs it dispatches inherit it). When it ends, a
+  report goes through the outbox to every channel that shows reports: Telegram gets `✓
+  hello-feature done · 5 nodes · $0.12 · 8m 42s · branch …` plus one line per node (≤ 200
+  chars), what still needs you, the error, and the vault note path; macOS gets a
+  notification. A conversation run (`conversation: true`) reports its reply only.
+- **Talking from Telegram.** With `org` and `project` set under `channels.telegram`, any text
+  you send the bot is a turn for the orchestrator: a `chat` run (in place, on that project)
+  with the conversation so far, whose reply comes back to the chat. `/status` answers with
+  the daemon, its runs and what needs you; `/help` lists this. The thread lives in memory
+  (a restart forgets it; the orchestrator's `remember` notes do not).
 
 `daemon.yaml` (every key optional):
 
@@ -131,7 +150,13 @@ max_concurrent_runs: 4
 approval_timeout_minutes: 120
 channels:
   macos: { enabled: true }
-  telegram: { bot_token_env: SHIBAOX_TELEGRAM_TOKEN, chat_id: 123456789 }
+  telegram:
+    bot_token_env: SHIBAOX_TELEGRAM_TOKEN
+    chat_id: 123456789
+    org: /path/to/org          # with org + project, text messages talk to the orchestrator
+    project: /path/to/project
+    workflow: chat             # default
+    # adapter: claude-code
 ```
 
 - **Environment.** The daemon keeps the environment of the shell that started it: provider
