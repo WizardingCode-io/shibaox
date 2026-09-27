@@ -518,6 +518,37 @@ test('without an org next to the project, the home uses the org under the shibao
   }
 });
 
+test("the org's adapter is the dashboard's default runtime", async () => {
+  const m = await mount({
+    models: [
+      { ref: 'openrouter/openai/gpt-5', provider: 'openrouter', model: 'gpt-5', configured: true },
+    ],
+  });
+  try {
+    writeFileSync(
+      join(m.dir, 'org', 'org.yaml'),
+      `${readFileSync(join(m.dir, 'org', 'org.yaml'), 'utf8')}\nadapter: claude-code\n`,
+    );
+    // the home reads the org again after a /tiers save; here the file changed under it
+    m.client.orgConfigs.set(join(m.dir, 'org'), {
+      root: join(m.dir, 'org'),
+      organization: 'my-org',
+      adapter: 'claude-code',
+      tiers: { strong: 'anthropic/claude-sonnet-5' },
+    });
+    await m.type('/tiers');
+    await m.setup.mockInput.pressEnter();
+    await m.setup.mockInput.pressEnter(); // strong → model list
+    await new Promise((r) => setTimeout(r, 20));
+    await m.type('gpt');
+    await m.setup.mockInput.pressEnter(); // saved: the home reads the org again
+    await m.setup.mockInput.pressEscape();
+    expect(await m.frame()).toContain('adapter claude-code');
+  } finally {
+    m.done();
+  }
+});
+
 test('/tiers shows the org tiers and changes one through the daemon', async () => {
   const m = await mount({
     models: [

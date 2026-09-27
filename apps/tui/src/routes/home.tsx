@@ -58,6 +58,8 @@ interface OrgInfo {
   /** Workflows marked `conversation: true` (the org's `chat`): they run in place. */
   single: string[];
   subscription: boolean;
+  /** `org.yaml adapter`: the org's default runtime. */
+  adapter?: 'mock' | 'direct' | 'claude-code';
   error?: string;
 }
 
@@ -72,6 +74,7 @@ function orgInfo(root: string): OrgInfo {
         .filter((w) => w.conversation)
         .map((w) => w.workflow),
       subscription: /-subscription\//.test(strong),
+      adapter: org.org.adapter,
     };
   } catch (e) {
     if (e instanceof OrgLoadError && /not found/i.test(e.message))
@@ -155,7 +158,7 @@ export function Home(): JSX.Element {
     const ref = chosenModel();
     const chosen = ref ? adapterForModel(ref, models() ?? []) : undefined;
     if (!chosen && prefs.data.lastAdapter && prefs.data.lastAdapter !== 'mock') return;
-    const adapter = chosen ?? (org().subscription ? 'claude-code' : 'direct');
+    const adapter = chosen ?? org().adapter ?? (org().subscription ? 'claude-code' : 'direct');
     setCtx((c) => (c.adapter === adapter ? c : { ...c, adapter }));
   });
   // a closed dialog gives the keyboard back to the prompt

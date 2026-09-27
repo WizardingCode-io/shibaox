@@ -195,6 +195,15 @@ describe('shibaox CLI against a daemon', () => {
     expect(rows.find((r) => r.name === 'strong')?.value).toBe('openrouter/openai/gpt-5');
     const bad = await cli('tiers', 'set', 'judge', 'nope', '--org', org);
     expect(bad.code).not.toBe(0);
+    // a budget typo or clearing a tier is refused, never silently applied
+    expect((await cli('tiers', 'set', 'budget', '$10', '--org', org)).code).not.toBe(0);
+    expect((await cli('tiers', 'set', 'budget', 'none', '--org', org)).code).not.toBe(0);
+    expect((await cli('tiers', 'set', 'strong', 'none', '--org', org)).code).not.toBe(0);
+    const after = json<{ name: string; value?: string }>(
+      await cli('tiers', '--org', org, '--json'),
+    );
+    expect(after.find((r) => r.name === 'budget')?.value).toBe('5');
+    expect(after.find((r) => r.name === 'strong')?.value).toBe('openrouter/openai/gpt-5');
   });
 
   it('run without --org uses the org under the shibaox home', async () => {

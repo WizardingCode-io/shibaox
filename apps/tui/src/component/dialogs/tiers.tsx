@@ -34,7 +34,7 @@ export function tierChoices(name: RowName, models: readonly ModelChoice[]): stri
   const refs = [...models]
     .sort((a, b) => Number(b.configured) - Number(a.configured))
     .map((m) => m.ref);
-  return name === 'decision' || name === 'judge' ? ['jev-latest', ...refs] : refs;
+  return name === 'decision' ? ['jev-latest', ...refs] : refs;
 }
 
 /**

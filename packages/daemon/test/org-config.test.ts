@@ -77,4 +77,35 @@ describe('org config', () => {
     expect(() => writeOrgConfig(root, { per_run_usd: -1 })).toThrow(/budget/);
     expect(loadOrg(root).models.tiers.strong).toBe('anthropic/claude-sonnet-5'); // untouched
   });
+  it('never leaves the org unloadable: bad types, empty adapter, unknown tiers are refused before any write', () => {
+    const root = org();
+    const before = readFileSync(join(root, 'models.yaml'), 'utf8');
+    expect(() => writeOrgConfig(root, { adapter: '' as never })).toThrow(/adapter/);
+    expect(() => writeOrgConfig(root, { per_run_usd: '10' as never })).toThrow(/budget/);
+    expect(() => writeOrgConfig(root, { per_run_usd: Number.NaN })).toThrow(/budget/);
+    expect(() => writeOrgConfig(root, { tiers: { foo: 'a/b' } as never })).toThrow(/tier/);
+    expect(() => writeOrgConfig(root, { tiers: { strong: null } })).toThrow(/strong/);
+    // a mixed patch that fails on org.yaml leaves models.yaml untouched too
+    expect(() =>
+      writeOrgConfig(root, { tiers: { strong: 'openrouter/x/y' }, adapter: 'nope' as never }),
+    ).toThrow(/adapter/);
+    expect(readFileSync(join(root, 'models.yaml'), 'utf8')).toBe(before);
+    expect(() => loadOrg(root)).not.toThrow();
+  });
+  it('accepts jev-* only for the decision tier', () => {
+    const root = org();
+    expect(() => writeOrgConfig(root, { tiers: { strong: 'jev-latest' } })).toThrow(/strong/);
+    expect(() => writeOrgConfig(root, { tiers: { cheap: 'jev-latest' } })).toThrow(/cheap/);
+    expect(() => writeOrgConfig(root, { judge: 'jev-latest' })).toThrow(/judge/);
+    expect(writeOrgConfig(root, { tiers: { decision: 'jev-latest' } }).tiers.decision).toBe(
+      'jev-latest',
+    );
+  });
+  it('clearing a value whose parent key is missing is a no-op', () => {
+    const root = org();
+    writeFileSync(join(root, 'models.yaml'), 'tiers:\n  strong: anthropic/claude-sonnet-5\n');
+    writeFileSync(join(root, 'org.yaml'), 'organization: my-org\nteams: []\n');
+    expect(() => writeOrgConfig(root, { judge: null, per_run_usd: null })).not.toThrow();
+    expect(readOrgConfig(root).judge).toBeUndefined();
+  });
 });

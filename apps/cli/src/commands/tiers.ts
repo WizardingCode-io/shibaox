@@ -37,7 +37,7 @@ export async function tiersList(o: { org?: string }, out: Out): Promise<number> 
   }
   out.line('');
   out.line(
-    'Change one with: shibaox tiers set <strong|cheap|decision|judge|adapter|budget> <value>   (value "none" clears judge/adapter)',
+    'Change one with: shibaox tiers set <strong|cheap|decision|judge|adapter|budget> <value>   ("none" clears judge/adapter; a budget of "—" means no spend limit)',
   );
   return 0;
 }
@@ -53,16 +53,31 @@ export async function tiersSet(
     out.obj({ name, set: false });
     return 1;
   }
+  const clear = value === 'none';
+  if (clear && (name === 'budget' || !(name === 'judge' || name === 'adapter'))) {
+    out.line(
+      name === 'budget'
+        ? 'A budget cannot be cleared here: set a positive amount (runs without one have no spend limit).'
+        : `Tier ${name} cannot be cleared: pick another model.`,
+    );
+    out.obj({ name, set: false });
+    return 1;
+  }
+  const budget = name === 'budget' ? Number(value) : undefined;
+  if (budget !== undefined && !(Number.isFinite(budget) && budget > 0)) {
+    out.line(`Budget must be a positive number in USD, got "${value}".`);
+    out.obj({ name, set: false });
+    return 1;
+  }
   const client = await connect({ write: true });
   const root = await resolveOrg(client, o.org);
-  const clear = value === 'none';
   const patch: OrgConfigPatch =
     name === 'judge'
       ? { judge: clear ? null : value }
       : name === 'adapter'
         ? { adapter: clear ? null : (value as OrgConfigPatch['adapter']) }
         : name === 'budget'
-          ? { per_run_usd: clear ? null : Number(value) }
+          ? { per_run_usd: budget }
           : { tiers: { [name]: clear ? null : value } };
   const c = await client.setOrgConfig(root, patch);
   out.line(`${name} set for org ${c.organization}.`);

@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { loadOrg } from '@shibaox/schemas';
+import { loadOrg, ModelsSchema, OrgFileSchema } from '@shibaox/schemas';
 import { parseDocument } from 'yaml';
 
 export type TierName = 'strong' | 'cheap' | 'decision';
@@ -18,7 +18,7 @@ export interface OrgConfig {
   judge?: string;
 }
 
-/** Values to change; `null` clears one. */
+/** Values to change; `null` clears one (judge, adapter, budget: a tier cannot be cleared). */
 export interface OrgConfigPatch {
   tiers?: Partial<Record<TierName, string | null>>;
   judge?: string | null;
@@ -26,9 +26,10 @@ export interface OrgConfigPatch {
   per_run_usd?: number | null;
 }
 
-/** A model ref (`provider/model`) or a Jev alias (`jev-latest`). */
-const isModelValue = (v: string) =>
-  /^[a-z0-9][a-z0-9-]*\/\S+$/i.test(v) || /^jev-[\w.-]+$/i.test(v);
+const isModelRef = (v: unknown): v is string =>
+  typeof v === 'string' && /^[a-z0-9][a-z0-9-]*\/\S+$/i.test(v);
+/** Jev (`jev-latest`) is a typed decision API, not a chat model: only the decision tier may name it. */
+const isJev = (v: unknown): v is string => typeof v === 'string' && /^jev-[\w.-]+$/i.test(v);
 
 export function readOrgConfig(root: string): OrgConfig {
   const org = loadOrg(root);
@@ -47,46 +48,77 @@ export function readOrgConfig(root: string): OrgConfig {
 }
 
 function validate(patch: OrgConfigPatch): void {
-  for (const [name, v] of Object.entries(patch.tiers ?? {}))
-    if (v !== null && v !== undefined && !isModelValue(v))
+  for (const [name, v] of Object.entries(patch.tiers ?? {})) {
+    if (!(TIER_NAMES as string[]).includes(name))
+      throw new Error(`unknown tier "${name}": use ${TIER_NAMES.join(', ')}`);
+    if (v === undefined) continue;
+    if (v === null) throw new Error(`tier ${name} cannot be cleared: pick another model`);
+    if (!(isModelRef(v) || (name === 'decision' && isJev(v))))
       throw new Error(
-        `tier ${name}: "${v}" must look like provider/model (see /model for the list)`,
+        `tier ${name}: "${String(v)}" must look like provider/model (see /model for the list)${name === 'decision' ? ' or jev-latest' : ''}`,
       );
-  if (patch.judge && !isModelValue(patch.judge))
-    throw new Error(`judge: "${patch.judge}" must look like provider/model`);
-  if (patch.adapter && !ADAPTERS.includes(patch.adapter))
+  }
+  if (patch.judge !== undefined && patch.judge !== null && !isModelRef(patch.judge))
+    throw new Error(`judge: "${String(patch.judge)}" must look like provider/model`);
+  if (
+    patch.adapter !== undefined &&
+    patch.adapter !== null &&
+    !(ADAPTERS as readonly string[]).includes(patch.adapter)
+  )
     throw new Error(`adapter must be one of ${ADAPTERS.join(', ')}`);
-  if (patch.per_run_usd !== undefined && patch.per_run_usd !== null && !(patch.per_run_usd > 0))
+  if (
+    patch.per_run_usd !== undefined &&
+    patch.per_run_usd !== null &&
+    !(
+      typeof patch.per_run_usd === 'number' &&
+      Number.isFinite(patch.per_run_usd) &&
+      patch.per_run_usd > 0
+    )
+  )
     throw new Error('budget (per_run_usd) must be a positive number');
 }
 
-function rewrite(path: string, edit: (doc: ReturnType<typeof parseDocument>) => void): void {
-  const doc = parseDocument(existsSync(path) ? readFileSync(path, 'utf8') : '{}');
-  edit(doc);
-  writeFileSync(path, doc.toString());
-}
+type Doc = ReturnType<typeof parseDocument>;
+const readDoc = (path: string): Doc =>
+  parseDocument(existsSync(path) ? readFileSync(path, 'utf8') : '');
+const setOrDelete = (doc: Doc, path: string[], v: string | number | null | undefined) => {
+  if (v === undefined) return;
+  if (v === null) {
+    if (doc.hasIn(path)) doc.deleteIn(path);
+  } else doc.setIn(path, v);
+};
+/** The file is replaced in one step: a run loading the org never sees a half-written file. */
+const writeAtomic = (path: string, text: string) => {
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, text);
+  renameSync(tmp, path);
+};
 
-/** Applies `patch` to `models.yaml` / `org.yaml`, keeping comments and every other key. */
+/**
+ * Applies `patch` to `models.yaml` / `org.yaml`, keeping comments and every other key. The
+ * patched documents are checked against the org schemas before anything touches the disk,
+ * so a refused change never leaves the org unloadable.
+ */
 export function writeOrgConfig(root: string, patch: OrgConfigPatch): OrgConfig {
   validate(patch);
   loadOrg(root); // an org that does not load is not edited
-  const hasModelsChange = patch.tiers !== undefined || patch.judge !== undefined;
-  if (hasModelsChange)
-    rewrite(join(root, 'models.yaml'), (doc) => {
-      for (const [name, v] of Object.entries(patch.tiers ?? {})) {
-        if (v === null) doc.deleteIn(['tiers', name]);
-        else if (v !== undefined) doc.setIn(['tiers', name], v);
-      }
-      if (patch.judge === null) doc.deleteIn(['gates', 'judge']);
-      else if (patch.judge !== undefined) doc.setIn(['gates', 'judge'], patch.judge);
-    });
-  if (patch.adapter !== undefined || patch.per_run_usd !== undefined)
-    rewrite(join(root, 'org.yaml'), (doc) => {
-      if (patch.adapter === null) doc.deleteIn(['adapter']);
-      else if (patch.adapter !== undefined) doc.setIn(['adapter'], patch.adapter);
-      if (patch.per_run_usd === null) doc.deleteIn(['budgets', 'per_run_usd']);
-      else if (patch.per_run_usd !== undefined)
-        doc.setIn(['budgets', 'per_run_usd'], patch.per_run_usd);
-    });
+  const writes: { path: string; text: string }[] = [];
+  if (patch.tiers !== undefined || patch.judge !== undefined) {
+    const path = join(root, 'models.yaml');
+    const doc = readDoc(path);
+    for (const [name, v] of Object.entries(patch.tiers ?? {})) setOrDelete(doc, ['tiers', name], v);
+    setOrDelete(doc, ['gates', 'judge'], patch.judge);
+    ModelsSchema.parse(doc.toJS() ?? {});
+    writes.push({ path, text: doc.toString() });
+  }
+  if (patch.adapter !== undefined || patch.per_run_usd !== undefined) {
+    const path = join(root, 'org.yaml');
+    const doc = readDoc(path);
+    setOrDelete(doc, ['adapter'], patch.adapter);
+    setOrDelete(doc, ['budgets', 'per_run_usd'], patch.per_run_usd);
+    OrgFileSchema.parse(doc.toJS() ?? {});
+    writes.push({ path, text: doc.toString() });
+  }
+  for (const w of writes) writeAtomic(w.path, w.text);
   return readOrgConfig(root);
 }
