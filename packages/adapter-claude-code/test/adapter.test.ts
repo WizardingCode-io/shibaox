@@ -53,8 +53,7 @@ describe('ClaudeCodeAdapter', () => {
     expect(events.map((e) => e.type)).toEqual([
       'started',
       'session',
-      'text',
-      'text',
+      'text', // the assistant's text only: the runtime's ready line goes to the log
       'tool_use',
       'file_changed',
       'tool_result',
@@ -285,7 +284,7 @@ describe('ClaudeCodeAdapter', () => {
         log: (l) => lines.push(l),
       },
     );
-    expect(lines.find((l) => l.startsWith('claude-code ready:'))).toContain('apiKeySource=none');
+    expect(lines.find((l) => l.startsWith('[claude-code] ready:'))).toContain('apiKeySource=none');
   });
   it('passes the output schema as a json_schema output format', async () => {
     const schema = { type: 'object', properties: { files: { type: 'array' } } };

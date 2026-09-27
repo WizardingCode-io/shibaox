@@ -174,10 +174,10 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
           if (m.session_id)
             yield { type: 'session', runtime: 'claude-code', sessionId: m.session_id };
           const mcp = m.mcp_servers.map((s) => `${s.name}:${s.status}`).join(',');
-          yield {
-            type: 'text',
-            text: `claude-code ready: model=${m.model} apiKeySource=${m.apiKeySource} tools=${m.tools.length} mcp=${mcp || 'none'}`,
-          };
+          // runtime details belong to the log, not to the conversation the user reads
+          ctx.log(
+            `[claude-code] ready: model=${m.model} apiKeySource=${m.apiKeySource} tools=${m.tools.length} mcp=${mcp || 'none'}`,
+          );
           for (const s of m.mcp_servers)
             if (s.status === 'failed' || s.status === 'needs-auth')
               ctx.log(`[claude-code] warning: MCP server ${s.name} ${s.status}`);
