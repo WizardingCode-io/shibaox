@@ -45,7 +45,7 @@ export interface DaemonOptions {
   claudeInstalled?: boolean;
   /** Model discovery at start and before runs (default on; tests turn it off: it probes local servers). */
   discovery?: boolean;
-  /** Conversation summariser (tests inject one); by default the org's cheap tier. */
+  /** Conversation summariser (tests inject one); by default the org's cheap tier or the run's model. */
   summarize?: (transcript: string, org: Org) => Promise<string>;
   /** Tokens a conversation may carry before it is compacted (tests lower it). */
   conversationTokens?: number;
@@ -53,6 +53,12 @@ export interface DaemonOptions {
 
 /** Turns kept per Telegram chat for the orchestrator's conversation. */
 const THREAD_TURNS = 20;
+
+/** The last `max` messages of a thread; a leading summary (older turns condensed) always stays. */
+export function keepThread(t: readonly ChatMessage[], max: number): ChatMessage[] {
+  if (t.length <= max) return [...t];
+  return t[0]?.summary ? [t[0], ...t.slice(-(max - 1))] : t.slice(-max);
+}
 
 /** The local daemon: store, inbox, run manager, channels and the socket API, composed. */
 export class Daemon {
@@ -131,7 +137,9 @@ export class Daemon {
       log,
       env: this.env,
       ready: opts.discovery === false ? undefined : () => this.models(),
-      summarize: opts.summarize ?? orgSummarizer(() => registryFor(this.env, opts.extraProviders)),
+      summarizer: opts.summarize
+        ? (org) => (t) => opts.summarize?.(t, org) ?? Promise.reject(new Error('no summariser'))
+        : orgSummarizer(() => registryFor(this.env, opts.extraProviders)),
       conversationTokens: opts.conversationTokens,
       queryFn: opts.queryFn,
       graphify: opts.graphify,
@@ -261,9 +269,10 @@ export class Daemon {
   }
 
   private remember(origin: string, m: ChatMessage): void {
-    const t = this.threads.get(origin) ?? [];
-    t.push(m);
-    this.threads.set(origin, t.slice(-THREAD_TURNS * 2));
+    this.threads.set(
+      origin,
+      keepThread([...(this.threads.get(origin) ?? []), m], THREAD_TURNS * 2),
+    );
   }
 
   /** Free text from a channel: a turn for the orchestrator on the configured org and project. */
@@ -309,9 +318,8 @@ export class Daemon {
         origin,
       });
       flight.runId = runId;
-      // the daemon may have compacted the thread: the chat goes on from what the run got
-      if (used && used !== messages)
-        this.threads.set(origin, [...used, { role: 'user', content: text }]);
+      // the daemon compacted the thread: the chat goes on from what the run got
+      if (used) this.threads.set(origin, [...used, { role: 'user', content: text }]);
     } catch (e) {
       this.threads.set(origin, messages);
       await say(`✗ could not start: ${e instanceof Error ? e.message : String(e)}`);

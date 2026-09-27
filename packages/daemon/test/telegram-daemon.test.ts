@@ -202,10 +202,9 @@ describe('talking to the orchestrator from Telegram', () => {
       );
     }
     const runs = await daemon.runs.list();
-    const last = runs.find(async (r) => (await await0(store, r.runId)).startsWith('4 '));
     const specs = await Promise.all(runs.map((r) => await0(store, r.runId)));
     const fourth = runs[specs.findIndex((sp) => sp.startsWith('4 '))];
-    expect(fourth ?? last).toBeDefined();
+    expect(fourth).toBeDefined();
     const created = (await store.read(fourth?.runId ?? ''))[0];
     const messages =
       created?.type === 'RunCreated'

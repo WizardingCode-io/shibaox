@@ -25,30 +25,33 @@ const transcript = (summary: string | undefined, turns: readonly ChatMessage[]):
   ].join('\n\n');
 
 /**
- * Without a model: each dropped turn cut to a line, oldest first, within `maxTokens`.
- * Nothing is lost silently: what does not fit is counted.
+ * Without a model: the earlier summary (cut to half the budget) and each dropped turn cut to
+ * a line, the newest ones kept when not all fit. What is omitted is counted, never silent.
  */
 export function condense(
   summary: string | undefined,
   turns: readonly ChatMessage[],
   maxTokens: number,
 ): string {
-  const lines = [
-    ...(summary ? [summary] : []),
-    ...turns.map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.slice(0, 160)}`),
-  ];
-  const out: string[] = [];
-  let used = 0;
-  for (const l of lines) {
+  const head = summary ? summary.slice(0, Math.floor(maxTokens / 2) * 4) : undefined;
+  let budget = maxTokens - (head ? estimateTokens(head) + 1 : 0);
+  const lines = turns.map(
+    (m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.slice(0, 160)}`,
+  );
+  const kept: string[] = [];
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const l = lines[i] as string;
     const t = estimateTokens(l) + 1;
-    if (used + t > maxTokens) {
-      out.push(`… and ${lines.length - out.length} earlier turn(s) not shown.`);
-      break;
-    }
-    out.push(l);
-    used += t;
+    if (t > budget) break;
+    kept.unshift(l);
+    budget -= t;
   }
-  return out.join('\n');
+  const omitted = lines.length - kept.length;
+  return [
+    ...(head ? [head] : []),
+    ...(omitted > 0 ? [`… ${omitted} earlier turn(s) omitted.`] : []),
+    ...kept,
+  ].join('\n');
 }
 
 export interface CompactOptions {
@@ -83,6 +86,14 @@ export async function compactConversation(
     cut = i;
   }
   while (cut < turns.length && turns[cut]?.role !== 'user') cut++;
+  // the latest exchange stays whole whatever its size: "fix line 3 of what you just wrote"
+  if (cut >= turns.length) {
+    for (let i = turns.length - 1; i >= 0; i--)
+      if (turns[i]?.role === 'user') {
+        cut = i;
+        break;
+      }
+  }
   const dropped = turns.slice(0, cut);
   const tail = turns.slice(cut);
   const summaryBudget = Math.max(64, Math.floor((o.maxTokens - keepTokens) / 2));
@@ -90,6 +101,7 @@ export async function compactConversation(
   try {
     text = (await o.summarize(transcript(summary, dropped))).trim();
     if (!text) throw new Error('empty summary');
+    if (estimateTokens(text) > summaryBudget) throw new Error('summary too long');
   } catch {
     text = condense(summary, dropped, summaryBudget);
   }

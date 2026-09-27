@@ -395,3 +395,53 @@ describe('model discovery at start', () => {
     }
   });
 });
+
+describe('orgSummarizer', () => {
+  it('uses the cheap tier when callable, else strong, else the run model; caps the output, strips thinking, times out', async () => {
+    const { startFakeOpenAI } = await import('@shibaox/providers/testing');
+    const { orgSummarizer } = await import('../src/runs/summarize.js');
+    const { ProviderRegistry } = await import('@shibaox/providers');
+    const { loadOrg } = await import('@shibaox/schemas');
+    const fake = await startFakeOpenAI(() => ({
+      content: '<think>hmm</think>\nThey agreed on /health.',
+    }));
+    try {
+      const entry = {
+        id: 'fake',
+        name: 'Fake',
+        kind: 'openai-compatible' as const,
+        base_url: fake.baseURL,
+        auth: { type: 'none' as const },
+        models: ['m'],
+        pricing: {},
+        verify: false,
+        context_window: {},
+        capabilities: { tools: true },
+      };
+      const s = setup();
+      const org = loadOrg(s.orgRoot); // tiers: anthropic/claude-sonnet-5 (no key), ollama/llama3.2 (nothing listens)
+      const registry = () => new ProviderRegistry([entry], {});
+      // neither tier is known to this registry, and there is no run model: no summariser
+      expect(orgSummarizer(registry)(org, undefined)).toBeUndefined();
+      // the run's own model is the fallback
+      const summarize = orgSummarizer(registry)(org, 'fake/m');
+      expect(summarize).toBeDefined();
+      expect(await summarize?.('User: hi\nAssistant: hello')).toBe('They agreed on /health.');
+      const req = fake.requests[0] as { max_tokens?: number; max_completion_tokens?: number };
+      expect(req.max_tokens ?? req.max_completion_tokens).toBe(600);
+    } finally {
+      await fake.close();
+    }
+  });
+  it('keepThread keeps the leading summary when the thread is cut to its last turns', async () => {
+    const { keepThread } = await import('../src/daemon.js');
+    const t = [
+      { role: 'user' as const, content: 'S', summary: true },
+      ...Array.from({ length: 50 }, (_, i) => ({ role: 'user' as const, content: String(i) })),
+    ];
+    const kept = keepThread(t, 40);
+    expect(kept).toHaveLength(40);
+    expect(kept[0]).toEqual({ role: 'user', content: 'S', summary: true });
+    expect(kept.at(-1)).toEqual({ role: 'user', content: '49' });
+  });
+});

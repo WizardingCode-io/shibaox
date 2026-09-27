@@ -1,6 +1,11 @@
 import type { ChatMessage } from '@shibaox/schemas';
 import { describe, expect, it, vi } from 'vitest';
-import { compactConversation, estimateTokens, splitConversation } from '../src/conversation.js';
+import {
+  compactConversation,
+  condense,
+  estimateTokens,
+  splitConversation,
+} from '../src/conversation.js';
 
 const turn = (i: number, words = 40): ChatMessage[] => [
   { role: 'user', content: `question ${i} ${'lorem '.repeat(words)}` },
@@ -53,8 +58,41 @@ describe('compactConversation', () => {
     const messages = Array.from({ length: 8 }, (_, i) => turn(i + 1)).flat();
     const out = await compactConversation(messages, { maxTokens: 200, summarize });
     expect(out[0]?.summary).toBe(true);
-    expect(out[0]?.content).toContain('question 1');
+    expect(out[0]?.content).toMatch(/Assistant: answer \d+/); // the newest dropped turn
+    expect(out[0]?.content).toContain('earlier turn(s) omitted');
     expect(estimateTokens(out[0]?.content ?? '')).toBeLessThanOrEqual(100);
+  });
+});
+
+describe('compactConversation without a model (condense)', () => {
+  it('keeps the newest dropped turns and a capped share of the earlier summary; the label counts what was omitted', () => {
+    const turns = Array.from({ length: 30 }, (_, i) => turn(i + 1, 20)).flat();
+    const out = condense('S'.repeat(4000), turns, 300);
+    expect(out).toContain('question 30'); // the newest dropped turn is there
+    expect(out).not.toContain('question 1 '); // the oldest are what goes
+    expect(out).toMatch(/\d+ earlier turn\(s\) omitted/);
+    expect(out.startsWith('S')).toBe(true);
+    expect(out.indexOf('SSSS')).toBeLessThan(out.indexOf('question')); // summary first, but capped
+    expect(estimateTokens(out)).toBeLessThanOrEqual(320);
+  });
+  it('an oversized summary from the model is replaced by the condensation', async () => {
+    const messages = Array.from({ length: 8 }, (_, i) => turn(i + 1)).flat();
+    const out = await compactConversation(messages, {
+      maxTokens: 200,
+      summarize: async () => 'x '.repeat(2000),
+    });
+    expect(estimateTokens(out[0]?.content ?? '')).toBeLessThanOrEqual(100);
+    expect(out[0]?.content).toMatch(/Assistant: answer \d+/);
+  });
+  it('the last user turn and its reply are always kept whole, even when larger than the cap', async () => {
+    const messages: ChatMessage[] = [
+      ...turn(1),
+      { role: 'user', content: 'fix line 3 of what you just wrote' },
+      { role: 'assistant', content: 'code '.repeat(5000) },
+    ];
+    const out = await compactConversation(messages, { maxTokens: 500, summarize: async () => 'S' });
+    expect(out.slice(-2)).toEqual(messages.slice(-2));
+    expect(out[0]?.summary).toBe(true);
   });
 });
 

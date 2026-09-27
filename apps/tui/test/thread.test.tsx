@@ -208,3 +208,100 @@ test('the next turn builds on the thread the daemon kept for the previous run (c
     setup.renderer.destroy();
   }
 });
+
+test('a follow-up waits for the previous turn to finish and turns are serialised, so no reply is frozen half-written', async () => {
+  const client = new FakeDaemonClient();
+  const r1 = state('r1', 'add a health endpoint', 'running');
+  client.states.set('r1', r1);
+  client.runs = [run('r1', 'running')];
+  client.history.set('r1', []); // still working: no reply yet
+  client.submitResult = { runId: 'r2', warnings: [] };
+  let hooks: AppHooks | undefined;
+  const setup = await testRender(
+    () => (
+      <App
+        client={client}
+        version="0.0.1"
+        home="/tmp/shx-home"
+        cwd="/tmp"
+        env={{ SHIBAOX_NO_MOTION: '1', SHIBAOX_TURN_WAIT_MS: '2000' }}
+        onExit={() => {}}
+        onMount={(h) => {
+          hooks = h;
+          h.data.openRun('r1');
+        }}
+      />
+    ),
+    { width: 120, height: 34, exitOnCtrlC: false },
+  );
+  try {
+    await settle();
+    await setup.renderOnce();
+    // two event turns arrive while r1 is still streaming
+    const first = hooks?.data.continueRun('r1', 'child A finished', { event: true });
+    const second = hooks?.data.continueRun('r1', 'child B finished', { event: true });
+    await settle(60);
+    expect(client.calls.filter((c) => c.method === 'submitRun')).toHaveLength(0); // waiting
+    // r1 completes with its reply, on its live stream
+    client.states.set('r1', state('r1', 'add a health endpoint', 'completed'));
+    client.runs = [run('r1')];
+    client.pushFrame('r1', {
+      kind: 'runtime',
+      seq: 2,
+      cursor: '0:2',
+      event: {
+        runId: 'r1',
+        nodeId: 'analyse',
+        seq: 2,
+        at: 'x',
+        event: { type: 'text', text: 'Dispatched two children.' },
+      },
+    } as unknown as Envelope);
+    client.pushFrame('r1', end('completed'));
+    // the daemon keeps the submitted thread in the new run's input
+    const r2 = state('r2', 'child A finished', 'completed');
+    r2.input = {
+      spec: 'child A finished',
+      event: true,
+      messages: [
+        { role: 'user', content: 'add a health endpoint' },
+        { role: 'assistant', content: 'Dispatched two children.' },
+      ],
+    };
+    client.states.set('r2', r2);
+    client.history.set('r2', [
+      {
+        kind: 'runtime',
+        seq: 2,
+        cursor: '0:2',
+        event: {
+          runId: 'r2',
+          nodeId: 'analyse',
+          seq: 2,
+          at: 'x',
+          event: { type: 'text', text: 'Noted A.' },
+        },
+      } as unknown as Envelope,
+      end('completed'),
+    ]);
+    await first;
+    client.submitResult = { runId: 'r3', warnings: [] };
+    await second;
+    const submits = client.calls
+      .filter((c) => c.method === 'submitRun')
+      .map((c) => c.args[0] as { input: string; messages?: { role: string; content: string }[] });
+    expect(submits.map((s) => s.input)).toEqual(['child A finished', 'child B finished']);
+    expect(submits[0]?.messages).toEqual([
+      { role: 'user', content: 'add a health endpoint' },
+      { role: 'assistant', content: 'Dispatched two children.' },
+    ]);
+    // the second turn builds on the first (serialised), with the first's reply once it exists
+    expect(submits[1]?.messages?.slice(0, 3)).toEqual([
+      { role: 'user', content: 'add a health endpoint' },
+      { role: 'assistant', content: 'Dispatched two children.' },
+      { role: 'user', content: 'child A finished' },
+    ]);
+  } finally {
+    setup.renderer.destroy();
+  }
+});

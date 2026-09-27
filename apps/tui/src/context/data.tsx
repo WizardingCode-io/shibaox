@@ -16,6 +16,7 @@ import { money } from '../model/format.js';
 import { type Card, reduceTimeline } from '../model/stream.js';
 import { requestText } from '../routes/session/request.js';
 import type { DaemonClientLike } from './client.js';
+import { useConfig } from './config.js';
 import { type DataState, FRAME_LIMIT, initialData } from './data-state.js';
 import { Poller, type PollerIntervals, type PollerToast } from './poller.js';
 
@@ -66,6 +67,9 @@ export function DataProvider(
   }>,
 ): JSX.Element {
   const [state, set] = createStore<DataState>(initialData());
+  const TERMINAL = new Set<string>(['completed', 'failed', 'cancelled']);
+  // how long a follow-up waits for the previous turn to end (tests shorten it)
+  const turnWaitMs = Number(useConfig().env.SHIBAOX_TURN_WAIT_MS) || 60_000;
   // frames stay out of the reactive store: a reduce over 20 000 proxied envelopes would
   // subscribe to every property it reads; `versions` is the only signal
   const frames = new Map<string, Envelope[]>();
@@ -103,9 +107,29 @@ export function DataProvider(
       .flatMap((b) => (b.kind === 'text' && !b.parentId ? [b.text.trim()] : []))
       .join('\n')
       .trim();
-  const continueRun = async (rootId: string, text: string, o: { event?: boolean } = {}) => {
+  // turns of a tab go one at a time: the next one builds on the previous one's reply
+  const chains = new Map<string, Promise<unknown>>();
+  const continueRun = (rootId: string, text: string, o: { event?: boolean } = {}) => {
+    const next = (chains.get(rootId) ?? Promise.resolve()).then(
+      () => submitTurn(rootId, text, o),
+      () => submitTurn(rootId, text, o),
+    );
+    chains.set(rootId, next);
+    return next;
+  };
+  /** Waits (bounded) until `runId` is no longer working, so its reply is whole. */
+  const settled = async (runId: string) => {
+    const until = Date.now() + turnWaitMs;
+    while (Date.now() < until) {
+      const st = state.states[runId];
+      if (st && TERMINAL.has(st.status)) return;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+  };
+  const submitTurn = async (rootId: string, text: string, o: { event?: boolean } = {}) => {
     const turns = turnsOf(rootId);
     const previousId = turns[turns.length - 1] ?? rootId;
+    await settled(previousId);
     const previous = state.states[previousId];
     if (!previous) return undefined;
     // the conversation so far travels as structured messages; the input is the new turn only.
@@ -218,7 +242,6 @@ export function DataProvider(
 
   // children whose end was already history when they joined a tab are never reported again
   const reported = new Set<string>();
-  const TERMINAL = new Set<string>(['completed', 'failed', 'cancelled']);
   // a run dispatched from a conversation (`parentRunId`) joins the tab of its parent
   createEffect(() => {
     if (props.single) return;

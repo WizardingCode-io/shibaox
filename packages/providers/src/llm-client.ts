@@ -24,6 +24,8 @@ export interface GenerateArgs {
   signal?: AbortSignal;
   /** Retries on retryable provider errors (AI SDK default: 2). */
   maxRetries?: number;
+  /** Cap on the tokens the model may write per step. */
+  maxOutputTokens?: number;
 }
 export interface GenerateResult<T = unknown> {
   text: string;
@@ -51,6 +53,7 @@ export async function generate<T = unknown>(args: GenerateArgs): Promise<Generat
       : isStepCount(args.maxSteps ?? 1),
     abortSignal: args.signal,
     maxRetries: args.maxRetries,
+    maxOutputTokens: args.maxOutputTokens,
     output: args.output ? Output.object({ schema: args.output }) : undefined,
   });
   return {
@@ -83,6 +86,7 @@ export async function generateStream<T = unknown>(
       : isStepCount(args.maxSteps ?? 1),
     abortSignal: args.signal,
     maxRetries: args.maxRetries,
+    maxOutputTokens: args.maxOutputTokens,
   });
   let failure: unknown;
   for await (const part of r.fullStream) {

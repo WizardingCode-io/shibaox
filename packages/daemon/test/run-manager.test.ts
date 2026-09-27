@@ -87,7 +87,22 @@ describe('RunManager', () => {
     const s = setup();
     const store = new MemoryEventStore();
     const summarize = vi.fn(async () => 'they built /health and tests');
-    const { manager: m } = manager(store, { vault: s.vault, summarize, conversationTokens: 300 });
+    const summarizer = vi.fn(() => summarize);
+    const { manager: m } = manager(store, { vault: s.vault, summarizer, conversationTokens: 300 });
+    // a short thread is not compacted and not echoed back
+    const short = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'chat',
+      input: 'hi',
+      adapter: 'mock',
+      workspace: 'inplace',
+      messages: [
+        { role: 'user', content: 'hello' },
+        { role: 'assistant', content: 'hey' },
+      ],
+    });
+    expect(short.messages).toBeUndefined();
     const messages = Array.from({ length: 12 }, (_, i) => [
       { role: 'user' as const, content: `question ${i} ${'lorem '.repeat(30)}` },
       { role: 'assistant' as const, content: `answer ${i} ${'ipsum '.repeat(30)}` },
@@ -99,9 +114,16 @@ describe('RunManager', () => {
       input: 'and now?',
       adapter: 'mock',
       workspace: 'inplace',
+      model: 'mock/m',
       messages,
     });
     expect(summarize).toHaveBeenCalledTimes(1);
+    // the summariser is chosen per submit, knowing the org and the run's own model choice
+    // (a mock run sets its model aside, so none reaches the summariser)
+    expect(summarizer).toHaveBeenLastCalledWith(
+      expect.objectContaining({ root: s.orgRoot }),
+      undefined,
+    );
     expect(used?.[0]).toMatchObject({ summary: true, content: 'they built /health and tests' });
     expect(used?.length ?? 0).toBeLessThan(messages.length);
     const created = (await store.read(runId))[0];

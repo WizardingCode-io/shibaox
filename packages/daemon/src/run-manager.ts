@@ -26,6 +26,7 @@ import { type GraphMode, prepareGraph } from './runs/graph.js';
 import { finishRun, vaultDir } from './runs/notes.js';
 import { memoryTools, orchestrationTools, toolsForRole } from './runs/orchestration.js';
 import { profileFor } from './runs/profile.js';
+import type { Summarizer } from './runs/summarize.js';
 import {
   assertProjectDir,
   gitPrefix,
@@ -89,10 +90,11 @@ export interface RunManagerOptions {
    */
   ready?: () => Promise<unknown>;
   /**
-   * Condenses the oldest turns of a conversation that outgrew `conversationTokens` (a cheap
-   * model, org-aware); without one the turns are cut to lines.
+   * Picks the summariser for a conversation that outgrew `conversationTokens` (the org's
+   * cheap tier, or the run's model); none when no model is callable: the turns are then cut
+   * to lines, under a cap three times larger (long windows can afford it).
    */
-  summarize?: (transcript: string, org: Org) => Promise<string>;
+  summarizer?: (org: Org, model: string | undefined) => Summarizer | undefined;
   /** Tokens (estimated) a conversation may carry into a run before it is compacted. */
   conversationTokens?: number;
   /** A run with an `origin` ended: the daemon reports it where it was asked for. */
@@ -194,14 +196,14 @@ export class RunManager {
     const workspace = ws.mode === 'worktree' ? join(ws.path, await gitPrefix(project)) : ws.path;
     const raw = req.messages?.filter((m) => m && typeof m.content === 'string') ?? [];
     // a conversation that outgrew its cap carries a summary of its oldest turns instead
+    const summarize = raw.length > 0 ? this.opts.summarizer?.(org, model) : undefined;
+    const cap = this.opts.conversationTokens ?? CONVERSATION_TOKENS;
     const messages = await compactConversation(raw, {
-      maxTokens: this.opts.conversationTokens ?? CONVERSATION_TOKENS,
-      summarize: (t) =>
-        this.opts.summarize
-          ? this.opts.summarize(t, org)
-          : Promise.reject(new Error('no summariser')),
+      maxTokens: summarize ? cap : cap * 3,
+      summarize: summarize ?? (() => Promise.reject(new Error('no summariser'))),
     });
-    if (messages !== raw) warnings.push('conversation compacted: the oldest turns are summarised');
+    const compacted = messages !== raw;
+    if (compacted) warnings.push('conversation compacted: the oldest turns are summarised');
     await engine.create({
       workflow: req.workflow,
       input: {
@@ -222,7 +224,7 @@ export class RunManager {
     });
     this.prepared.set(runId, { engine, org, adapter });
     this.enqueue({ runId, action: 'run', settle: [] });
-    return { runId, warnings, ...(messages.length > 0 ? { messages } : {}) };
+    return { runId, warnings, ...(compacted ? { messages } : {}) };
   }
 
   /** Recovers the runs left by a previous daemon process. */
