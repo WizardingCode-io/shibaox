@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -150,6 +150,61 @@ describe('RunManager', () => {
     const b = await submitMock(m, s, 'inplace');
     await vi.waitFor(() => expect(gates.size).toBe(1));
     expect((await m.state(b.runId)).status).toBe('queued');
+  });
+
+  it('submit records messages and parentRunId; list exposes parentRunId', async () => {
+    const s = setup();
+    const store = new MemoryEventStore();
+    const { manager: m } = manager(store, { vault: s.vault });
+    const messages = [
+      { role: 'user' as const, content: 'hi' },
+      { role: 'assistant' as const, content: 'hello' },
+    ];
+    const { runId } = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'chat',
+      input: 'and?',
+      adapter: 'mock',
+      workspace: 'inplace',
+      messages,
+      parentRunId: 'p',
+    });
+    const created = (await store.read(runId))[0];
+    expect(created?.type === 'RunCreated' && created.input).toEqual({ spec: 'and?', messages });
+    expect(created?.type === 'RunCreated' && created.parentRunId).toBe('p');
+    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('completed'));
+    expect((await m.list()).find((r) => r.runId === runId)?.parentRunId).toBe('p');
+    const plain = await submitMock(m, s, 'inplace');
+    const plainCreated = (await store.read(plain.runId))[0];
+    expect(plainCreated?.type === 'RunCreated' && plainCreated.input).toEqual({
+      spec: 'add /health',
+    });
+  });
+
+  it('a claude-code chat run gets the shibaox MCP tools and the project preamble', async () => {
+    const s = setup({ claudeCode: true });
+    const store = new MemoryEventStore();
+    const q = fakeQuery(() => [msg.init(), msg.success('ok')]);
+    const { manager: m } = manager(store, { queryFn: q, vault: s.vault });
+    const { runId } = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'chat',
+      input: 'olá',
+      workspace: 'inplace',
+    });
+    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('completed'));
+    const o = q.calls[0]?.options ?? {};
+    expect(o.mcpServers?.shibaox).toBeDefined();
+    expect(o.allowedTools).toContain('mcp__shibaox__*');
+    expect(o.allowedTools).toContain('WebFetch');
+    const append = (o.systemPrompt as { append?: string }).append ?? '';
+    expect(append).toContain('Project: ');
+    expect(append).toContain('files');
+    // the orchestrator prompt from the template
+    expect(append).toContain('start_workflow');
+    expect(existsSync(join(s.vault, '10-projects', 'proj', 'profile.md'))).toBe(true);
   });
 
   it('restart keeps the pending approval and resumes by session id', async () => {

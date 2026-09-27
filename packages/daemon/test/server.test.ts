@@ -66,6 +66,21 @@ async function collect(events: AsyncIterable<Envelope>, until: (e: Envelope) => 
   return out;
 }
 
+describe('project profile endpoint', () => {
+  it('GET /projects/profile profiles a directory and writes the vault note', async () => {
+    const s = setup();
+    const { client } = await started(s);
+    const p = await client.projectProfile(s.project, s.orgRoot);
+    expect(p.summary).toContain('files');
+    expect(p.stack).toContain('JavaScript');
+    expect(existsSync(join(s.vault, '10-projects', 'proj', 'profile.md'))).toBe(true);
+    await expect(client.projectProfile('', s.orgRoot)).rejects.toThrow(DaemonHttpError);
+    await expect(client.projectProfile(join(s.dir, 'missing'))).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+});
+
 describe('daemon server and client', () => {
   it('health, submit, events and completion through the client', async () => {
     const s = setup();

@@ -11,7 +11,8 @@ export interface NotesOptions {
   vault?: string;
 }
 
-function vaultDir(org: Org, opts: NotesOptions): string | undefined {
+/** The vault of an org: the daemon override, else `vault:` in org.yaml (relative to the org). */
+export function vaultDir(org: Org, opts: { vault?: string }): string | undefined {
   if (opts.vault) return resolve(opts.vault);
   return org.org.vault ? resolve(org.root, org.org.vault) : undefined;
 }

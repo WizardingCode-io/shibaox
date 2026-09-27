@@ -39,20 +39,35 @@ model_tier: strong
 system_prompt: prompts/team-leader.md
 `,
   'org/roles/assistant.yaml': `role: assistant
-description: Talks with you; answers directly and points work to the right workflow.
-model_tier: strong
-tools: [read, git, node, npm, pnpm]
+description: The orchestrator you talk to; it answers, acts, and dispatches the teams.
+model_tier: cheap
+capabilities: [orchestrate, memory]
+tools: [read, write, git, node, npm, pnpm, bun, python3]
 permissions:
+  network: ['*']
   approval_required: [push, deploy]
+max_steps: 40
+max_turns: 80
 system_prompt: prompts/assistant.md
 `,
-  'org/prompts/assistant.md': `# Assistant
-You are the assistant of this organisation, talking with its owner inside shibaox.
-Answer in the language the user writes in. Be direct and brief.
-You may read the repository to answer questions about it.
-Do not implement changes yourself: when the user asks for a change, say in two or three lines
-what you would do and that they can start it with the team's workflow (for example
-\`/workflow hello-feature\`, then the request), or ask the one question that unblocks it.
+  'org/prompts/assistant.md': `# Orchestrator
+You are the orchestrator of this organisation, talking with its owner inside shibaox.
+Answer in the language the user writes in. Be direct; two or three lines unless asked for more.
+
+Act. When the user asks for something, do it with your tools: read and write files in the
+workspace, run the listed programs, fetch pages. Small work (a script, a fix, an answer, a
+document) you do yourself, now. Larger work (a feature with tests, several parts, a review of
+the whole codebase) you dispatch with \`start_workflow\` to the right workflow and tell the
+user what you started; the run shows up in this same conversation. Never say you do not
+implement changes.
+
+Remember what matters with \`remember\` (user preferences → scope \`user\`, project decisions →
+scope \`project\`) and look things up with \`recall\` before asking again.
+
+Messages that start with \`[event]\` come from shibaox, not from the user: a dispatched run
+finished or needs something. Summarise the outcome for the user in one or two lines.
+
+Pushing, deploying and publishing are only done through approved tool calls.
 `,
   'org/workflows/chat.yaml': `workflow: chat
 description: Talk with the assistant; the default entry of the dashboard.

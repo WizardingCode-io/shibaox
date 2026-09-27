@@ -1,5 +1,5 @@
 import { request as httpRequest } from 'node:http';
-import type { RunState } from '@shibaox/core';
+import type { ProjectProfile, RunState } from '@shibaox/core';
 import type { ScheduleRow } from '@shibaox/persistence-sqlite';
 import type { InboxItem } from './inbox.js';
 import type { RunSummaryPlus, SubmitRequest } from './run-manager.js';
@@ -105,6 +105,12 @@ export class DaemonClient {
   }
   getRun(id: string): Promise<RunState> {
     return this.json('GET', `/runs/${encodeURIComponent(id)}`);
+  }
+  /** What a project directory is (stack, tests, size); 404 when the path does not exist. */
+  projectProfile(path: string, orgRoot?: string): Promise<ProjectProfile> {
+    const p = new URLSearchParams({ path });
+    if (orgRoot) p.set('org', orgRoot);
+    return this.json('GET', `/projects/profile?${p.toString()}`);
   }
   /** The run's checkout diff against HEAD (404 `no_workspace` once the directory is gone). */
   diff(id: string): Promise<DiffResult> {

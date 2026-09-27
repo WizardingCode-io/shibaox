@@ -12,6 +12,8 @@ export * from './run-manager.js';
 export * from './runs/diff.js';
 export * from './runs/graph.js';
 export * from './runs/notes.js';
+export * from './runs/orchestration.js';
+export * from './runs/profile.js';
 export * from './runs/workspace.js';
 export * from './runtime.js';
 export * from './runtime-buffer.js';

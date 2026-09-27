@@ -4,6 +4,7 @@ import type { EventStore, MockScript } from '@shibaox/core';
 import type { Graphify } from '@shibaox/memory';
 import { OutboxRepo, SchedulesRepo, SqliteEventStore } from '@shibaox/persistence-sqlite';
 import type { ProviderEntry } from '@shibaox/providers';
+import { loadOrg } from '@shibaox/schemas';
 import { macosChannel } from './channels/macos.js';
 import { OutboxWorker } from './channels/outbox.js';
 import { inboxToken, telegramChannel } from './channels/telegram.js';
@@ -12,6 +13,8 @@ import { type DaemonConfig, loadDaemonConfig } from './config.js';
 import { type HomePaths, homePaths } from './home.js';
 import { type InboxId, InboxService } from './inbox.js';
 import { RunManager } from './run-manager.js';
+import { vaultDir } from './runs/notes.js';
+import { profileFor } from './runs/profile.js';
 import { Scheduler } from './scheduler.js';
 import { DaemonServer, type Health, type SchedulesApi } from './server.js';
 
@@ -112,6 +115,11 @@ export class Daemon {
       inbox: this.inbox,
       schedules: () => this.schedules,
       health: () => this.health(),
+      profile: (path, orgRoot) =>
+        profileFor(path, {
+          vault: opts.vault ?? (orgRoot ? vaultDir(loadOrg(orgRoot), {}) : undefined),
+          log: opts.log,
+        }),
       onShutdown: (o) => {
         void this.stop(o);
       },

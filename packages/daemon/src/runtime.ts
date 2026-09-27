@@ -1,6 +1,7 @@
 import { ClaudeCodeAdapter, type McpServers, type QueryFn } from '@shibaox/adapter-claude-code';
 import { DirectAdapter } from '@shibaox/adapter-direct';
 import {
+  type AgentTool,
   type ApprovalHandler,
   type CheckRunners,
   type Decider,
@@ -74,6 +75,11 @@ export interface RuntimeOptions {
   mockScript?: MockScript;
   /** Every RuntimeEvent a task yields (the daemon streams them). */
   onRuntimeEvent?: (runId: string, nodeId: string, e: RuntimeEvent) => void;
+  /** What the daemon adds to every task: extra tools by role and a prompt preamble. */
+  tools?: {
+    extra?: (job: TaskJob) => AgentTool[];
+    preamble?: (job: TaskJob) => string | undefined;
+  };
 }
 
 /** Bridges a HumanHandler to the approval interface (the CLI's terminal prompt). */
@@ -251,6 +257,8 @@ export function buildRuntime(o: RuntimeOptions) {
         orgRoot,
         graphQuery: o.graph?.query,
         approvals,
+        extraTools: o.tools?.extra,
+        preamble: o.tools?.preamble,
       }),
       'claude-code': new ClaudeCodeAdapter({
         approvals,
@@ -266,6 +274,8 @@ export function buildRuntime(o: RuntimeOptions) {
         },
         mcpServers: () => ({ ...o.graph?.mcpServers }),
         queryFn: o.queryFn,
+        extraTools: o.tools?.extra,
+        preamble: o.tools?.preamble,
       }),
     },
     defaultAdapter: adapter,

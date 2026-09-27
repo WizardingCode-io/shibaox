@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { QueryFn } from '@shibaox/adapter-claude-code';
 import {
+  type AgentTool,
   type EventStore,
   isTerminal,
   type MockScript,
@@ -13,18 +14,21 @@ import {
   replay,
   ScriptedDecider,
 } from '@shibaox/core';
-import type { Graphify } from '@shibaox/memory';
+import { type Graphify, MemoryNotes } from '@shibaox/memory';
 import type { ProviderEntry } from '@shibaox/providers';
-import { loadOrg, type Org, type Workflow } from '@shibaox/schemas';
+import { type ChatMessage, loadOrg, type Org, type Workflow } from '@shibaox/schemas';
 import { createRunWorkspace, type WorkspaceMode } from '@shibaox/workspace';
 import type { DaemonConfig } from './config.js';
 import type { InboxAnswer, InboxItem, InboxService } from './inbox.js';
 import { type DiffResult, diffWorkspace, worktreeBase } from './runs/diff.js';
 import { type GraphMode, prepareGraph } from './runs/graph.js';
-import { finishRun } from './runs/notes.js';
+import { finishRun, vaultDir } from './runs/notes.js';
+import { memoryTools, orchestrationTools } from './runs/orchestration.js';
+import { profileFor } from './runs/profile.js';
 import {
   assertProjectDir,
   gitPrefix,
+  projectName,
   projectOf,
   workspaceMode,
   worktreeOf,
@@ -35,6 +39,7 @@ import {
   effectiveAdapter,
   type GraphWiring,
   isAdapterId,
+  type RuntimeOptions,
 } from './runtime.js';
 import { RuntimeBuffer, type RuntimeEnvelope } from './runtime-buffer.js';
 
@@ -47,6 +52,10 @@ export interface SubmitRequest {
   workspace?: WorkspaceMode;
   budgetUsd?: number;
   graph?: GraphMode;
+  /** The conversation so far (the orchestrator's chat); `input` is the new turn. */
+  messages?: ChatMessage[];
+  /** The run this one is dispatched from (`start_workflow`). */
+  parentRunId?: string;
 }
 
 export interface RunManagerOptions {
@@ -68,6 +77,7 @@ export interface RunSummaryPlus extends RunSummary {
   project?: string;
   orgRoot?: string;
   spentUsd: number;
+  parentRunId?: string;
 }
 
 interface Prepared {
@@ -135,13 +145,16 @@ export class RunManager {
       budgetUsd,
       graph,
       runId,
+      project,
+      workspaceMode: mode,
       warn: (w) => warnings.push(w),
     });
     const ws = await createRunWorkspace({ project, runId, mode });
     const workspace = ws.mode === 'worktree' ? join(ws.path, await gitPrefix(project)) : ws.path;
+    const messages = req.messages?.filter((m) => m && typeof m.content === 'string') ?? [];
     await engine.create({
       workflow: req.workflow,
-      input: { spec: req.input },
+      input: { spec: req.input, ...(messages.length > 0 ? { messages } : {}) },
       workspace,
       budgetUsd,
       adapter,
@@ -149,6 +162,7 @@ export class RunManager {
       project,
       branch: ws.branch,
       orgRoot,
+      parentRunId: req.parentRunId,
     });
     this.prepared.set(runId, { engine, org, adapter });
     this.enqueue({ runId, action: 'run', settle: [] });
@@ -268,6 +282,7 @@ export class RunManager {
         project: state.project,
         orgRoot: state.orgRoot,
         spentUsd: state.spentUsd,
+        parentRunId: state.parentRunId,
       });
     }
     return out;
@@ -436,6 +451,9 @@ export class RunManager {
       workflow,
       budgetUsd: state.budgetUsd,
       graph,
+      runId: state.runId,
+      project,
+      workspaceMode: state.workspaceMode,
       warn: (w) => this.opts.log(`warn: ${w}`),
     });
     return { engine, org, adapter };
@@ -467,10 +485,14 @@ export class RunManager {
       budgetUsd?: number;
       graph?: GraphWiring;
       runId?: string;
+      /** The main project checkout (tools and the preamble are built for it). */
+      project?: string;
+      workspaceMode?: WorkspaceMode;
       warn: (w: string) => void;
     },
   ): RunEngine {
     const { engine, warnings } = buildRuntime({
+      tools: this.taskTools(org, r),
       org,
       store: this.opts.store,
       human: this.opts.inbox,
@@ -497,6 +519,75 @@ export class RunManager {
     });
     for (const w of warnings) r.warn(w);
     return engine;
+  }
+
+  /**
+   * What every task of a run gets from the daemon: the project preamble (profile + memory)
+   * for all roles, `start_workflow` for roles with the `orchestrate` capability and
+   * `remember`/`recall` for roles with `memory`.
+   */
+  private taskTools(
+    org: Org,
+    r: {
+      adapter: AdapterId;
+      workflow?: Workflow;
+      runId?: string;
+      project?: string;
+      workspaceMode?: WorkspaceMode;
+    },
+  ): RuntimeOptions['tools'] {
+    const project = r.project;
+    if (!project || r.adapter === 'mock') return undefined;
+    const vault = vaultDir(org, { vault: this.opts.vault });
+    const log = this.opts.log;
+    let profileSummary: string | undefined;
+    try {
+      profileSummary = profileFor(project, { vault, log }).summary;
+    } catch (e) {
+      log(`warn: project profile: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    let notes: MemoryNotes | undefined;
+    if (vault)
+      try {
+        notes = new MemoryNotes({ vault, project: projectName(project) });
+      } catch (e) {
+        log(`warn: memory notes: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    const workflows = Object.values(org.workflows).map((w) => ({
+      name: w.workflow,
+      description: w.description,
+    }));
+    const current = r.workflow?.workflow ?? '';
+    return {
+      preamble: () => {
+        const p = notes?.preamble({ profileSummary });
+        return p || (profileSummary ? `Project: ${profileSummary}` : undefined);
+      },
+      extra: (job) => {
+        const out: AgentTool[] = [];
+        if (job.role.capabilities.includes('orchestrate') && r.runId)
+          out.push(
+            ...orchestrationTools({
+              runId: r.runId,
+              current,
+              workflows,
+              startWorkflow: async (workflow, request) => {
+                const { runId } = await this.submit({
+                  orgRoot: org.root,
+                  project,
+                  workflow,
+                  input: request,
+                  adapter: r.adapter,
+                  parentRunId: r.runId,
+                });
+                return { runId };
+              },
+            }),
+          );
+        if (job.role.capabilities.includes('memory') && notes) out.push(...memoryTools(notes));
+        return out;
+      },
+    };
   }
 
   /** An engine that only needs the event log (suspend/cancel without adapters). */

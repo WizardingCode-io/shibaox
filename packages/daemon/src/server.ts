@@ -1,7 +1,13 @@
 import { chmodSync, existsSync, unlinkSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { connect } from 'node:net';
-import { type EventStore, isTerminal, type RunStatus, type StoredEvent } from '@shibaox/core';
+import {
+  type EventStore,
+  isTerminal,
+  type ProjectProfile,
+  type RunStatus,
+  type StoredEvent,
+} from '@shibaox/core';
 import type { ScheduleRow } from '@shibaox/persistence-sqlite';
 import { AlreadyResolvedError, type InboxService, NotFoundError } from './inbox.js';
 import type { RunManager, SubmitRequest } from './run-manager.js';
@@ -46,6 +52,8 @@ export interface ServerDeps {
   inbox: InboxService;
   schedules: () => SchedulesApi | undefined;
   health: () => Health;
+  /** The profile of a project directory (with the org's vault note when `orgRoot` is given). */
+  profile: (path: string, orgRoot?: string) => ProjectProfile;
   onShutdown: (o: { force?: boolean }) => void;
   log: (line: string) => void;
 }
@@ -202,6 +210,18 @@ export class DaemonServer {
     };
 
     if (method === 'GET' && path === '/health') return send(res, 200, this.deps.health());
+    if (method === 'GET' && path === '/projects/profile') {
+      const p = url.searchParams.get('path') ?? '';
+      if (!p) throw new HttpError(400, 'bad_request', '"path" is required');
+      const org = url.searchParams.get('org') ?? undefined;
+      try {
+        return send(res, 200, this.deps.profile(p, org));
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        if (/not found/.test(m)) throw new HttpError(404, 'not_found', m);
+        throw e;
+      }
+    }
     if (method === 'POST' && path === '/runs') {
       const body = asRecord(await readBody(req));
       for (const k of ['orgRoot', 'project', 'workflow', 'input'])
