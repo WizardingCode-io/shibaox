@@ -84,10 +84,14 @@ export function modelValues(models: readonly ModelChoice[]): ValueChoice[] {
     .sort((a, b) => Number(b.configured) - Number(a.configured))
     .map((m) => ({
       value: m.ref,
-      hint: m.configured
-        ? (m.runtime ?? 'direct')
-        : `needs ${m.missing?.join(', ') || 'configuration'}`,
-      disabled: !m.configured,
+      hint: m.local
+        ? m.available === false
+          ? 'local (server not reachable)'
+          : 'local'
+        : m.configured
+          ? (m.runtime ?? 'direct')
+          : `needs ${m.missing?.join(', ') || 'configuration'}`,
+      disabled: !m.configured || m.available === false,
     }));
 }
 

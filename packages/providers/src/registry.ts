@@ -114,6 +114,71 @@ export interface ModelChoice {
   runtime?: string;
   /** Environment variables missing for the provider. */
   missing?: string[];
+  /** A server on this machine (LM Studio, Ollama): its models are discovered live. */
+  local?: boolean;
+  /** For a local provider: whether its server answered. */
+  available?: boolean;
+}
+
+const LOCAL_URL = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:|\/|$)/i;
+/** Models a local server may list that are not chat models. */
+const NOT_A_CHAT_MODEL = /whisper|embed|tts|rerank|speech|vision-encoder/i;
+
+const isLocal = (e: ProviderEntry): boolean =>
+  e.auth?.type === 'none' && typeof e.base_url === 'string' && LOCAL_URL.test(e.base_url);
+
+/** The model ids an OpenAI-compatible server reports at `GET <base_url>/models`, or undefined when it does not answer. */
+async function probeModels(
+  baseUrl: string,
+  o: { fetch: typeof fetch; timeoutMs: number },
+): Promise<string[] | undefined> {
+  try {
+    const res = await o.fetch(`${baseUrl.replace(/\/$/, '')}/models`, {
+      signal: AbortSignal.timeout(o.timeoutMs),
+    });
+    if (!res.ok) return undefined;
+    const json = (await res.json()) as { data?: { id?: unknown }[] };
+    return (json.data ?? [])
+      .map((m) => (typeof m.id === 'string' ? m.id : ''))
+      .filter((id) => id && !NOT_A_CHAT_MODEL.test(id));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Every model a run can be pointed at: the catalog, plus what the local servers (LM Studio,
+ * Ollama) say they have right now; a local server that does not answer keeps its catalog
+ * models, marked unavailable.
+ */
+export async function discoverModels(
+  registry: ProviderRegistry,
+  o: { fetch?: typeof fetch; timeoutMs?: number } = {},
+): Promise<ModelChoice[]> {
+  const doFetch = o.fetch ?? fetch;
+  const timeoutMs = o.timeoutMs ?? 1500;
+  const out: ModelChoice[] = [];
+  for (const e of registry.list()) {
+    if (!isLocal(e)) {
+      out.push(...listModels(registry).filter((m) => m.provider === e.id));
+      continue;
+    }
+    const found = e.base_url
+      ? await probeModels(e.base_url, { fetch: doFetch, timeoutMs })
+      : undefined;
+    const available = found !== undefined;
+    const ids = [...(found ?? []), ...e.models.filter((m) => !(found ?? []).includes(m))];
+    for (const model of ids)
+      out.push({
+        ref: `${e.id}/${model}`,
+        provider: e.id,
+        model,
+        configured: true,
+        local: true,
+        available,
+      });
+  }
+  return out;
 }
 
 /** Every model the catalog names, with its state in this environment. */

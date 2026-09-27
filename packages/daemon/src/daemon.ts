@@ -3,7 +3,7 @@ import type { QueryFn } from '@shibaox/adapter-claude-code';
 import type { EventStore, MockScript } from '@shibaox/core';
 import type { Graphify } from '@shibaox/memory';
 import { OutboxRepo, SchedulesRepo, SqliteEventStore } from '@shibaox/persistence-sqlite';
-import { listModels, type ProviderEntry } from '@shibaox/providers';
+import { discoverModels, type ModelChoice, type ProviderEntry } from '@shibaox/providers';
 import { type ChatMessage, loadOrg } from '@shibaox/schemas';
 import { macosChannel } from './channels/macos.js';
 import { OutboxWorker } from './channels/outbox.js';
@@ -62,6 +62,7 @@ export class Daemon {
   private readonly threads = new Map<string, ChatMessage[]>();
   /** One turn at a time per chat: the run in flight and the texts waiting for it. */
   private readonly inFlight = new Map<string, { runId: string; queue: string[] }>();
+  private modelsCache: { at: number; models: ModelChoice[] } | undefined;
 
   constructor(private readonly opts: DaemonOptions = {}) {
     this.paths = opts.home ?? homePaths(opts.env);
@@ -162,7 +163,16 @@ export class Daemon {
           vault: opts.vault ?? (orgRoot ? vaultDir(loadOrg(orgRoot), {}) : undefined),
           log: opts.log,
         }),
-      models: () => listModels(registryFor(opts.env ?? process.env, opts.extraProviders)),
+      models: async () => {
+        // local servers are probed at most every 10 s (each `/model` keystroke asks the list)
+        if (this.modelsCache && Date.now() - this.modelsCache.at < 10_000)
+          return this.modelsCache.models;
+        const models = await discoverModels(
+          registryFor(opts.env ?? process.env, opts.extraProviders),
+        );
+        this.modelsCache = { at: Date.now(), models };
+        return models;
+      },
       onShutdown: (o) => {
         void this.stop(o);
       },

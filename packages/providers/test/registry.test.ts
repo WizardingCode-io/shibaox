@@ -1,5 +1,6 @@
+import { createServer } from 'node:http';
 import { describe, expect, it } from 'vitest';
-import { loadCatalog, ProviderRegistry } from '../src/index.js';
+import { discoverModels, loadCatalog, ProviderRegistry } from '../src/index.js';
 
 describe('ProviderRegistry', () => {
   const reg = (env: Record<string, string> = {}) => new ProviderRegistry(loadCatalog(), env);
@@ -96,5 +97,77 @@ describe('context windows', () => {
     expect(reg.contextWindow('openai/gpt-5')).toBe(400_000);
     expect(reg.contextWindow('xai/grok-4')).toBeUndefined();
     expect(reg.contextWindow('nope/x')).toBeUndefined();
+  });
+});
+
+describe('discoverModels', () => {
+  it('asks local OpenAI-compatible servers which models they have and merges them with the catalog', async () => {
+    const server = createServer((req, res) => {
+      res.setHeader('content-type', 'application/json');
+      if (req.url === '/v1/models')
+        return res.end(
+          JSON.stringify({
+            data: [{ id: 'qwen/qwen3-coder-30b' }, { id: 'whisper-large-v3' }, { id: 'llama3.2' }],
+          }),
+        );
+      res.statusCode = 404;
+      res.end('{}');
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const reg = new ProviderRegistry(
+        [
+          {
+            id: 'lmstudio',
+            name: 'LM Studio',
+            kind: 'openai-compatible',
+            base_url: `http://127.0.0.1:${port}/v1`,
+            auth: { type: 'none' },
+            models: ['llama3.2'],
+            pricing: {},
+            verify: false,
+            context_window: {},
+            capabilities: { tools: true },
+          },
+          {
+            id: 'ollama',
+            name: 'Ollama',
+            kind: 'openai-compatible',
+            base_url: 'http://127.0.0.1:1/v1', // nothing listens here
+            auth: { type: 'none' },
+            models: ['llama3.2'],
+            pricing: {},
+            verify: false,
+            context_window: {},
+            capabilities: { tools: true },
+          },
+        ],
+        {},
+      );
+      const models = await discoverModels(reg, { timeoutMs: 1000 });
+      const lm = models.filter((m) => m.provider === 'lmstudio');
+      // discovered ids first, the catalog entry kept once, audio/embedding models left out
+      expect(lm.map((m) => m.model)).toEqual(['qwen/qwen3-coder-30b', 'llama3.2']);
+      expect(lm[0]).toMatchObject({
+        ref: 'lmstudio/qwen/qwen3-coder-30b',
+        configured: true,
+        local: true,
+        available: true,
+      });
+      const ol = models.filter((m) => m.provider === 'ollama');
+      expect(ol).toEqual([
+        {
+          ref: 'ollama/llama3.2',
+          provider: 'ollama',
+          model: 'llama3.2',
+          configured: true,
+          local: true,
+          available: false,
+        },
+      ]);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
   });
 });

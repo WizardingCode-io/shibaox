@@ -86,6 +86,11 @@ describe('models endpoint', () => {
       configured: false,
       missing: ['OPENAI_API_KEY'],
     });
+    // local servers are asked what they have; catalog entries stay listed either way
+    expect(models.find((m) => m.ref === 'ollama/llama3.2')).toMatchObject({
+      local: true,
+      configured: true,
+    });
   });
 });
 
