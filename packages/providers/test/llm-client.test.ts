@@ -127,3 +127,25 @@ describe('LlmClient over an OpenAI-compatible fake', () => {
     expect(Date.now() - start).toBeLessThan(500);
   });
 });
+
+describe('generateObject', () => {
+  it('falls back to the JSON in a plain-text answer when the model cannot do structured output', async () => {
+    let calls = 0;
+    fake = await startFakeOpenAI(() => {
+      calls++;
+      // the first answer is prose around JSON: JSON mode "did not match schema"; the retry gets the object
+      return calls === 1
+        ? { content: 'Sure thing! Here you go: {"choice":"ship","reasoning":"tests pass"} — done.' }
+        : { content: '{"choice":"ship","reasoning":"tests pass"}' };
+    });
+    const client = new LlmClient(new ProviderRegistry([entryFor(fake.baseURL)], {}));
+    const r = await client.generateObject(
+      'fake/m',
+      { messages: [{ role: 'user', content: 'ship?' }] },
+      z.object({ choice: z.enum(['ship', 'rework']), reasoning: z.string() }),
+    );
+    expect(r.output).toEqual({ choice: 'ship', reasoning: 'tests pass' });
+    expect(calls).toBeLessThanOrEqual(2);
+    await fake.close();
+  });
+});

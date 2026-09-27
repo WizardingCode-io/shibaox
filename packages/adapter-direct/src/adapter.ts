@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -16,6 +17,8 @@ import {
   generate,
   type ProviderRegistry,
 } from '@shibaox/providers';
+import type { ModelMessage, ToolSet } from 'ai';
+import { parseTextToolCalls } from './text-tools.js';
 import { APPROVAL_PENDING, buildTools } from './tools.js';
 
 export interface DirectAdapterOptions {
@@ -45,6 +48,13 @@ const CHAT_RULES =
   'Rules: answer the user directly in your reply text, in their language. Use the tools only when the request needs them (reading or writing files in the workspace, running a listed program, fetching a page, dispatching a workflow); after using tools, still answer in text. Never describe a tool call in text: either call the tool or answer. Do not call finish for a plain answer.';
 
 type Settled = { ok: true; r: GenerateResult } | { ok: false; e: unknown };
+
+/** Follow-up calls after tool calls the model wrote as text (models without native tools). */
+const TEXT_TOOL_ROUNDS = 3;
+
+type SafeParsed =
+  | { success: true; data: unknown }
+  | { success: false; error?: { message?: string } };
 
 /**
  * What the conversation shows for a call: the model's text; without it, what finish() carried
@@ -113,6 +123,10 @@ export class DirectAdapter implements RuntimeAdapter {
     let pending: Promise<Settled>;
     let ref: string;
     let effectiveMaxSteps: number;
+    let messages: ModelMessage[] = [];
+    let tools: ToolSet | undefined;
+    let callModel: (msgs: ModelMessage[]) => Promise<Settled> = () =>
+      Promise.resolve({ ok: false, e: new Error('not started') });
     try {
       ref = this.opts.resolveRef(job);
       yield { type: 'usage', model: ref };
@@ -120,7 +134,7 @@ export class DirectAdapter implements RuntimeAdapter {
       // plain-text turn instead: no tools are sent and the reply is the result.
       const supportsTools = this.opts.registry.supportsTools(ref);
       effectiveMaxSteps = supportsTools ? (job.role.max_steps ?? this.opts.maxSteps ?? 12) : 1;
-      const tools = supportsTools
+      tools = supportsTools
         ? buildTools({
             workspace: job.workspace,
             role: job.role,
@@ -143,43 +157,115 @@ export class DirectAdapter implements RuntimeAdapter {
             extraTools: this.opts.extraTools?.(job) ?? [],
           })
         : undefined;
-      pending = generate({
-        model: this.opts.registry.model(ref),
-        system: this.systemPrompt(job),
-        messages: [
-          ...conversationOf(job.input).map((m) => ({ role: m.role, content: m.content })),
-          { role: 'user' as const, content: this.userMessage(job) },
-        ],
-        tools,
-        maxSteps: effectiveMaxSteps,
-        stopOnTools: supportsTools ? ['finish'] : undefined,
-        signal: abort.signal,
-        maxRetries: this.opts.maxRetries,
-      })
-        .then(
+      messages = [
+        ...conversationOf(job.input).map((m) => ({ role: m.role, content: m.content })),
+        { role: 'user' as const, content: this.userMessage(job) },
+      ];
+      const model = this.opts.registry.model(ref);
+      const system = this.systemPrompt(job);
+      const maxSteps = effectiveMaxSteps;
+      callModel = (msgs) =>
+        generate({
+          model,
+          system,
+          messages: msgs,
+          tools,
+          maxSteps,
+          stopOnTools: supportsTools ? ['finish'] : undefined,
+          signal: abort.signal,
+          maxRetries: this.opts.maxRetries,
+        }).then(
           (r): Settled => ({ ok: true, r }),
           (e: unknown): Settled => ({ ok: false, e }),
-        )
-        .finally(() => ctx.signal.removeEventListener('abort', onAbort));
+        );
+      pending = callModel(messages);
     } catch (e) {
       ctx.signal.removeEventListener('abort', onAbort);
       yield { type: 'error', message: describeError(e) };
       return;
     }
 
-    let settled: Settled | undefined;
-    while (!settled) {
+    // yields the tool events pushed while a call is in flight, then hands back its outcome
+    const drain = async function* (p: Promise<Settled>): AsyncGenerator<RuntimeEvent, Settled> {
+      let s: Settled | undefined;
+      while (!s) {
+        while (queue.length > 0) yield queue.shift() as RuntimeEvent;
+        const next = await Promise.race([
+          p,
+          new Promise<undefined>((res) => {
+            wake = () => res(undefined);
+          }),
+        ]);
+        wake = undefined;
+        s = next;
+      }
       while (queue.length > 0) yield queue.shift() as RuntimeEvent;
-      const next = await Promise.race([
-        pending,
-        new Promise<undefined>((res) => {
-          wake = () => res(undefined);
-        }),
-      ]);
-      wake = undefined;
-      settled = next;
+      return s;
+    };
+    let settled = yield* drain(pending);
+    // a model without native tool calling writes its calls as text: run them, hand the
+    // results back, and let it continue (a few rounds at most)
+    const totals = { inputTokens: 0, outputTokens: 0 };
+    let shown = false;
+    for (let round = 0; ; round++) {
+      if (suspended || !settled.ok) break;
+      totals.inputTokens += settled.r.usage.inputTokens;
+      totals.outputTokens += settled.r.usage.outputTokens;
+      shown = false;
+      if (finished || !tools || settled.r.finishReason !== 'stop' || round >= TEXT_TOOL_ROUNDS)
+        break;
+      const parsed = parseTextToolCalls(settled.r.text);
+      if (parsed.calls.length === 0) break;
+      if (parsed.text) yield { type: 'text', text: parsed.text };
+      shown = true;
+      const results: string[] = [];
+      for (const call of parsed.calls) {
+        const t = tools[call.name];
+        if (!t?.execute) {
+          const id = randomUUID();
+          emit({ type: 'tool_use', id, name: call.name, input: call.args });
+          emit({
+            type: 'tool_result',
+            id,
+            name: call.name,
+            output: { error: `unknown tool "${call.name}"` },
+            durationMs: 0,
+          });
+          results.push(`${call.name}: {"error":"unknown tool"}`);
+          continue;
+        }
+        // native calls go through the tool's zod schema (defaults, types): text ones must too
+        const schema = (t as { inputSchema?: { safeParse?: (v: unknown) => SafeParsed } })
+          .inputSchema;
+        const checked = schema?.safeParse ? schema.safeParse(call.args) : undefined;
+        if (checked && !checked.success) {
+          const id = randomUUID();
+          const error = `invalid arguments for ${call.name}: ${checked.error?.message ?? 'schema'}`;
+          emit({ type: 'tool_use', id, name: call.name, input: call.args });
+          emit({ type: 'tool_result', id, name: call.name, output: { error }, durationMs: 0 });
+          results.push(`${call.name}: ${JSON.stringify({ error })}`);
+          continue;
+        }
+        const run = t.execute as (input: unknown, options: unknown) => Promise<unknown>;
+        const out = await run(checked ? checked.data : call.args, {
+          toolCallId: randomUUID(),
+          messages: [],
+        });
+        results.push(`${call.name}: ${JSON.stringify(out ?? null).slice(0, 8000)}`);
+      }
+      while (queue.length > 0) yield queue.shift() as RuntimeEvent;
+      if (finished) break;
+      messages = [
+        ...messages,
+        { role: 'assistant', content: settled.r.text },
+        {
+          role: 'user',
+          content: `Tool results:\n${results.join('\n')}\n\nContinue: answer the user, or call another tool the same way.`,
+        },
+      ];
+      settled = yield* drain(callModel(messages));
     }
-    while (queue.length > 0) yield queue.shift() as RuntimeEvent;
+    ctx.signal.removeEventListener('abort', onAbort);
 
     if (suspended) {
       yield {
@@ -195,15 +281,17 @@ export class DirectAdapter implements RuntimeAdapter {
       yield { type: 'error', message: describeError(settled.e) };
       return;
     }
-    const { usage, text, finishReason, steps, lastStepInputTokens } = settled.r;
+    const { text, finishReason, steps, lastStepInputTokens } = settled.r;
+    const usage = totals;
     const cost = {
       usd: this.opts.registry.estimateCost(ref, usage) ?? 0,
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
     };
     // the model's answer is a text event, like any runtime's: the conversation view shows
-    // text, never raw results. Without finish() it is the reply; with finish() the text output.
-    const reply = replyText(text, finished);
+    // text, never raw results or tool calls written as text. Without finish() it is the
+    // reply; with finish() the text output.
+    const reply = replyText(shown ? '' : parseTextToolCalls(text).text, finished);
     if (reply) yield { type: 'text', text: reply };
     const contextWindow = this.opts.registry.contextWindow(ref);
     yield {

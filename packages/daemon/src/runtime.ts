@@ -238,11 +238,21 @@ export function buildRuntime(o: RuntimeOptions) {
   const strongRef = o.org.models.tiers.strong;
   const strongOk = real && strongRef !== undefined && unusable(registry, strongRef) === undefined;
 
+  // tiers.decision: a `provider/model` ref makes an LLM the decider (any router or model,
+  // e.g. openrouter/typesafe/jev-router); `jev-*` names the TypeSafe typed API (needs its key)
+  const decisionRef = o.org.models.tiers.decision;
+  const decisionIsRef = decisionRef?.includes('/') ?? false;
+  const decisionOk = real && decisionIsRef && unusable(registry, decisionRef) === undefined;
+  if (real && decisionIsRef && !decisionOk)
+    warnings.push(
+      `decision model "${decisionRef}" is not usable: ${unusable(registry, decisionRef)}`,
+    );
   const jevKey = env.TYPESAFE_API_KEY;
-  const jev = jevKey
-    ? new JevClient({ apiKey: jevKey, baseURL: env.SHIBAOX_JEV_BASE_URL || undefined })
-    : undefined;
-  const judgeRef = o.org.models.gates.judge ?? strongRef;
+  const jev =
+    jevKey && !decisionIsRef
+      ? new JevClient({ apiKey: jevKey, baseURL: env.SHIBAOX_JEV_BASE_URL || undefined })
+      : undefined;
+  const judgeRef = o.org.models.gates.judge ?? (decisionOk ? decisionRef : strongRef);
   const judge =
     real && judgeRef && unusable(registry, judgeRef) === undefined
       ? judgeCheckRunner(llm, judgeRef)
@@ -264,9 +274,9 @@ export function buildRuntime(o: RuntimeOptions) {
         ? `no usable judge model (${judgeRef ?? 'unset'}): judge checks will fail`
         : 'judge checks need a real adapter: they will fail with the mock adapter',
     );
-  const lead: Decider | undefined =
-    strongOk && strongRef ? new LeadDecider(llm, strongRef) : undefined;
-  if (lead && strongRef) usedRefs.add(strongRef);
+  const leadRef = decisionOk ? decisionRef : strongOk ? strongRef : undefined;
+  const lead: Decider | undefined = leadRef ? new LeadDecider(llm, leadRef) : undefined;
+  if (leadRef) usedRefs.add(leadRef);
   const decider: Decider = jev
     ? new JevDecider(jev, { threshold: 0.8, fallback: lead })
     : (lead ?? new ScriptedDecider({}, 'ship'));

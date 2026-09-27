@@ -14,18 +14,21 @@ export class LeadDecider implements Decider {
     const schema = z.object({ choice: z.enum([first, ...rest]), reasoning: z.string() });
     let r: GenerateResult<z.infer<typeof schema>> & { cost?: number };
     try {
-      r = await this.client.generate<z.infer<typeof schema>>(this.ref, {
-        system:
-          'You are the team lead. Decide the next step for this run. Answer with the JSON object requested.',
-        messages: [
-          {
-            role: 'user',
-            content: `Question: ${req.question}\nOptions: ${req.options.join(', ')}\n\nContext:\n${JSON.stringify(req.context).slice(0, 60_000)}`,
-          },
-        ],
-        output: schema,
-        signal: req.signal,
-      });
+      r = await this.client.generateObject(
+        this.ref,
+        {
+          system:
+            'You are the team lead. Decide the next step for this run. Answer with the JSON object requested.',
+          messages: [
+            {
+              role: 'user',
+              content: `Question: ${req.question}\nOptions: ${req.options.join(', ')}\n\nContext:\n${JSON.stringify(req.context).slice(0, 60_000)}`,
+            },
+          ],
+          signal: req.signal,
+        },
+        schema,
+      );
     } catch (e) {
       throw new Error(`lead decider ${this.ref} failed: ${describeError(e)}`);
     }

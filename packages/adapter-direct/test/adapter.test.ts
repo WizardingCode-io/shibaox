@@ -687,6 +687,42 @@ describe('DirectAdapter', () => {
     expect(system2).toContain('call finish(output, summary) exactly once');
   });
 
+  it('runs tool calls the model wrote as text (models without native tools) and shows them as tools', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    writeFileSync(join(ws, 'a.txt'), 'x');
+    fake = await startFakeOpenAI((req, turn) =>
+      turn === 0
+        ? { content: 'Deixa-me ver.\n<tool_call>{"name":"list_files","arguments":{}}</tool_call>' }
+        : {
+            content: `Há ${String(JSON.stringify(req.messages)).includes('a.txt') ? 'um' : 'zero'} ficheiro.`,
+          },
+    );
+    const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    const events: RuntimeEvent[] = [];
+    for await (const e of adapter.run({ ...jobFor(ws), conversation: true }, ctx())) events.push(e);
+    expect(events.map((e) => e.type)).toEqual([
+      'started',
+      'usage',
+      'text', // what the model said before the call it wrote as text
+      'tool_use',
+      'tool_result',
+      'text',
+      'usage',
+      'result',
+    ]);
+    expect(events.find((e) => e.type === 'tool_use')).toMatchObject({ name: 'list_files' });
+    expect(events.filter((e) => e.type === 'text')).toEqual([
+      { type: 'text', text: 'Deixa-me ver.' },
+      { type: 'text', text: 'Há um ficheiro.' },
+    ]);
+    expect(fake.requests).toHaveLength(2); // the tool result went back to the model
+    expect(String(JSON.stringify(events))).not.toContain('<tool_call>');
+  });
+
   it('aborts when the signal fires', async () => {
     const ws = mkdtempSync(join(tmpdir(), 'ws-'));
     fake = await startFakeOpenAI(

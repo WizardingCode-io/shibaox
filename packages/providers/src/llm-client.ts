@@ -84,4 +84,69 @@ export class LlmClient {
     });
     return { ...r, cost: this.registry.estimateCost(ref, r.usage) };
   }
+
+  /**
+   * A structured answer: the provider's JSON mode first; when the model cannot do that
+   * (routers and small local models answer in prose), the same prompt again asking for the
+   * JSON object in plain text, which is then extracted and validated against `schema`.
+   */
+  async generateObject<T>(
+    ref: string,
+    args: Omit<GenerateArgs, 'model' | 'output'>,
+    schema: z.ZodType<T>,
+  ): Promise<GenerateResult<T> & { cost?: number; output: T }> {
+    try {
+      const r = await this.generate<T>(ref, { ...args, output: schema });
+      if (r.output !== undefined) return { ...r, output: r.output };
+    } catch (e) {
+      if (!isNoObjectError(e)) throw e;
+    }
+    const plain = await this.generate<T>(ref, {
+      ...args,
+      messages: [
+        ...args.messages,
+        { role: 'user', content: 'Answer with the JSON object only, no prose around it.' },
+      ],
+    });
+    const output = schema.parse(extractJson(plain.text));
+    return { ...plain, output };
+  }
+}
+
+const isNoObjectError = (e: unknown): boolean =>
+  e instanceof Error &&
+  (e.name === 'AI_NoObjectGeneratedError' ||
+    /No object generated|did not match schema/i.test(e.message));
+
+/** The first JSON object in a text (models wrap it in prose or code fences). */
+export function extractJson(text: string): unknown {
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(text)?.[1];
+  const candidates = [fenced, text].filter((t): t is string => typeof t === 'string');
+  for (const t of candidates) {
+    const start = t.indexOf('{');
+    if (start < 0) continue;
+    let depth = 0;
+    let inString = false;
+    for (let i = start; i < t.length; i++) {
+      const ch = t[i];
+      if (inString) {
+        if (ch === '\\') i++;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') inString = true;
+      else if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          try {
+            return JSON.parse(t.slice(start, i + 1));
+          } catch {
+            break;
+          }
+        }
+      }
+    }
+  }
+  throw new Error(`no JSON object in the model's answer: ${text.slice(0, 200)}`);
 }

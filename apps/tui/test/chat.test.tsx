@@ -100,7 +100,8 @@ test('a chat run reads as a conversation: the request, then the reply without no
   const m = await mount(client, 'r1');
   try {
     let f = await m.frame();
-    for (let i = 0; i < 40 && !f.includes('Continue'); i++) f = await m.frame();
+    // the reply streams in after the run is known to be done: wait for the text itself
+    for (let i = 0; i < 60 && !f.includes('Olá! Em que posso ajudar?'); i++) f = await m.frame();
     expect(f).toContain('olá');
     expect(f).toContain('Olá! Em que posso ajudar?');
     expect(f).not.toContain('reply · assistant');

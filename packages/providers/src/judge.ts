@@ -29,14 +29,17 @@ export function judgeCheckRunner(client: LlmClient, ref: string): CheckRunner {
     if (check.type !== 'judge') throw new Error('judgeCheckRunner got a non-judge check');
     let r: GenerateResult<z.infer<typeof Verdict>> & { cost?: number };
     try {
-      r = await client.generate<z.infer<typeof Verdict>>(ref, {
-        system: JUDGE_SYSTEM,
-        messages: [
-          { role: 'user', content: `Rubric:\n${check.rubric}\n\n${await judgeContext(ctx)}` },
-        ],
-        output: Verdict,
-        signal: ctx.signal,
-      });
+      r = await client.generateObject(
+        ref,
+        {
+          system: JUDGE_SYSTEM,
+          messages: [
+            { role: 'user', content: `Rubric:\n${check.rubric}\n\n${await judgeContext(ctx)}` },
+          ],
+          signal: ctx.signal,
+        },
+        Verdict,
+      );
     } catch (e) {
       return {
         name: check.name,

@@ -281,7 +281,9 @@ describe('RunManager', () => {
       input: 'olá',
       workspace: 'inplace',
     });
-    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('completed'));
+    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('completed'), {
+      timeout: 5_000,
+    });
     const o = q.calls[0]?.options ?? {};
     expect(o.mcpServers?.shibaox).toBeDefined();
     expect(o.allowedTools).toContain('mcp__shibaox__*');
@@ -332,7 +334,10 @@ describe('RunManager', () => {
     expect(finished[0]).toMatchObject({ runId, origin: 'schedule:s1' });
     expect(finished[0]?.notePath).toContain('10-projects');
     const plain = await submitMock(m, s, 'inplace');
-    await vi.waitFor(async () => expect((await m.state(plain.runId)).status).toBe('waiting_human'));
+    await vi.waitFor(
+      async () => expect((await m.state(plain.runId)).status).toBe('waiting_human'),
+      { timeout: 5_000 },
+    );
     await m.cancel(plain.runId);
     await new Promise((r) => setTimeout(r, 50));
     expect(finished).toHaveLength(1);

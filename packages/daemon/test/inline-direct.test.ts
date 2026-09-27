@@ -84,3 +84,63 @@ describe('shibaox run --adapter direct (fake providers)', () => {
     expect(state.spentUsd).toBeGreaterThan(0);
   });
 });
+
+describe('tiers.decision as a model ref', () => {
+  it('decide nodes and judge checks use the decision model when it is a provider ref, without a TypeSafe key', async () => {
+    const seen: string[] = [];
+    const llm = await startFakeOpenAI((req, turn) => {
+      seen.push(String((req as { model?: string }).model));
+      const text = JSON.stringify(req.messages);
+      if (text.includes('Rubric:')) return { content: '{"passed": true, "evidence": "fine"}' };
+      if (text.includes('Options: ship, rework'))
+        return { content: '{"choice": "ship", "reasoning": "ok"}' };
+      return turn % 2 === 0
+        ? { toolCalls: [{ name: 'finish', args: { output: { note: 'done' }, summary: 'done' } }] }
+        : { content: 'done' };
+    });
+    fakes.push(llm);
+    const dir = mkdtempSync(join(tmpdir(), 'e2e-'));
+    scaffoldOrg(dir);
+    writeFileSync(
+      join(dir, 'org/models.yaml'),
+      `providers: {}\ntiers: { strong: fake/m, cheap: fake/m, decision: fake/decider }\nroles: {}\ngates: {}\n`,
+    );
+    writeFileSync(
+      join(dir, 'org/gates/tests.yaml'),
+      'gate: tests\nchecks:\n  - { name: review, type: judge, role: team-leader, rubric: "The change is small and tested" }\n',
+    );
+    const project = join(dir, 'project');
+    cpSync(sample, project, { recursive: true });
+    const warnings: string[] = [];
+    const state = await runWorkflow('hello-feature', {
+      org: join(dir, 'org'),
+      project,
+      db: join(dir, 'events.db'),
+      input: 'add /health',
+      adapter: 'direct',
+      human: new AutoApproveHuman(),
+      log: (l) => warnings.push(l),
+      env: {},
+      extraProviders: [
+        {
+          id: 'fake',
+          name: 'Fake',
+          kind: 'openai-compatible',
+          base_url: llm.baseURL,
+          auth: { type: 'none' },
+          models: [],
+          pricing: {},
+          verify: false,
+          context_window: {},
+          capabilities: { tools: true },
+        },
+      ],
+    });
+    expect(state.status).toBe('completed');
+    expect(state.nodes.judge?.choice).toBe('ship');
+    // the decision and the judge went to the decision model, the tasks to the strong one
+    expect(seen).toContain('decider');
+    expect(seen).toContain('m');
+    expect(warnings.join('\n')).not.toContain('no decider model configured');
+  });
+});
