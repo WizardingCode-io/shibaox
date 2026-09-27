@@ -43,7 +43,27 @@ test('a finished run shows the prompt; the next request runs in the same tab, af
   const client = new FakeDaemonClient();
   client.runs = [run('r1')];
   client.states.set('r1', state('r1', 'add a health endpoint'));
-  client.history.set('r1', [end('completed')]);
+  client.history.set('r1', [
+    {
+      kind: 'run',
+      seq: 1,
+      cursor: '1:0',
+      event: { runId: 'r1', at: 'x', seq: 1, type: 'NodeStarted', nodeId: 'analyse' },
+    } as unknown as Envelope,
+    {
+      kind: 'runtime',
+      seq: 2,
+      cursor: '0:2',
+      event: {
+        runId: 'r1',
+        nodeId: 'analyse',
+        seq: 2,
+        at: 'x',
+        event: { type: 'text', text: 'Sure, here is the endpoint.' },
+      },
+    } as unknown as Envelope,
+    end('completed'),
+  ]);
   client.submitResult = { runId: 'r2', warnings: [] };
   let hooks: AppHooks | undefined;
   const setup = await testRender(
@@ -99,6 +119,7 @@ test('a finished run shows the prompt; the next request runs in the same tab, af
     });
     expect(submit.input).toContain('now add tests for it');
     expect(submit.input).toContain('add a health endpoint'); // the previous request travels as context
+    expect(submit.input).toContain('Assistant: Sure, here is the endpoint.'); // and the previous reply
     expect(hooks?.data.state.open).toEqual(['r1']); // same tab
     expect(f).toContain('add a health endpoint');
     expect(f).toContain('now add tests for it');

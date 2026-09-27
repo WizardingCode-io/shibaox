@@ -94,9 +94,20 @@ export function DataProvider(
     const previousId = runs[runs.length - 1] ?? rootId;
     const previous = state.states[previousId];
     if (!previous) return undefined;
-    const spec = requestText(previous.input);
-    const input = spec
-      ? `Follow-up to run ${previousId.slice(0, 8)} (${previous.status}), which was asked: "${spec}".\n\nNow: ${text}`
+    // the whole thread travels as the conversation: each request and the reply it got
+    const turns = runs.flatMap((id) => {
+      const st = state.states[id];
+      if (!st) return [];
+      const spec = requestText(st.input);
+      const reply = timeline(id)()
+        .flatMap((c) => (c.kind === 'node' ? c.blocks : []))
+        .flatMap((b) => (b.kind === 'text' && !b.parentId ? [b.text.trim()] : []))
+        .join('\n')
+        .trim();
+      return [`User: ${spec}`, ...(reply ? [`Assistant: ${reply}`] : [])];
+    });
+    const input = turns.length
+      ? `Conversation so far:\n${turns.join('\n\n')}\n\nUser: ${text}`
       : text;
     const runId = await poller.submit({
       orgRoot: previous.orgRoot ?? '',

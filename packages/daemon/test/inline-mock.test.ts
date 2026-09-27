@@ -36,6 +36,22 @@ describe('shibaox run (mock adapter)', () => {
     expect(state.nodes.judge?.choice).toBe('ship');
     expect(state.lastGateReport?.checks.map((c) => c.type)).toEqual(['tests']); // the org template detects the project's runner
   });
+  it('chat answers in one node: no team gates, no push', async () => {
+    const { org, project, db, env } = setup();
+    const state = await runWorkflow('chat', {
+      org,
+      project,
+      db,
+      env,
+      input: 'olá',
+      adapter: 'mock',
+      human: new AutoApproveHuman(),
+      log: () => {},
+    });
+    expect(state.status).toBe('completed');
+    expect(Object.keys(state.nodes)).toEqual(['reply']);
+    expect(state.lastGateReport).toBeUndefined();
+  });
   it('fails after retries when the sample tests are broken', async () => {
     const { org, project, db, env } = setup();
     writeFileSync(

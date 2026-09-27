@@ -38,6 +38,28 @@ description: Judges readiness, approves or sends back.
 model_tier: strong
 system_prompt: prompts/team-leader.md
 `,
+  'org/roles/assistant.yaml': `role: assistant
+description: Talks with you; answers directly and points work to the right workflow.
+model_tier: strong
+tools: [read, git, node, npm, pnpm]
+permissions:
+  approval_required: [push, deploy]
+system_prompt: prompts/assistant.md
+`,
+  'org/prompts/assistant.md': `# Assistant
+You are the assistant of this organisation, talking with its owner inside shibaox.
+Answer in the language the user writes in. Be direct and brief.
+You may read the repository to answer questions about it.
+Do not implement changes yourself: when the user asks for a change, say in two or three lines
+what you would do and that they can start it with the team's workflow (for example
+\`/workflow hello-feature\`, then the request), or ask the one question that unblocks it.
+`,
+  'org/workflows/chat.yaml': `workflow: chat
+description: Talk with the assistant; the default entry of the dashboard.
+start: reply
+nodes:
+  reply: { type: task, role: assistant, instruction: "Reply to the user." }
+`,
   'org/roles/analyst.yaml': `role: analyst
 description: Reads the request and lists files and risks.
 model_tier: cheap

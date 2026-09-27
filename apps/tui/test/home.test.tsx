@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { testRender } from '@opentui/solid';
@@ -56,8 +56,8 @@ test('home shows the logo, prompt, context line and daemon footer', async () => 
     const f = await m.frame();
     expect(f).toContain('█');
     expect(f).toContain('Add a /health endpoint');
-    expect(f).toContain('workflow hello-feature');
-    expect(f).toContain('adapter mock');
+    expect(f).toContain('workflow chat'); // the org's chat workflow is the default entry
+    expect(f).toContain('adapter direct');
     expect(f).toContain('project /');
     expect(f).toContain('daemon 0.0.1 · 0 running · 0 queued');
     expect(f).toContain('ctrl+o runs');
@@ -119,10 +119,12 @@ test('a command chosen from the list applies on enter; free-text commands ask fo
     await m.type('/workflow');
     await m.setup.mockInput.pressTab();
     await m.frame();
+    await m.setup.mockInput.pressArrow('down'); // chat is first; hello-feature second
+    await m.frame();
     await m.setup.mockInput.pressEnter();
     let f = await m.frame();
     expect(f).not.toContain('required');
-    expect(f).toContain('hello-feature');
+    expect(f).toContain('workflow hello-feature');
     // /adapter + enter steps into its values; down + enter picks the second one
     await m.type('/adapter');
     await m.setup.mockInput.pressEnter();
@@ -173,7 +175,7 @@ test('an unknown org is refused and the current one stays; ctrl+c clears the tex
     await m.setup.mockInput.pressEnter();
     let f = await m.frame();
     expect(f).toContain('Org not found');
-    expect(f).toContain('workflow hello-feature'); // the valid org stays
+    expect(f).toContain('workflow chat'); // the valid org stays
     await m.type('do it');
     await m.setup.mockInput.pressKey('c', { ctrl: true });
     f = await m.frame();
@@ -187,16 +189,29 @@ test('an unknown org is refused and the current one stays; ctrl+c clears the tex
   }
 });
 
-test('the adapter defaults to claude-code when the claude CLI is on the PATH, and mock is never remembered', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'tui-home-claude-'));
+test('the adapter follows the org: a subscription tier runs through claude-code, an API tier through direct', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tui-home-tier-'));
   scaffoldOrg(dir);
-  const bin = join(dir, 'bin');
-  mkdirSync(bin);
-  writeFileSync(join(bin, 'claude'), '#!/bin/sh\n');
-  chmodSync(join(bin, 'claude'), 0o755);
+  const models = join(dir, 'org', 'models.yaml');
+  writeFileSync(
+    models,
+    readFileSync(models, 'utf8').replace(
+      'strong: anthropic/claude-sonnet-5',
+      'strong: anthropic-subscription/claude-sonnet-5',
+    ),
+  );
   const client = new FakeDaemonClient();
   const setup = await testRender(
-    () => <App client={client} version="0.0.1" home={join(dir, 'home')} cwd={dir} env={{ SHIBAOX_NO_MOTION: '1', PATH: bin }} onExit={() => {}} />,
+    () => (
+      <App
+        client={client}
+        version="0.0.1"
+        home={join(dir, 'home')}
+        cwd={dir}
+        env={{ SHIBAOX_NO_MOTION: '1' }}
+        onExit={() => {}}
+      />
+    ),
     { width: 100, height: 30, exitOnCtrlC: false },
   );
   try {
@@ -213,7 +228,11 @@ test('a mock run says so in the prompt and never becomes the remembered adapter'
   const m = await mount();
   try {
     let f = await m.frame();
-    expect(f).toContain('mock runs no model'); // the default here: no claude on this PATH
+    expect(f).toContain('adapter direct'); // the template's strong tier is an API model
+    await m.type('/adapter mock');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).toContain('mock runs no model');
     await m.type('do it');
     await m.setup.mockInput.pressEnter();
     f = await m.frame();

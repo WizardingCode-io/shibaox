@@ -1,5 +1,4 @@
-import { existsSync } from 'node:fs';
-import { basename, delimiter, join } from 'node:path';
+import { join } from 'node:path';
 import { useTerminalDimensions } from '@opentui/solid';
 import { loadOrg, OrgLoadError } from '@shibaox/schemas';
 import { createEffect, createMemo, createSignal, type JSX, on, Show } from 'solid-js';
@@ -38,14 +37,23 @@ export const HOME_HINTS = [
   { key: '?', label: 'help' },
 ];
 
-/** The org's workflows, or why it could not be loaded. */
-function orgInfo(root: string): { workflows: string[]; error?: string } {
+/** The org's workflows and whether its strong tier runs on a subscription runtime, or why it could not be loaded. */
+function orgInfo(root: string): { workflows: string[]; subscription: boolean; error?: string } {
   try {
-    return { workflows: Object.keys(loadOrg(root).workflows) };
+    const org = loadOrg(root);
+    const strong = String(org.models.tiers?.strong ?? '');
+    return {
+      workflows: Object.keys(org.workflows),
+      subscription: /-subscription\//.test(strong),
+    };
   } catch (e) {
     if (e instanceof OrgLoadError && /not found/i.test(e.message))
-      return { workflows: [], error: `Org not found: ${root}` };
-    return { workflows: [], error: e instanceof Error ? e.message : String(e) };
+      return { workflows: [], subscription: false, error: `Org not found: ${root}` };
+    return {
+      workflows: [],
+      subscription: false,
+      error: e instanceof Error ? e.message : String(e),
+    };
   }
 }
 
@@ -56,11 +64,6 @@ export function daemonLine(d: ReturnType<typeof useData>['state'], version: stri
   const queued = d.runs.filter((r) => r.status === 'queued').length;
   const needs = d.inbox.length;
   return `daemon ${version} · ${running} running · ${queued} queued${needs ? ` · ▲ ${needs} needs you` : ''}`;
-}
-
-/** Whether the `claude` CLI is on the PATH: the natural default adapter then. */
-export function claudeOnPath(env: NodeJS.ProcessEnv): boolean {
-  return (env.PATH ?? '').split(delimiter).some((d) => d && existsSync(join(d, 'claude')));
 }
 
 export const MOCK_NOTICE =
@@ -85,13 +88,17 @@ export function Home(): JSX.Element {
   const [ctx, setCtx] = createSignal<PromptContext>({
     org: prefs.data.lastOrg ?? join(config.cwd, 'org'),
     project: config.cwd,
-    // mock is a test double: it is never the remembered choice, and claude-code wins when claude is installed
-    adapter:
-      ADAPTERS.find((a) => a === prefs.data.lastAdapter && a !== 'mock') ??
-      (claudeOnPath(config.env) ? 'claude-code' : 'mock'),
-    workflow: prefs.data.lastWorkflow,
+    // the org's models decide the runtime: a subscription tier runs through claude-code, an API
+    // or local tier through our own agent loop (direct); mock is never the remembered choice
+    adapter: ADAPTERS.find((a) => a === prefs.data.lastAdapter && a !== 'mock') ?? 'direct',
   });
-  const org = createMemo(() => orgInfo(ctx().org));
+  const orgRoot = createMemo(() => ctx().org);
+  const org = createMemo(() => orgInfo(orgRoot()));
+  createEffect(() => {
+    if (prefs.data.lastAdapter && prefs.data.lastAdapter !== 'mock') return;
+    const adapter = org().subscription ? 'claude-code' : 'direct';
+    setCtx((c) => (c.adapter === adapter ? c : { ...c, adapter }));
+  });
   // a closed dialog gives the keyboard back to the prompt
   createEffect(
     on(
@@ -105,7 +112,9 @@ export function Home(): JSX.Element {
   const [error, setError] = createSignal<string | undefined>();
   const [hint, setHint] = createSignal<string | undefined>();
   // the first workflow of the org when none was picked yet
-  const workflow = () => ctx().workflow ?? org().workflows[0];
+  // chat is the entry of the dashboard when the org has it; other workflows are one `/workflow` away
+  const workflow = () =>
+    ctx().workflow ?? (org().workflows.includes('chat') ? 'chat' : org().workflows[0]);
 
   const onCommand = (cmd: PromptCommand) => {
     setError(undefined);
