@@ -120,6 +120,8 @@ export function NodeCard(props: {
   selectedRow?: string;
   expanded: Set<string>;
   rowRef: (id: string, el: unknown) => void;
+  /** A conversation turn: the blocks are the reply, without node header or closing line. */
+  chat?: boolean;
 }): JSX.Element {
   const theme = useTheme();
   const syntax = useSyntax();
@@ -142,6 +144,27 @@ export function NodeCard(props: {
   const collapsed = () => props.expanded.has(headerId());
   const finished = () =>
     props.card.status !== 'running' && props.card.status !== 'pending' && props.card.endedAt;
+  const blocks = () => (
+    <For each={props.card.blocks}>
+      {(block) => (
+        <BlockView
+          block={block}
+          nodeId={props.card.nodeId}
+          running={props.card.status === 'running'}
+          selectedRow={props.selectedRow}
+          expanded={props.expanded}
+          rowRef={props.rowRef}
+          syntax={syntax}
+        />
+      )}
+    </For>
+  );
+  if (props.chat)
+    return (
+      <box flexDirection="column" width="100%" flexShrink={0} paddingLeft={1} marginBottom={1}>
+        {blocks()}
+      </box>
+    );
   return (
     <Surface>
       <Header
@@ -153,19 +176,7 @@ export function NodeCard(props: {
       />
       <Show when={!collapsed()}>
         <box flexDirection="column" width="100%" paddingTop={props.card.blocks.length > 0 ? 1 : 0}>
-          <For each={props.card.blocks}>
-            {(block) => (
-              <BlockView
-                block={block}
-                nodeId={props.card.nodeId}
-                running={props.card.status === 'running'}
-                selectedRow={props.selectedRow}
-                expanded={props.expanded}
-                rowRef={props.rowRef}
-                syntax={syntax}
-              />
-            )}
-          </For>
+          {blocks()}
         </box>
       </Show>
       <Show when={finished()}>

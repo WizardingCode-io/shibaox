@@ -91,8 +91,10 @@ test('a finished run shows the prompt; the next request runs in the same tab, af
     return setup.captureCharFrame();
   };
   try {
+    // a one-task workflow reads as a conversation: the reply arrives with the stream
     let f = await frame();
-    expect(f).toContain('✓ Done');
+    for (let i = 0; i < 40 && !f.includes('Sure, here is the endpoint.'); i++) f = await frame();
+    expect(f).toContain('Sure, here is the endpoint.');
     expect(f).toContain('› ');
     expect(f).toContain('Continue');
     // the follow-up run exists on the daemon once submitted
@@ -110,6 +112,7 @@ test('a finished run shows the prompt; the next request runs in the same tab, af
       workflow: string;
       input: string;
       adapter: string;
+      messages?: { role: string; content: string }[];
     };
     expect(submit).toMatchObject({
       orgRoot: '/o',
@@ -117,9 +120,12 @@ test('a finished run shows the prompt; the next request runs in the same tab, af
       workflow: 'hello-feature',
       adapter: 'mock',
     });
-    expect(submit.input).toContain('now add tests for it');
-    expect(submit.input).toContain('add a health endpoint'); // the previous request travels as context
-    expect(submit.input).toContain('Assistant: Sure, here is the endpoint.'); // and the previous reply
+    // the new turn is the input; the conversation so far travels as structured messages
+    expect(submit.input).toBe('now add tests for it');
+    expect(submit.messages).toEqual([
+      { role: 'user', content: 'add a health endpoint' },
+      { role: 'assistant', content: 'Sure, here is the endpoint.' },
+    ]);
     expect(hooks?.data.state.open).toEqual(['r1']); // same tab
     expect(f).toContain('add a health endpoint');
     expect(f).toContain('now add tests for it');

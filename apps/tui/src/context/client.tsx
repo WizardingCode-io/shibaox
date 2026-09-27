@@ -1,4 +1,4 @@
-import type { RunState } from '@shibaox/core';
+import type { ProjectProfile, RunState } from '@shibaox/core';
 import type {
   DiffResult,
   Envelope,
@@ -27,6 +27,7 @@ export interface DaemonClientLike {
   resume(id: string, o?: { budgetUsd?: number }): Promise<RunState>;
   submitRun(req: SubmitRequest): Promise<{ runId: string; warnings: string[] }>;
   diff(id: string): Promise<DiffResult>;
+  projectProfile(path: string, orgRoot?: string): Promise<ProjectProfile>;
 }
 
 const Context = createContext<DaemonClientLike>();

@@ -1,12 +1,23 @@
-import { join } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { useTerminalDimensions } from '@opentui/solid';
 import { loadOrg, OrgLoadError } from '@shibaox/schemas';
-import { createEffect, createMemo, createSignal, type JSX, on, Show } from 'solid-js';
+import {
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  type JSX,
+  on,
+  Show,
+} from 'solid-js';
 import { HelpDialog } from '../component/dialogs/help.js';
 import { RunsDialog } from '../component/dialogs/runs.js';
 import { KeyHints } from '../component/footer.js';
 import { Logo } from '../component/logo.js';
 import { Prompt, type PromptRef } from '../component/prompt/index.js';
+import { useClient } from '../context/client.js';
 import { useConfig } from '../context/config.js';
 import { useData } from '../context/data.js';
 import { usePrefs } from '../context/prefs.js';
@@ -37,24 +48,48 @@ export const HOME_HINTS = [
   { key: '?', label: 'help' },
 ];
 
+interface OrgInfo {
+  workflows: string[];
+  /** Workflows of one task node (the org's `chat`): conversations, run in place. */
+  single: string[];
+  subscription: boolean;
+  error?: string;
+}
+
 /** The org's workflows and whether its strong tier runs on a subscription runtime, or why it could not be loaded. */
-function orgInfo(root: string): { workflows: string[]; subscription: boolean; error?: string } {
+function orgInfo(root: string): OrgInfo {
   try {
     const org = loadOrg(root);
     const strong = String(org.models.tiers?.strong ?? '');
     return {
       workflows: Object.keys(org.workflows),
+      single: Object.values(org.workflows)
+        .filter((w) => {
+          const nodes = Object.values(w.nodes);
+          return nodes.length === 1 && nodes[0]?.type === 'task';
+        })
+        .map((w) => w.workflow),
       subscription: /-subscription\//.test(strong),
     };
   } catch (e) {
     if (e instanceof OrgLoadError && /not found/i.test(e.message))
-      return { workflows: [], subscription: false, error: `Org not found: ${root}` };
+      return { workflows: [], single: [], subscription: false, error: `Org not found: ${root}` };
     return {
       workflows: [],
+      single: [],
       subscription: false,
       error: e instanceof Error ? e.message : String(e),
     };
   }
+}
+
+/**
+ * The project the dashboard works on: the current directory, except the home directory itself,
+ * where the orchestrator gets a workspace of its own (`~/.shibaox/workspace`).
+ */
+export function defaultProject(cwd: string, home: string | undefined): string {
+  const h = home || homedir();
+  return h && resolve(cwd) === resolve(h) ? join(h, '.shibaox', 'workspace') : cwd;
 }
 
 /** `daemon 0.0.1 · 2 running · 1 queued · ▲ 1 needs you`, or the unreachable notice. */
@@ -70,14 +105,14 @@ export const MOCK_NOTICE =
   'mock runs no model: the nodes complete at once. /adapter claude-code uses your Claude login';
 
 /** `~/dir` for paths under the home directory. */
-export function tilde(p: string): string {
-  const home = process.env.HOME;
+export function tilde(p: string, home: string | undefined = process.env.HOME): string {
   return home && p.startsWith(home) ? `~${p.slice(home.length)}` : p;
 }
 
 export function Home(): JSX.Element {
   const theme = useTheme();
   const config = useConfig();
+  const client = useClient();
   const data = useData();
   const prefs = usePrefs();
   const route = useRoute();
@@ -87,13 +122,18 @@ export function Home(): JSX.Element {
   let prompt: PromptRef | undefined;
   const [ctx, setCtx] = createSignal<PromptContext>({
     org: prefs.data.lastOrg ?? join(config.cwd, 'org'),
-    project: config.cwd,
+    project: defaultProject(config.cwd, config.env.HOME),
     // the org's models decide the runtime: a subscription tier runs through claude-code, an API
     // or local tier through our own agent loop (direct); mock is never the remembered choice
     adapter: ADAPTERS.find((a) => a === prefs.data.lastAdapter && a !== 'mock') ?? 'direct',
   });
   const orgRoot = createMemo(() => ctx().org);
   const org = createMemo(() => orgInfo(orgRoot()));
+  // what the project is (stack, tests, size), from the daemon; nothing when it cannot say
+  const [profile] = createResource(
+    () => ({ project: ctx().project, org: orgRoot() }),
+    (k) => client.projectProfile(k.project, k.org).catch(() => undefined),
+  );
   createEffect(() => {
     if (prefs.data.lastAdapter && prefs.data.lastAdapter !== 'mock') return;
     const adapter = org().subscription ? 'claude-code' : 'direct';
@@ -132,6 +172,10 @@ export function Home(): JSX.Element {
     const wf = workflow();
     if (!wf) return setError('Pick a workflow first: /workflow <name>');
     const req = toSubmitRequest({ ...ctx(), workflow: wf }, text);
+    // a conversation acts on the checkout itself; teams get the org default (a worktree)
+    if (req.workspace === undefined && org().single.includes(wf)) req.workspace = 'inplace';
+    if (req.project === join(config.env.HOME || homedir(), '.shibaox', 'workspace'))
+      mkdirSync(req.project, { recursive: true });
     const runId = await data.actions.submit(req);
     if (!runId) return;
     prefs.update({
@@ -158,7 +202,7 @@ export function Home(): JSX.Element {
         <span style={{ fg: muted }}> adapter </span>
         {c.adapter}
         <span style={{ fg: muted }}> project </span>
-        {tilde(c.project)}
+        {tilde(c.project, config.env.HOME)}
         {c.workspace ? <span style={{ fg: muted }}>{`   workspace ${c.workspace}`}</span> : ''}
         {c.budgetUsd !== undefined ? (
           <span style={{ fg: muted }}>{`   budget ${money(c.budgetUsd)}`}</span>
@@ -196,6 +240,13 @@ export function Home(): JSX.Element {
             onNeedValue={(c) => setHint(COMMAND_HINT[c])}
             footer={contextFooter()}
           />
+          <Show when={profile()?.summary}>
+            <box height={1} flexShrink={0} width="100%" paddingLeft={1}>
+              <text fg={theme.text.muted} wrapMode="none">
+                {profile()?.summary ?? ''}
+              </text>
+            </box>
+          </Show>
           <box height={1} flexShrink={0} flexDirection="row" width="100%" paddingLeft={1}>
             <Show when={notice() ?? hint() ?? mockNotice()}>
               <text
@@ -226,7 +277,7 @@ export function Home(): JSX.Element {
         width="100%"
       >
         <text fg={theme.text.muted} flexShrink={1} wrapMode="none">
-          {tilde(config.cwd)}
+          {tilde(config.cwd, config.env.HOME)}
         </text>
         <text fg={theme.text.muted} flexShrink={0} wrapMode="none">
           {`  ·  ${daemonLine(data.state, config.version)}`}

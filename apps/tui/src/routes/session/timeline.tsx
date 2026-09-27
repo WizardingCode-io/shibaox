@@ -16,7 +16,7 @@ import {
 } from 'solid-js';
 import { useData } from '../../context/data.js';
 import { useKeys } from '../../context/keys.js';
-import type { Card } from '../../model/stream.js';
+import { type Card, isChatRun } from '../../model/stream.js';
 import { useTheme } from '../../theme/context.js';
 import {
   DecideCard,
@@ -254,6 +254,7 @@ export function Timeline(props: {
                           selectedRow={selected()}
                           expanded={expandedHere()}
                           rowRef={rowRef}
+                          chat={isChatRun(data.state.states[run])}
                         />
                       )}
                     </Match>

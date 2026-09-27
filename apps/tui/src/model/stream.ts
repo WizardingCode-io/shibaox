@@ -76,6 +76,15 @@ export type Card =
     };
 
 export const CARD_LIMIT = 5000;
+
+/** A conversation turn: the workflow is one task node (the org's `chat`), read as a message. */
+export function isChatRun(state: RunState | undefined): boolean {
+  const nodes = Object.values(state?.workflowSnapshot?.nodes ?? {});
+  return nodes.length === 1 && nodes[0]?.type === 'task';
+}
+
+/** The text a run's input asks for; `[event] …` inputs come from shibaox, not from the user. */
+export const EVENT_PREFIX = '[event] ';
 const SUMMARY_LIMIT = 80;
 
 /** Run events after which the dashboard refreshes the run's state. */
@@ -398,7 +407,9 @@ export function reduceTimeline(state: RunState | undefined, frames: Envelope[]):
         cards.push(c);
       }
 
-  if (ended || (state && TERMINAL.has(state.status))) {
+  // a chat turn that ended well needs no summary line: the reply is the result
+  const chatDone = isChatRun(state) && (state?.status ?? 'completed') === 'completed';
+  if ((ended || (state && TERMINAL.has(state.status))) && !chatDone) {
     const status: RunStatus = state?.status ?? 'completed';
     cards.push({
       kind: 'summary',

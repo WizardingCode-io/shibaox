@@ -1,4 +1,4 @@
-import type { RunState } from '@shibaox/core';
+import type { ProjectProfile, RunState } from '@shibaox/core';
 import type {
   DiffResult,
   Envelope,
@@ -37,6 +37,8 @@ export class FakeDaemonClient implements DaemonClientLike {
   history = new Map<string, Envelope[]>();
   /** Diff results by run id; a missing entry is a 404 `no_workspace`. */
   diffs = new Map<string, DiffResult>();
+  /** Project profiles by path; a missing entry is a 404 `not_found`. */
+  profiles = new Map<string, ProjectProfile>();
   private readonly streams = new Map<string, Stream>();
 
   private record(method: string, args: unknown[]): void {
@@ -105,6 +107,13 @@ export class FakeDaemonClient implements DaemonClientLike {
     const d = this.diffs.get(id);
     if (!d) throw new DaemonHttpError(404, 'no_workspace', 'The run workspace is gone');
     return d;
+  }
+
+  async projectProfile(path: string, orgRoot?: string): Promise<ProjectProfile> {
+    this.record('projectProfile', [path, orgRoot]);
+    const p = this.profiles.get(path);
+    if (!p) throw new DaemonHttpError(404, 'not_found', `project path not found: ${path}`);
+    return p;
   }
 
   events(

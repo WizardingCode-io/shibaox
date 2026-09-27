@@ -1,4 +1,6 @@
+import type { RunState, RunStatus } from '@shibaox/core';
 import type { Envelope, InboxId, SubmitRequest } from '@shibaox/daemon';
+import type { ChatMessage } from '@shibaox/schemas';
 import {
   type Accessor,
   createContext,
@@ -10,7 +12,8 @@ import {
   useContext,
 } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
-import { type Card, reduceTimeline } from '../model/stream.js';
+import { money } from '../model/format.js';
+import { type Card, EVENT_PREFIX, reduceTimeline } from '../model/stream.js';
 import { requestText } from '../routes/session/request.js';
 import type { DaemonClientLike } from './client.js';
 import { type DataState, FRAME_LIMIT, initialData } from './data-state.js';
@@ -31,7 +34,7 @@ export interface Data {
   closeRun(runId: string): void;
   /** The runs of the tab that holds `runId`, oldest first. */
   threadOf(runId: string): string[];
-  /** Submits a follow-up run in the tab of `rootId` (same org, project, workflow and adapter; the previous request travels as context). */
+  /** Submits the next turn in the tab of `rootId` (same org, project, workflow and adapter; the conversation so far travels as `messages`). */
   continueRun(rootId: string, text: string): Promise<string | undefined>;
   activate(runId?: string): void;
   nextTab(direction: 1 | -1): void;
@@ -89,31 +92,36 @@ export function DataProvider(
     activate(runId);
   };
   const threadOf = (runId: string) => state.threads[runId] ?? [runId];
+  /** The conversation turns of a tab: the runs the user talked to (dispatched runs are not turns). */
+  const turnsOf = (rootId: string) =>
+    threadOf(rootId).filter((id) => !state.states[id]?.parentRunId);
+  const replyOf = (id: string) =>
+    timeline(id)()
+      .flatMap((c) => (c.kind === 'node' ? c.blocks : []))
+      .flatMap((b) => (b.kind === 'text' && !b.parentId ? [b.text.trim()] : []))
+      .join('\n')
+      .trim();
   const continueRun = async (rootId: string, text: string) => {
-    const runs = threadOf(rootId);
-    const previousId = runs[runs.length - 1] ?? rootId;
+    const turns = turnsOf(rootId);
+    const previousId = turns[turns.length - 1] ?? rootId;
     const previous = state.states[previousId];
     if (!previous) return undefined;
-    // the whole thread travels as the conversation: each request and the reply it got
-    const turns = runs.flatMap((id) => {
+    // the conversation so far travels as structured messages; the input is the new turn only
+    const messages: ChatMessage[] = turns.flatMap((id) => {
       const st = state.states[id];
       if (!st) return [];
-      const spec = requestText(st.input);
-      const reply = timeline(id)()
-        .flatMap((c) => (c.kind === 'node' ? c.blocks : []))
-        .flatMap((b) => (b.kind === 'text' && !b.parentId ? [b.text.trim()] : []))
-        .join('\n')
-        .trim();
-      return [`User: ${spec}`, ...(reply ? [`Assistant: ${reply}`] : [])];
+      const reply = replyOf(id);
+      return [
+        { role: 'user' as const, content: requestText(st.input) },
+        ...(reply ? [{ role: 'assistant' as const, content: reply }] : []),
+      ];
     });
-    const input = turns.length
-      ? `Conversation so far:\n${turns.join('\n\n')}\n\nUser: ${text}`
-      : text;
     const runId = await poller.submit({
       orgRoot: previous.orgRoot ?? '',
       project: previous.project ?? previous.workspace,
       workflow: previous.workflow,
-      input,
+      input: text,
+      messages,
       adapter: previous.adapter as SubmitRequest['adapter'],
       workspace: previous.workspaceMode,
       budgetUsd: previous.budgetUsd,
@@ -122,6 +130,29 @@ export function DataProvider(
     set('threads', rootId, (t = [rootId]) => [...t, runId]);
     poller.subscribe(runId);
     return runId;
+  };
+  /** The tab whose thread holds `runId`, when one does. */
+  const rootOf = (runId: string) =>
+    state.open.find((root) => (state.threads[root] ?? [root]).includes(runId));
+  /** What the orchestrator is told when a run it dispatched ends. */
+  const eventText = (st: RunState, status: RunStatus) => {
+    const nodes = Object.entries(st.nodes);
+    const summaries = nodes
+      .filter(([, n]) => n.summary)
+      .map(([id, n]) => `${id}: ${String(n.summary).replace(/\s+/g, ' ').slice(0, 200)}`);
+    const files = timeline(st.runId)().find((c) => c.kind === 'summary');
+    const parts = [
+      `${EVENT_PREFIX}workflow ${st.workflow} finished: ${status}`,
+      `${nodes.length} node${nodes.length === 1 ? '' : 's'}`,
+      money(st.spentUsd),
+      ...(files?.kind === 'summary' && files.files.length > 0
+        ? [`files: ${files.files.slice(0, 20).join(', ')}`]
+        : []),
+      ...(st.branch ? [`branch ${st.branch}`] : []),
+      ...(st.error ? [`error: ${st.error}`] : []),
+      ...summaries,
+    ];
+    return parts.join(' · ').slice(0, 2000);
   };
   const poller = new Poller({
     client: props.client,
@@ -178,6 +209,31 @@ export function DataProvider(
     }
     return entry.cards;
   };
+
+  // a run dispatched from a conversation (`parentRunId`) joins the tab of its parent
+  createEffect(() => {
+    if (props.single) return;
+    for (const r of state.runs) {
+      if (!r.parentRunId) continue;
+      const root = rootOf(r.parentRunId);
+      if (!root || threadOf(root).includes(r.runId)) continue;
+      set('threads', root, (t = [root]) => [...t, r.runId]);
+      poller.subscribe(r.runId);
+    }
+  });
+  // when a dispatched run ends, the conversation continues with an event for the orchestrator
+  const reported = new Set<string>();
+  createEffect(() => {
+    if (props.single) return;
+    for (const root of state.open)
+      for (const id of state.threads[root] ?? []) {
+        const st = state.states[id];
+        const status = state.ended[id];
+        if (!st?.parentRunId || !status || reported.has(id)) continue;
+        reported.add(id);
+        void continueRun(root, eventText(st, status));
+      }
+  });
 
   poller.start();
   if (props.single) {

@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { testRender } from '@opentui/solid';
+import type { ProjectProfile } from '@shibaox/core';
 import { scaffoldOrg } from '@shibaox/daemon';
 import { App } from '../src/app.js';
 import { loadPrefs } from '../src/context/prefs.js';
@@ -10,11 +11,19 @@ import { FakeDaemonClient } from '../src/testing/fake-client.js';
 
 const settle = (ms = 30) => new Promise((r) => setTimeout(r, ms));
 
-async function mount(o: { width?: number; height?: number } = {}) {
+async function mount(
+  o: {
+    width?: number;
+    height?: number;
+    env?: Record<string, string>;
+    profile?: ProjectProfile;
+  } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), 'tui-home-'));
   scaffoldOrg(dir); // writes <dir>/org
   const home = join(dir, 'home');
   const client = new FakeDaemonClient();
+  if (o.profile) client.profiles.set(dir, o.profile);
   const exits: number[] = [];
   const setup = await testRender(
     () => (
@@ -23,7 +32,7 @@ async function mount(o: { width?: number; height?: number } = {}) {
         version="0.0.1"
         home={home}
         cwd={dir}
-        env={{ SHIBAOX_NO_MOTION: '1', PATH: '/nonexistent' }}
+        env={{ SHIBAOX_NO_MOTION: '1', PATH: '/nonexistent', ...o.env }}
         onExit={(c) => exits.push(c)}
       />
     ),
@@ -250,5 +259,84 @@ test('a short terminal hides the logo but keeps the prompt', async () => {
     expect(f).toContain('Add a /health endpoint');
   } finally {
     m.done();
+  }
+});
+
+test('the home shows the project profile under the prompt', async () => {
+  const m = await mount({
+    profile: {
+      name: 'demo',
+      path: '/p',
+      git: false,
+      stack: ['JavaScript'],
+      testCommand: 'npm test',
+      files: 3,
+      truncated: false,
+      languages: [],
+      summary: 'JavaScript · npm test · 3 files',
+    },
+  });
+  try {
+    const f = await m.frame();
+    expect(f).toContain('JavaScript · npm test · 3 files');
+  } finally {
+    m.done();
+  }
+});
+
+test('chat runs in place; opened in the home directory the project is ~/.shibaox/workspace', async () => {
+  const m = await mount({ env: { HOME: '' } });
+  try {
+    // chat is the default workflow of the scaffolded org
+    await m.type('olá');
+    await m.setup.mockInput.pressEnter();
+    await m.frame();
+    const chat = m.client.calls.find((c) => c.method === 'submitRun')?.args[0] as {
+      workflow: string;
+      workspace?: string;
+    };
+    expect(chat.workflow).toBe('chat');
+    expect(chat.workspace).toBe('inplace');
+  } finally {
+    m.done();
+  }
+});
+
+test('opened in the home directory itself, the project is ~/.shibaox/workspace', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tui-homedir-'));
+  scaffoldOrg(dir);
+  const client = new FakeDaemonClient();
+  const setup = await testRender(
+    () => (
+      <App
+        client={client}
+        version="0.0.1"
+        home={join(dir, 'home')}
+        cwd={dir}
+        env={{ SHIBAOX_NO_MOTION: '1', PATH: '/nonexistent', HOME: dir }}
+        onExit={() => {}}
+      />
+    ),
+    { width: 100, height: 30, exitOnCtrlC: false },
+  );
+  try {
+    await settle();
+    await setup.renderOnce();
+    await settle();
+    await setup.renderOnce();
+    const f = setup.captureCharFrame();
+    expect(f).toContain('~/.shibaox/workspace');
+    for (const ch of 'olá') {
+      await setup.mockInput.typeText(ch);
+      await settle(5);
+    }
+    await setup.mockInput.pressEnter();
+    await settle();
+    await setup.renderOnce();
+    const req = client.calls.find((c) => c.method === 'submitRun')?.args[0] as { project: string };
+    expect(req.project).toBe(join(dir, '.shibaox', 'workspace'));
+  } finally {
+    setup.renderer.destroy();
+    rmSync(dir, { recursive: true, force: true });
   }
 });

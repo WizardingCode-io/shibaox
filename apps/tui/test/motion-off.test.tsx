@@ -12,7 +12,11 @@ const state: RunState = {
   workflowSnapshot: {
     workflow: 'hello-feature',
     start: 'analyse',
-    nodes: { analyse: { type: 'task', role: 'analyst' } },
+    // two nodes: a one-task workflow reads as a conversation, without the node header
+    nodes: {
+      analyse: { type: 'task', role: 'analyst', next: 'implement' },
+      implement: { type: 'task', role: 'backend' },
+    },
   },
   input: {},
   workspace: '/w',
