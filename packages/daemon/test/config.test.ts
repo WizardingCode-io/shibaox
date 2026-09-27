@@ -30,7 +30,7 @@ describe('daemon config and home', () => {
       approval_timeout_minutes: 120,
       channels: {
         macos: { enabled: false },
-        telegram: { bot_token_env: 'SHIBAOX_TELEGRAM_TOKEN', chat_id: 5 },
+        telegram: { bot_token_env: 'SHIBAOX_TELEGRAM_TOKEN', chat_id: 5, workflow: 'chat' },
       },
     });
   });

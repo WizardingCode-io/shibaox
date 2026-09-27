@@ -14,6 +14,11 @@ export const DaemonConfigSchema = z.object({
         .object({
           bot_token_env: z.string().default('SHIBAOX_TELEGRAM_TOKEN'),
           chat_id: z.number().int(),
+          /** Where text messages talk to the orchestrator: an org directory and a project. */
+          org: z.string().optional(),
+          project: z.string().optional(),
+          workflow: z.string().default('chat'),
+          adapter: z.enum(['mock', 'direct', 'claude-code']).optional(),
         })
         .optional(),
     })

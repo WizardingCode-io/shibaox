@@ -11,6 +11,10 @@ export interface Channel {
   /** A run asked for from this side ended (or waits): channels that can show it implement this. */
   report?(report: RunReport): Promise<void>;
   onAnswer?(cb: (id: InboxId, a: { approved: boolean; note?: string }) => Promise<void>): void;
+  /** Free text typed on the channel (a turn for the orchestrator). */
+  onMessage?(cb: (chatId: number, text: string) => Promise<void>): void;
+  /** Says something on the channel (plain text). */
+  say?(text: string): Promise<void>;
   start?(): Promise<void>;
   stop?(): Promise<void>;
 }

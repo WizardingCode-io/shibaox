@@ -65,6 +65,10 @@ const human: InboxItem = {
   detail: { action: 'ship' },
 };
 
+const message = (id: number, chatId: number, text: string) => ({
+  update_id: id,
+  message: { message_id: 200 + id, text, chat: { id: chatId }, from: { id: chatId } },
+});
 const callback = (id: number, chatId: number, data: string) => ({
   update_id: id,
   callback_query: { id: `cb${id}`, data, message: { message_id: 101, chat: { id: chatId } } },
@@ -205,5 +209,94 @@ describe('telegram channel', () => {
         text: 'Already answered',
       }),
     );
+  });
+});
+
+describe('telegram text', () => {
+  it('a text message from the configured chat reaches onMessage; other chats are ignored', async () => {
+    fake = await fakeTelegram();
+    const logs: string[] = [];
+    const received: [number, string][] = [];
+    channel = telegramChannel({
+      token: 't',
+      chatId: 7,
+      apiBase: fake.apiBase,
+      log: (l) => logs.push(l),
+      pollTimeoutSeconds: 0,
+    });
+    channel.onMessage?.(async (chatId, text) => {
+      received.push([chatId, text]);
+    });
+    await channel.start?.();
+    fake.push(message(1, 9, 'hack'));
+    fake.push(message(2, 7, 'olá'));
+    await vi.waitFor(() => expect(received).toEqual([[7, 'olá']]));
+    expect(logs.some((l) => l.includes('ignored message from chat 9'))).toBe(true);
+    expect(fake.calls.filter((c) => c.method === 'sendMessage')).toHaveLength(0);
+    expect(fake.calls.find((c) => c.method === 'sendChatAction')?.body).toMatchObject({
+      chat_id: 7,
+      action: 'typing',
+    });
+    const poll = fake.calls.find((c) => c.method === 'getUpdates');
+    expect(poll?.body.allowed_updates).toEqual(['callback_query', 'message']);
+  });
+
+  it('/status and /help answer from the channel itself', async () => {
+    fake = await fakeTelegram();
+    channel = telegramChannel({
+      token: 't',
+      chatId: 7,
+      apiBase: fake.apiBase,
+      log: () => {},
+      pollTimeoutSeconds: 0,
+      status: async () => 'daemon 0.0.1 · 1 running',
+    });
+    const received: string[] = [];
+    channel.onMessage?.(async (_c, text) => {
+      received.push(text);
+    });
+    await channel.start?.();
+    fake.push(message(1, 7, '/status'));
+    fake.push(message(2, 7, '/help'));
+    await vi.waitFor(() =>
+      expect(fake?.calls.filter((c) => c.method === 'sendMessage')).toHaveLength(2),
+    );
+    const sent = fake.calls.filter((c) => c.method === 'sendMessage');
+    expect(String(sent[0]?.body.text)).toContain('daemon 0.0.1 · 1 running');
+    expect(String(sent[1]?.body.text)).toContain('/status');
+    expect(received).toEqual([]);
+  });
+
+  it('report sends a conversation reply as is and long text in pieces', async () => {
+    fake = await fakeTelegram();
+    channel = telegramChannel({ token: 't', chatId: 7, apiBase: fake.apiBase, log: () => {} });
+    await channel.report?.({
+      runId: 'r1',
+      workflow: 'chat',
+      status: 'completed',
+      project: '/w',
+      spentUsd: 0.01,
+      nodes: [{ id: 'reply', status: 'completed' }],
+      reply: 'a <b> & c',
+    });
+    await channel.report?.({
+      runId: 'r2',
+      workflow: 'chat',
+      status: 'completed',
+      project: '/w',
+      spentUsd: 0.01,
+      nodes: [{ id: 'reply', status: 'completed' }],
+      reply: Array.from({ length: 200 }, (_, i) => `line ${i} ${'x'.repeat(60)}`).join('\n'),
+    });
+    const sent = fake.calls.filter((c) => c.method === 'sendMessage');
+    expect(sent[0]?.body).toMatchObject({
+      chat_id: 7,
+      text: 'a &lt;b&gt; &amp; c',
+      parse_mode: 'HTML',
+    });
+    expect(sent.length).toBeGreaterThan(3);
+    for (const s of sent) expect(String(s.body.text).length).toBeLessThanOrEqual(4000);
+    await channel.say?.('plain');
+    expect(fake.calls.at(-1)?.body).toMatchObject({ chat_id: 7, text: 'plain' });
   });
 });

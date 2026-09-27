@@ -33,7 +33,7 @@ function replyOf(state: RunState, workflow: Workflow | undefined): string | unde
   const ids = workflow ? Object.keys(workflow.nodes) : Object.keys(state.nodes);
   for (const id of [...ids].reverse()) {
     const n = state.nodes[id];
-    if (!n || n.status !== 'completed') continue;
+    if (n?.status !== 'completed') continue;
     if (workflow && workflow.nodes[id]?.type !== 'task') continue;
     const out = n.output as { text?: unknown } | undefined;
     if (out && typeof out.text === 'string' && out.text.trim()) return out.text.trim();

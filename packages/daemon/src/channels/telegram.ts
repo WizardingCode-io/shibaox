@@ -14,7 +14,15 @@ export interface TelegramOptions {
   log: (line: string) => void;
   /** Long-polling wait (default 30 s; 0 for tests). */
   pollTimeoutSeconds?: number;
+  /** What `/status` answers (the daemon's health as text). */
+  status?: () => Promise<string>;
 }
+
+const HELP = [
+  'Type anything to talk to the orchestrator; it answers here.',
+  '/status — the daemon, its runs and what needs you',
+  '/help — this',
+].join('\n');
 
 /** `callback_data` is limited to 64 bytes: a short, deterministic token stands for the item. */
 export const inboxToken = (id: string): string =>
@@ -62,9 +70,15 @@ interface CallbackQuery {
   data?: string;
   message?: { message_id: number; chat: { id: number } };
 }
+interface Message {
+  message_id: number;
+  text?: string;
+  chat: { id: number };
+}
 interface Update {
   update_id: number;
   callback_query?: CallbackQuery;
+  message?: Message;
 }
 
 /** Telegram Bot API over `fetch`: inline Approve/Deny buttons, long polling for the answers. */
@@ -76,6 +90,7 @@ export function telegramChannel(o: TelegramOptions): Channel {
   const resolveToken = async (t: string): Promise<InboxId | undefined> =>
     tokens.get(t) ?? (await o.lookup?.(t));
   let answer: ((id: InboxId, a: { approved: boolean; note?: string }) => Promise<void>) | undefined;
+  let onText: ((chatId: number, text: string) => Promise<void>) | undefined;
   let polling: AbortController | undefined;
   let offset = 0;
 
@@ -96,7 +111,31 @@ export function telegramChannel(o: TelegramOptions): Channel {
     return json.result as T;
   }
 
+  async function sendText(text: string, parseMode?: 'HTML'): Promise<void> {
+    for (const piece of chunkText(text, TELEGRAM_CHUNK))
+      await api('sendMessage', {
+        chat_id: o.chatId,
+        text: piece,
+        ...(parseMode ? { parse_mode: parseMode } : {}),
+      });
+  }
+
+  async function handleMessage(m: Message): Promise<void> {
+    if (m.chat.id !== o.chatId) {
+      o.log(`[telegram] ignored message from chat ${m.chat.id}`);
+      return;
+    }
+    const text = (m.text ?? '').trim();
+    if (!text) return;
+    if (text === '/help' || text === '/start') return sendText(HELP);
+    if (text === '/status') return sendText((await o.status?.()) ?? 'No status available.');
+    if (!onText) return sendText('Nobody is listening for messages here yet.');
+    await api('sendChatAction', { chat_id: o.chatId, action: 'typing' }).catch(() => undefined);
+    await onText(m.chat.id, text);
+  }
+
   async function handle(u: Update): Promise<void> {
+    if (u.message) return handleMessage(u.message);
     const cb = u.callback_query;
     if (!cb) return;
     const chat = cb.message?.chat.id;
@@ -131,7 +170,11 @@ export function telegramChannel(o: TelegramOptions): Channel {
       try {
         const updates = await api<Update[]>(
           'getUpdates',
-          { offset, timeout: o.pollTimeoutSeconds ?? 30, allowed_updates: ['callback_query'] },
+          {
+            offset,
+            timeout: o.pollTimeoutSeconds ?? 30,
+            allowed_updates: ['callback_query', 'message'],
+          },
           signal,
         );
         for (const u of updates) {
@@ -183,11 +226,14 @@ export function telegramChannel(o: TelegramOptions): Channel {
       });
     },
     async report(r) {
-      for (const piece of chunkText(telegramReportText(r), TELEGRAM_CHUNK))
-        await api('sendMessage', { chat_id: o.chatId, text: piece, parse_mode: 'HTML' });
+      await sendText(telegramReportText(r), 'HTML');
     },
+    say: (text) => sendText(text),
     onAnswer(cb) {
       answer = cb;
+    },
+    onMessage(cb) {
+      onText = cb;
     },
     async start() {
       polling = new AbortController();
