@@ -6,6 +6,8 @@ export interface ProjectProfile {
   name: string;
   path: string;
   git: boolean;
+  /** The checked-out branch (`.git/HEAD`), or the short sha of a detached head. */
+  branch?: string;
   /** Frameworks and languages found from marker files, most specific first. */
   stack: string[];
   packageManager?: string;
@@ -196,6 +198,15 @@ function walk(
   }
 }
 
+/** The branch named in `.git/HEAD`, the short sha when detached, undefined without git. */
+export function gitBranch(dir: string): string | undefined {
+  const head = readText(join(dir, '.git', 'HEAD')).trim();
+  if (!head) return undefined;
+  const ref = /^ref:\s*refs\/heads\/(.+)$/.exec(head);
+  if (ref) return ref[1];
+  return /^[0-9a-f]{7,}$/i.test(head) ? head.slice(0, 7) : undefined;
+}
+
 /** What a directory is: stack, tooling and size, from marker files and a bounded file walk. */
 export function profileProject(dir: string, o: { maxFiles?: number } = {}): ProjectProfile {
   const maxFiles = o.maxFiles ?? 20_000;
@@ -215,6 +226,7 @@ export function profileProject(dir: string, o: { maxFiles?: number } = {}): Proj
   const stack = stackOf(dir, languages);
   const testCommand = detectTestCommand(dir);
   const truncated = budget.truncated;
+  const branch = gitBranch(dir);
   const summary =
     files === 0 && stack.length === 0
       ? 'empty directory'
@@ -225,6 +237,7 @@ export function profileProject(dir: string, o: { maxFiles?: number } = {}): Proj
     name,
     path: dir,
     git: existsSync(join(dir, '.git')),
+    ...(branch ? { branch } : {}),
     stack,
     packageManager: packageManagerOf(dir),
     testCommand,

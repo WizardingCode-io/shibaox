@@ -75,6 +75,17 @@ describe('profileProject', () => {
     const full = profileProject(d);
     expect(full.files).toBe(10);
   });
+  it('reads the git branch from .git/HEAD (a detached head shows the short sha)', () => {
+    const d = dir();
+    file(d, '.git/HEAD', 'ref: refs/heads/feat/x\n');
+    const p = profileProject(d);
+    expect(p.git).toBe(true);
+    expect(p.branch).toBe('feat/x');
+    const detached = dir();
+    file(detached, '.git/HEAD', 'abcdef0123456789abcdef0123456789abcdef01\n');
+    expect(profileProject(detached).branch).toBe('abcdef0');
+    expect(profileProject(dir()).branch).toBeUndefined();
+  });
   it('renders a note with frontmatter', () => {
     const d = dir();
     file(d, 'go.mod', 'module x');

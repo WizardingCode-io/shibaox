@@ -87,3 +87,14 @@ describe('ProviderRegistry', () => {
     ).toBeUndefined();
   });
 });
+
+describe('context windows', () => {
+  it('knows the window of catalog models and says nothing for the rest', () => {
+    const reg = new ProviderRegistry(loadCatalog(), {});
+    expect(reg.contextWindow('anthropic/claude-sonnet-5')).toBe(200_000);
+    expect(reg.contextWindow('anthropic-subscription/claude-haiku-4-5')).toBe(200_000);
+    expect(reg.contextWindow('openai/gpt-5')).toBe(400_000);
+    expect(reg.contextWindow('xai/grok-4')).toBeUndefined();
+    expect(reg.contextWindow('nope/x')).toBeUndefined();
+  });
+});

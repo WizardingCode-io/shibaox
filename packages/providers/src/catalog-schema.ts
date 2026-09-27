@@ -54,6 +54,8 @@ export const ProviderEntrySchema = z
       )
       .default({}),
     verify: z.boolean().default(false),
+    /** Context window (tokens) per model, when known: the dashboard shows how full it is. */
+    context_window: z.record(z.string(), z.number().int().positive()).default({}),
     /** Model-calling capabilities; `tools: false` marks a provider/model that cannot use function/tool calling (the direct adapter then runs it text-only). */
     capabilities: z.object({ tools: z.boolean().default(true) }).default({ tools: true }),
     notes: z.string().optional(),

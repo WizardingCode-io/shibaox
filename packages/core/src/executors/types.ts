@@ -24,6 +24,19 @@ export type RuntimeEvent =
       parentToolUseId?: string;
     }
   | { type: 'file_changed'; path: string }
+  /**
+   * Which model is at work and how full its context is: the model alone as soon as the
+   * runtime names it, then tokens (and the window when the runtime or catalog knows it).
+   */
+  | {
+      type: 'usage';
+      model?: string;
+      /** Tokens in the model's context at the last call (input + cached input). */
+      contextTokens?: number;
+      contextWindow?: number;
+      inputTokens?: number;
+      outputTokens?: number;
+    }
   | { type: 'result'; output: unknown; summary: string; cost?: Cost }
   | {
       type: 'error';

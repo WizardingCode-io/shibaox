@@ -198,11 +198,16 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
 
     const toolNames = new Map<string, string>();
     const toolStarted = new Map<string, number>();
+    let model: string | undefined;
     try {
       for await (const m of this.queryFn({ prompt, options })) {
         if (m.type === 'system' && m.subtype === 'init') {
           if (m.session_id)
             yield { type: 'session', runtime: 'claude-code', sessionId: m.session_id };
+          if (m.model) {
+            model = m.model;
+            yield { type: 'usage', model };
+          }
           const mcp = m.mcp_servers.map((s) => `${s.name}:${s.status}`).join(',');
           // runtime details belong to the log, not to the conversation the user reads
           ctx.log(
@@ -251,6 +256,32 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
             usd: m.total_cost_usd,
             inputTokens: m.usage.input_tokens,
             outputTokens: m.usage.output_tokens,
+          };
+          // how full the context is: the last call's input (fresh + cached) against the window
+          const perModel = Object.entries(m.modelUsage ?? {});
+          const busiest = perModel.sort(
+            (a, b) =>
+              b[1].inputTokens +
+              b[1].cacheReadInputTokens -
+              (a[1].inputTokens + a[1].cacheReadInputTokens),
+          )[0];
+          const usedModel = busiest?.[0] ?? model;
+          const u = m.usage as {
+            input_tokens: number;
+            output_tokens: number;
+            cache_read_input_tokens?: number | null;
+            cache_creation_input_tokens?: number | null;
+          };
+          yield {
+            type: 'usage',
+            ...(usedModel ? { model: usedModel } : {}),
+            contextTokens:
+              u.input_tokens +
+              (u.cache_read_input_tokens ?? 0) +
+              (u.cache_creation_input_tokens ?? 0),
+            ...(busiest?.[1].contextWindow ? { contextWindow: busiest[1].contextWindow } : {}),
+            inputTokens: u.input_tokens,
+            outputTokens: u.output_tokens,
           };
           if (deferred) yield { ...pending(), cost };
           else if (m.subtype === 'error_max_budget_usd')

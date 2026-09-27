@@ -94,6 +94,7 @@ export class DirectAdapter implements RuntimeAdapter {
     let effectiveMaxSteps: number;
     try {
       ref = this.opts.resolveRef(job);
+      yield { type: 'usage', model: ref };
       // Models without tool-calling support (registry.supportsTools) get a single
       // plain-text turn instead: no tools are sent and the reply is the result.
       const supportsTools = this.opts.registry.supportsTools(ref);
@@ -178,6 +179,14 @@ export class DirectAdapter implements RuntimeAdapter {
       usd: this.opts.registry.estimateCost(ref, usage) ?? 0,
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
+    };
+    const contextWindow = this.opts.registry.contextWindow(ref);
+    yield {
+      type: 'usage',
+      model: ref,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      ...(contextWindow ? { contextWindow } : {}),
     };
     if (
       !finished &&

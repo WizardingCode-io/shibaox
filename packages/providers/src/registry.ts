@@ -35,6 +35,17 @@ export class ProviderRegistry {
     const { provider } = this.parseRef(ref);
     return this.get(provider).capabilities.tools;
   }
+  /** The model's context window in tokens, when the catalog records it. */
+  contextWindow(ref: string): number | undefined {
+    let parsed: { provider: string; model: string };
+    try {
+      parsed = this.parseRef(ref);
+    } catch {
+      return undefined;
+    }
+    const entry = this.byId.get(parsed.provider);
+    return entry?.context_window?.[parsed.model];
+  }
   resolveBaseUrl(e: ProviderEntry): string | undefined {
     if (e.base_url_env) return this.env[e.base_url_env] ?? undefined;
     return e.base_url;

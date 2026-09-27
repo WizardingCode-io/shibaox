@@ -54,10 +54,12 @@ describe('ClaudeCodeAdapter', () => {
     expect(events.map((e) => e.type)).toEqual([
       'started',
       'session',
+      'usage', // the model, as soon as the runtime says which one it is
       'text', // the assistant's text only: the runtime's ready line goes to the log
       'tool_use',
       'file_changed',
       'tool_result',
+      'usage', // model, context tokens and window from the result
       'result',
     ]);
     const result = events.at(-1);
@@ -483,5 +485,46 @@ describe('ClaudeCodeAdapter (3A)', () => {
     const role = RoleSchema.parse({ role: 'assistant', budget_usd: 5 });
     await collectRun(adapter, job({ role, budgetRemainingUsd: 0.2 }), ctx());
     expect(q.calls[0]?.options?.maxBudgetUsd).toBe(0.2);
+  });
+});
+
+describe('ClaudeCodeAdapter usage', () => {
+  it('reports the model at init and the context tokens and window at the result', async () => {
+    const q = fakeQuery(() => [
+      msg.init({ model: 'claude-haiku-4-5' }),
+      msg.success('ok', {
+        usage: {
+          input_tokens: 100,
+          output_tokens: 50,
+          cache_read_input_tokens: 20_000,
+          cache_creation_input_tokens: 400,
+        } as never,
+        modelUsage: {
+          'claude-haiku-4-5': {
+            inputTokens: 100,
+            outputTokens: 50,
+            cacheReadInputTokens: 20_000,
+            cacheCreationInputTokens: 400,
+            webSearchRequests: 0,
+            costUSD: 0.01,
+            contextWindow: 200_000,
+            maxOutputTokens: 32_000,
+          },
+        } as never,
+      } as never),
+    ]);
+    const adapter = new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q });
+    const events: RuntimeEvent[] = [];
+    for await (const e of adapter.run(job(), ctx())) events.push(e);
+    const usage = events.filter((e) => e.type === 'usage');
+    expect(usage[0]).toEqual({ type: 'usage', model: 'claude-haiku-4-5' });
+    expect(usage[1]).toEqual({
+      type: 'usage',
+      model: 'claude-haiku-4-5',
+      contextTokens: 20_500,
+      contextWindow: 200_000,
+      inputTokens: 100,
+      outputTokens: 50,
+    });
   });
 });

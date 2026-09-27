@@ -85,11 +85,13 @@ describe('DirectAdapter', () => {
     expect(readFileSync(join(ws, 'hello.txt'), 'utf8')).toBe('hi');
     expect(events.map((e) => e.type)).toEqual([
       'started',
+      'usage', // the model ref, before the first call
       'tool_use',
       'file_changed',
       'tool_result',
       'tool_use',
       'tool_result',
+      'usage', // tokens at the end
       'result',
     ]);
     const result = events.at(-1);
@@ -598,6 +600,27 @@ describe('DirectAdapter', () => {
     for await (const e of adapter.run(jobFor(ws), ctx())) events.push(e);
     const result = events.find((e) => e.type === 'tool_result' && e.name === 'ping');
     expect(result?.type === 'tool_result' && result.output).toEqual({ pong: 1 });
+  });
+
+  it('reports the model ref when it starts and the tokens when it ends', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI(() => ({ content: 'hi' }));
+    const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    const events: RuntimeEvent[] = [];
+    for await (const e of adapter.run(jobFor(ws), ctx())) events.push(e);
+    const usage = events.filter((e) => e.type === 'usage');
+    expect(usage[0]).toEqual({ type: 'usage', model: 'fake/m' });
+    expect(usage[1]).toMatchObject({
+      type: 'usage',
+      model: 'fake/m',
+      outputTokens: expect.any(Number),
+    });
+    expect(usage[1]).not.toHaveProperty('contextWindow'); // the fake provider has no window
+    expect(events.map((e) => e.type).slice(-2)).toEqual(['usage', 'result']);
   });
 
   it('aborts when the signal fires', async () => {
