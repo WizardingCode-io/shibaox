@@ -24,3 +24,15 @@ export const age = (iso: string, now = Date.now()): string => {
 };
 
 export const shortId = (id: string): string => id.slice(0, 8);
+
+/** `~/dir` for paths under the home directory. */
+export function tilde(p: string, home: string | undefined = process.env.HOME): string {
+  return home && p.startsWith(home) ? `~${p.slice(home.length)}` : p;
+}
+
+/** `24.0k` / `1.2M` for token counts. */
+export function tokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}

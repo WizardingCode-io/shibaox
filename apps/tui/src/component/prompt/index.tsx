@@ -2,9 +2,9 @@ import type { InputRenderable } from '@opentui/core';
 import { createEffect, createMemo, createSignal, type JSX, onCleanup, Show } from 'solid-js';
 import { useKeys } from '../../context/keys.js';
 import {
-  COMMAND_KIND,
   completeCommand,
   type PromptCommand,
+  type PromptCommandSpec,
   parsePromptCommand,
 } from '../../model/prompt-commands.js';
 import { useMotion } from '../../motion/config.js';
@@ -28,13 +28,16 @@ export function Prompt(props: {
   ref?: (r: PromptRef) => void;
   placeholders: string[];
   disabled?: boolean;
-  workflows: string[];
+  /** The `/` commands this prompt offers. */
+  commands: PromptCommandSpec[];
+  /** Only the input row and the footer: the caller draws the box around it. */
+  bare?: boolean;
   onSubmit(text: string): void;
   onCommand(cmd: PromptCommand): void;
   /** The text changed (the screen clears its notices). */
   onInput?(text: string): void;
   /** A free-text command was entered without its value: the screen shows what to type. */
-  onNeedValue?(cmd: PromptCommand['command']): void;
+  onNeedValue?(cmd: string): void;
   /** A line drawn inside the box under the input (the run context). */
   footer?: JSX.Element;
 }): JSX.Element {
@@ -44,7 +47,7 @@ export function Prompt(props: {
   const [text, setText] = createSignal('');
   const [selected, setSelected] = createSignal(0);
   const [placeholder, setPlaceholder] = createSignal(0);
-  const suggestions = createMemo(() => completeCommand(text(), { workflows: props.workflows }));
+  const suggestions = createMemo(() => completeCommand(text(), { commands: props.commands }));
   createEffect(() => {
     suggestions();
     setSelected(0);
@@ -84,13 +87,13 @@ export function Prompt(props: {
     if (!value) return;
     if (!value.startsWith('/')) return props.onSubmit(value);
     const s = suggestions()[selected()];
-    const parsed = parsePromptCommand(value);
+    const parsed = parsePromptCommand(value, props.commands);
     if (!parsed) {
       // only the command name so far: enter takes the highlighted command
       if (s) set(s.insert);
       return;
     }
-    const kind = COMMAND_KIND[parsed.command];
+    const kind = props.commands.find((c) => c.name === parsed.command)?.kind ?? 'action';
     if (kind === 'action') {
       set('');
       props.onCommand(parsed);
@@ -105,7 +108,7 @@ export function Prompt(props: {
     if (kind === 'choice') {
       // no value or a partial one: the highlighted choice is the value
       const chosen = s?.insert.startsWith(`/${parsed.command} `)
-        ? parsePromptCommand(s.insert)
+        ? parsePromptCommand(s.insert, props.commands)
         : undefined;
       const cmd = chosen?.arg ? chosen : parsed;
       if (!cmd.arg) return;
@@ -144,53 +147,67 @@ export function Prompt(props: {
     return false;
   });
 
+  const inner = () => (
+    <>
+      <box flexDirection="row" width="100%" height={1}>
+        <text fg={theme.text.action.primary.selected} flexShrink={0}>
+          {'› '}
+        </text>
+        <input
+          ref={(r: InputRenderable) => {
+            input = r;
+          }}
+          focused={!props.disabled}
+          placeholder={props.placeholders[placeholder()] ?? ''}
+          onInput={(v: string) => {
+            setText(v);
+            props.onInput?.(v);
+          }}
+          onSubmit={submit}
+          flexGrow={1}
+          backgroundColor={theme.background.raised.base}
+          focusedBackgroundColor={theme.background.raised.base}
+          textColor={theme.text.base}
+          placeholderColor={theme.text.muted}
+          cursorColor={theme.text.action.primary.selected}
+        />
+      </box>
+      <Show when={props.footer}>
+        <box height={1} flexShrink={0} />
+        <box height={1} flexShrink={0} flexDirection="row">
+          {props.footer}
+        </box>
+      </Show>
+    </>
+  );
   return (
     <box flexDirection="column" width="100%">
       <Show when={suggestions().length > 0}>
         <Autocomplete items={suggestions()} selected={selected()} />
       </Show>
-      <box flexDirection="row" width="100%">
-        <box width={1} flexShrink={0} backgroundColor={theme.text.action.primary.selected} />
-        <box
-          flexGrow={1}
-          flexDirection="column"
-          paddingLeft={2}
-          paddingRight={2}
-          paddingTop={1}
-          paddingBottom={1}
-          backgroundColor={theme.background.raised.base}
-        >
-          <box flexDirection="row" width="100%" height={1}>
-            <text fg={theme.text.action.primary.selected} flexShrink={0}>
-              {'› '}
-            </text>
-            <input
-              ref={(r: InputRenderable) => {
-                input = r;
-              }}
-              focused={!props.disabled}
-              placeholder={props.placeholders[placeholder()] ?? ''}
-              onInput={(v: string) => {
-                setText(v);
-                props.onInput?.(v);
-              }}
-              onSubmit={submit}
-              flexGrow={1}
-              backgroundColor={theme.background.raised.base}
-              focusedBackgroundColor={theme.background.raised.base}
-              textColor={theme.text.base}
-              placeholderColor={theme.text.muted}
-              cursorColor={theme.text.action.primary.selected}
-            />
+      <Show
+        when={!props.bare}
+        fallback={
+          <box flexDirection="column" width="100%">
+            {inner()}
           </box>
-          <Show when={props.footer}>
-            <box height={1} flexShrink={0} />
-            <box height={1} flexShrink={0} flexDirection="row">
-              {props.footer}
-            </box>
-          </Show>
+        }
+      >
+        <box flexDirection="row" width="100%">
+          <box width={1} flexShrink={0} backgroundColor={theme.text.action.primary.selected} />
+          <box
+            flexGrow={1}
+            flexDirection="column"
+            paddingLeft={2}
+            paddingRight={2}
+            paddingTop={1}
+            paddingBottom={1}
+            backgroundColor={theme.background.raised.base}
+          >
+            {inner()}
+          </box>
         </box>
-      </box>
+      </Show>
     </box>
   );
 }

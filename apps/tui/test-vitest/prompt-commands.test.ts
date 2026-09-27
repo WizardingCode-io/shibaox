@@ -3,29 +3,43 @@ import { describe, expect, it } from 'vitest';
 import {
   applyPromptCommand,
   completeCommand,
+  homeCommands,
   type PromptContext,
   parsePromptCommand,
   toSubmitRequest,
 } from '../src/model/prompt-commands.js';
 
 const ctx: PromptContext = { org: '/demo/org', project: '/demo/project', adapter: 'mock' };
+const home = (workflows: string[] = []) => homeCommands(workflows);
 
 describe('prompt commands', () => {
   it('parses a slash command with its argument', () => {
-    expect(parsePromptCommand('/workflow hello')).toEqual({ command: 'workflow', arg: 'hello' });
-    expect(parsePromptCommand('/runs')).toEqual({ command: 'runs', arg: '' });
-    expect(parsePromptCommand('add /health')).toBeUndefined();
-    expect(parsePromptCommand('/nope x')).toBeUndefined();
+    expect(parsePromptCommand('/workflow hello', home())).toEqual({
+      command: 'workflow',
+      arg: 'hello',
+    });
+    expect(parsePromptCommand('/runs', home())).toEqual({ command: 'runs', arg: '' });
+    expect(parsePromptCommand('add /health', home())).toBeUndefined();
+    expect(parsePromptCommand('/nope x', home())).toBeUndefined();
   });
   it('completes command names and workflow names', () => {
-    expect(completeCommand('/wor', { workflows: ['hello-feature'] })[0]?.insert).toBe('/workflow ');
-    expect(
-      completeCommand('/workflow hel', { workflows: ['hello-feature', 'other'] })[0]?.insert,
-    ).toBe('/workflow hello-feature');
-    expect(completeCommand('/adapter c', { workflows: [] })[0]?.insert).toBe(
-      '/adapter claude-code',
+    const c = (text: string, workflows: string[] = []) =>
+      completeCommand(text, { commands: home(workflows) });
+    expect(c('/wor', ['hello-feature'])[0]).toEqual({
+      label: '/workflow',
+      insert: '/workflow ',
+      hint: 'pick a workflow of the org',
+    });
+    expect(c('/workflow hel', ['hello-feature', 'other'])[0]?.insert).toBe(
+      '/workflow hello-feature',
     );
-    expect(completeCommand('hello', { workflows: [] })).toEqual([]);
+    expect(c('/adapter c')[0]?.insert).toBe('/adapter claude-code');
+    expect(c('hello')).toEqual([]);
+    // a prompt with its own commands (the session): actions with the label as hint
+    const session = [{ name: 'diff', kind: 'action' as const, hint: 'Diff of the run' }];
+    expect(completeCommand('/d', { commands: session })).toEqual([
+      { label: '/diff', insert: '/diff ', hint: 'Diff of the run' },
+    ]);
   });
   it('applies commands with validation', () => {
     expect(applyPromptCommand(ctx, { command: 'project', arg: '~' }, { cwd: '/x' })).toMatchObject({

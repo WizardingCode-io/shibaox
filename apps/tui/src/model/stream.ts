@@ -34,6 +34,8 @@ export type Card =
       endedAt?: string;
       blocks: Block[];
       tools: number;
+      /** The model at work and how full its context is (latest `usage` frame of the node). */
+      usage?: RunUsage;
     }
   | {
       kind: 'gate';
@@ -76,6 +78,23 @@ export type Card =
     };
 
 export const CARD_LIMIT = 5000;
+
+export interface RunUsage {
+  model?: string;
+  contextTokens?: number;
+  contextWindow?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+/** The latest usage of a run: the last node card that reported one. */
+export function runUsage(cards: readonly Card[]): RunUsage | undefined {
+  for (let i = cards.length - 1; i >= 0; i--) {
+    const c = cards[i];
+    if (c?.kind === 'node' && c.usage) return c.usage;
+  }
+  return undefined;
+}
 
 /** A conversation turn: a run of a workflow marked `conversation: true` (the org's `chat`). */
 export function isChatRun(state: RunState | undefined): boolean {
@@ -386,6 +405,18 @@ export function reduceTimeline(state: RunState | undefined, frames: Envelope[]):
         files.add(rt.path as string);
         c.blocks.push({ kind: 'file', key: `file:${c.blocks.length}`, path: rt.path as string });
         break;
+      case 'usage': {
+        const u = rt as RunUsage & { type: string };
+        c.usage = {
+          ...c.usage,
+          ...(u.model ? { model: u.model } : {}),
+          ...(u.contextTokens !== undefined ? { contextTokens: u.contextTokens } : {}),
+          ...(u.contextWindow !== undefined ? { contextWindow: u.contextWindow } : {}),
+          ...(u.inputTokens !== undefined ? { inputTokens: u.inputTokens } : {}),
+          ...(u.outputTokens !== undefined ? { outputTokens: u.outputTokens } : {}),
+        };
+        break;
+      }
       case 'error':
         cards.push({
           kind: 'error',

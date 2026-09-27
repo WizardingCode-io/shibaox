@@ -201,7 +201,13 @@ tab: the next request runs in the same tab and the conversation so far travels w
 (`messages` on `POST /runs`). A chat turn reads as a message: your request, then the
 orchestrator's reply, without node chrome; a run the orchestrator dispatched shows up in the
 same tab under `→ <workflow>` with its own cards, approvals and diff, and when it ends a quiet
-`↳ workflow … finished` line hands the outcome back to the orchestrator, which replies. The sidebar (automatic from 120 columns, `ctrl+b`) shows
+`↳ workflow … finished` line hands the outcome back to the orchestrator, which replies. In a
+run tab `/` offers the screen's commands (`/diff`, `/cancel`, `/resume`, `/sidebar`, `/home`,
+`/runs`, `/help`, `/close`, `/quit`; the same ones as the `ctrl+k` palette), and under the
+status while it works, and under the prompt once it is done, one line says where you are:
+how full the model's context is (`12% ctx`, from the runtime's usage; `24.0k tokens` when the
+window is unknown), the model (the planned one, muted, until the runtime names it), the git
+branch (`⎇ main`), the project, the org, the workflow, the cost of the thread and the time. The sidebar (automatic from 120 columns, `ctrl+b`) shows
 the run's request, its cost and progress, the nodes as a checklist, the files it touched and
 what needs you; drag its edge with the mouse to resize it. The runs picker is `ctrl+o`.
 

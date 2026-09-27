@@ -53,44 +53,80 @@ export const COMMAND_HINT: Record<CommandName, string> = {
   help: 'show the keys',
 };
 export interface PromptCommand {
-  command: CommandName;
+  command: string;
   arg: string;
 }
 
-export function parsePromptCommand(text: string): PromptCommand | undefined {
+/** A `/command` a prompt offers: its kind decides what enter does, `values` feed the list. */
+export interface PromptCommandSpec {
+  name: string;
+  kind: 'choice' | 'text' | 'action';
+  hint: string;
+  values?: () => readonly string[];
+}
+
+/** The home prompt's commands (the run context), with the org's workflows as values. */
+export function homeCommands(workflows: readonly string[]): PromptCommandSpec[] {
+  return COMMANDS.map((name) => ({
+    name,
+    kind: COMMAND_KIND[name],
+    hint: COMMAND_HINT[name],
+    values:
+      name === 'workflow'
+        ? () => workflows
+        : name === 'adapter'
+          ? () => ADAPTERS
+          : name === 'workspace'
+            ? () => WORKSPACES
+            : undefined,
+  }));
+}
+
+export function parsePromptCommand(
+  text: string,
+  commands: readonly PromptCommandSpec[],
+): PromptCommand | undefined {
   const m = /^\/(\S+)\s*(.*)$/s.exec(text.trim());
   if (!m) return undefined;
-  const command = COMMANDS.find((c) => c === m[1]);
+  const command = commands.find((c) => c.name === m[1]);
   if (!command) return undefined;
-  return { command, arg: (m[2] ?? '').trim() };
+  return { command: command.name, arg: (m[2] ?? '').trim() };
 }
+
+/** Rows the suggestion list shows at most. */
+export const SUGGESTIONS = 10;
 
 function rank(query: string, targets: readonly string[]): string[] {
   if (!query) return [...targets];
-  return fuzzysort.go(query, targets, { limit: 6 }).map((r) => r.target);
+  return fuzzysort.go(query, targets, { limit: SUGGESTIONS }).map((r) => r.target);
+}
+
+export interface Suggestion {
+  label: string;
+  insert: string;
+  /** What the command does, shown beside it. */
+  hint?: string;
 }
 
 /** Suggestions for the text typed so far: command names, then the values of the current command. */
 export function completeCommand(
   text: string,
-  o: { workflows: string[] },
-): { label: string; insert: string }[] {
+  o: { commands: readonly PromptCommandSpec[] },
+): Suggestion[] {
   if (!text.startsWith('/')) return [];
   const m = /^\/(\S*)(\s+(.*))?$/s.exec(text);
   if (!m) return [];
   const name = m[1] ?? '';
+  const byName = new Map(o.commands.map((c) => [c.name, c]));
   if (m[2] === undefined) {
-    return rank(name, COMMANDS).map((c) => ({ label: `/${c}`, insert: `/${c} ` }));
+    return rank(name, [...byName.keys()]).map((c) => ({
+      label: `/${c}`,
+      insert: `/${c} `,
+      hint: byName.get(c)?.hint,
+    }));
   }
   const arg = (m[3] ?? '').trim();
-  const values: readonly string[] =
-    name === 'workflow'
-      ? o.workflows
-      : name === 'adapter'
-        ? ADAPTERS
-        : name === 'workspace'
-          ? WORKSPACES
-          : [];
+  const values = byName.get(name)?.values?.() ?? [];
   return rank(arg, values).map((v) => ({ label: v, insert: `/${name} ${v}` }));
 }
 
@@ -110,7 +146,7 @@ export function applyPromptCommand(
     const e = expandHome(p);
     return isAbsolute(e) ? e : resolve(o.cwd, e);
   };
-  switch (cmd.command) {
+  switch (cmd.command as CommandName) {
     case 'workflow':
       if (!cmd.arg) return { error: 'Workflow name is required' };
       return { ...ctx, workflow: cmd.arg };

@@ -9,7 +9,7 @@ import { useCommands } from '../../context/commands.js';
 import { useData } from '../../context/data.js';
 import { useKeys } from '../../context/keys.js';
 import { usePrefs } from '../../context/prefs.js';
-import { duration, money, shortId } from '../../model/format.js';
+import { duration, shortId } from '../../model/format.js';
 import { statusOf } from '../../model/status.js';
 import { createAnimatable, spring } from '../../motion/animation.js';
 import { useMotion } from '../../motion/config.js';
@@ -20,6 +20,7 @@ import { clampSidebarWidth, SIDEBAR_WIDTH, sidebarAuto } from '../../ui/layout.j
 import { createPaneResize } from '../../ui/pane-resize.js';
 import { useToast } from '../../ui/toast.js';
 import { ApprovalBar, pendingFor } from './approval-bar.js';
+import { ContextLine } from './context-line.js';
 import { ContinuePrompt } from './continue.js';
 import { Timeline, type TimelineApi } from './timeline.js';
 
@@ -84,7 +85,7 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
     data.state.ended[latest()] ?? state()?.status ?? summary()?.status ?? 'queued';
   const look = () => statusOf({ status: status() });
   const working = () => status() === 'running';
-  const spent = () => state()?.spentUsd ?? summary()?.spentUsd ?? 0;
+  const _spent = () => state()?.spentUsd ?? summary()?.spentUsd ?? 0;
   const elapsed = () => {
     const created = summary()?.createdAt;
     const updated = summary()?.updatedAt;
@@ -109,15 +110,6 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
   const pending = createMemo(() => pendingFor(data.state.inbox, latest()));
   const finished = () => ['completed', 'failed', 'cancelled'].includes(status());
   let timeline: TimelineApi | undefined;
-  const detail = () => {
-    const parts = [money(spent())];
-    const e = elapsed();
-    if (e) parts.push(e);
-    parts.push(summary()?.workflow ?? state()?.workflow ?? '');
-    if (state()?.adapter) parts.push(state()?.adapter ?? '');
-    parts.push(shortId(latest()));
-    return parts.filter(Boolean).join(' · ');
-  };
 
   // sidebar: automatic on wide terminals, toggled with ctrl+b, resizable with the mouse
   const area = () => dimensions().width;
@@ -264,6 +256,7 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
                     <ContinuePrompt
                       onSubmit={(t) => void data.continueRun(props.runId, t)}
                       onScroll={(n) => timeline?.scrollBy(n)}
+                      footer={<ContextLine runId={props.runId} elapsed={elapsed()} />}
                     />
                   }
                 >
@@ -291,10 +284,8 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
                       {activeNode() ? ` · ${activeNode()}` : ''}
                     </text>
                   </box>
-                  <box height={1} flexShrink={0}>
-                    <text fg={theme.text.muted} wrapMode="none">
-                      {detail()}
-                    </text>
+                  <box height={1} flexShrink={0} flexDirection="row">
+                    <ContextLine runId={props.runId} elapsed={elapsed()} />
                   </box>
                 </Show>
               }

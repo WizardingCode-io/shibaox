@@ -22,12 +22,14 @@ import { useConfig } from '../context/config.js';
 import { useData } from '../context/data.js';
 import { usePrefs } from '../context/prefs.js';
 import { useRoute } from '../context/route.js';
-import { money } from '../model/format.js';
+import { money, tilde } from '../model/format.js';
 import {
   ADAPTERS,
   type Adapter,
   applyPromptCommand,
   COMMAND_HINT,
+  type CommandName,
+  homeCommands,
   type PromptCommand,
   type PromptContext,
   toSubmitRequest,
@@ -101,10 +103,7 @@ export function daemonLine(d: ReturnType<typeof useData>['state'], version: stri
 export const MOCK_NOTICE =
   'mock runs no model: the nodes complete at once. /adapter claude-code uses your Claude login';
 
-/** `~/dir` for paths under the home directory. */
-export function tilde(p: string, home: string | undefined = process.env.HOME): string {
-  return home && p.startsWith(home) ? `~${p.slice(home.length)}` : p;
-}
+export { tilde } from '../model/format.js';
 
 export function Home(): JSX.Element {
   const theme = useTheme();
@@ -227,14 +226,14 @@ export function Home(): JSX.Element {
               prompt = r;
             }}
             placeholders={PLACEHOLDERS}
-            workflows={org().workflows}
+            commands={homeCommands(org().workflows)}
             onSubmit={(t) => void onSubmit(t)}
             onCommand={onCommand}
             onInput={() => {
               setError(undefined);
               setHint(undefined);
             }}
-            onNeedValue={(c) => setHint(COMMAND_HINT[c])}
+            onNeedValue={(c) => setHint(COMMAND_HINT[c as CommandName])}
             footer={contextFooter()}
           />
           <Show when={profile()?.summary}>
