@@ -91,10 +91,15 @@ describe('RunManager', () => {
     const created = (await store.read(runId))[0];
     expect(created).toMatchObject({ type: 'RunCreated', orgRoot: s.orgRoot, project: s.project });
     // the template's ship node is a human node: it waits in the inbox
-    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('waiting_human'));
+    // the first run of the file pays the cold start (workspace, engine build): give it room
+    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('waiting_human'), {
+      timeout: 5_000,
+    });
     expect(await inbox.list()).toMatchObject([{ id: `human:${runId}:ship` }]);
     await inbox.answer(`human:${runId}:ship`, { approved: true, via: 'cli' });
-    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('completed'));
+    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('completed'), {
+      timeout: 5_000,
+    });
     expect(m.active()).toEqual({ running: 0, queued: 0, waiting: 0 });
   });
 
