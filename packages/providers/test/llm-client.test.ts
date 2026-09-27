@@ -146,6 +146,10 @@ describe('generateObject', () => {
     );
     expect(r.output).toEqual({ choice: 'ship', reasoning: 'tests pass' });
     expect(calls).toBeLessThanOrEqual(2);
+    // the retry says which shape is expected (the schema only travelled in JSON mode before)
+    const last = (fake.requests.at(-1) as { messages: { content: string }[] }).messages.at(-1);
+    expect(String(last?.content)).toContain('"choice"');
+    expect(String(last?.content)).toContain('"reasoning"');
     await fake.close();
   });
 });

@@ -23,6 +23,9 @@ providers: {}
 tiers:
   strong: anthropic/claude-sonnet-5
   cheap: ollama/llama3.2
+  # decisions (decide nodes) and judge checks: a model ref runs them on that model through
+  # its provider (e.g. openrouter/typesafe/jev-router); jev-latest uses TypeSafe's typed API
+  # and needs TYPESAFE_API_KEY (without it, decisions fall back to the strong tier)
   decision: jev-latest
 roles: {}
 gates: {}

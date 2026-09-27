@@ -8,7 +8,7 @@ import {
   Output,
   type ToolSet,
 } from 'ai';
-import type { z } from 'zod';
+import { z } from 'zod';
 import type { ProviderRegistry } from './registry.js';
 
 export interface GenerateArgs {
@@ -105,7 +105,10 @@ export class LlmClient {
       ...args,
       messages: [
         ...args.messages,
-        { role: 'user', content: 'Answer with the JSON object only, no prose around it.' },
+        {
+          role: 'user',
+          content: `Answer with one JSON object only, no prose around it, matching this JSON Schema:\n${JSON.stringify(z.toJSONSchema(schema))}`,
+        },
       ],
     });
     const output = schema.parse(extractJson(plain.text));

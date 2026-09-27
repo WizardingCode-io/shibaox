@@ -313,7 +313,7 @@ Each provider reads its key from the variable shown by `providers list` (for exa
 
 | Variable | Used for |
 | --- | --- |
-| `TYPESAFE_API_KEY` | Jev: `decide` nodes and `jev` gate checks (`shibaox keys set TYPESAFE_API_KEY …`). Without it `decide` nodes fall back to an LLM lead on the `strong` tier and `jev` checks fail. `shibaox init` ships the `spec` jev check in `org/gates/tests.yaml` commented out; uncomment it once the key is set. |
+| `TYPESAFE_API_KEY` | Jev through TypeSafe's typed API (`tiers.decision: jev-latest`): `decide` nodes and `jev` gate checks. `tiers.decision` may instead name any model ref, e.g. `openrouter/typesafe/jev-router`: `decide` nodes and `judge` checks then run on that model through its provider, no TypeSafe key needed (models without structured output are asked for the JSON in plain text). Without either, `decide` nodes fall back to an LLM lead on the `strong` tier and `jev` checks fail. `shibaox init` ships the `spec` jev check in `org/gates/tests.yaml` commented out; uncomment it once the key is set. |
 | `SHIBAOX_JEV_BASE_URL` | optional Jev endpoint override |
 | `SHIBAOX_REAL_TESTS=1` | enables `apps/cli/test/real.test.ts` (real calls, needs keys) |
 
