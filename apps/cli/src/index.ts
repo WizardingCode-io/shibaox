@@ -25,6 +25,7 @@ import {
   runsCommand,
 } from './commands/run.js';
 import { scheduleAdd, scheduleList, scheduleRemove, scheduleRun } from './commands/schedule.js';
+import { tiersList, tiersSet } from './commands/tiers.js';
 import { uiCommand } from './commands/ui.js';
 import { worktreeList, worktreeRemove } from './commands/worktree.js';
 import { makeOut } from './output.js';
@@ -200,6 +201,26 @@ keys
   .argument('<name>')
   .action(async function (this: Command, name: string) {
     exitWith(await keysUnset(name, out(this)));
+  });
+
+const tiers = program
+  .command('tiers')
+  .description("the org's model tiers, judge, adapter and budget (no YAML editing)")
+  .option(
+    '--org <dir>',
+    'org directory (default: ./org when it exists, else the org under ~/.shibaox)',
+  )
+  .action(async function (this: Command, o: { org?: string }) {
+    exitWith(await tiersList(o, out(this)));
+  });
+tiers
+  .command('set')
+  .argument('<name>', 'strong | cheap | decision | judge | adapter | budget')
+  .argument('<value>', 'a provider/model ref, jev-latest, an adapter, a USD amount, or "none"')
+  .option('--org <dir>')
+  .action(async function (this: Command, name: string, value: string) {
+    // `--org` is also an option of the parent command, which takes it wherever it appears
+    exitWith(await tiersSet(name, value, this.optsWithGlobals<{ org?: string }>(), out(this)));
   });
 
 const schedule = program.command('schedule').description('cron schedules that submit runs');

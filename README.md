@@ -180,6 +180,22 @@ channels:
   keys exported there still work, and `doctor` says which of the two a key comes from. The
   Telegram token is read when the daemon starts: set it, then restart once.
 
+- **Tiers.** Which model each tier of an org runs on (`strong`, `cheap`, `decision`), the
+  `judge` model, the default `adapter` and the budget per run are set without editing YAML,
+  through the daemon (`GET/PUT /orgs/config?org=…`, which rewrites `models.yaml`/`org.yaml`
+  keeping the comments):
+
+  ```sh
+  shibaox tiers                                   # the org's tiers, judge, adapter and budget
+  shibaox tiers set strong openrouter/openai/gpt-5
+  shibaox tiers set decision openrouter/typesafe/jev-router
+  shibaox tiers set judge none                    # back to the default (decision, then strong)
+  shibaox tiers set budget 10
+  ```
+
+  In the dashboard `/tiers` lists the same rows; enter on one opens the model list (the
+  same as `/model`, typing filters) and enter saves. The next run uses the new tiers.
+
 `shibaox doctor` reports the daemon (and whether it is older than the CLI), Telegram
 (`getMe` with the configured token) and the `claude` login.
 

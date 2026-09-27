@@ -10,6 +10,7 @@ export * from './default-org.js';
 export * from './home.js';
 export * from './inbox.js';
 export * from './inline.js';
+export * from './org-config.js';
 export * from './run-manager.js';
 export * from './runs/diff.js';
 export * from './runs/graph.js';

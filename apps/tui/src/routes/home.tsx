@@ -15,6 +15,7 @@ import {
 import { HelpDialog } from '../component/dialogs/help.js';
 import { KeysDialog } from '../component/dialogs/keys.js';
 import { RunsDialog } from '../component/dialogs/runs.js';
+import { TiersDialog } from '../component/dialogs/tiers.js';
 import { KeyHints } from '../component/footer.js';
 import { Logo } from '../component/logo.js';
 import { Prompt, type PromptRef } from '../component/prompt/index.js';
@@ -136,7 +137,12 @@ export function Home(): JSX.Element {
     if (d && !ctx().org) setCtx((c) => ({ ...c, org: d.root }));
   });
   const orgRoot = createMemo(() => ctx().org);
-  const org = createMemo(() => orgInfo(orgRoot()));
+  // bumped when the org's files change under us (a /tiers save) so the memo reads them again
+  const [orgVersion, setOrgVersion] = createSignal(0);
+  const org = createMemo(() => {
+    orgVersion();
+    return orgInfo(orgRoot());
+  });
   // what the project is (stack, tests, size), from the daemon; nothing when it cannot say
   const [profile] = createResource(
     () => ({ project: ctx().project, org: orgRoot() }),
@@ -175,6 +181,10 @@ export function Home(): JSX.Element {
     if (cmd.command === 'help') return dialog.open(() => <HelpDialog />);
     if (cmd.command === 'runs') return dialog.open(() => <RunsDialog />);
     if (cmd.command === 'keys') return dialog.open(() => <KeysDialog />);
+    if (cmd.command === 'tiers')
+      return dialog.open(() => (
+        <TiersDialog orgRoot={orgRoot()} onSaved={() => setOrgVersion((v) => v + 1)} />
+      ));
     if (cmd.command === 'key') {
       const [name, ...rest] = cmd.arg.split(/\s+/);
       const value = rest.join(' ').trim();

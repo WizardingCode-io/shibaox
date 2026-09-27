@@ -179,6 +179,24 @@ describe('shibaox CLI against a daemon', () => {
     expect(st[0]?.version).toBe('0.0.1');
   });
 
+  it('tiers list/set change the org models without editing YAML', async () => {
+    const { org, cli } = await setup();
+    const list = await cli('tiers', '--org', org);
+    expect(list.code).toBe(0);
+    expect(list.stdout).toContain('strong');
+    expect(list.stdout).toContain('anthropic/claude-sonnet-5');
+    const set = await cli('tiers', 'set', 'strong', 'openrouter/openai/gpt-5', '--org', org);
+    expect(set.code).toBe(0);
+    const again = await cli('tiers', '--org', org, '--json');
+    const rows = again.stdout
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l) as { name: string; value?: string });
+    expect(rows.find((r) => r.name === 'strong')?.value).toBe('openrouter/openai/gpt-5');
+    const bad = await cli('tiers', 'set', 'judge', 'nope', '--org', org);
+    expect(bad.code).not.toBe(0);
+  });
+
   it('run without --org uses the org under the shibaox home', async () => {
     const { project, cli, home } = await setup({ claudeInstalled: false });
     const r = await cli(

@@ -11,6 +11,7 @@ import {
 import type { ScheduleRow } from '@shibaox/persistence-sqlite';
 import type { ModelChoice } from '@shibaox/providers';
 import { AlreadyResolvedError, type InboxService, NotFoundError } from './inbox.js';
+import { type OrgConfigPatch, readOrgConfig, writeOrgConfig } from './org-config.js';
 import type { RunManager, SubmitRequest } from './run-manager.js';
 import type { RuntimeEnvelope } from './runtime-buffer.js';
 import type { KeyRow } from './secrets.js';
@@ -221,6 +222,18 @@ export class DaemonServer {
 
     if (method === 'GET' && path === '/health') return send(res, 200, this.deps.health());
     if (method === 'GET' && path === '/models') return send(res, 200, await this.deps.models());
+    if (path === '/orgs/config' && (method === 'GET' || method === 'PUT')) {
+      const org = url.searchParams.get('org') ?? '';
+      if (!org) throw new HttpError(400, 'bad_request', '"org" is required');
+      try {
+        if (method === 'GET') return send(res, 200, readOrgConfig(org));
+        const body = asRecord(await readBody(req));
+        return send(res, 200, writeOrgConfig(org, body as OrgConfigPatch));
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        throw new HttpError(/not found/i.test(m) ? 404 : 400, 'bad_request', m);
+      }
+    }
     if (method === 'GET' && path === '/orgs/default')
       return send(res, 200, await this.deps.defaultOrg());
     if (method === 'GET' && path === '/keys') return send(res, 200, this.deps.keys());

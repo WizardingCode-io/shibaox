@@ -66,6 +66,25 @@ async function collect(events: AsyncIterable<Envelope>, until: (e: Envelope) => 
   return out;
 }
 
+describe('org config endpoints', () => {
+  it('GET/PUT /orgs/config read and change the tiers of an org', async () => {
+    const s = setup();
+    const { client } = await started(s);
+    const before = await client.orgConfig(s.orgRoot);
+    expect(before.tiers.strong).toBe('anthropic/claude-sonnet-5');
+    const after = await client.setOrgConfig(s.orgRoot, {
+      tiers: { strong: 'openrouter/openai/gpt-5' },
+    });
+    expect(after.tiers.strong).toBe('openrouter/openai/gpt-5');
+    expect((await client.orgConfig(s.orgRoot)).tiers.strong).toBe('openrouter/openai/gpt-5');
+    await expect(
+      client.setOrgConfig(s.orgRoot, { tiers: { strong: 'bad' } }),
+    ).rejects.toMatchObject({
+      status: 400,
+    });
+  });
+});
+
 describe('default org', () => {
   it('GET /orgs/default names the org under the shibaox home and creates it when missing', async () => {
     const s = setup();

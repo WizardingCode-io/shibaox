@@ -6,6 +6,8 @@ import type {
   InboxItem,
   KeyRow,
   ModelChoice,
+  OrgConfig,
+  OrgConfigPatch,
   RunSummaryPlus,
   SubmitRequest,
 } from '@shibaox/daemon';
@@ -31,6 +33,8 @@ export interface DaemonClientLike {
   diff(id: string): Promise<DiffResult>;
   projectProfile(path: string, orgRoot?: string): Promise<ProjectProfile>;
   models(): Promise<ModelChoice[]>;
+  orgConfig(root: string): Promise<OrgConfig>;
+  setOrgConfig(root: string, patch: OrgConfigPatch): Promise<OrgConfig>;
   defaultOrg(): Promise<{ root: string; created: boolean }>;
   keys(): Promise<KeyRow[]>;
   setKey(name: string, value: string): Promise<{ name: string; set: true }>;

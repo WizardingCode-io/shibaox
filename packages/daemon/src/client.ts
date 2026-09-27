@@ -3,6 +3,7 @@ import type { ProjectProfile, RunState } from '@shibaox/core';
 import type { ScheduleRow } from '@shibaox/persistence-sqlite';
 import type { ModelChoice } from '@shibaox/providers';
 import type { InboxItem } from './inbox.js';
+import type { OrgConfig, OrgConfigPatch } from './org-config.js';
 import type { RunSummaryPlus, SubmitRequest } from './run-manager.js';
 import type { DiffResult } from './runs/diff.js';
 import type { KeyRow } from './secrets.js';
@@ -107,6 +108,13 @@ export class DaemonClient {
   }
   getRun(id: string): Promise<RunState> {
     return this.json('GET', `/runs/${encodeURIComponent(id)}`);
+  }
+  /** Tiers, judge, adapter and budget of an org (`models.yaml` / `org.yaml`). */
+  orgConfig(root: string): Promise<OrgConfig> {
+    return this.json('GET', `/orgs/config?org=${encodeURIComponent(root)}`);
+  }
+  setOrgConfig(root: string, patch: OrgConfigPatch): Promise<OrgConfig> {
+    return this.json('PUT', `/orgs/config?org=${encodeURIComponent(root)}`, patch);
   }
   /** The org under the shibaox home (`~/.shibaox/org`), created on first use. */
   defaultOrg(): Promise<{ root: string; created: boolean }> {

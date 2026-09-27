@@ -517,3 +517,53 @@ test('without an org next to the project, the home uses the org under the shibao
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('/tiers shows the org tiers and changes one through the daemon', async () => {
+  const m = await mount({
+    models: [
+      {
+        ref: 'anthropic-subscription/claude-haiku-4-5',
+        provider: 'anthropic-subscription',
+        model: 'claude-haiku-4-5',
+        configured: true,
+        runtime: 'claude-code',
+      },
+      { ref: 'openrouter/openai/gpt-5', provider: 'openrouter', model: 'gpt-5', configured: true },
+    ],
+  });
+  try {
+    m.client.orgConfigs.set(join(m.dir, 'org'), {
+      root: join(m.dir, 'org'),
+      organization: 'my-org',
+      per_run_usd: 5,
+      tiers: {
+        strong: 'anthropic/claude-sonnet-5',
+        cheap: 'ollama/llama3.2',
+        decision: 'jev-latest',
+      },
+    });
+    await m.type('/tiers');
+    await m.setup.mockInput.pressEnter();
+    let f = await m.frame();
+    expect(f).toContain('Tiers');
+    expect(f).toContain('strong');
+    expect(f).toContain('anthropic/claude-sonnet-5');
+    expect(f).toContain('decision');
+    expect(f).toContain('jev-latest');
+    // strong is the first row: enter opens the model list, typing filters, enter saves
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).toContain('openrouter/openai/gpt-5');
+    await m.type('gpt');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    const call = m.client.calls.find((c) => c.method === 'setOrgConfig');
+    expect(call?.args).toEqual([
+      join(m.dir, 'org'),
+      { tiers: { strong: 'openrouter/openai/gpt-5' } },
+    ]);
+    await m.setup.mockInput.pressEscape();
+  } finally {
+    m.done();
+  }
+});

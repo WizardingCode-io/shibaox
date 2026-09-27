@@ -6,6 +6,8 @@ import type {
   InboxItem,
   KeyRow,
   ModelChoice,
+  OrgConfig,
+  OrgConfigPatch,
   RunSummaryPlus,
   SubmitRequest,
 } from '@shibaox/daemon';
@@ -43,6 +45,8 @@ export class FakeDaemonClient implements DaemonClientLike {
   profiles = new Map<string, ProjectProfile>();
   /** What `/model` offers. */
   modelChoices: ModelChoice[] = [];
+  /** What `/tiers` shows, by org root. */
+  orgConfigs = new Map<string, OrgConfig>();
   /** What `/keys` shows. */
   keyRows: KeyRow[] = [];
   /** What `GET /orgs/default` answers. */
@@ -135,6 +139,31 @@ export class FakeDaemonClient implements DaemonClientLike {
   async unsetKey(name: string): Promise<{ name: string; removed: boolean }> {
     this.record('unsetKey', [name]);
     return { name, removed: true };
+  }
+
+  async orgConfig(root: string): Promise<OrgConfig> {
+    this.record('orgConfig', [root]);
+    const c = this.orgConfigs.get(root);
+    if (!c) throw new DaemonHttpError(404, 'bad_request', `org.yaml: file not found (${root})`);
+    return c;
+  }
+
+  async setOrgConfig(root: string, patch: OrgConfigPatch): Promise<OrgConfig> {
+    this.record('setOrgConfig', [root, patch]);
+    const c = await this.orgConfig(root);
+    const tiers = { ...c.tiers };
+    for (const [k, v] of Object.entries(patch.tiers ?? {}))
+      if (v === null) delete tiers[k as keyof typeof tiers];
+      else if (v !== undefined) tiers[k as keyof typeof tiers] = v;
+    const next: OrgConfig = {
+      ...c,
+      tiers,
+      judge: patch.judge === null ? undefined : (patch.judge ?? c.judge),
+      adapter: patch.adapter === null ? undefined : (patch.adapter ?? c.adapter),
+      per_run_usd: patch.per_run_usd === null ? undefined : (patch.per_run_usd ?? c.per_run_usd),
+    };
+    this.orgConfigs.set(root, next);
+    return next;
   }
 
   async models(): Promise<ModelChoice[]> {

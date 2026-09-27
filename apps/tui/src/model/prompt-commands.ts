@@ -30,6 +30,7 @@ export const COMMANDS = [
   'runs',
   'keys',
   'key',
+  'tiers',
   'help',
 ] as const;
 export type CommandName = (typeof COMMANDS)[number];
@@ -46,6 +47,7 @@ export const COMMAND_KIND: Record<CommandName, 'choice' | 'text' | 'action'> = {
   runs: 'action',
   keys: 'action',
   key: 'text',
+  tiers: 'action',
   help: 'action',
 };
 
@@ -61,6 +63,7 @@ export const COMMAND_HINT: Record<CommandName, string> = {
   runs: 'open a run',
   keys: 'the key vault: which API keys and tokens are set',
   key: 'type NAME VALUE (e.g. OPENROUTER_API_KEY sk-or-…) and press enter',
+  tiers: "the org's model tiers, judge and adapter",
   help: 'show the keys',
 };
 export interface PromptCommand {
