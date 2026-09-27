@@ -150,8 +150,10 @@ channels:
 the text commands keep working. `pnpm test` also needs Bun for the dashboard's own tests. It
 needs an interactive terminal of at least 60×15.
 
-**Home** shows the logo and a prompt: type what the team should do and press `enter` to
-start a run. `/` commands set the context shown inside the prompt: `/workflow`, `/adapter`
+**Home** shows the logo and a prompt: type what you want and press `enter`. The org's `chat`
+workflow (the default) talks to the orchestrator (see below); any other workflow starts a
+team run. Under the prompt, one line says what the current project is (`Next.js · React ·
+TypeScript · pnpm test · 412 files`, from `GET /projects/profile`). `/` commands set the context shown inside the prompt: `/workflow`, `/adapter`
 and `/workspace` step into a list to pick from (`enter` takes the highlighted value),
 `/project <dir>`, `/org <dir>` and `/budget <usd>` take a value, `/runs` and `/help` open
 their dialogs. The org defaults to `./org`, the project to the current
@@ -165,8 +167,11 @@ confidence, and a summary at the end (status, cost, duration, files changed, bra
 the run waits for you, the bottom of the screen asks: `a` approves, `d` denies, `n` adds a
 note (a command approval asks `y` first). Runs that end or start waiting in another tab make
 their tab pulse until you open it. When a run ends, the prompt comes back at the bottom of its
-tab: the next request runs as a follow-up in the same tab, with the previous request as
-context. The sidebar (automatic from 120 columns, `ctrl+b`) shows
+tab: the next request runs in the same tab and the conversation so far travels with it
+(`messages` on `POST /runs`). A chat turn reads as a message: your request, then the
+orchestrator's reply, without node chrome; a run the orchestrator dispatched shows up in the
+same tab under `→ <workflow>` with its own cards, approvals and diff, and when it ends a quiet
+`↳ workflow … finished` line hands the outcome back to the orchestrator, which replies. The sidebar (automatic from 120 columns, `ctrl+b`) shows
 the run's request, its cost and progress, the nodes as a checklist, the files it touched and
 what needs you; drag its edge with the mouse to resize it. The runs picker is `ctrl+o`.
 
@@ -183,6 +188,37 @@ In an interactive terminal with Bun installed, `shibaox run` (without `--detach`
 `shibaox follow` show the same run view; without a TTY, without Bun, or with `--json`, they
 print plain lines as before. When the run ends, the view closes and the run's final state is
 printed; `q` leaves it running in the daemon.
+
+## The orchestrator
+
+The org template ships an `assistant` role and a one-node `chat` workflow: the orchestrator
+you talk to in the dashboard. It answers in your language, **acts** (reads and writes files in
+the project, runs the programs listed in its `tools`, fetches pages), **dispatches** larger
+work to the org's workflows with a `start_workflow` tool (the run gets `parentRunId` and joins
+the conversation), and **remembers** with `remember`/`recall` (see Memory). Every task of a
+run starts with a preamble: the project's profile and the memory notes.
+
+Role fields that drive this (`roles/<name>.yaml`):
+
+```yaml
+capabilities: [orchestrate, memory]   # orchestrate → start_workflow; memory → remember/recall
+tools: [read, write, git, node, npm, pnpm, bun, python3]
+permissions:
+  network: ['*']                       # hosts the role may fetch (`*` = any; `github.com` covers subdomains)
+  approval_required: [push, deploy]
+max_steps: 40                          # direct adapter tool-loop steps (default 12)
+max_turns: 80                          # Claude Code agent turns (default 60)
+budget_usd: 1                          # optional cap per task, within the run budget
+model_tier: cheap                      # the conversation runs on the cheap tier; teams use their own
+```
+
+With `permissions.network` set, the direct adapter exposes `web_fetch` (GET as text, HTML
+reduced to text, 200 kB) and the Claude Code adapter allows `WebFetch`/`WebSearch`, both
+checked against the allowlist per host (redirects included). `write` in `tools` is what lets
+the direct adapter write files (`write_file`); programs run by allowlist as before. A chat
+turn runs **in place** on your checkout; dispatched team runs use the org default (a worktree
+in a git repository). Opened in your home directory itself, the dashboard works in
+`~/.shibaox/workspace`.
 
 ## Providers
 
@@ -407,6 +443,13 @@ shibaox worktree rm <runId> --project ./project [--delete-branch]
 (status, adapter, spend, nodes, last gate report, timeline) and one
 `90-system/decisions/<date>-<runId8>-<node>.md` per `decide` node, and prints `note:
 <path>`. Notes are never overwritten. Without `vault:` the run prints one warning.
+
+**Profile and memory.** `10-projects/<project>/profile.md` is rewritten whenever the project
+is profiled (the dashboard home, every run). Roles with the `memory` capability get
+`remember({ scope, text })` and `recall({ query })`: `scope: user` appends to
+`00-org/memory.md`, `scope: project` to `10-projects/<project>/memory.md` (dated bullet
+lines); `recall` returns the lines containing every word of the query. The last 40 lines of
+each note (4 kB at most) plus the profile line open every task's prompt.
 
 **graphify.** A code knowledge graph of the project, built with
 [graphify](https://pypi.org/project/graphifyy/) (installed with `uv tool install graphifyy`;
