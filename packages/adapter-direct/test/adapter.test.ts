@@ -20,6 +20,7 @@ import { startFakeOpenAI } from '@shibaox/providers/testing';
 import { RoleSchema } from '@shibaox/schemas';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { replyText } from '../src/adapter.js';
 import { DirectAdapter } from '../src/index.js';
 
 let fake: Awaited<ReturnType<typeof startFakeOpenAI>> | undefined;
@@ -91,6 +92,7 @@ describe('DirectAdapter', () => {
       'tool_result',
       'tool_use',
       'tool_result',
+      'text', // what finish() said, shown like any reply
       'usage', // tokens at the end
       'result',
     ]);
@@ -109,6 +111,44 @@ describe('DirectAdapter', () => {
     expect(r.output).toEqual({ text: 'Nothing to do here.' });
     expect(r.summary).toContain('Nothing to do');
   });
+  it('emits the reply as a text event (the conversation view shows text, not results)', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI(() => ({ content: '\n\nOla! Como posso ajudar? 😊' }));
+    const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    const events: RuntimeEvent[] = [];
+    for await (const e of adapter.run(jobFor(ws), ctx())) events.push(e);
+    const texts = events.filter((e) => e.type === 'text');
+    expect(texts).toEqual([{ type: 'text', text: 'Ola! Como posso ajudar? 😊' }]);
+    expect(events.map((e) => e.type).slice(-3)).toEqual(['text', 'usage', 'result']);
+    // a finish() with a text output is shown the same way
+    await fake.close();
+    fake = await startFakeOpenAI(() => ({
+      toolCalls: [
+        { name: 'finish', args: { output: { text: 'Done, see README.' }, summary: 'done' } },
+      ],
+    }));
+    const adapter2 = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    const events2: RuntimeEvent[] = [];
+    for await (const e of adapter2.run(jobFor(ws), ctx())) events2.push(e);
+    expect(events2.filter((e) => e.type === 'text')).toEqual([
+      { type: 'text', text: 'Done, see README.' },
+    ]);
+    // a plain-string output (what small local models tend to send) and, failing that, the summary
+    expect(replyText('', { output: 'olá', summary: 'said hi' })).toBe('olá');
+    expect(replyText('', { output: { files: [] }, summary: 'wrote two files' })).toBe(
+      'wrote two files',
+    );
+    expect(replyText('  ', undefined)).toBe('');
+  });
+
   it('refuses paths outside the workspace and reports it back to the model', async () => {
     const ws = mkdtempSync(join(tmpdir(), 'ws-'));
     fake = await startFakeOpenAI((req, turn) => {

@@ -43,6 +43,23 @@ const RULES =
 
 type Settled = { ok: true; r: GenerateResult } | { ok: false; e: unknown };
 
+/**
+ * What the conversation shows for a call: the model's text; without it, what finish() carried
+ * (a string output, an output `text`, else the summary).
+ */
+export function replyText(
+  text: string,
+  finished: { output: unknown; summary: string } | undefined,
+): string {
+  if (text.trim()) return text.trim();
+  if (!finished) return '';
+  const out = finished.output;
+  if (typeof out === 'string' && out.trim()) return out.trim();
+  const inner = (out as { text?: unknown } | null | undefined)?.text;
+  if (typeof inner === 'string' && inner.trim()) return inner.trim();
+  return finished.summary.trim();
+}
+
 export class DirectAdapter implements RuntimeAdapter {
   readonly id = 'direct';
   constructor(private readonly opts: DirectAdapterOptions) {}
@@ -180,6 +197,10 @@ export class DirectAdapter implements RuntimeAdapter {
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
     };
+    // the model's answer is a text event, like any runtime's: the conversation view shows
+    // text, never raw results. Without finish() it is the reply; with finish() the text output.
+    const reply = replyText(text, finished);
+    if (reply) yield { type: 'text', text: reply };
     const contextWindow = this.opts.registry.contextWindow(ref);
     yield {
       type: 'usage',
