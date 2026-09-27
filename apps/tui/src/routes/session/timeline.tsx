@@ -129,16 +129,22 @@ export function Timeline(props: {
     if (!props.focused || key.ctrl || key.meta) return false;
     const n = rows().length;
     switch (key.name) {
+      // j/k walk the cursor; the arrows (and a wheel the terminal turns into arrows) scroll the view
       case 'j':
-      case 'down':
         if (cursor() < n - 1) move(1);
         else scroll?.scrollBy(1);
         return true;
       case 'k':
-      case 'up':
         setFollowing(false);
         if (cursor() > 0) move(-1);
         else scroll?.scrollBy(-1);
+        return true;
+      case 'down':
+        scroll?.scrollBy(2);
+        return true;
+      case 'up':
+        setFollowing(false);
+        scroll?.scrollBy(-2);
         return true;
       case 'pagedown':
         scroll?.scrollBy(scroll.viewport.height);

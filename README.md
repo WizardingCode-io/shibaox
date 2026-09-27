@@ -170,7 +170,8 @@ what needs you; drag its edge with the mouse to resize it. The runs picker is `c
 
 Keys: `ctrl+n` home · `ctrl+o` open a run · `ctrl+k` command palette · `ctrl+]`/`ctrl+p`
 next/previous tab · `ctrl+w` close tab · `ctrl+b` sidebar · `?` help · `ctrl+q` quit (the
-daemon keeps running). In a run: `j/k` move, `enter` expand, `g`/`G` top/follow, `d` diff of
+daemon keeps running). In a run: `j/k` move the cursor, `↑/↓` or the mouse wheel scroll,
+`enter` expand, `g`/`G` top/follow, `d` diff of
 the run's checkout (`GET /runs/:id/diff`), `c` cancel, `r` resume, `tab` sidebar. Runs that
 the daemon no longer streams (older than the last 50 finished) still show their nodes from
 the run state. `SHIBAOX_NO_MOTION=1` (or `"animations": false` in `ui.json`) turns every

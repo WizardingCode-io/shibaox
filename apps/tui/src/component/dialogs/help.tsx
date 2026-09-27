@@ -32,7 +32,8 @@ const RIGHT: Section[] = [
   {
     title: 'Session',
     keys: [
-      ['j/k · ↑/↓', 'cursor · scroll'],
+      ['j / k', 'move the cursor'],
+      ['↑ / ↓ · wheel', 'scroll the view'],
       ['enter', 'expand / collapse'],
       ['g · G', 'top · follow the end'],
       ['d', 'diff (deny while waiting)'],
