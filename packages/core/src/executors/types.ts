@@ -71,6 +71,8 @@ export interface TaskJob {
   resumeNote?: string;
   /** argvHash → approved, for tool approvals already answered on this node. */
   approvedCommands: Record<string, boolean>;
+  /** The task is a turn of a conversation (`conversation: true` workflow): the reply is the text. */
+  conversation?: boolean;
 }
 
 export interface ExecutionContext {

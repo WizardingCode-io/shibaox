@@ -196,6 +196,32 @@ describe('RunManager', () => {
     });
   });
 
+  it('tasks of a conversation workflow are marked as such for the adapters', async () => {
+    const s = setup();
+    const store = new MemoryEventStore();
+    const seen: { node: string; conversation?: boolean }[] = [];
+    const { manager: m } = manager(store, {
+      vault: s.vault,
+      mockScript: (j: TaskJob) => {
+        seen.push({ node: j.nodeId, conversation: j.conversation });
+        return { output: { text: 'ok' }, summary: 'ok' };
+      },
+    });
+    const chat = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'chat',
+      input: 'olá',
+      adapter: 'mock',
+      workspace: 'inplace',
+    });
+    await vi.waitFor(async () => expect((await m.state(chat.runId)).status).toBe('completed'));
+    const team = await submitMock(m, s, 'inplace');
+    await vi.waitFor(async () => expect((await m.state(team.runId)).status).toBe('waiting_human'));
+    expect(seen.find((x) => x.node === 'reply')?.conversation).toBe(true);
+    expect(seen.find((x) => x.node === 'implement')?.conversation).toBeFalsy();
+  });
+
   it('a model chosen for the run overrides the org routing and picks the adapter', async () => {
     const s = setup(); // org.yaml without adapter (mock by default), tiers on the API provider
     const store = new MemoryEventStore();

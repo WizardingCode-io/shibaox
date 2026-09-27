@@ -106,7 +106,10 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
       if (existsSync(p)) prompt = readFileSync(p, 'utf8');
     }
     const preamble = this.opts.preamble?.(job);
-    return `${prompt}\n\n${RULES}${preamble ? `\n\n${preamble}` : ''}`;
+    const chat = job.conversation
+      ? '\n\nThis is a conversation turn: answer the user directly in your reply, in their language; use tools only when the request needs them.'
+      : '';
+    return `${prompt}\n\n${RULES}${chat}${preamble ? `\n\n${preamble}` : ''}`;
   }
 
   async *run(job: TaskJob, ctx: ExecutionContext): AsyncIterable<RuntimeEvent> {

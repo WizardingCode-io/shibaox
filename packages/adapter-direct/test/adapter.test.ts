@@ -664,6 +664,29 @@ describe('DirectAdapter', () => {
     expect(events.map((e) => e.type).slice(-2)).toEqual(['usage', 'result']);
   });
 
+  it('a conversation task asks the model to answer in its text, not through finish', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI(() => ({ content: 'Olá! Tudo bem?' }));
+    const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    const r = await collectRun(adapter, { ...jobFor(ws), conversation: true }, ctx());
+    expect(r.output).toEqual({ text: 'Olá! Tudo bem?' });
+    const system = String(
+      (fake.requests[0] as { messages: { role: string; content: string }[] }).messages[0]?.content,
+    );
+    expect(system).toContain('answer the user directly');
+    expect(system).not.toContain('call finish(output, summary) exactly once');
+    // a team task keeps the finish() contract
+    await collectRun(adapter, jobFor(ws), ctx());
+    const system2 = String(
+      (fake.requests[1] as { messages: { role: string; content: string }[] }).messages[0]?.content,
+    );
+    expect(system2).toContain('call finish(output, summary) exactly once');
+  });
+
   it('aborts when the signal fires', async () => {
     const ws = mkdtempSync(join(tmpdir(), 'ws-'));
     fake = await startFakeOpenAI(

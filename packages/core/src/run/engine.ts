@@ -434,6 +434,7 @@ export class RunEngine {
             ),
             // a node suspended with a session resumes it; a fresh node starts clean
             resumeSessionId: nodeState?.sessionId,
+            ...(workflow.conversation ? { conversation: true } : {}),
             resumeNote:
               last && nodeState?.sessionId
                 ? `The approval for \`${last.command}\` was ${last.approved ? 'granted' : 'denied'}${last.note ? ` (${last.note})` : ''}. Continue the task.`

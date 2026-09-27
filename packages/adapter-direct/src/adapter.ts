@@ -40,6 +40,9 @@ export interface DirectAdapterOptions {
 
 const RULES =
   'Rules: work only inside the workspace using the tools; never assume files exist without reading them; when the task is done call finish(output, summary) exactly once. If nothing needs to change, call finish with an explanation.';
+/** A conversation turn: the answer is the reply text; tools only when the request needs them. */
+const CHAT_RULES =
+  'Rules: answer the user directly in your reply text, in their language. Use the tools only when the request needs them (reading or writing files in the workspace, running a listed program, fetching a page, dispatching a workflow); after using tools, still answer in text. Never describe a tool call in text: either call the tool or answer. Do not call finish for a plain answer.';
 
 type Settled = { ok: true; r: GenerateResult } | { ok: false; e: unknown };
 
@@ -75,7 +78,8 @@ export class DirectAdapter implements RuntimeAdapter {
       if (existsSync(p)) prompt = readFileSync(p, 'utf8');
     }
     const preamble = this.opts.preamble?.(job);
-    return `${prompt}\n\n${RULES}${preamble ? `\n\n${preamble}` : ''}`;
+    const rules = job.conversation ? CHAT_RULES : RULES;
+    return `${prompt}\n\n${rules}${preamble ? `\n\n${preamble}` : ''}`;
   }
 
   private userMessage(job: TaskJob): string {
