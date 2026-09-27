@@ -39,7 +39,8 @@ export function PrefsProvider(props: ParentProps<{ home: string }>): JSX.Element
   const [data, set] = createStore<Prefs>(loadPrefs(props.home));
   const update = (patch: Partial<Prefs>) => {
     set(patch);
-    savePrefs(props.home, { ...data });
+    const next = Object.fromEntries(Object.entries({ ...data }).filter(([, v]) => v !== undefined));
+    savePrefs(props.home, next);
   };
   return <Context.Provider value={{ data, update }}>{props.children}</Context.Provider>;
 }

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { testRender } from '@opentui/solid';
@@ -23,7 +23,7 @@ async function mount(o: { width?: number; height?: number } = {}) {
         version="0.0.1"
         home={home}
         cwd={dir}
-        env={{ SHIBAOX_NO_MOTION: '1' }}
+        env={{ SHIBAOX_NO_MOTION: '1', PATH: '/nonexistent' }}
         onExit={(c) => exits.push(c)}
       />
     ),
@@ -182,6 +182,42 @@ test('an unknown org is refused and the current one stays; ctrl+c clears the tex
     await m.setup.mockInput.pressKey('c', { ctrl: true });
     await settle();
     expect(m.exits).toEqual([0]);
+  } finally {
+    m.done();
+  }
+});
+
+test('the adapter defaults to claude-code when the claude CLI is on the PATH, and mock is never remembered', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tui-home-claude-'));
+  scaffoldOrg(dir);
+  const bin = join(dir, 'bin');
+  mkdirSync(bin);
+  writeFileSync(join(bin, 'claude'), '#!/bin/sh\n');
+  chmodSync(join(bin, 'claude'), 0o755);
+  const client = new FakeDaemonClient();
+  const setup = await testRender(
+    () => <App client={client} version="0.0.1" home={join(dir, 'home')} cwd={dir} env={{ SHIBAOX_NO_MOTION: '1', PATH: bin }} onExit={() => {}} />,
+    { width: 100, height: 30, exitOnCtrlC: false },
+  );
+  try {
+    await settle(60);
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain('adapter claude-code');
+  } finally {
+    setup.renderer.destroy();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a mock run says so in the prompt and never becomes the remembered adapter', async () => {
+  const m = await mount();
+  try {
+    let f = await m.frame();
+    expect(f).toContain('mock runs no model'); // the default here: no claude on this PATH
+    await m.type('do it');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(loadPrefs(m.home).lastAdapter).toBeUndefined();
   } finally {
     m.done();
   }

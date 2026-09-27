@@ -5,6 +5,8 @@ export interface AppConfig {
   version: string;
   home: string;
   cwd: string;
+  /** The environment the dashboard was launched with (PATH decides the default adapter). */
+  env: NodeJS.ProcessEnv;
 }
 
 const Context = createContext<AppConfig>();

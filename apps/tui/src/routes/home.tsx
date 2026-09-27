@@ -1,4 +1,5 @@
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { basename, delimiter, join } from 'node:path';
 import { useTerminalDimensions } from '@opentui/solid';
 import { loadOrg, OrgLoadError } from '@shibaox/schemas';
 import { createEffect, createMemo, createSignal, type JSX, on, Show } from 'solid-js';
@@ -57,6 +58,14 @@ export function daemonLine(d: ReturnType<typeof useData>['state'], version: stri
   return `daemon ${version} · ${running} running · ${queued} queued${needs ? ` · ▲ ${needs} needs you` : ''}`;
 }
 
+/** Whether the `claude` CLI is on the PATH: the natural default adapter then. */
+export function claudeOnPath(env: NodeJS.ProcessEnv): boolean {
+  return (env.PATH ?? '').split(delimiter).some((d) => d && existsSync(join(d, 'claude')));
+}
+
+export const MOCK_NOTICE =
+  'mock runs no model: the nodes complete at once. /adapter claude-code uses your Claude login';
+
 /** `~/dir` for paths under the home directory. */
 export function tilde(p: string): string {
   const home = process.env.HOME;
@@ -76,7 +85,10 @@ export function Home(): JSX.Element {
   const [ctx, setCtx] = createSignal<PromptContext>({
     org: prefs.data.lastOrg ?? join(config.cwd, 'org'),
     project: config.cwd,
-    adapter: ADAPTERS.find((a) => a === prefs.data.lastAdapter) ?? 'mock',
+    // mock is a test double: it is never the remembered choice, and claude-code wins when claude is installed
+    adapter:
+      ADAPTERS.find((a) => a === prefs.data.lastAdapter && a !== 'mock') ??
+      (claudeOnPath(config.env) ? 'claude-code' : 'mock'),
     workflow: prefs.data.lastWorkflow,
   });
   const org = createMemo(() => orgInfo(ctx().org));
@@ -113,13 +125,18 @@ export function Home(): JSX.Element {
     const req = toSubmitRequest({ ...ctx(), workflow: wf }, text);
     const runId = await data.actions.submit(req);
     if (!runId) return;
-    prefs.update({ lastOrg: req.orgRoot, lastAdapter: req.adapter as Adapter, lastWorkflow: wf });
+    prefs.update({
+      lastOrg: req.orgRoot,
+      lastAdapter: req.adapter === 'mock' ? undefined : (req.adapter as Adapter),
+      lastWorkflow: wf,
+    });
     prompt?.clear();
     data.openRun(runId);
     route.navigate({ type: 'session', runId });
   };
 
   const notice = () => error() ?? org().error;
+  const mockNotice = () => (ctx().adapter === 'mock' ? MOCK_NOTICE : undefined);
   void toast;
   const contextFooter = () => {
     const c = ctx();
@@ -171,9 +188,18 @@ export function Home(): JSX.Element {
             footer={contextFooter()}
           />
           <box height={1} flexShrink={0} flexDirection="row" width="100%" paddingLeft={1}>
-            <Show when={notice() ?? hint()}>
-              <text fg={notice() ? theme.text.feedback.error : theme.text.muted} wrapMode="none">
-                {notice() ?? hint() ?? ''}
+            <Show when={notice() ?? hint() ?? mockNotice()}>
+              <text
+                fg={
+                  notice()
+                    ? theme.text.feedback.error
+                    : hint()
+                      ? theme.text.muted
+                      : theme.text.feedback.warning
+                }
+                wrapMode="none"
+              >
+                {notice() ?? hint() ?? mockNotice() ?? ''}
               </text>
             </Show>
             <box flexGrow={1} />

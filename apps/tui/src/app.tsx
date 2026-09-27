@@ -183,7 +183,7 @@ export function App(props: AppProps): JSX.Element {
   const cwd = props.cwd ?? process.cwd();
   return (
     <ClientProvider client={props.client}>
-      <ConfigProvider config={{ version: props.version, home: props.home, cwd }}>
+      <ConfigProvider config={{ version: props.version, home: props.home, cwd, env }}>
         <PrefsProvider home={props.home}>
           <MotionProvider enabled={motionEnabled(env, loadPrefs(props.home))}>
             <ThemeProvider>
