@@ -1,5 +1,6 @@
 import type { OutboxRepo } from '@shibaox/persistence-sqlite';
 import type { InboxItem } from '../inbox.js';
+import type { RunReport } from '../runs/report.js';
 import type { Channel } from './types.js';
 
 /** Retry delays by attempt; past the last one, hourly. */
@@ -31,6 +32,14 @@ export class OutboxWorker {
     for (const c of this.opts.channels) this.opts.repo.enqueue(c.id, item.id, item, at);
   }
 
+  /** One row per channel that can show reports; delivery happens on the next tick. */
+  enqueueReport(report: RunReport): void {
+    const at = this.now().toISOString();
+    for (const c of this.opts.channels)
+      if (c.report)
+        this.opts.repo.enqueue(c.id, `report:${report.runId}`, { type: 'report', report }, at);
+  }
+
   /** The item was answered: nothing left to announce. */
   clear(inboxId: string): void {
     this.opts.repo.removeForInbox(inboxId);
@@ -47,7 +56,13 @@ export class OutboxWorker {
           continue;
         }
         try {
-          await channel.notify(JSON.parse(row.payload) as InboxItem);
+          const payload = JSON.parse(row.payload) as
+            | InboxItem
+            | { type: 'report'; report: RunReport };
+          // rows written before 3B are bare inbox items
+          if ('type' in payload && payload.type === 'report') {
+            if (channel.report) await channel.report(payload.report);
+          } else await channel.notify(payload as InboxItem);
           this.opts.repo.remove(row.id);
         } catch (e) {
           const delay = BACKOFF_MS[row.attempts] ?? HOURLY_MS;

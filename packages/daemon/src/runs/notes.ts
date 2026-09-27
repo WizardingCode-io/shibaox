@@ -23,16 +23,16 @@ export async function finishRun(
   org: Org,
   state: RunState,
   opts: NotesOptions & { adapter: AdapterId },
-): Promise<void> {
-  if (!isTerminal(state.status)) return;
+): Promise<{ notePath?: string }> {
+  if (!isTerminal(state.status)) return {};
   const log = opts.log;
   const vault = vaultDir(org, opts);
   if (!vault) {
     log('warn: no vault in org.yaml: run notes are not written');
-    return;
+    return {};
   }
   const workflow = state.workflowSnapshot ?? org.workflows[state.workflow];
-  if (!workflow) return;
+  if (!workflow) return {};
   try {
     const events = await store.read(state.runId);
     const project = projectName(projectOf(state));
@@ -48,8 +48,10 @@ export async function finishRun(
     for (const [nodeId, node] of Object.entries(workflow.nodes))
       if (node.type === 'decide' && state.nodes[nodeId]?.choice)
         log(`note: ${writeDecisionNote({ vault, project, state, nodeId, events }).path}`);
+    return { notePath: note.path };
   } catch (err) {
     log(`warn: vault note not written: ${err instanceof Error ? err.message : String(err)}`);
+    return {};
   }
 }
 

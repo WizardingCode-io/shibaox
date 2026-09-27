@@ -232,6 +232,35 @@ describe('RunManager', () => {
     expect(teamAppend).not.toContain('uses pnpm everywhere');
   });
 
+  it('a run with an origin reports once when it ends; runs without one do not', async () => {
+    const s = setup();
+    const store = new MemoryEventStore();
+    const finished: { runId: string; origin?: string; notePath?: string }[] = [];
+    const { manager: m } = manager(store, {
+      vault: s.vault,
+      onFinished: (state, _events, _workflow, notePath) =>
+        finished.push({ runId: state.runId, origin: state.origin, notePath }),
+    });
+    const { runId } = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'chat',
+      input: 'olá',
+      adapter: 'mock',
+      workspace: 'inplace',
+      origin: 'schedule:s1',
+    });
+    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('completed'));
+    await vi.waitFor(() => expect(finished).toHaveLength(1));
+    expect(finished[0]).toMatchObject({ runId, origin: 'schedule:s1' });
+    expect(finished[0]?.notePath).toContain('10-projects');
+    const plain = await submitMock(m, s, 'inplace');
+    await vi.waitFor(async () => expect((await m.state(plain.runId)).status).toBe('waiting_human'));
+    await m.cancel(plain.runId);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(finished).toHaveLength(1);
+  });
+
   it('restart keeps the pending approval and resumes by session id', async () => {
     const s = setup({ claudeCode: true });
     const store = new MemoryEventStore();

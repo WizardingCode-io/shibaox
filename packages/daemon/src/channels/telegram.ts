@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { AlreadyResolvedError, type InboxAnswer, type InboxId, type InboxItem } from '../inbox.js';
+import { chunkText, type RunReport, STATUS_SYMBOL, shortDuration } from '../runs/report.js';
 import type { Channel } from './types.js';
 
 export interface TelegramOptions {
@@ -29,6 +30,31 @@ export function telegramText(item: InboxItem): string {
   if (item.kind === 'approval')
     return `Approval needed\n${where.join(' · ')}\n<code>${escapeHtml(item.prompt)}</code>`;
   return `Decision needed\n${where.join(' · ')}\n${escapeHtml(item.prompt)}`;
+}
+
+/** Telegram messages take at most 4096 chars; text is sent in pieces under this. */
+export const TELEGRAM_CHUNK = 4000;
+
+/** The report as a Telegram message: a conversation's reply as is, a run as a short digest. */
+export function telegramReportText(r: RunReport): string {
+  if (r.reply !== undefined && r.nodes.every((n) => n.status === 'completed'))
+    return escapeHtml(r.reply);
+  const symbol = STATUS_SYMBOL[r.status] ?? '•';
+  const word = r.status === 'completed' ? 'done' : r.status.replace('_', ' ');
+  const head = [
+    `${symbol} ${escapeHtml(r.workflow)} ${word}`,
+    `${r.nodes.length} node${r.nodes.length === 1 ? '' : 's'}`,
+    `$${r.spentUsd.toFixed(4)}`,
+    ...(r.durationMs !== undefined ? [shortDuration(r.durationMs)] : []),
+    ...(r.branch ? [`branch ${escapeHtml(r.branch)}`] : []),
+  ].join(' · ');
+  const lines = [head];
+  if (r.needs) lines.push(`needs you: ${escapeHtml(r.needs)}`);
+  if (r.error) lines.push(`error: ${escapeHtml(r.error)}`);
+  for (const n of r.nodes)
+    if (n.summary) lines.push(`${escapeHtml(n.id)}: ${escapeHtml(n.summary)}`);
+  if (r.notePath) lines.push(`note: ${escapeHtml(r.notePath)}`);
+  return lines.join('\n');
 }
 
 interface CallbackQuery {
@@ -155,6 +181,10 @@ export function telegramChannel(o: TelegramOptions): Channel {
         text: `${m.text}\n\n${a.approved ? 'Approved' : 'Denied'} via ${a.via}`,
         parse_mode: 'HTML',
       });
+    },
+    async report(r) {
+      for (const piece of chunkText(telegramReportText(r), TELEGRAM_CHUNK))
+        await api('sendMessage', { chat_id: o.chatId, text: piece, parse_mode: 'HTML' });
     },
     onAnswer(cb) {
       answer = cb;

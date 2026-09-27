@@ -12,6 +12,7 @@ import {
   type RunSummary,
   replay,
   ScriptedDecider,
+  type StoredEvent,
 } from '@shibaox/core';
 import { type Graphify, MemoryNotes } from '@shibaox/memory';
 import type { ProviderEntry } from '@shibaox/providers';
@@ -74,6 +75,13 @@ export interface RunManagerOptions {
   vault?: string;
   mockScript?: MockScript;
   now?: () => string;
+  /** A run with an `origin` ended: the daemon reports it where it was asked for. */
+  onFinished?: (
+    state: RunState,
+    events: StoredEvent[],
+    workflow: Workflow | undefined,
+    notePath?: string,
+  ) => void;
 }
 
 export interface RunSummaryPlus extends RunSummary {
@@ -424,12 +432,20 @@ export class RunManager {
     } finally {
       if (this.live.get(p.runId)?.token === token) this.live.delete(p.runId);
       if (result && isTerminal(result.status)) {
-        await finishRun(this.opts.store, prepared.org, result, {
+        const { notePath } = await finishRun(this.opts.store, prepared.org, result, {
           log: this.opts.log,
           vault: this.opts.vault,
           adapter: prepared.adapter,
         });
         this.buffer.retire(p.runId);
+        if (result.origin && this.opts.onFinished)
+          try {
+            const events = await this.opts.store.read(p.runId);
+            const workflow = result.workflowSnapshot ?? prepared.org.workflows[result.workflow];
+            this.opts.onFinished(result, events, workflow, notePath);
+          } catch (e) {
+            this.opts.log(`warn: report: ${e instanceof Error ? e.message : String(e)}`);
+          }
       }
       this.pump();
     }

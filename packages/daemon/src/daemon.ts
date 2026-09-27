@@ -15,6 +15,7 @@ import { type InboxId, InboxService } from './inbox.js';
 import { RunManager } from './run-manager.js';
 import { vaultDir } from './runs/notes.js';
 import { profileFor } from './runs/profile.js';
+import { buildRunReport } from './runs/report.js';
 import { Scheduler } from './scheduler.js';
 import { DaemonServer, type Health, type SchedulesApi } from './server.js';
 
@@ -102,6 +103,16 @@ export class Daemon {
       vault: opts.vault,
       mockScript: opts.mockScript,
       now: opts.now,
+      onFinished: (state, events, workflow, notePath) => {
+        const report = buildRunReport(state, events, workflow, { notePath });
+        log(`report: ${state.runId} ${state.status} → ${state.origin}`);
+        if (this.outbox) this.outbox.enqueueReport(report);
+        else
+          for (const c of this.channels)
+            c.report?.(report).catch((e: unknown) =>
+              log(`[${c.id}] report failed: ${e instanceof Error ? e.message : String(e)}`),
+            );
+      },
     });
     for (const c of this.channels)
       c.onAnswer?.((id, a) =>

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { BACKOFF_MS, OutboxWorker } from '../src/channels/outbox.js';
 import type { Channel } from '../src/channels/types.js';
 import type { InboxItem } from '../src/inbox.js';
+import type { RunReport } from '../src/runs/report.js';
 
 let dir: string;
 let store: SqliteEventStore;
@@ -80,6 +81,50 @@ describe('OutboxWorker', () => {
       'macos',
     ]);
     worker.clear(item.id);
+    expect(repo.due('2100-01-01T00:00:00.000Z')).toEqual([]);
+  });
+
+  it('reports go only to channels that implement report(); legacy inbox rows still notify', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'outbox-'));
+    store = new SqliteEventStore(join(dir, 'e.db'));
+    const repo = new OutboxRepo(store.db);
+    const reported: string[] = [];
+    const notified: string[] = [];
+    const telegram: Channel = {
+      id: 'telegram',
+      async notify(i) {
+        notified.push(i.id);
+      },
+      async report(r) {
+        reported.push(r.runId);
+      },
+    };
+    const macos: Channel = {
+      id: 'macos',
+      async notify(i) {
+        notified.push(`macos:${i.id}`);
+      },
+    };
+    const report: RunReport = {
+      runId: 'run-1',
+      workflow: 'chat',
+      status: 'completed',
+      project: '/w',
+      spentUsd: 0,
+      nodes: [],
+      reply: 'hi',
+    };
+    // a row written before 3B: a bare InboxItem payload
+    repo.enqueue('telegram', item.id, item);
+    const worker = new OutboxWorker({ repo, channels: [telegram, macos], log: () => {} });
+    worker.enqueueReport(report);
+    expect(repo.due('2100-01-01T00:00:00.000Z').map((r) => r.channel)).toEqual([
+      'telegram',
+      'telegram',
+    ]);
+    await worker.tick();
+    expect(notified).toEqual(['approval:a1']);
+    expect(reported).toEqual(['run-1']);
     expect(repo.due('2100-01-01T00:00:00.000Z')).toEqual([]);
   });
 
