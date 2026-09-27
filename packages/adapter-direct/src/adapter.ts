@@ -14,7 +14,7 @@ import {
 import {
   describeError,
   type GenerateResult,
-  generate,
+  generateStream,
   type ProviderRegistry,
 } from '@shibaox/providers';
 import type { ModelMessage, ToolSet } from 'ai';
@@ -51,6 +51,40 @@ type Settled = { ok: true; r: GenerateResult } | { ok: false; e: unknown };
 
 /** Follow-up calls after tool calls the model wrote as text (models without native tools). */
 const TEXT_TOOL_ROUNDS = 3;
+
+/** Where streamed text stops being shown until the call ends: it may be a tool call in text. */
+const HOLD_MARKERS = ['<', '```', '\nfinish'];
+
+/**
+ * Streams a call's text to the conversation as it arrives, holding back from the first sign
+ * of a tool call written as text (`<tools>`, a fenced block, a bare `finish`) so the screen
+ * never shows a call; what was held is settled once the call ends (`remainder`).
+ */
+class TextStreamer {
+  private seen = '';
+  private streamed = 0;
+  private held = false;
+  constructor(private readonly show: (text: string) => void) {}
+  delta(text: string): void {
+    this.seen += text;
+    if (this.held) return;
+    let stop = -1;
+    for (const m of HOLD_MARKERS) {
+      const i = this.seen.indexOf(m, Math.max(0, this.streamed - m.length));
+      if (i >= 0 && (stop < 0 || i < stop)) stop = i;
+    }
+    const upTo = stop >= 0 ? stop : this.seen.length;
+    if (upTo > this.streamed) {
+      this.show(this.seen.slice(this.streamed, upTo));
+      this.streamed = upTo;
+    }
+    if (stop >= 0) this.held = true;
+  }
+  /** The part of the final (cleaned) text that was not streamed yet. */
+  remainder(clean: string): string {
+    return clean.length > this.streamed ? clean.slice(this.streamed) : '';
+  }
+}
 
 type SafeParsed =
   | { success: true; data: unknown }
@@ -125,6 +159,7 @@ export class DirectAdapter implements RuntimeAdapter {
     let effectiveMaxSteps: number;
     let messages: ModelMessage[] = [];
     let tools: ToolSet | undefined;
+    let streamer = new TextStreamer((text) => emit({ type: 'text', text }));
     let callModel: (msgs: ModelMessage[]) => Promise<Settled> = () =>
       Promise.resolve({ ok: false, e: new Error('not started') });
     try {
@@ -165,7 +200,7 @@ export class DirectAdapter implements RuntimeAdapter {
       const system = this.systemPrompt(job);
       const maxSteps = effectiveMaxSteps;
       callModel = (msgs) =>
-        generate({
+        generateStream({
           model,
           system,
           messages: msgs,
@@ -174,6 +209,7 @@ export class DirectAdapter implements RuntimeAdapter {
           stopOnTools: supportsTools ? ['finish'] : undefined,
           signal: abort.signal,
           maxRetries: this.opts.maxRetries,
+          onText: (delta) => streamer.delta(delta),
         }).then(
           (r): Settled => ({ ok: true, r }),
           (e: unknown): Settled => ({ ok: false, e }),
@@ -216,7 +252,8 @@ export class DirectAdapter implements RuntimeAdapter {
         break;
       const parsed = parseTextToolCalls(settled.r.text);
       if (parsed.calls.length === 0) break;
-      if (parsed.text) yield { type: 'text', text: parsed.text };
+      const rest = streamer.remainder(parsed.text);
+      if (rest.trim()) yield { type: 'text', text: rest };
       shown = true;
       const results: string[] = [];
       for (const call of parsed.calls) {
@@ -263,6 +300,7 @@ export class DirectAdapter implements RuntimeAdapter {
           content: `Tool results:\n${results.join('\n')}\n\nContinue: answer the user, or call another tool the same way.`,
         },
       ];
+      streamer = new TextStreamer((text) => emit({ type: 'text', text }));
       settled = yield* drain(callModel(messages));
     }
     ctx.signal.removeEventListener('abort', onAbort);
@@ -291,8 +329,10 @@ export class DirectAdapter implements RuntimeAdapter {
     // the model's answer is a text event, like any runtime's: the conversation view shows
     // text, never raw results or tool calls written as text. Without finish() it is the
     // reply; with finish() the text output.
-    const reply = replyText(shown ? '' : parseTextToolCalls(text).text, finished);
-    if (reply) yield { type: 'text', text: reply };
+    // what was streamed stays; only what was held back (or came through finish()) follows
+    const clean = shown ? '' : parseTextToolCalls(text).text;
+    const reply = clean ? streamer.remainder(clean) : replyText('', finished);
+    if (reply.trim()) yield { type: 'text', text: reply };
     const contextWindow = this.opts.registry.contextWindow(ref);
     yield {
       type: 'usage',

@@ -153,3 +153,34 @@ describe('generateObject', () => {
     await fake.close();
   });
 });
+
+describe('generateStream', () => {
+  it('delivers the text as it arrives and ends with the same result as generate', async () => {
+    fake = await startFakeOpenAI((_req, turn) =>
+      turn === 0
+        ? { toolCalls: [{ name: 'add', args: { a: 2, b: 3 } }] }
+        : { content: 'The sum is 5, streamed piece by piece.' },
+    );
+    const client = new LlmClient(new ProviderRegistry([entryFor(fake.baseURL)], {}));
+    const deltas: string[] = [];
+    const r = await client.generateStream('fake/m', {
+      messages: [{ role: 'user', content: 'add 2 and 3' }],
+      tools: {
+        add: tool({
+          description: 'add',
+          inputSchema: z.object({ a: z.number(), b: z.number() }),
+          execute: async ({ a, b }) => a + b,
+        }),
+      },
+      maxSteps: 3,
+      onText: (d) => deltas.push(d),
+    });
+    expect(deltas.length).toBeGreaterThan(1);
+    expect(deltas.join('')).toBe('The sum is 5, streamed piece by piece.');
+    expect(r.text).toBe('The sum is 5, streamed piece by piece.');
+    expect(r.steps).toBe(2);
+    expect(r.usage.inputTokens).toBeGreaterThan(0);
+    expect((fake.requests[0] as { stream?: boolean }).stream).toBe(true);
+    await fake.close();
+  });
+});

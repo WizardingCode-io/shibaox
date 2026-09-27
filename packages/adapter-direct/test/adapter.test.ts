@@ -111,6 +111,23 @@ describe('DirectAdapter', () => {
     expect(r.output).toEqual({ text: 'Nothing to do here.' });
     expect(r.summary).toContain('Nothing to do');
   });
+  it('streams the reply in pieces and never repeats it at the end', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI(() => ({ content: 'Olá! Como posso ajudar hoje? 😊' }));
+    const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    const events: RuntimeEvent[] = [];
+    for await (const e of adapter.run({ ...jobFor(ws), conversation: true }, ctx())) events.push(e);
+    const texts = events.filter((e): e is RuntimeEvent & { type: 'text' } => e.type === 'text');
+    expect(texts.length).toBeGreaterThan(1);
+    expect(texts.map((t) => t.text).join('')).toBe('Olá! Como posso ajudar hoje? 😊');
+    const types = events.map((e) => e.type);
+    expect(types.lastIndexOf('usage')).toBeGreaterThan(types.lastIndexOf('text'));
+  });
+
   it('emits the reply as a text event (the conversation view shows text, not results)', async () => {
     const ws = mkdtempSync(join(tmpdir(), 'ws-'));
     fake = await startFakeOpenAI(() => ({ content: '\n\nOla! Como posso ajudar? 😊' }));
@@ -121,9 +138,14 @@ describe('DirectAdapter', () => {
     });
     const events: RuntimeEvent[] = [];
     for await (const e of adapter.run(jobFor(ws), ctx())) events.push(e);
-    const texts = events.filter((e) => e.type === 'text');
-    expect(texts).toEqual([{ type: 'text', text: 'Ola! Como posso ajudar? 😊' }]);
-    expect(events.map((e) => e.type).slice(-3)).toEqual(['text', 'usage', 'result']);
+    const texts = events.filter((e): e is RuntimeEvent & { type: 'text' } => e.type === 'text');
+    expect(
+      texts
+        .map((t) => t.text)
+        .join('')
+        .trim(),
+    ).toBe('Ola! Como posso ajudar? 😊');
+    expect(events.map((e) => e.type).slice(-2)).toEqual(['usage', 'result']);
     // a finish() with a text output is shown the same way
     await fake.close();
     fake = await startFakeOpenAI(() => ({
@@ -704,21 +726,29 @@ describe('DirectAdapter', () => {
     });
     const events: RuntimeEvent[] = [];
     for await (const e of adapter.run({ ...jobFor(ws), conversation: true }, ctx())) events.push(e);
-    expect(events.map((e) => e.type)).toEqual([
-      'started',
-      'usage',
-      'text', // what the model said before the call it wrote as text
-      'tool_use',
-      'tool_result',
-      'text',
-      'usage',
-      'result',
-    ]);
+    const types = events.map((e) => e.type);
+    const toolAt = types.indexOf('tool_use');
+    expect(toolAt).toBeGreaterThan(0);
+    const before = events
+      .slice(0, toolAt)
+      .filter((e): e is RuntimeEvent & { type: 'text' } => e.type === 'text');
+    const after = events
+      .slice(toolAt)
+      .filter((e): e is RuntimeEvent & { type: 'text' } => e.type === 'text');
+    expect(
+      before
+        .map((t) => t.text)
+        .join('')
+        .trim(),
+    ).toBe('Deixa-me ver.'); // shown before the call
+    expect(
+      after
+        .map((t) => t.text)
+        .join('')
+        .trim(),
+    ).toBe('Há um ficheiro.');
     expect(events.find((e) => e.type === 'tool_use')).toMatchObject({ name: 'list_files' });
-    expect(events.filter((e) => e.type === 'text')).toEqual([
-      { type: 'text', text: 'Deixa-me ver.' },
-      { type: 'text', text: 'Há um ficheiro.' },
-    ]);
+    expect(types.slice(-2)).toEqual(['usage', 'result']);
     expect(fake.requests).toHaveLength(2); // the tool result went back to the model
     expect(String(JSON.stringify(events))).not.toContain('<tool_call>');
   });

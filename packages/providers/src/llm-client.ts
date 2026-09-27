@@ -6,6 +6,7 @@ import {
   type LanguageModel,
   type ModelMessage,
   Output,
+  streamText,
   type ToolSet,
 } from 'ai';
 import { z } from 'zod';
@@ -65,6 +66,46 @@ export async function generate<T = unknown>(args: GenerateArgs): Promise<Generat
   };
 }
 
+/**
+ * `generate`, streamed: `onText` gets the model's text as it arrives (tool calls still run
+ * between steps); the result is the same shape as `generate` once the stream ends.
+ */
+export async function generateStream<T = unknown>(
+  args: GenerateArgs & { onText?: (delta: string) => void },
+): Promise<GenerateResult<T>> {
+  const r = streamText({
+    model: args.model,
+    system: args.system,
+    messages: args.messages,
+    tools: args.tools,
+    stopWhen: args.stopOnTools?.length
+      ? [isStepCount(args.maxSteps ?? 1), hasToolCall(...args.stopOnTools)]
+      : isStepCount(args.maxSteps ?? 1),
+    abortSignal: args.signal,
+    maxRetries: args.maxRetries,
+  });
+  let failure: unknown;
+  for await (const part of r.fullStream) {
+    if (part.type === 'text-delta') args.onText?.(part.text);
+    else if (part.type === 'error') failure = part.error;
+  }
+  if (failure) throw failure;
+  const [text, usage, steps, finishReason] = await Promise.all([
+    r.text,
+    r.usage,
+    r.steps,
+    r.finishReason,
+  ]);
+  return {
+    text,
+    output: undefined,
+    usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 },
+    lastStepInputTokens: steps.at(-1)?.usage.inputTokens ?? usage.inputTokens ?? 0,
+    steps: steps.length,
+    finishReason,
+  };
+}
+
 export class LlmClient {
   constructor(
     private readonly registry: ProviderRegistry,
@@ -78,6 +119,20 @@ export class LlmClient {
   ): Promise<GenerateResult<T> & { cost?: number }> {
     const model = this.registry.model(ref);
     const r = await generate<T>({
+      ...args,
+      model,
+      maxRetries: args.maxRetries ?? this.defaults.maxRetries,
+    });
+    return { ...r, cost: this.registry.estimateCost(ref, r.usage) };
+  }
+
+  /** `generate` with the text streamed to `onText`. */
+  async generateStream<T = unknown>(
+    ref: string,
+    args: Omit<GenerateArgs, 'model'> & { onText?: (delta: string) => void },
+  ): Promise<GenerateResult<T> & { cost?: number }> {
+    const model = this.registry.model(ref);
+    const r = await generateStream<T>({
       ...args,
       model,
       maxRetries: args.maxRetries ?? this.defaults.maxRetries,

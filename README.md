@@ -204,7 +204,9 @@ the same from the command line. In a run tab, `/model` sets the model of the nex
 Models without native tool calling (many local ones, some routers) tend to write their calls
 as text (`<tools>{"name": …}</tools>`, `<tool_call>…</tool_call>`, a fenced JSON block):
 the direct adapter runs those as real tool calls, hands the results back and lets the model
-continue, so the conversation shows `⊙ start_workflow …` rather than raw XML. Under the prompt, one line says what the current project is (`Next.js · React ·
+continue, so the conversation shows `⊙ start_workflow …` rather than raw XML. The direct
+adapter streams the model's text as it arrives (held back from the first sign of a call
+written as text, so no half-written call ever shows). Under the prompt, one line says what the current project is (`Next.js · React ·
 TypeScript · pnpm test · 412 files`, from `GET /projects/profile`). `/` commands set the context shown inside the prompt: `/workflow`, `/adapter`
 and `/workspace` step into a list to pick from (`enter` takes the highlighted value),
 `/project <dir>`, `/org <dir>` and `/budget <usd>` take a value, `/runs` and `/help` open
