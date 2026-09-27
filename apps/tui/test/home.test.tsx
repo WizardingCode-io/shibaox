@@ -444,11 +444,15 @@ test('/keys shows the vault and /key sets a key through the daemon', async () =>
     f = await m.type('sk-or-1234567890');
     expect(f).not.toContain('sk-or-1234567890'); // masked while typing
     expect(f).toContain('••••••••');
+    // a long value never runs past the dialog: the dots are capped and the count says the rest
+    f = await m.type('x'.repeat(80));
+    expect(f).not.toMatch(/•{41}/);
+    expect(f).toContain('(96 chars)');
     await m.setup.mockInput.pressEnter();
     f = await m.frame();
     expect(m.client.calls.find((c) => c.method === 'setKey')?.args).toEqual([
       'OPENROUTER_API_KEY',
-      'sk-or-1234567890',
+      `sk-or-1234567890${'x'.repeat(80)}`,
     ]);
     expect(f).not.toContain('sk-or-1234567890');
     // x removes the selected key

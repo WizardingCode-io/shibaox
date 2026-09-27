@@ -187,3 +187,55 @@ describe('discoverModels', () => {
     }
   });
 });
+
+describe('discoverModels (OpenRouter)', () => {
+  it('lists what OpenRouter offers once its key is set, catalog models first', async () => {
+    const server = createServer((req, res) => {
+      res.setHeader('content-type', 'application/json');
+      if (req.url === '/api/v1/models' && req.headers.authorization === 'Bearer sk-or-x')
+        return res.end(
+          JSON.stringify({
+            data: [
+              { id: 'openai/gpt-5', context_length: 400000 },
+              { id: 'google/gemini-2.5-flash', context_length: 1048576 },
+              { id: 'mistralai/devstral-small', context_length: 128000 },
+            ],
+          }),
+        );
+      res.statusCode = 401;
+      res.end('{}');
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const port = (server.address() as { port: number }).port;
+    const entry = {
+      id: 'openrouter',
+      name: 'OpenRouter',
+      kind: 'openrouter' as const,
+      base_url: `http://127.0.0.1:${port}/api/v1`,
+      auth: { type: 'api_key' as const, env: 'OPENROUTER_API_KEY' },
+      models: ['openai/gpt-5'],
+      pricing: {},
+      verify: false,
+      context_window: {},
+      capabilities: { tools: true },
+    };
+    try {
+      const withKey = await discoverModels(
+        new ProviderRegistry([entry], { OPENROUTER_API_KEY: 'sk-or-x' }),
+        { timeoutMs: 1000 },
+      );
+      expect(withKey.map((m) => m.ref)).toEqual([
+        'openrouter/openai/gpt-5',
+        'openrouter/google/gemini-2.5-flash',
+        'openrouter/mistralai/devstral-small',
+      ]);
+      expect(withKey[1]).toMatchObject({ configured: true, contextWindow: 1048576 });
+      // without the key: the catalog entry only, not configured
+      const noKey = await discoverModels(new ProviderRegistry([entry], {}), { timeoutMs: 1000 });
+      expect(noKey.map((m) => m.ref)).toEqual(['openrouter/openai/gpt-5']);
+      expect(noKey[0]?.configured).toBe(false);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+});

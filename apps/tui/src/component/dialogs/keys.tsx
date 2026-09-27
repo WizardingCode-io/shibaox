@@ -172,8 +172,11 @@ export function KeysDialog(): JSX.Element {
             <text fg={theme.text.base} wrapMode="none" flexShrink={0}>
               {`value for ${editing() ?? ''}: `}
             </text>
-            <text fg={theme.text.action.primary.selected} wrapMode="none" flexShrink={0}>
-              {'•'.repeat(value().length)}
+            <text fg={theme.text.action.primary.selected} wrapMode="none" flexShrink={1}>
+              {'•'.repeat(Math.min(value().length, 40))}
+            </text>
+            <text fg={theme.text.muted} wrapMode="none" flexShrink={0}>
+              {value().length > 40 ? ` (${value().length} chars)` : ''}
             </text>
             {/* the real input carries the keys; its text is hidden behind the dots */}
             <input

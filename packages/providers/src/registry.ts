@@ -35,6 +35,10 @@ export class ProviderRegistry {
     const { provider } = this.parseRef(ref);
     return this.get(provider).capabilities.tools;
   }
+  /** A value of the environment this registry was built with (keys stay inside it). */
+  envValue(name: string): string | undefined {
+    return this.env[name];
+  }
   /** The model's context window in tokens, when the catalog records it. */
   contextWindow(ref: string): number | undefined {
     let parsed: { provider: string; model: string };
@@ -118,6 +122,45 @@ export interface ModelChoice {
   local?: boolean;
   /** For a local provider: whether its server answered. */
   available?: boolean;
+  /** Context window (tokens) when the provider's own listing says so. */
+  contextWindow?: number;
+}
+
+const OPENROUTER_API = 'https://openrouter.ai/api/v1';
+/** Remote listings are big and slow: kept for ten minutes per provider. */
+const REMOTE_TTL_MS = 600_000;
+const remoteCache = new Map<
+  string,
+  { at: number; models: { id: string; contextWindow?: number }[] }
+>();
+
+/** What OpenRouter offers, with the key: every model id and its context length. */
+async function probeOpenRouter(
+  e: ProviderEntry,
+  apiKey: string,
+  o: { fetch: typeof fetch; timeoutMs: number },
+): Promise<{ id: string; contextWindow?: number }[] | undefined> {
+  const hit = remoteCache.get(e.id);
+  if (hit && Date.now() - hit.at < REMOTE_TTL_MS) return hit.models;
+  try {
+    const res = await o.fetch(`${(e.base_url ?? OPENROUTER_API).replace(/\/$/, '')}/models`, {
+      headers: { authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(o.timeoutMs),
+    });
+    if (!res.ok) return undefined;
+    const json = (await res.json()) as { data?: { id?: unknown; context_length?: unknown }[] };
+    const models = (json.data ?? [])
+      .filter((m) => typeof m.id === 'string' && m.id)
+      .map((m) => ({
+        id: m.id as string,
+        ...(typeof m.context_length === 'number' ? { contextWindow: m.context_length } : {}),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    remoteCache.set(e.id, { at: Date.now(), models });
+    return models;
+  } catch {
+    return undefined;
+  }
 }
 
 const LOCAL_URL = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:|\/|$)/i;
@@ -159,6 +202,25 @@ export async function discoverModels(
   const timeoutMs = o.timeoutMs ?? 1500;
   const out: ModelChoice[] = [];
   for (const e of registry.list()) {
+    if (e.kind === 'openrouter' && e.auth?.type === 'api_key') {
+      // the whole OpenRouter catalogue once the key is there: the catalog's picks first
+      const catalog = listModels(registry).filter((m) => m.provider === e.id);
+      const apiKey = registry.isConfigured(e.id).ok ? registry.envValue(e.auth.env) : undefined;
+      const remote = apiKey
+        ? await probeOpenRouter(e, apiKey, { fetch: doFetch, timeoutMs: Math.max(timeoutMs, 4000) })
+        : undefined;
+      out.push(...catalog);
+      for (const m of remote ?? [])
+        if (!e.models.includes(m.id))
+          out.push({
+            ref: `${e.id}/${m.id}`,
+            provider: e.id,
+            model: m.id,
+            configured: true,
+            ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
+          });
+      continue;
+    }
     if (!isLocal(e)) {
       out.push(...listModels(registry).filter((m) => m.provider === e.id));
       continue;

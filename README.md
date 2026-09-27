@@ -194,7 +194,9 @@ needs an interactive terminal of at least 60×15.
 **Home** shows the logo and a prompt: type what you want and press `enter`. The org's `chat`
 workflow (the default) talks to the orchestrator (see below); any other workflow starts a
 team run. `/model` lists every model of the providers catalog (`GET /models`: configured
-ones first, the others say which key they miss) and pins one for the run
+ones first, the others say which key they miss; with `OPENROUTER_API_KEY` in the vault the
+whole OpenRouter catalogue is listed too, with its context windows; LM Studio and Ollama are
+asked what they have running) and pins one for the run
 (`provider/model`, e.g. `anthropic-subscription/claude-sonnet-5`): every task runs on it,
 the adapter follows from it (a subscription model goes through Claude Code, an API or local
 one through the direct loop), the choice is remembered, and `shibaox run --model <ref>` does
