@@ -107,6 +107,7 @@ export class Scheduler {
       input: s.input,
       adapter: s.adapter as AdapterId | undefined,
       budgetUsd: s.budgetUsd,
+      origin: `schedule:${s.id}`,
     });
     this.opts.repo.setLastRun(s.id, runId);
     return { runId };

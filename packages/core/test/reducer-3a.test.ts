@@ -17,6 +17,8 @@ describe('phase 3A state', () => {
       parentRunId: 'p',
     };
     expect(replay([created]).parentRunId).toBe('p');
+    expect(replay([{ ...created, origin: 'schedule:s1' }]).origin).toBe('schedule:s1');
+    expect(replay([created]).origin).toBeUndefined();
     expect(replay([{ ...created, parentRunId: undefined }]).parentRunId).toBeUndefined();
   });
 

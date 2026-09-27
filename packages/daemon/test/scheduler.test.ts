@@ -55,6 +55,7 @@ describe('Scheduler', () => {
         input: 'hi',
         adapter: 'mock',
         budgetUsd: 2,
+        origin: `schedule:${s.id}`,
       },
     ]);
     expect(repo.get(s.id)?.lastRunId).toBe('run-1');

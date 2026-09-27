@@ -79,6 +79,8 @@ export interface RunState {
   orgRoot?: string;
   /** The run that dispatched this one (recorded since phase 3A). */
   parentRunId?: string;
+  /** Who asked for the run (`schedule:<id>`, `telegram:<chatId>`); absent for the CLI and the dashboard. */
+  origin?: string;
   status: RunStatus;
   nodes: Record<string, NodeState>;
   spentUsd: number;

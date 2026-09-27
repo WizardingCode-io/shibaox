@@ -227,6 +227,7 @@ export function reduce(state: RunState | undefined, event: RunEvent, idx: number
       branch: event.branch,
       orgRoot: event.orgRoot,
       parentRunId: event.parentRunId,
+      origin: event.origin,
       status: 'queued',
       nodes: {},
       spentUsd: 0,

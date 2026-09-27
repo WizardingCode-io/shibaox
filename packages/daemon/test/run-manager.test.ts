@@ -171,8 +171,10 @@ describe('RunManager', () => {
       messages,
       parentRunId: 'p',
       event: true,
+      origin: 'telegram:42',
     });
     const created = (await store.read(runId))[0];
+    expect(created?.type === 'RunCreated' && created.origin).toBe('telegram:42');
     expect(created?.type === 'RunCreated' && created.input).toEqual({
       spec: 'and?',
       messages,
@@ -181,6 +183,7 @@ describe('RunManager', () => {
     expect(created?.type === 'RunCreated' && created.parentRunId).toBe('p');
     await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('completed'));
     expect((await m.list()).find((r) => r.runId === runId)?.parentRunId).toBe('p');
+    expect((await m.list()).find((r) => r.runId === runId)?.origin).toBe('telegram:42');
     const plain = await submitMock(m, s, 'inplace');
     const plainCreated = (await store.read(plain.runId))[0];
     expect(plainCreated?.type === 'RunCreated' && plainCreated.input).toEqual({

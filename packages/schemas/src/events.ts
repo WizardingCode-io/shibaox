@@ -50,6 +50,8 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     orgRoot: z.string().optional(),
     /** The run that dispatched this one (a workflow started by the orchestrator). */
     parentRunId: z.string().optional(),
+    /** Who asked for the run when it was not the CLI or the dashboard: `schedule:<id>`, `telegram:<chatId>`. */
+    origin: z.string().optional(),
   }),
   z.object({ ...base, type: z.literal('RunStarted') }),
   z.object({

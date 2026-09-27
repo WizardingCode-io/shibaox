@@ -57,6 +57,8 @@ export interface SubmitRequest {
   parentRunId?: string;
   /** A turn shibaox submits itself (a dispatched run ended): rendered quietly, never re-dispatches. */
   event?: boolean;
+  /** Who asked (`schedule:<id>`, `telegram:<chatId>`): the run reports back there when it ends. */
+  origin?: string;
 }
 
 export interface RunManagerOptions {
@@ -79,6 +81,7 @@ export interface RunSummaryPlus extends RunSummary {
   orgRoot?: string;
   spentUsd: number;
   parentRunId?: string;
+  origin?: string;
 }
 
 interface Prepared {
@@ -148,6 +151,7 @@ export class RunManager {
       runId,
       project,
       workspaceMode: mode,
+      origin: req.origin,
       warn: (w) => warnings.push(w),
     });
     const ws = await createRunWorkspace({ project, runId, mode });
@@ -168,6 +172,7 @@ export class RunManager {
       branch: ws.branch,
       orgRoot,
       parentRunId: req.parentRunId,
+      origin: req.origin,
     });
     this.prepared.set(runId, { engine, org, adapter });
     this.enqueue({ runId, action: 'run', settle: [] });
@@ -288,6 +293,7 @@ export class RunManager {
         orgRoot: state.orgRoot,
         spentUsd: state.spentUsd,
         parentRunId: state.parentRunId,
+        origin: state.origin,
       });
     }
     return out;
@@ -459,6 +465,7 @@ export class RunManager {
       runId: state.runId,
       project,
       workspaceMode: state.workspaceMode,
+      origin: state.origin,
       warn: (w) => this.opts.log(`warn: ${w}`),
     });
     return { engine, org, adapter };
@@ -493,6 +500,7 @@ export class RunManager {
       /** The main project checkout (tools and the preamble are built for it). */
       project?: string;
       workspaceMode?: WorkspaceMode;
+      origin?: string;
       warn: (w: string) => void;
     },
   ): RunEngine {
@@ -540,6 +548,7 @@ export class RunManager {
       runId?: string;
       project?: string;
       workspaceMode?: WorkspaceMode;
+      origin?: string;
     },
   ): RuntimeOptions['tools'] {
     const project = r.project;
@@ -583,6 +592,8 @@ export class RunManager {
               input: request,
               adapter: r.adapter,
               parentRunId: r.runId,
+              // a dispatched run reports where its parent was asked from
+              origin: r.origin,
             });
             return { runId };
           },
