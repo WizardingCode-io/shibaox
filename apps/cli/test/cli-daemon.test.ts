@@ -179,6 +179,31 @@ describe('shibaox CLI against a daemon', () => {
     expect(st[0]?.version).toBe('0.0.1');
   });
 
+  it('run without --org uses the org under the shibaox home', async () => {
+    const { project, cli, home } = await setup({ claudeInstalled: false });
+    const r = await cli(
+      'run',
+      'chat',
+      '--project',
+      project,
+      '--input',
+      'olá',
+      '--adapter',
+      'mock',
+      '--detach',
+      '--json',
+    );
+    expect(r.code).toBe(0);
+    const { runId } = JSON.parse(r.stdout.trim().split('\n').pop() ?? '{}') as { runId: string };
+    const shown = await cli('runs', '--json');
+    const row = shown.stdout
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l) as { runId: string; orgRoot?: string })
+      .find((x) => x.runId === runId);
+    expect(row?.orgRoot).toBe(join(home.root, 'org'));
+  });
+
   it('keys set/list/unset round-trip through the daemon', async () => {
     const { cli } = await setup();
     const set = await cli('keys', 'set', 'OPENROUTER_API_KEY', 'sk-or-1234567890');

@@ -45,6 +45,8 @@ export class FakeDaemonClient implements DaemonClientLike {
   modelChoices: ModelChoice[] = [];
   /** What `/keys` shows. */
   keyRows: KeyRow[] = [];
+  /** What `GET /orgs/default` answers. */
+  defaultOrgRoot = '/o';
   private readonly streams = new Map<string, Stream>();
 
   private record(method: string, args: unknown[]): void {
@@ -113,6 +115,11 @@ export class FakeDaemonClient implements DaemonClientLike {
     const d = this.diffs.get(id);
     if (!d) throw new DaemonHttpError(404, 'no_workspace', 'The run workspace is gone');
     return d;
+  }
+
+  async defaultOrg(): Promise<{ root: string; created: boolean }> {
+    this.record('defaultOrg', []);
+    return { root: this.defaultOrgRoot, created: false };
   }
 
   async keys(): Promise<KeyRow[]> {

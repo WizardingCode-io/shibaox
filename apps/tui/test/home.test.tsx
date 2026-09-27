@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { testRender } from '@opentui/solid';
@@ -470,5 +470,50 @@ test('/keys shows the vault and /key sets a key through the daemon', async () =>
     expect(f).not.toContain('sk-or-1234567890'); // the value never stays on screen
   } finally {
     m.done();
+  }
+});
+
+test('without an org next to the project, the home uses the org under the shibaox home', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tui-noorg-'));
+  const home = join(dir, 'home');
+  scaffoldOrg(home); // the daemon keeps the default org at <home>/org
+  const project = join(dir, 'proj');
+  mkdirSync(project);
+  const client = new FakeDaemonClient();
+  client.defaultOrgRoot = join(home, 'org');
+  const setup = await testRender(
+    () => (
+      <App
+        client={client}
+        version="0.0.1"
+        home={home}
+        cwd={project}
+        env={{ SHIBAOX_NO_MOTION: '1', PATH: '/nonexistent', HOME: dir }}
+        onExit={() => {}}
+      />
+    ),
+    { width: 100, height: 30, exitOnCtrlC: false },
+  );
+  try {
+    await settle();
+    await setup.renderOnce();
+    await settle();
+    await setup.renderOnce();
+    let f = setup.captureCharFrame();
+    expect(f).toContain('workflow chat'); // the default org loaded: its chat is the workflow
+    expect(f).not.toContain('Org not found');
+    for (const ch of 'olá') {
+      await setup.mockInput.typeText(ch);
+      await settle(5);
+    }
+    await setup.mockInput.pressEnter();
+    await settle();
+    await setup.renderOnce();
+    f = setup.captureCharFrame();
+    const req = client.calls.find((c) => c.method === 'submitRun')?.args[0] as { orgRoot: string };
+    expect(req.orgRoot).toBe(join(home, 'org'));
+  } finally {
+    setup.renderer.destroy();
+    rmSync(dir, { recursive: true, force: true });
   }
 });

@@ -108,6 +108,10 @@ export class DaemonClient {
   getRun(id: string): Promise<RunState> {
     return this.json('GET', `/runs/${encodeURIComponent(id)}`);
   }
+  /** The org under the shibaox home (`~/.shibaox/org`), created on first use. */
+  defaultOrg(): Promise<{ root: string; created: boolean }> {
+    return this.json('GET', '/orgs/default');
+  }
   /** The key vault, masked. */
   keys(): Promise<KeyRow[]> {
     return this.json('GET', '/keys');

@@ -31,6 +31,7 @@ export interface DaemonClientLike {
   diff(id: string): Promise<DiffResult>;
   projectProfile(path: string, orgRoot?: string): Promise<ProjectProfile>;
   models(): Promise<ModelChoice[]>;
+  defaultOrg(): Promise<{ root: string; created: boolean }>;
   keys(): Promise<KeyRow[]>;
   setKey(name: string, value: string): Promise<{ name: string; set: true }>;
   unsetKey(name: string): Promise<{ name: string; removed: boolean }>;

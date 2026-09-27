@@ -54,6 +54,7 @@ describe('daemon config and home', () => {
       config: join(home, 'daemon.yaml'),
       db: join(home, 'events.db'),
       secrets: join(home, 'secrets.json'),
+      org: join(home, 'org'),
     });
     expect(homePaths({ HOME: dir }).root).toBe(join(dir, '.shibaox'));
   });

@@ -6,6 +6,7 @@ export * from './channels/types.js';
 export * from './client.js';
 export * from './config.js';
 export * from './daemon.js';
+export * from './default-org.js';
 export * from './home.js';
 export * from './inbox.js';
 export * from './inline.js';

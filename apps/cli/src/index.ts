@@ -72,7 +72,10 @@ program
   .command('run')
   .argument('<workflow>')
   .description('submit a run to the daemon and follow it (Ctrl-C leaves it running)')
-  .requiredOption('--org <dir>', 'org repo directory')
+  .option(
+    '--org <dir>',
+    'org directory (default: ./org when it exists, else the org under ~/.shibaox)',
+  )
   .requiredOption('--project <path>', 'project workspace')
   .requiredOption('--input <text>', 'request / spec text')
   .addOption(

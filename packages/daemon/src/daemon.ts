@@ -1,6 +1,6 @@
 import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
 import type { QueryFn } from '@shibaox/adapter-claude-code';
-import type { EventStore, MockScript } from '@shibaox/core';
+import { type EventStore, type MockScript, runArgv } from '@shibaox/core';
 import type { Graphify } from '@shibaox/memory';
 import { OutboxRepo, SchedulesRepo, SqliteEventStore } from '@shibaox/persistence-sqlite';
 import { discoverModels, type ModelChoice, type ProviderEntry } from '@shibaox/providers';
@@ -10,6 +10,7 @@ import { OutboxWorker } from './channels/outbox.js';
 import { inboxToken, telegramChannel } from './channels/telegram.js';
 import type { Channel } from './channels/types.js';
 import { type DaemonConfig, loadDaemonConfig } from './config.js';
+import { ensureDefaultOrg } from './default-org.js';
 import { type HomePaths, homePaths } from './home.js';
 import { type InboxId, InboxService } from './inbox.js';
 import { RunManager } from './run-manager.js';
@@ -39,6 +40,8 @@ export interface DaemonOptions {
   mockScript?: MockScript;
   /** Schedules; by default a cron Scheduler over the SQLite store (none with an injected store). */
   schedules?: (d: Daemon) => SchedulesApi & { start(): void; stop(): void };
+  /** Whether the `claude` CLI is installed (tests inject it; probed with `which` by default). */
+  claudeInstalled?: boolean;
 }
 
 /** Turns kept per Telegram chat for the orchestrator's conversation. */
@@ -179,6 +182,7 @@ export class Daemon {
         this.modelsCache = { at: Date.now(), models };
         return models;
       },
+      defaultOrg: () => this.defaultOrg(),
       keys: () => this.secrets.list(opts.env ?? process.env),
       setKey: (name, value) => {
         this.secrets.set(name, value);
@@ -286,7 +290,18 @@ export class Daemon {
     };
   }
 
+  /** The default org, created on first use. */
+  async defaultOrg(): Promise<{ root: string; created: boolean }> {
+    const claude =
+      this.opts.claudeInstalled ??
+      (await runArgv({ argv: ['which', 'claude'], cwd: '/', timeoutMs: 5_000 })).exitCode === 0;
+    const r = ensureDefaultOrg(this.paths, { env: this.env, claude });
+    if (r.created) (this.opts.log ?? console.log)(`default org created: ${r.root}`);
+    return r;
+  }
+
   async start(): Promise<void> {
+    await this.defaultOrg();
     this.schedules = this.opts.schedules
       ? this.opts.schedules(this)
       : this.store instanceof SqliteEventStore

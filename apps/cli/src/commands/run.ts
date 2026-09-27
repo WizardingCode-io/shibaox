@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { isTerminal, type RunStatus } from '@shibaox/core';
 import type { AdapterId, GraphMode } from '@shibaox/daemon';
 import { homePaths } from '@shibaox/daemon';
@@ -10,7 +10,8 @@ import { followRun } from './follow.js';
 import { bunAvailable, spawnTui, TUI_ENTRY } from './ui.js';
 
 export interface RunCommandOptions {
-  org: string;
+  /** Absent: `./org` when it exists, else the daemon's default org. */
+  org?: string;
   project: string;
   input: string;
   adapter?: AdapterId;
@@ -22,6 +23,17 @@ export interface RunCommandOptions {
   detach?: boolean;
 }
 
+/** `--org`, else `./org` when it holds an org, else the daemon's default org. */
+export async function resolveOrg(
+  client: { defaultOrg(): Promise<{ root: string }> },
+  org: string | undefined,
+): Promise<string> {
+  if (org) return resolve(org);
+  const local = resolve('org');
+  if (existsSync(join(local, 'org.yaml'))) return local;
+  return (await client.defaultOrg()).root;
+}
+
 /** `shibaox run`: submits to the daemon and, unless detached, follows the stream. */
 export async function runCommand(
   workflow: string,
@@ -29,8 +41,9 @@ export async function runCommand(
   out: Out,
 ): Promise<number> {
   const client = await connect({ write: true });
+  const orgRoot = await resolveOrg(client, o.org);
   const { runId, warnings } = await client.submitRun({
-    orgRoot: resolve(o.org),
+    orgRoot,
     project: resolve(o.project),
     workflow,
     input: o.input,

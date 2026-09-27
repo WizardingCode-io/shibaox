@@ -58,6 +58,8 @@ export interface ServerDeps {
   profile: (path: string, orgRoot?: string) => ProjectProfile;
   /** The models of the catalog and the local servers, and whether this daemon can use them. */
   models: () => Promise<ModelChoice[]>;
+  /** The org under the shibaox home, created on first use. */
+  defaultOrg: () => Promise<{ root: string; created: boolean }>;
   /** The key vault, masked; set/unset take effect at once. */
   keys: () => KeyRow[];
   setKey: (name: string, value: string) => void;
@@ -219,6 +221,8 @@ export class DaemonServer {
 
     if (method === 'GET' && path === '/health') return send(res, 200, this.deps.health());
     if (method === 'GET' && path === '/models') return send(res, 200, await this.deps.models());
+    if (method === 'GET' && path === '/orgs/default')
+      return send(res, 200, await this.deps.defaultOrg());
     if (method === 'GET' && path === '/keys') return send(res, 200, this.deps.keys());
     const keyName = param(/^\/keys\/([^/]+)$/);
     if (keyName !== undefined && method === 'PUT') {

@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { useTerminalDimensions } from '@opentui/solid';
@@ -118,8 +118,10 @@ export function Home(): JSX.Element {
   const dialog = useDialog();
   const dimensions = useTerminalDimensions();
   let prompt: PromptRef | undefined;
+  // the org: the remembered one, else `./org` next to the project, else the daemon's default
+  const localOrg = join(config.cwd, 'org');
   const [ctx, setCtx] = createSignal<PromptContext>({
-    org: prefs.data.lastOrg ?? join(config.cwd, 'org'),
+    org: prefs.data.lastOrg ?? (existsSync(join(localOrg, 'org.yaml')) ? localOrg : ''),
     project: defaultProject(config.cwd, config.env.HOME),
     // the org's models decide the runtime: a subscription tier runs through claude-code, an API
     // or local tier through our own agent loop (direct); mock is never the remembered choice
@@ -128,6 +130,11 @@ export function Home(): JSX.Element {
   });
   // the models a run can be pointed at (`/model`), from the daemon
   const [models] = createResource(() => client.models().catch(() => []));
+  const [defaultOrg] = createResource(() => client.defaultOrg().catch(() => undefined));
+  createEffect(() => {
+    const d = defaultOrg();
+    if (d && !ctx().org) setCtx((c) => ({ ...c, org: d.root }));
+  });
   const orgRoot = createMemo(() => ctx().org);
   const org = createMemo(() => orgInfo(orgRoot()));
   // what the project is (stack, tests, size), from the daemon; nothing when it cannot say

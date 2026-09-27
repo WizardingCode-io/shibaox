@@ -66,6 +66,17 @@ async function collect(events: AsyncIterable<Envelope>, until: (e: Envelope) => 
   return out;
 }
 
+describe('default org', () => {
+  it('GET /orgs/default names the org under the shibaox home and creates it when missing', async () => {
+    const s = setup();
+    const { client } = await started(s, { claudeInstalled: false });
+    const r = await client.defaultOrg();
+    expect(r.root).toBe(join(s.home.root, 'org'));
+    expect(existsSync(join(r.root, 'org.yaml'))).toBe(true);
+    expect(existsSync(join(s.home.root, 'vault'))).toBe(true);
+  });
+});
+
 describe('keys endpoints', () => {
   it('PUT/GET/DELETE /keys manage the vault and the daemon uses a new key at once', async () => {
     const s = setup();
