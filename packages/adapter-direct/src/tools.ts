@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { lstatSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import {
+  type AgentTool,
   type ApprovalHandler,
   argvHash,
   type ExecutionContext,
@@ -12,6 +13,7 @@ import type { Role } from '@shibaox/schemas';
 import { type ToolSet, tool } from 'ai';
 import { z } from 'zod';
 import { safePath } from './safe-path.js';
+import { fetchText } from './web.js';
 
 export interface ToolArgs {
   workspace: string;
@@ -31,6 +33,11 @@ export interface ToolArgs {
   maxFileBytes: number;
   /** When given, exposes a `graph_query` tool backed by this function. */
   graphQuery?: (question: string) => Promise<string>;
+  /** Tools added by the daemon (orchestration, memory), exposed under their own names. */
+  extraTools?: AgentTool[];
+  /** `web_fetch` timeout and size (defaults 15 s, 200 kB). */
+  webTimeoutMs?: number;
+  webMaxBytes?: number;
 }
 
 function walk(dir: string, root: string, out: string[], limit: number): void {
@@ -189,7 +196,17 @@ export function buildTools(a: ToolArgs): ToolSet {
   // `read`/`write` in role.tools are capabilities (file tools), never runnable programs
   const allowed = new Set(a.role.tools.filter((t) => t !== 'read' && t !== 'write'));
   const readOnly = a.role.capabilities.includes('read-only');
+  // `write` is the file-writing capability; programs run by allowlist whatever the role writes
+  const canWrite = !readOnly && a.role.tools.includes('write');
+  const network = a.role.permissions.network;
   const graphQuery = a.graphQuery;
+  const extra: ToolSet = {};
+  for (const t of a.extraTools ?? [])
+    extra[t.name] = tool({
+      description: t.description,
+      inputSchema: t.input,
+      execute: guarded(t.name, (input: Record<string, unknown>) => t.execute(input)),
+    });
   return {
     list_files: tool({
       description: 'List files in the workspace (relative paths), up to 500 entries',
@@ -210,9 +227,8 @@ export function buildTools(a: ToolArgs): ToolSet {
         return { content: readFileSync(p, 'utf8') };
       }),
     }),
-    ...(readOnly
-      ? {}
-      : {
+    ...(canWrite
+      ? {
           write_file: tool({
             description: 'Create or overwrite a UTF-8 file in the workspace',
             inputSchema: z.object({ path: z.string(), content: z.string() }),
@@ -228,6 +244,11 @@ export function buildTools(a: ToolArgs): ToolSet {
               },
             ),
           }),
+        }
+      : {}),
+    ...(readOnly
+      ? {}
+      : {
           run_command: tool({
             description: `Run one program without a shell (no operators, no $ or ~ expansion, no globs; single/double quotes group words literally); runs in the workspace; arguments must be relative paths inside it and must not touch .git; this is an allowlist, not a sandbox. Allowed programs: ${[...allowed].join(', ') || 'none'}`,
             inputSchema: z.object({ command: z.string() }),
@@ -292,6 +313,22 @@ export function buildTools(a: ToolArgs): ToolSet {
             }),
           }),
         }),
+    ...(network.length > 0
+      ? {
+          web_fetch: tool({
+            description: `Fetch a web page or API response over http(s) as text (HTML reduced to text, up to ${a.webMaxBytes ?? 200_000} bytes). Allowed hosts: ${network.join(', ')}`,
+            inputSchema: z.object({ url: z.string() }),
+            execute: guarded('web_fetch', ({ url }: { url: string }) =>
+              fetchText(url, {
+                timeoutMs: a.webTimeoutMs ?? 15_000,
+                maxBytes: a.webMaxBytes ?? 200_000,
+                allow: network,
+              }),
+            ),
+          }),
+        }
+      : {}),
+    ...extra,
     ...(graphQuery
       ? {
           graph_query: tool({

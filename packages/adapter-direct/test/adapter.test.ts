@@ -19,6 +19,7 @@ import { ProviderRegistry } from '@shibaox/providers';
 import { startFakeOpenAI } from '@shibaox/providers/testing';
 import { RoleSchema } from '@shibaox/schemas';
 import { afterEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { DirectAdapter } from '../src/index.js';
 
 let fake: Awaited<ReturnType<typeof startFakeOpenAI>> | undefined;
@@ -43,7 +44,7 @@ const registry = (baseURL: string) =>
     {},
   );
 const ctx = () => ({ signal: new AbortController().signal, log: () => {} });
-const jobFor = (workspace: string, tools: string[] = ['echo']): TaskJob => ({
+const jobFor = (workspace: string, tools: string[] = ['write', 'echo']): TaskJob => ({
   runId: 'r',
   nodeId: 'implement',
   role: RoleSchema.parse({
@@ -531,6 +532,72 @@ describe('DirectAdapter', () => {
     expect(names).toEqual(expect.arrayContaining(['list_files', 'read_file', 'finish']));
     expect(names).not.toContain('write_file');
     expect(names).not.toContain('run_command');
+  });
+
+  it('sends the conversation as prior turns and the new request last', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI(() => ({ content: 'sure' }));
+    const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+      preamble: () => 'Project: Node · 3 files',
+    });
+    const job = {
+      ...jobFor(ws),
+      input: {
+        spec: 'and now?',
+        messages: [
+          { role: 'user', content: 'hello' },
+          { role: 'assistant', content: 'hi' },
+        ],
+      },
+    };
+    await collectRun(adapter, job, ctx());
+    const msgs = (fake.requests[0] as { messages: { role: string; content: string }[] }).messages;
+    expect(msgs.map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'user']);
+    expect(msgs[0]?.content).toContain('Project: Node · 3 files');
+    expect(msgs[1]?.content).toBe('hello');
+    expect(msgs[2]?.content).toBe('hi');
+    expect(msgs[3]?.content).toContain('and now?');
+    expect(msgs[3]?.content).not.toContain('"messages"');
+  });
+  it('role.max_steps caps the tool loop', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI(() => ({ toolCalls: [{ name: 'list_files', args: {} }] }));
+    const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    const job = { ...jobFor(ws), role: RoleSchema.parse({ role: 'r', tools: [], max_steps: 2 }) };
+    await expect(collectRun(adapter, job, ctx())).rejects.toThrow('max steps (2) reached');
+    expect(fake.requests).toHaveLength(2);
+  });
+  it('extra tools from the daemon are callable', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI((_r, turn) =>
+      turn === 0
+        ? { toolCalls: [{ name: 'ping', args: { n: 1 } }] }
+        : { toolCalls: [{ name: 'finish', args: { output: {}, summary: 'ok' } }] },
+    );
+    const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+      extraTools: () => [
+        {
+          name: 'ping',
+          description: 'pong',
+          input: z.object({ n: z.number() }),
+          execute: async (i) => ({ pong: i.n }),
+        },
+      ],
+    });
+    const events: RuntimeEvent[] = [];
+    for await (const e of adapter.run(jobFor(ws), ctx())) events.push(e);
+    const result = events.find((e) => e.type === 'tool_result' && e.name === 'ping');
+    expect(result?.type === 'tool_result' && result.output).toEqual({ pong: 1 });
   });
 
   it('aborts when the signal fires', async () => {

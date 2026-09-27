@@ -1,12 +1,14 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type {
-  ApprovalHandler,
-  Capability,
-  ExecutionContext,
-  RuntimeAdapter,
-  RuntimeEvent,
-  TaskJob,
+import {
+  type AgentTool,
+  type ApprovalHandler,
+  type Capability,
+  conversationOf,
+  type ExecutionContext,
+  type RuntimeAdapter,
+  type RuntimeEvent,
+  type TaskJob,
 } from '@shibaox/core';
 import {
   describeError,
@@ -30,6 +32,10 @@ export interface DirectAdapterOptions {
   maxRetries?: number;
   /** When given, exposes a `graph_query` tool that answers questions from the knowledge graph. */
   graphQuery?: (question: string) => Promise<string>;
+  /** Tools the daemon adds for this job (orchestration, memory), exposed under their own names. */
+  extraTools?: (job: TaskJob) => AgentTool[];
+  /** Context appended to the system prompt (project profile, memory). */
+  preamble?: (job: TaskJob) => string | undefined;
 }
 
 const RULES =
@@ -51,13 +57,16 @@ export class DirectAdapter implements RuntimeAdapter {
       const p = join(this.opts.orgRoot, job.role.system_prompt);
       if (existsSync(p)) prompt = readFileSync(p, 'utf8');
     }
-    return `${prompt}\n\n${RULES}`;
+    const preamble = this.opts.preamble?.(job);
+    return `${prompt}\n\n${RULES}${preamble ? `\n\n${preamble}` : ''}`;
   }
 
   private userMessage(job: TaskJob): string {
+    // the conversation travels as its own turns (see run), never inside the input JSON
+    const { messages: _messages, ...input } = job.input;
     return [
       `Task: ${job.instruction}`,
-      `Input: ${JSON.stringify(job.input)}`,
+      `Input: ${JSON.stringify(input)}`,
       `Previous outputs: ${JSON.stringify(job.context.previousOutputs).slice(0, 60_000)}`,
       `Last gate report: ${JSON.stringify(job.context.lastGateReport ?? null).slice(0, 20_000)}`,
     ].join('\n\n');
@@ -88,7 +97,7 @@ export class DirectAdapter implements RuntimeAdapter {
       // Models without tool-calling support (registry.supportsTools) get a single
       // plain-text turn instead: no tools are sent and the reply is the result.
       const supportsTools = this.opts.registry.supportsTools(ref);
-      effectiveMaxSteps = supportsTools ? (this.opts.maxSteps ?? 12) : 1;
+      effectiveMaxSteps = supportsTools ? (job.role.max_steps ?? this.opts.maxSteps ?? 12) : 1;
       const tools = supportsTools
         ? buildTools({
             workspace: job.workspace,
@@ -109,12 +118,16 @@ export class DirectAdapter implements RuntimeAdapter {
             commandTimeoutMs: this.opts.commandTimeoutMs ?? 120_000,
             maxFileBytes: this.opts.maxFileBytes ?? 200_000,
             graphQuery: this.opts.graphQuery,
+            extraTools: this.opts.extraTools?.(job) ?? [],
           })
         : undefined;
       pending = generate({
         model: this.opts.registry.model(ref),
         system: this.systemPrompt(job),
-        messages: [{ role: 'user', content: this.userMessage(job) }],
+        messages: [
+          ...conversationOf(job.input).map((m) => ({ role: m.role, content: m.content })),
+          { role: 'user' as const, content: this.userMessage(job) },
+        ],
         tools,
         maxSteps: effectiveMaxSteps,
         stopOnTools: supportsTools ? ['finish'] : undefined,
