@@ -36,7 +36,10 @@ const NODE_MARK: Record<string, string> = {
 
 /** The current run at a glance: request, context, nodes as a checklist, files, and what needs you. */
 export function Sidebar(props: {
+  /** The latest run of the tab (its nodes and pending items). */
   runId: string;
+  /** The first run of the tab (its request titles the sidebar). */
+  rootId?: string;
   width: number;
   focused: boolean;
   onFocusBack: () => void;
@@ -47,7 +50,12 @@ export function Sidebar(props: {
   const dialog = useDialog();
   const toast = useToast();
   const state = () => data.state.states[props.runId];
+  const root = () => data.state.states[props.rootId ?? props.runId];
   const summary = () => data.state.runs.find((r) => r.runId === props.runId);
+  const spent = () =>
+    data
+      .threadOf(props.rootId ?? props.runId)
+      .reduce((n, id) => n + (data.state.states[id]?.spentUsd ?? 0), 0);
   const cards = data.timeline(props.runId);
   const inner = () => Math.max(8, props.width - 2);
 
@@ -134,13 +142,13 @@ export function Sidebar(props: {
       paddingTop={1}
     >
       <text fg={theme.text.base} attributes={TextAttributes.BOLD} wrapMode="word">
-        {marqueeText(requestText(state()?.input) || (summary()?.workflow ?? ''), inner() * 3, 0)}
+        {marqueeText(requestText(root()?.input) || (summary()?.workflow ?? ''), inner() * 3, 0)}
       </text>
       <Title text="Context" />
       <text
         fg={theme.text.muted}
         wrapMode="none"
-      >{`${money(state()?.spentUsd ?? summary()?.spentUsd ?? 0)} spent`}</text>
+      >{`${money(spent() || (summary()?.spentUsd ?? 0))} spent`}</text>
       <text
         fg={theme.text.muted}
         wrapMode="none"

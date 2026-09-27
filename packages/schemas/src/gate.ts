@@ -9,6 +9,12 @@ export const CheckSchema = z.discriminatedUnion('type', [
     command: z.string().min(1),
     timeout_ms: z.number().int().positive().default(300_000),
   }),
+  /** Runs the project's own test runner, detected in the workspace (npm/pnpm/yarn/bun test, pytest, go test, cargo test, make test, phpunit, rspec). */
+  z.object({
+    ...base,
+    type: z.literal('tests'),
+    timeout_ms: z.number().int().positive().default(300_000),
+  }),
   z.object({
     ...base,
     type: z.literal('jev'),

@@ -1,6 +1,7 @@
 import type { Check, CheckResult, Cost, Gate, GateReport } from '@shibaox/schemas';
 import { runCommand } from '../executors/code.js';
 import type { RunState } from '../run/state.js';
+import { detectTestCommand } from './detect.js';
 
 export interface CheckContext {
   runId: string;
@@ -39,6 +40,33 @@ export const codeCheckRunner: CheckRunner = async (check, ctx) => {
   };
 };
 
+/** Runs the workspace's own test runner; a project without one passes with a note. */
+export const testsCheckRunner: CheckRunner = async (check, ctx) => {
+  if (check.type !== 'tests') throw new Error('testsCheckRunner got a non-tests check');
+  const command = detectTestCommand(ctx.workspace);
+  if (!command)
+    return {
+      name: check.name,
+      type: 'tests',
+      passed: true,
+      skipped: true,
+      evidence: `no test runner found in ${ctx.workspace} (package.json scripts.test, pyproject, go.mod, Cargo.toml, Makefile test, composer, Gemfile)`,
+    };
+  const r = await runCommand({ command, cwd: ctx.workspace, timeoutMs: check.timeout_ms });
+  const passed = r.exitCode === 0 && !r.timedOut;
+  const evidence = r.timedOut
+    ? `${command}: timed out after ${check.timeout_ms}ms\n${tail(r.stdout)}${tail(r.stderr)}`
+    : `${command}: exit ${r.exitCode}\n${tail(r.stdout)}${tail(r.stderr)}`;
+  return {
+    name: check.name,
+    type: 'tests',
+    passed,
+    skipped: false,
+    evidence,
+    suggestion: passed ? undefined : `Fix so that \`${command}\` exits 0`,
+  };
+};
+
 export const mockCheckRunner: CheckRunner = async (check) => {
   if (check.type !== 'mock') throw new Error('mockCheckRunner got a non-mock check');
   return {
@@ -51,7 +79,7 @@ export const mockCheckRunner: CheckRunner = async (check) => {
 };
 
 export function defaultCheckRunners(): CheckRunners {
-  return { code: codeCheckRunner, mock: mockCheckRunner };
+  return { code: codeCheckRunner, tests: testsCheckRunner, mock: mockCheckRunner };
 }
 
 export async function runGate(args: {

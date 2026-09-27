@@ -22,8 +22,11 @@ const Context = createContext<{ theme: ResolvedTheme; syntax: () => SyntaxStyle 
 export function ThemeProvider(props: ParentProps<{ theme?: ResolvedTheme }>): JSX.Element {
   const theme = props.theme ?? defaultTheme();
   const syntax = createMemo(() => SyntaxStyle.fromStyles(syntaxStyles(theme)));
-  // a native handle: release it with the provider (tests mount many)
-  onCleanup(() => syntax().destroy());
+  // a native handle: released a little after the provider goes, once no renderable draws with it
+  onCleanup(() => {
+    const style = syntax();
+    setTimeout(() => style.destroy(), 500);
+  });
   return <Context.Provider value={{ theme, syntax }}>{props.children}</Context.Provider>;
 }
 

@@ -13,8 +13,10 @@ export interface DataState {
   /** Bumped whenever a run's frames change (the frames themselves live outside the store). */
   versions: Record<string, number>;
   ended: Record<string, RunStatus>;
-  /** Open tabs (run ids) in order; `active` undefined means the home tab. */
+  /** Open tabs (root run ids) in order; `active` undefined means the home tab. */
   open: string[];
+  /** The runs of each tab, oldest first: a tab continues into follow-up runs. */
+  threads: Record<string, string[]>;
   active?: string;
   /** Runs with something the user has not looked at yet (tab pulse). */
   unread: Record<string, 'done' | 'needs'>;
@@ -28,6 +30,7 @@ export const initialData = (): DataState => ({
   versions: {},
   ended: {},
   open: [],
+  threads: {},
   unread: {},
 });
 

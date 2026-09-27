@@ -1,14 +1,17 @@
 import type { Renderable, ScrollBoxRenderable } from '@opentui/core';
 import { useTerminalDimensions } from '@opentui/solid';
 import {
+  type Accessor,
   createEffect,
   createMemo,
   createSignal,
   For,
+  getOwner,
   type JSX,
   Match,
   on,
   onCleanup,
+  runWithOwner,
   Switch,
 } from 'solid-js';
 import { useData } from '../../context/data.js';
@@ -26,7 +29,7 @@ import {
 } from './cards.js';
 import { RequestBlock } from './request.js';
 
-/** How many cards the screen mounts at once (the model keeps up to 5000). */
+/** How many cards the screen mounts per run (the model keeps up to 5000). */
 export const RENDER_LIMIT = 300;
 
 /** Ids of the rows the cursor can land on: card headers and tool lines, in reading order. */
@@ -45,29 +48,53 @@ export function selectableRows(cards: Card[]): string[] {
   return rows;
 }
 
+export interface TimelineApi {
+  scrollBy(lines: number): void;
+}
+
 /**
- * The conversation of a run: its cards in a scrollbox that follows the end until the user
- * scrolls, with a cursor over card headers and tool lines (enter expands or collapses).
+ * The conversation of a tab: every run of its thread (request block, then cards), in a
+ * scrollbox that follows the newest content until the user scrolls up, with a cursor over card
+ * headers and tool lines (enter expands or collapses).
  */
 export function Timeline(props: {
   runId: string;
   focused: boolean;
   onToggle?: (id: string) => void;
+  api?: (api: TimelineApi) => void;
 }): JSX.Element {
   const data = useData();
   const theme = useTheme();
   const dimensions = useTerminalDimensions();
-  const all = data.timeline(props.runId);
-  // only the newest cards are mounted: every card costs native renderables (spinner, fade-in,
-  // markdown); older ones fold into the "earlier" line until the run is opened in the diff/log
-  const cards = createMemo<Card[]>(() => {
-    const list = all();
-    if (list.length <= RENDER_LIMIT) return list;
-    const dropped = list.slice(0, list.length - RENDER_LIMIT);
-    const earlier = dropped.reduce((n, c) => n + (c.kind === 'earlier' ? c.count : 1), 0);
-    return [{ kind: 'earlier', key: 'earlier', count: earlier }, ...list.slice(-RENDER_LIMIT)];
-  });
-  const rows = createMemo(() => selectableRows(cards()));
+  const runs = createMemo(() => data.threadOf(props.runId));
+  const owner = getOwner();
+  const memos = new Map<string, Accessor<Card[]>>();
+  // per-run memos live under the timeline itself, never under whichever computation asks first
+  const cardsOf = (run: string): Accessor<Card[]> => {
+    let m = memos.get(run);
+    if (!m) {
+      const all = data.timeline(run);
+      // only the newest cards are mounted: every card costs native renderables (spinner,
+      // fade-in, markdown); older ones fold into the "earlier" line
+      const limited = () => {
+        const list = all();
+        if (list.length <= RENDER_LIMIT) return list;
+        const dropped = list.slice(0, list.length - RENDER_LIMIT);
+        const earlier = dropped.reduce((n, c) => n + (c.kind === 'earlier' ? c.count : 1), 0);
+        return [
+          { kind: 'earlier', key: 'earlier', count: earlier } as Card,
+          ...list.slice(-RENDER_LIMIT),
+        ];
+      };
+      m = runWithOwner(owner, () => createMemo(limited)) ?? limited;
+      memos.set(run, m);
+    }
+    return m;
+  };
+  const rows = createMemo(() =>
+    runs().flatMap((run) => selectableRows(cardsOf(run)()).map((id) => `${run}|${id}`)),
+  );
+  const version = createMemo(() => runs().reduce((n, run) => n + cardsOf(run)().length, 0));
   const [cursor, setCursor] = createSignal(0);
   const [expanded, setExpanded] = createSignal(new Set<string>(), { equals: false });
   const [now, setNow] = createSignal(Date.now());
@@ -78,26 +105,25 @@ export function Timeline(props: {
   const tick = setInterval(() => setNow(Date.now()), 1000);
   onCleanup(() => clearInterval(tick));
 
-  // the markdown renderable lays out its text a frame late, which can leave a sticky scrollbox
-  // parked past the content: re-stick explicitly after every change while following
+  // OpenTUI's stickyScroll re-sticks after a programmatic scrollTo(0), so following is ours alone
   const follow = () => {
     if (!following() || !scroll) return;
     scroll.scrollTo(scroll.scrollHeight);
   };
-  // OpenTUI's stickyScroll re-sticks after a programmatic scrollTo(0), so following is ours alone
   createEffect(
-    on([cards, dimensions], () => {
+    on([version, dimensions], () => {
       setTimeout(follow, 0);
       setTimeout(follow, 120);
     }),
   );
+  props.api?.({ scrollBy: (n) => scroll?.scrollBy(n) });
 
   const selectedRow = () => rows()[Math.min(cursor(), rows().length - 1)];
-  const nodes = createMemo(
-    () =>
-      cards().filter((c) => c.kind !== 'error' && c.kind !== 'earlier' && c.kind !== 'summary')
-        .length,
-  );
+  /** The selected row id inside `run`, or undefined when the cursor is in another run. */
+  const selectedIn = (run: string) => {
+    const s = selectedRow();
+    return props.focused && s?.startsWith(`${run}|`) ? s.slice(run.length + 1) : undefined;
+  };
 
   const ensureVisible = () => {
     const id = selectedRow();
@@ -124,6 +150,13 @@ export function Timeline(props: {
     });
     props.onToggle?.(id);
   };
+  /** The expanded set as the cards see it: ids of this run only. */
+  const expandedIn = (run: string) =>
+    new Set(
+      [...expanded()]
+        .filter((id) => id.startsWith(`${run}|`))
+        .map((id) => id.slice(run.length + 1)),
+    );
 
   useKeys('pane', (key) => {
     if (!props.focused || key.ctrl || key.meta) return false;
@@ -172,9 +205,10 @@ export function Timeline(props: {
     }
   });
 
-  const rowRef = (id: string, el: unknown) => {
-    if (el) refs.set(id, el as Renderable);
-    else refs.delete(id);
+  const rowRefFor = (run: string) => (id: string, el: unknown) => {
+    const key = `${run}|${id}`;
+    if (el) refs.set(key, el as Renderable);
+    else refs.delete(key);
   };
 
   return (
@@ -194,64 +228,84 @@ export function Timeline(props: {
       horizontalScrollbarOptions={{ visible: false }}
       contentOptions={{ flexDirection: 'column', paddingTop: 1, paddingLeft: 2, paddingRight: 2 }}
     >
-      <RequestBlock runId={props.runId} />
-      <For each={cards()}>
-        {(card) => (
-          <Switch>
-            <Match when={card.kind === 'node' && card}>
-              {(c) => (
-                <NodeCard
-                  card={c()}
-                  now={now()}
-                  selectedRow={props.focused ? selectedRow() : undefined}
-                  expanded={expanded()}
-                  rowRef={rowRef}
-                />
-              )}
-            </Match>
-            <Match when={card.kind === 'gate' && card}>
-              {(c) => (
-                <GateCard
-                  card={c()}
-                  selected={props.focused && selectedRow() === `card:${c().nodeId}`}
-                  rowRef={rowRef}
-                />
-              )}
-            </Match>
-            <Match when={card.kind === 'decide' && card}>
-              {(c) => (
-                <DecideCard
-                  card={c()}
-                  selected={props.focused && selectedRow() === `card:${c().nodeId}`}
-                  rowRef={rowRef}
-                />
-              )}
-            </Match>
-            <Match when={card.kind === 'human' && card}>
-              {(c) => (
-                <HumanCard
-                  card={c()}
-                  selected={props.focused && selectedRow() === `card:${c().nodeId}`}
-                  rowRef={rowRef}
-                />
-              )}
-            </Match>
-            <Match when={card.kind === 'error' && card}>{(c) => <ErrorCard card={c()} />}</Match>
-            <Match when={card.kind === 'earlier' && card}>
-              {(c) => <EarlierCard card={c()} />}
-            </Match>
-            <Match when={card.kind === 'summary' && card}>
-              {(c) => (
-                <SummaryCard
-                  card={c()}
-                  nodes={nodes()}
-                  selected={props.focused && selectedRow() === 'card:summary'}
-                  rowRef={rowRef}
-                />
-              )}
-            </Match>
-          </Switch>
-        )}
+      <For each={runs()}>
+        {(run) => {
+          const cards = cardsOf(run);
+          const rowRef = rowRefFor(run);
+          const selected = createMemo(() => selectedIn(run));
+          const expandedHere = createMemo(() => expandedIn(run));
+          const nodes = createMemo(
+            () =>
+              cards().filter(
+                (c) => c.kind !== 'error' && c.kind !== 'earlier' && c.kind !== 'summary',
+              ).length,
+          );
+          return (
+            <>
+              <RequestBlock runId={run} />
+              <For each={cards()}>
+                {(card) => (
+                  <Switch>
+                    <Match when={card.kind === 'node' && card}>
+                      {(c) => (
+                        <NodeCard
+                          card={c()}
+                          now={now()}
+                          selectedRow={selected()}
+                          expanded={expandedHere()}
+                          rowRef={rowRef}
+                        />
+                      )}
+                    </Match>
+                    <Match when={card.kind === 'gate' && card}>
+                      {(c) => (
+                        <GateCard
+                          card={c()}
+                          selected={selected() === `card:${c().nodeId}`}
+                          rowRef={rowRef}
+                        />
+                      )}
+                    </Match>
+                    <Match when={card.kind === 'decide' && card}>
+                      {(c) => (
+                        <DecideCard
+                          card={c()}
+                          selected={selected() === `card:${c().nodeId}`}
+                          rowRef={rowRef}
+                        />
+                      )}
+                    </Match>
+                    <Match when={card.kind === 'human' && card}>
+                      {(c) => (
+                        <HumanCard
+                          card={c()}
+                          selected={selected() === `card:${c().nodeId}`}
+                          rowRef={rowRef}
+                        />
+                      )}
+                    </Match>
+                    <Match when={card.kind === 'error' && card}>
+                      {(c) => <ErrorCard card={c()} />}
+                    </Match>
+                    <Match when={card.kind === 'earlier' && card}>
+                      {(c) => <EarlierCard card={c()} />}
+                    </Match>
+                    <Match when={card.kind === 'summary' && card}>
+                      {(c) => (
+                        <SummaryCard
+                          card={c()}
+                          nodes={nodes()}
+                          selected={selected() === 'card:summary'}
+                          rowRef={rowRef}
+                        />
+                      )}
+                    </Match>
+                  </Switch>
+                )}
+              </For>
+            </>
+          );
+        }}
       </For>
     </scrollbox>
   );

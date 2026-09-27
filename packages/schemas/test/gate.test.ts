@@ -21,3 +21,10 @@ describe('GateSchema', () => {
     expect(GateSchema.safeParse({ gate: 'x', checks: [] }).success).toBe(false);
   });
 });
+
+describe('the tests check', () => {
+  it('needs no command: the runner is detected in the workspace', () => {
+    const g = GateSchema.parse({ gate: 'tests', checks: [{ name: 'unit-tests', type: 'tests' }] });
+    expect(g.checks[0]).toMatchObject({ type: 'tests', timeout_ms: 300_000 });
+  });
+});

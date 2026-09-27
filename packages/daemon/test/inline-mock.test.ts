@@ -34,7 +34,7 @@ describe('shibaox run (mock adapter)', () => {
     expect(state.status).toBe('completed');
     expect(state.nodes.qa?.status).toBe('passed');
     expect(state.nodes.judge?.choice).toBe('ship');
-    expect(state.lastGateReport?.checks.map((c) => c.type)).toEqual(['code']);
+    expect(state.lastGateReport?.checks.map((c) => c.type)).toEqual(['tests']); // the org template detects the project's runner
   });
   it('fails after retries when the sample tests are broken', async () => {
     const { org, project, db, env } = setup();

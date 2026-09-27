@@ -68,7 +68,7 @@ cp -R <path-to-shibaox>/examples/sample-repo ./project
 shibaox run hello-feature --org ./org --project ./project --input "add /health"
 ```
 
-`hello-feature` runs `analyse → implement → qa (gate: npm test) → judge (decide) → ship
+`hello-feature` runs `analyse → implement → qa (gate: the project's own tests) → judge (decide) → ship
 (human)`. `run` submits the run to the daemon and follows it; in an interactive terminal
 the `ship` node asks `Approve the push? (y/n)` right there. Without a TTY the run keeps
 waiting in the inbox (`shibaox inbox`, `shibaox approve human:<runId>:ship`). Ctrl-C stops
@@ -164,7 +164,9 @@ decision, human step) with the agent's text in Markdown, tool calls (`> Read src
 confidence, and a summary at the end (status, cost, duration, files changed, branch). While
 the run waits for you, the bottom of the screen asks: `a` approves, `d` denies, `n` adds a
 note (a command approval asks `y` first). Runs that end or start waiting in another tab make
-their tab pulse until you open it. The sidebar (automatic from 120 columns, `ctrl+b`) shows
+their tab pulse until you open it. When a run ends, the prompt comes back at the bottom of its
+tab: the next request runs as a follow-up in the same tab, with the previous request as
+context. The sidebar (automatic from 120 columns, `ctrl+b`) shows
 the run's request, its cost and progress, the nodes as a checklist, the files it touched and
 what needs you; drag its edge with the mouse to resize it. The runs picker is `ctrl+o`.
 
@@ -202,6 +204,15 @@ shibaox providers test groq           # one short real call with the first catal
 shibaox providers test ollama --model qwen2.5-coder:7b
 shibaox models --org ./org            # how each role of the org resolves to a model
 ```
+
+### Gate checks
+
+A gate lists checks. `type: tests` runs the project's own test runner, detected in the run's
+workspace (`npm|pnpm|yarn|bun test` from `package.json`, `pytest`, `go test ./...`,
+`cargo test`, `make test`, `php artisan test` / `vendor/bin/phpunit`, `bundle exec rspec`);
+a project with none passes with a note, so the same org works in any repository.
+`type: code` runs a fixed command (`command: "pnpm lint"`), `jev` asks Jev a typed question
+about the diff, `judge` asks a strong model, `human` asks you.
 
 ### Environment variables
 

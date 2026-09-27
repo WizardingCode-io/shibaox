@@ -11,6 +11,7 @@ import {
 } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
 import { type Card, reduceTimeline } from '../model/stream.js';
+import { requestText } from '../routes/session/request.js';
 import type { DaemonClientLike } from './client.js';
 import { type DataState, FRAME_LIMIT, initialData } from './data-state.js';
 import { Poller, type PollerIntervals, type PollerToast } from './poller.js';
@@ -28,6 +29,10 @@ export interface Data {
   frameCount(runId: string): number | undefined;
   openRun(runId: string): void;
   closeRun(runId: string): void;
+  /** The runs of the tab that holds `runId`, oldest first. */
+  threadOf(runId: string): string[];
+  /** Submits a follow-up run in the tab of `rootId` (same org, project, workflow and adapter; the previous request travels as context). */
+  continueRun(rootId: string, text: string): Promise<string | undefined>;
   activate(runId?: string): void;
   nextTab(direction: 1 | -1): void;
   markRead(runId: string): void;
@@ -79,8 +84,33 @@ export function DataProvider(
   };
   const openRun = (runId: string) => {
     if (!state.open.includes(runId)) set('open', (o) => [...o, runId]);
-    poller.subscribe(runId);
+    if (!state.threads[runId]) set('threads', runId, [runId]);
+    for (const id of state.threads[runId] ?? [runId]) poller.subscribe(id);
     activate(runId);
+  };
+  const threadOf = (runId: string) => state.threads[runId] ?? [runId];
+  const continueRun = async (rootId: string, text: string) => {
+    const runs = threadOf(rootId);
+    const previousId = runs[runs.length - 1] ?? rootId;
+    const previous = state.states[previousId];
+    if (!previous) return undefined;
+    const spec = requestText(previous.input);
+    const input = spec
+      ? `Follow-up to run ${previousId.slice(0, 8)} (${previous.status}), which was asked: "${spec}".\n\nNow: ${text}`
+      : text;
+    const runId = await poller.submit({
+      orgRoot: previous.orgRoot ?? '',
+      project: previous.project ?? previous.workspace,
+      workflow: previous.workflow,
+      input,
+      adapter: previous.adapter as SubmitRequest['adapter'],
+      workspace: previous.workspaceMode,
+      budgetUsd: previous.budgetUsd,
+    });
+    if (!runId) return undefined;
+    set('threads', rootId, (t = [rootId]) => [...t, runId]);
+    poller.subscribe(runId);
+    return runId;
   };
   const poller = new Poller({
     client: props.client,
@@ -103,8 +133,11 @@ export function DataProvider(
     const i = state.open.indexOf(runId);
     if (i < 0) return;
     set('open', (o) => o.filter((id) => id !== runId));
-    poller.unsubscribe(runId);
-    release(runId);
+    for (const id of threadOf(runId)) {
+      poller.unsubscribe(id);
+      release(id);
+    }
+    set('threads', runId, undefined as never);
     if (state.active === runId) activate(state.open[Math.min(i, state.open.length - 1)]);
   };
   const nextTab = (direction: 1 | -1) => {
@@ -152,6 +185,8 @@ export function DataProvider(
     frameCount: (runId) => frames.get(runId)?.length,
     openRun,
     closeRun,
+    threadOf,
+    continueRun,
     activate,
     nextTab,
     markRead: (runId) => set('unread', runId, undefined as never),

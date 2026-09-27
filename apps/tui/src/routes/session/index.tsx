@@ -20,7 +20,8 @@ import { clampSidebarWidth, SIDEBAR_WIDTH, sidebarAuto } from '../../ui/layout.j
 import { createPaneResize } from '../../ui/pane-resize.js';
 import { useToast } from '../../ui/toast.js';
 import { ApprovalBar, pendingFor } from './approval-bar.js';
-import { Timeline } from './timeline.js';
+import { ContinuePrompt } from './continue.js';
+import { Timeline, type TimelineApi } from './timeline.js';
 
 export const SESSION_HINTS: KeyHint[] = [
   { key: 'enter', label: 'expand' },
@@ -72,10 +73,15 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
   const tick = setInterval(() => setNow(Date.now()), 1000);
   onCleanup(() => clearInterval(tick));
 
-  const summary = () => data.state.runs.find((r) => r.runId === props.runId);
-  const state = () => data.state.states[props.runId];
+  // the tab is a thread: the status, the pending items and the prompt belong to its latest run
+  const latest = () => {
+    const runs = data.threadOf(props.runId);
+    return runs[runs.length - 1] ?? props.runId;
+  };
+  const summary = () => data.state.runs.find((r) => r.runId === latest());
+  const state = () => data.state.states[latest()];
   const status = () =>
-    data.state.ended[props.runId] ?? state()?.status ?? summary()?.status ?? 'queued';
+    data.state.ended[latest()] ?? state()?.status ?? summary()?.status ?? 'queued';
   const look = () => statusOf({ status: status() });
   const working = () => status() === 'running';
   const spent = () => state()?.spentUsd ?? summary()?.spentUsd ?? 0;
@@ -100,14 +106,16 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
     const f = look().feedback;
     return f === 'muted' ? theme.text.muted : theme.text.feedback[f];
   };
-  const pending = createMemo(() => pendingFor(data.state.inbox, props.runId));
+  const pending = createMemo(() => pendingFor(data.state.inbox, latest()));
+  const finished = () => ['completed', 'failed', 'cancelled'].includes(status());
+  let timeline: TimelineApi | undefined;
   const detail = () => {
     const parts = [money(spent())];
     const e = elapsed();
     if (e) parts.push(e);
     parts.push(summary()?.workflow ?? state()?.workflow ?? '');
     if (state()?.adapter) parts.push(state()?.adapter ?? '');
-    parts.push(shortId(props.runId));
+    parts.push(shortId(latest()));
     return parts.filter(Boolean).join(' · ');
   };
 
@@ -147,19 +155,19 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
   const cancel = () =>
     dialog.open(() => (
       <Confirm
-        message={`Cancel run ${shortId(props.runId)}?`}
+        message={`Cancel run ${shortId(latest())}?`}
         onYes={() => {
           dialog.close();
-          void data.actions.cancel(props.runId);
+          void data.actions.cancel(latest());
         }}
         onNo={() => dialog.close()}
       />
     ));
   const resume = () => {
-    if (status() === 'paused_budget') void data.actions.resume(props.runId);
+    if (status() === 'paused_budget') void data.actions.resume(latest());
     else toast.show({ message: 'Nothing to resume', variant: 'info' });
   };
-  const diff = () => dialog.open(() => <DiffDialog runId={props.runId} />);
+  const diff = () => dialog.open(() => <DiffDialog runId={latest()} />);
   const unregister = useCommands().register([
     { id: 'diff', label: 'Diff of the run', keys: 'd', run: diff },
     {
@@ -221,7 +229,13 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
       onMouseUp={resize.onMouseUp}
     >
       <box flexDirection="column" flexGrow={1} height="100%">
-        <Timeline runId={props.runId} focused={focus() === 'conversation'} />
+        <Timeline
+          runId={props.runId}
+          focused={focus() === 'conversation'}
+          api={(a) => {
+            timeline = a;
+          }}
+        />
         <box flexDirection="row" width="100%" flexShrink={0} paddingLeft={2} paddingRight={2}>
           <box
             width={1}
@@ -244,7 +258,15 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
             <Show
               when={pending().length > 0}
               fallback={
-                <>
+                <Show
+                  when={!finished() || props.single}
+                  fallback={
+                    <ContinuePrompt
+                      onSubmit={(t) => void data.continueRun(props.runId, t)}
+                      onScroll={(n) => timeline?.scrollBy(n)}
+                    />
+                  }
+                >
                   <box height={1} flexShrink={0} flexDirection="row">
                     <Show
                       when={working()}
@@ -274,10 +296,10 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
                       {detail()}
                     </text>
                   </box>
-                </>
+                </Show>
               }
             >
-              <ApprovalBar runId={props.runId} />
+              <ApprovalBar runId={latest()} />
             </Show>
           </box>
         </box>
@@ -315,7 +337,8 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
           onMouseDown={resize.onMouseDown}
         />
         <Sidebar
-          runId={props.runId}
+          runId={latest()}
+          rootId={props.runId}
           width={sidebarWidth()}
           focused={focus() === 'sidebar'}
           onFocusBack={() => setFocus('conversation')}
