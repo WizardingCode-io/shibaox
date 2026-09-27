@@ -9,6 +9,12 @@ export const RoleSchema = z.object({
   model_tier: ModelTierSchema.default('strong'),
   system_prompt: z.string().optional(),
   tools: z.array(z.string()).default([]),
+  /** Tool-loop steps for the direct adapter (default 12). */
+  max_steps: z.number().int().positive().optional(),
+  /** Agent turns for the Claude Code adapter (default 60). */
+  max_turns: z.number().int().positive().optional(),
+  /** Cap on what one task of this role may spend (USD), within the run budget. */
+  budget_usd: z.number().positive().optional(),
   permissions: z
     .object({
       fs: z.array(z.string()).default(['workspace']),

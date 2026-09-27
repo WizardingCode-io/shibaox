@@ -77,6 +77,8 @@ export interface RunState {
   branch?: string;
   /** The org directory the run was submitted with (recorded since phase 2A). */
   orgRoot?: string;
+  /** The run that dispatched this one (recorded since phase 3A). */
+  parentRunId?: string;
   status: RunStatus;
   nodes: Record<string, NodeState>;
   spentUsd: number;

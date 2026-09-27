@@ -48,6 +48,8 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     branch: z.string().optional(),
     /** The org directory the run was submitted with (recorded since phase 2A). */
     orgRoot: z.string().optional(),
+    /** The run that dispatched this one (a workflow started by the orchestrator). */
+    parentRunId: z.string().optional(),
   }),
   z.object({ ...base, type: z.literal('RunStarted') }),
   z.object({

@@ -1,4 +1,11 @@
-import type { Cost, GateReport, Role } from '@shibaox/schemas';
+import {
+  type ChatMessage,
+  ChatMessageSchema,
+  type Cost,
+  type GateReport,
+  type Role,
+} from '@shibaox/schemas';
+import type { z } from 'zod';
 
 export type Capability = 'write-code' | 'run-tests' | 'read-only' | 'shell';
 
@@ -99,4 +106,27 @@ export async function collectRun(
       return { output: event.output, summary: event.summary, cost: event.cost };
   }
   throw new Error(`adapter ${adapter.id} ended without a result for node ${job.nodeId}`);
+}
+
+/**
+ * A tool the daemon hands to a task on top of the adapter's own: the direct adapter exposes
+ * it as an AI SDK tool, the Claude Code adapter through an in-process MCP server.
+ */
+export interface AgentTool {
+  name: string;
+  description: string;
+  input: z.ZodObject<z.ZodRawShape>;
+  execute(input: Record<string, unknown>): Promise<unknown>;
+}
+
+/** The conversation carried in a run's input (`input.messages`), well-formed turns only. */
+export function conversationOf(input: Record<string, unknown>): ChatMessage[] {
+  const raw = input.messages;
+  if (!Array.isArray(raw)) return [];
+  const out: ChatMessage[] = [];
+  for (const m of raw) {
+    const r = ChatMessageSchema.safeParse(m);
+    if (r.success) out.push(r.data);
+  }
+  return out;
 }
