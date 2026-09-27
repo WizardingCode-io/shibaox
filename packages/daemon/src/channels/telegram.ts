@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto';
 import { AlreadyResolvedError, type InboxAnswer, type InboxId, type InboxItem } from '../inbox.js';
-import { chunkText, type RunReport, STATUS_SYMBOL, shortDuration } from '../runs/report.js';
+import {
+  chunkBy,
+  chunkText,
+  type RunReport,
+  STATUS_SYMBOL,
+  shortDuration,
+} from '../runs/report.js';
 import type { Channel } from './types.js';
 
 export interface TelegramOptions {
@@ -45,8 +51,7 @@ export const TELEGRAM_CHUNK = 4000;
 
 /** The report as a Telegram message: a conversation's reply as is, a run as a short digest. */
 export function telegramReportText(r: RunReport): string {
-  if (r.reply !== undefined && r.nodes.every((n) => n.status === 'completed'))
-    return escapeHtml(r.reply);
+  if (r.reply !== undefined && r.nodes.every((n) => n.status === 'completed')) return r.reply;
   const symbol = STATUS_SYMBOL[r.status] ?? '•';
   const word = r.status === 'completed' ? 'done' : r.status.replace('_', ' ');
   const head = [
@@ -73,7 +78,19 @@ interface CallbackQuery {
 interface Message {
   message_id: number;
   text?: string;
-  chat: { id: number };
+  chat: { id: number; type?: string };
+}
+
+/** A Bot API error with what Telegram says about it. */
+class TelegramApiError extends Error {
+  constructor(
+    method: string,
+    readonly status: number,
+    readonly description: string,
+    readonly retryAfter?: number,
+  ) {
+    super(`telegram ${method} failed: ${description}`);
+  }
 }
 interface Update {
   update_id: number;
@@ -105,24 +122,73 @@ export function telegramChannel(o: TelegramOptions): Channel {
       body: JSON.stringify(body),
       signal,
     });
-    const json = (await res.json()) as { ok: boolean; result?: T; description?: string };
+    const json = (await res.json()) as {
+      ok: boolean;
+      result?: T;
+      description?: string;
+      parameters?: { retry_after?: number };
+    };
     if (!res.ok || !json.ok)
-      throw new Error(`telegram ${method} failed: ${json.description ?? res.status}`);
+      throw new TelegramApiError(
+        method,
+        res.status,
+        json.description ?? String(res.status),
+        json.parameters?.retry_after,
+      );
     return json.result as T;
   }
 
+  /**
+   * Sends `text` in pieces under the limit, escaping each piece after the split so no HTML
+   * entity is ever cut; a rate-limited piece waits `retry_after` and is sent again (never
+   * the earlier pieces); a piece Telegram cannot parse goes out as plain text.
+   */
   async function sendText(text: string, parseMode?: 'HTML'): Promise<void> {
-    for (const piece of chunkText(text, TELEGRAM_CHUNK))
-      await api('sendMessage', {
-        chat_id: o.chatId,
-        text: piece,
-        ...(parseMode ? { parse_mode: parseMode } : {}),
-      });
+    const pieces =
+      parseMode === 'HTML'
+        ? chunkBy(text, TELEGRAM_CHUNK, (s) => escapeHtml(s).length)
+        : chunkText(text, TELEGRAM_CHUNK);
+    for (const raw of pieces) {
+      const piece = parseMode === 'HTML' ? escapeHtml(raw) : raw;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await api('sendMessage', {
+            chat_id: o.chatId,
+            text: piece,
+            ...(parseMode ? { parse_mode: parseMode } : {}),
+          });
+          break;
+        } catch (e) {
+          if (e instanceof TelegramApiError && e.status === 429 && attempt < 3) {
+            await new Promise((r) => setTimeout(r, Math.min(e.retryAfter ?? 1, 30) * 1000));
+            continue;
+          }
+          if (e instanceof TelegramApiError && e.status === 400 && parseMode) {
+            await api('sendMessage', { chat_id: o.chatId, text: raw });
+            break;
+          }
+          throw e;
+        }
+      }
+    }
+  }
+
+  /** A pre-escaped HTML digest: pieces are already safe, only the split matters. */
+  async function sendDigest(html: string): Promise<void> {
+    for (const piece of chunkText(html, TELEGRAM_CHUNK))
+      await api('sendMessage', { chat_id: o.chatId, text: piece, parse_mode: 'HTML' });
   }
 
   async function handleMessage(m: Message): Promise<void> {
     if (m.chat.id !== o.chatId) {
       o.log(`[telegram] ignored message from chat ${m.chat.id}`);
+      return;
+    }
+    // text is a turn for the orchestrator (with write-capable tools): private chats only
+    if (m.chat.type !== undefined && m.chat.type !== 'private') {
+      o.log(
+        `[telegram] ignored message from a ${m.chat.type} chat: text is accepted in private chats only`,
+      );
       return;
     }
     const text = (m.text ?? '').trim();
@@ -226,7 +292,10 @@ export function telegramChannel(o: TelegramOptions): Channel {
       });
     },
     async report(r) {
-      await sendText(telegramReportText(r), 'HTML');
+      const text = telegramReportText(r);
+      // a conversation reply is raw text (escaped per piece); a digest is already HTML
+      if (r.reply !== undefined && text === r.reply) await sendText(text, 'HTML');
+      else await sendDigest(text);
     },
     say: (text) => sendText(text),
     onAnswer(cb) {

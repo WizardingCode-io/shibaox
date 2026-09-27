@@ -52,14 +52,23 @@ describe('launchd service', () => {
   });
   it('install writes the plist under ~/Library/LaunchAgents and bootstraps it; uninstall boots it out and removes it', async () => {
     const { env, paths } = setup();
-    const { calls, exec } = fakeExec();
-    const r = await installService({ paths, env, node: '/n', cli: '/c', exec, uid: 501 });
+    // launchd does not know the label yet: `print` fails
+    const { calls, exec } = fakeExec((argv) => argv[1] === 'print');
+    const r = await installService({
+      paths,
+      env,
+      node: '/n',
+      cli: '/c',
+      exec,
+      uid: 501,
+      pollMs: 1,
+    });
     const file = plistPath(env);
     expect(file).toBe(join(env.HOME, 'Library', 'LaunchAgents', `${LAUNCHD_LABEL}.plist`));
     expect(r.plist).toBe(file);
     expect(existsSync(file)).toBe(true);
     expect(readFileSync(file, 'utf8')).toContain("exec '/n' '/c' daemon start");
-    expect(calls).toEqual([
+    expect(calls.filter((c) => c[1] !== 'print')).toEqual([
       ['launchctl', 'bootout', `gui/501/${LAUNCHD_LABEL}`],
       ['launchctl', 'bootstrap', 'gui/501', file],
     ]);
@@ -70,18 +79,51 @@ describe('launchd service', () => {
   });
   it('falls back to launchctl load when bootstrap is refused, and fails when both are', async () => {
     const { env, paths } = setup();
-    const a = fakeExec((argv) => argv[1] === 'bootstrap');
-    await installService({ paths, env, node: '/n', cli: '/c', exec: a.exec, uid: 501 });
+    const a = fakeExec((argv) => argv[1] === 'bootstrap' || argv[1] === 'print');
+    await installService({ paths, env, node: '/n', cli: '/c', exec: a.exec, uid: 501, pollMs: 1 });
     expect(a.calls.at(-1)).toEqual(['launchctl', 'load', '-w', plistPath(env)]);
-    const b = fakeExec((argv) => argv[1] === 'bootstrap' || argv[1] === 'load');
+    const b = fakeExec((argv) => ['bootstrap', 'load', 'print'].includes(String(argv[1])));
     await expect(
-      installService({ paths, env, node: '/n', cli: '/c', exec: b.exec, uid: 501 }),
+      installService({ paths, env, node: '/n', cli: '/c', exec: b.exec, uid: 501, pollMs: 1 }),
     ).rejects.toThrow(/launchctl/);
   });
+  it('waits for a previous instance to be booted out and retries bootstrap', async () => {
+    const { env, paths } = setup();
+    let prints = 0;
+    let bootstraps = 0;
+    const calls: string[][] = [];
+    const exec: Exec = async ({ argv }) => {
+      calls.push(argv);
+      // the label stays visible for two polls after bootout, and the first bootstrap is refused
+      if (argv[1] === 'print')
+        return { exitCode: ++prints <= 2 ? 0 : 1, stdout: '', stderr: '', timedOut: false };
+      if (argv[1] === 'bootstrap')
+        return {
+          exitCode: ++bootstraps === 1 ? 5 : 0,
+          stdout: '',
+          stderr: 'Input/output error',
+          timedOut: false,
+        };
+      return { exitCode: 0, stdout: '', stderr: '', timedOut: false };
+    };
+    await installService({ paths, env, node: '/n', cli: '/c', exec, uid: 501, pollMs: 1 });
+    expect(prints).toBe(3);
+    expect(bootstraps).toBe(2);
+    expect(calls.some((c) => c[1] === 'load')).toBe(false);
+  });
+
   it('status reads launchctl print and the plist', async () => {
     const { env, paths } = setup();
     expect(await serviceStatus({ env, exec: fakeExec().exec, uid: 501 })).toBe('not-installed');
-    await installService({ paths, env, node: '/n', cli: '/c', exec: fakeExec().exec, uid: 501 });
+    await installService({
+      paths,
+      env,
+      node: '/n',
+      cli: '/c',
+      exec: fakeExec((argv) => argv[1] === 'print').exec,
+      uid: 501,
+      pollMs: 1,
+    });
     expect(await serviceStatus({ env, exec: fakeExec().exec, uid: 501 })).toBe('installed');
     const off = fakeExec((argv) => argv[1] === 'print');
     expect(await serviceStatus({ env, exec: off.exec, uid: 501 })).toBe('not-loaded');

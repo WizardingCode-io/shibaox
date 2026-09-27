@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { runArgv } from '@shibaox/core';
 import {
   Daemon,
   DaemonClient,
@@ -6,6 +7,7 @@ import {
   type HomePaths,
   homePaths,
   installService,
+  loadDaemonConfig,
   type ServiceArgs,
   serviceStatus,
   uninstallService,
@@ -129,8 +131,44 @@ export async function daemonInstall(out: Out, d: ServiceDeps = {}): Promise<numb
   });
   out.line(`Installed the launchd service (${plist}); it starts now and at every login.`);
   out.line(`Log: ${paths.log}`);
-  out.obj({ installed: true, plist, log: paths.log });
+  const missing = await hiddenFromLoginShell(d.env ?? process.env, d.exec ?? runArgv);
+  if (missing.length > 0)
+    out.line(
+      `Note: a login shell does not see ${missing.join(', ')} (exported in ~/.zshrc?). The service reads ~/.zprofile or ~/.zshenv: move the export there, then \`shibaox daemon install\` again.`,
+    );
+  out.obj({ installed: true, plist, log: paths.log, hiddenEnv: missing });
   return 0;
+}
+
+/** The keys this shell has that `/bin/zsh -lc` (what launchd runs) would not: `.zshrc`-only exports. */
+export async function hiddenFromLoginShell(
+  env: NodeJS.ProcessEnv,
+  exec: typeof runArgv,
+): Promise<string[]> {
+  const tokenEnv = (() => {
+    try {
+      return loadDaemonConfig(homePaths(env).config).channels.telegram?.bot_token_env;
+    } catch {
+      return undefined;
+    }
+  })();
+  const names = [
+    'ANTHROPIC_API_KEY',
+    'OPENAI_API_KEY',
+    'OPENROUTER_API_KEY',
+    'TYPESAFE_API_KEY',
+    tokenEnv ?? 'SHIBAOX_TELEGRAM_TOKEN',
+  ].filter((n) => env[n]);
+  const missing: string[] = [];
+  for (const name of names) {
+    const r = await exec({
+      argv: ['/bin/zsh', '-lc', `printenv ${name}`],
+      cwd: '/',
+      timeoutMs: 10_000,
+    });
+    if (r.exitCode !== 0 || !r.stdout.trim()) missing.push(name);
+  }
+  return missing;
 }
 
 export async function daemonUninstall(out: Out, d: ServiceDeps = {}): Promise<number> {
@@ -161,7 +199,9 @@ export async function daemonStatus(out: Out): Promise<number> {
   out.line(`runs: ${h.runs.running} running, ${h.runs.queued} queued`);
   out.line(`channels: ${h.channels.length ? h.channels.join(', ') : 'none'}`);
   const service = await serviceStatus();
-  out.line(await serviceLine());
+  out.line(
+    `service: ${service === 'installed' ? 'launchd (installed)' : service === 'not-loaded' ? 'launchd (plist present, not loaded)' : 'not installed'}`,
+  );
   out.line(`socket: ${paths.socket}`);
   out.obj({ running: true, pid, socket: paths.socket, service, ...h });
   return 0;

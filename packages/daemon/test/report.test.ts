@@ -122,7 +122,7 @@ describe('telegramReportText', () => {
       reply: 'a <b> & c',
       nodes: [],
     });
-    expect(reply).toBe('a &lt;b&gt; &amp; c');
+    expect(reply).toBe('a <b> & c'); // escaped by the channel, per piece, when it is sent
     const failed = telegramReportText({ ...r, status: 'failed', error: 'boom' });
     expect(failed.startsWith('✗ hello-feature failed')).toBe(true);
     expect(failed).toContain('error: boom');
@@ -134,5 +134,7 @@ describe('telegramReportText', () => {
     for (const c of chunks) expect(c.length).toBeLessThanOrEqual(1000);
     expect(chunks.join('\n')).toBe(lines.join('\n'));
     expect(chunkText('x'.repeat(2500), 1000).map((c) => c.length)).toEqual([1000, 1000, 500]);
+    expect(chunkText(`${'x'.repeat(1000)}\n`, 1000)).toEqual(['x'.repeat(1000)]);
+    expect(chunkText('', 1000)).toEqual([]);
   });
 });

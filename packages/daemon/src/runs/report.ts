@@ -83,6 +83,47 @@ export function buildRunReport(
   };
 }
 
+/**
+ * Splits `text` into pieces whose `measure` (default: length) stays within `limit`, at line
+ * breaks when it can; a single line longer than the limit is cut by characters. With a
+ * measure that counts the HTML-escaped size, no entity is ever split.
+ */
+export function chunkBy(
+  text: string,
+  limit: number,
+  measure: (s: string) => number = (s) => s.length,
+): string[] {
+  const out: string[] = [];
+  let piece = '';
+  const flush = () => {
+    if (piece.length > 0) out.push(piece);
+    piece = '';
+  };
+  for (const line of text.split('\n')) {
+    const candidate = piece ? `${piece}\n${line}` : line;
+    if (measure(candidate) <= limit) {
+      piece = candidate;
+      continue;
+    }
+    flush();
+    if (measure(line) <= limit) {
+      piece = line;
+      continue;
+    }
+    // one line over the limit: cut it by characters (code points, never inside a surrogate pair)
+    let current = '';
+    for (const ch of line) {
+      if (measure(current + ch) > limit) {
+        out.push(current);
+        current = ch;
+      } else current += ch;
+    }
+    piece = current;
+  }
+  flush();
+  return out.filter((p) => p.length > 0);
+}
+
 /** Splits `text` into pieces of at most `limit` chars, at line breaks when it can. */
 export function chunkText(text: string, limit: number): string[] {
   const out: string[] = [];
@@ -94,7 +135,7 @@ export function chunkText(text: string, limit: number): string[] {
     rest = rest.slice(cut).replace(/^\n/, '');
   }
   out.push(rest);
-  return out;
+  return out.filter((piece) => piece.length > 0);
 }
 
 export const STATUS_SYMBOL: Record<string, string> = {

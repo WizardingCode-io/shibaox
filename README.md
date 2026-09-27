@@ -107,9 +107,12 @@ shibaox daemon uninstall
 
 - **Service.** `daemon install` writes `~/Library/LaunchAgents/io.shibaox.daemon.plist` and
   loads it: the daemon starts now and at every login, and launchd restarts it if it exits.
-  The agent runs the CLI through `/bin/zsh -lc`, so it gets the environment of your login
-  shell (provider keys, the Telegram token); nothing is copied into the plist. `daemon stop`
-  says when launchd will start it again; `daemon status` and `doctor` show the service.
+  The agent runs the CLI through `/bin/zsh -lc`, so it gets the environment of a **login**
+  shell: exports in `~/.zprofile` or `~/.zshenv` reach it, exports only in `~/.zshrc` do not
+  (`daemon install` checks the keys your shell has and says which ones the service would
+  miss); nothing is copied into the plist. `daemon stop` says when launchd will start it
+  again; `daemon status` and `doctor` show the service. Reinstall after upgrading Node: the
+  agent records the `node` binary it was installed with.
 
 - **Files.** `daemon.sock` (0600, HTTP JSON + SSE, no authentication: only your user reaches
   it), `daemon.pid`, `daemon.log`, `daemon.yaml`, `events.db` (one SQLite database for every
@@ -138,7 +141,9 @@ shibaox daemon uninstall
   chars), what still needs you, the error, and the vault note path; macOS gets a
   notification. A conversation run (`conversation: true`) reports its reply only.
 - **Talking from Telegram.** With `org` and `project` set under `channels.telegram`, any text
-  you send the bot is a turn for the orchestrator: a `chat` run (in place, on that project)
+  you send the bot from your **private** chat (groups are ignored: the orchestrator writes to
+  the project) is a turn for the orchestrator, one at a time (texts sent while it answers
+  wait their turn): a `chat` run (in place, on that project)
   with the conversation so far, whose reply comes back to the chat. `/status` answers with
   the daemon, its runs and what needs you; `/help` lists this. The thread lives in memory
   (a restart forgets it; the orchestrator's `remember` notes do not).

@@ -12,6 +12,8 @@ export interface ServiceArgs {
   env?: NodeJS.ProcessEnv;
   exec?: Exec;
   uid?: number;
+  /** Delay between polls/retries of launchctl (default 500 ms). */
+  pollMs?: number;
 }
 
 /** `~/Library/LaunchAgents/io.shibaox.daemon.plist`. */
@@ -69,8 +71,21 @@ export async function installService(
   const file = plistPath(o.env);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, renderPlist({ node: o.node, cli: o.cli, paths: o.paths }));
+  const pollMs = o.pollMs ?? 500;
+  const sleep = () => new Promise((r) => setTimeout(r, pollMs));
+  // bootout returns before launchd finished tearing the old instance down: wait for the label
+  // to disappear (up to ~5 s) before bootstrapping again
   await launchctl(exec, ['bootout', `${domain(uid)}/${LAUNCHD_LABEL}`]); // may fail: not loaded
-  const boot = await launchctl(exec, ['bootstrap', domain(uid), file]);
+  for (let i = 0; i < 10; i++) {
+    const p = await launchctl(exec, ['print', `${domain(uid)}/${LAUNCHD_LABEL}`]);
+    if (p.exitCode !== 0) break;
+    await sleep();
+  }
+  let boot = await launchctl(exec, ['bootstrap', domain(uid), file]);
+  for (let attempt = 1; boot.exitCode !== 0 && attempt < 4; attempt++) {
+    await sleep();
+    boot = await launchctl(exec, ['bootstrap', domain(uid), file]);
+  }
   if (boot.exitCode !== 0) {
     const load = await launchctl(exec, ['load', '-w', file]);
     if (load.exitCode !== 0)

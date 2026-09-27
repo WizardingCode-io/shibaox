@@ -59,6 +59,8 @@ export class Daemon {
   private stopping: Promise<void> | undefined;
   /** The conversation per Telegram chat (last turns), for the orchestrator's `messages`. */
   private readonly threads = new Map<string, ChatMessage[]>();
+  /** One turn at a time per chat: the run in flight and the texts waiting for it. */
+  private readonly inFlight = new Map<string, { runId: string; queue: string[] }>();
 
   constructor(private readonly opts: DaemonOptions = {}) {
     this.paths = opts.home ?? homePaths(opts.env);
@@ -117,8 +119,21 @@ export class Daemon {
       onFinished: (state, events, workflow, notePath) => {
         const report = buildRunReport(state, events, workflow, { notePath });
         log(`report: ${state.runId} ${state.status} → ${state.origin}`);
-        if (report.reply && report.origin)
-          this.remember(report.origin, { role: 'assistant', content: report.reply });
+        // a conversation turn asked from a chat: its reply joins the thread, then the next
+        // queued text goes out (dispatched children report, but are not turns)
+        if (report.origin?.startsWith('telegram:') && !state.parentRunId) {
+          if (report.reply)
+            this.remember(report.origin, { role: 'assistant', content: report.reply });
+          const flight = this.inFlight.get(report.origin);
+          if (flight?.runId === state.runId) {
+            this.inFlight.delete(report.origin);
+            const next = flight.queue.shift();
+            if (next !== undefined) {
+              this.inFlight.set(report.origin, { runId: '', queue: flight.queue });
+              void this.submitTurn(report.origin, next);
+            }
+          }
+        }
         if (this.outbox) this.outbox.enqueueReport(report);
         else
           for (const c of this.channels)
@@ -183,20 +198,44 @@ export class Daemon {
       return;
     }
     const origin = `telegram:${chatId}`;
+    const flight = this.inFlight.get(origin);
+    if (flight) {
+      flight.queue.push(text);
+      return;
+    }
+    this.inFlight.set(origin, { runId: '', queue: [] });
+    await this.submitTurn(origin, text, say);
+  }
+
+  /** Submits one turn of a chat; the thread gets the user turn first, dropped again on failure. */
+  private async submitTurn(
+    origin: string,
+    text: string,
+    say: (t: string) => Promise<void> = async () => undefined,
+  ): Promise<void> {
+    const tg = this.config.channels.telegram;
+    const flight = this.inFlight.get(origin);
+    if (!tg?.org || !tg.project || !flight) return;
+    const messages = [...(this.threads.get(origin) ?? [])];
+    this.remember(origin, { role: 'user', content: text });
     try {
-      await this.runs.submit({
+      const { runId } = await this.runs.submit({
         orgRoot: tg.org,
         project: tg.project,
         workflow: tg.workflow,
         adapter: tg.adapter,
         input: text,
-        messages: this.threads.get(origin) ?? [],
+        messages,
         workspace: 'inplace',
         origin,
       });
-      this.remember(origin, { role: 'user', content: text });
+      flight.runId = runId;
     } catch (e) {
+      this.threads.set(origin, messages);
       await say(`✗ could not start: ${e instanceof Error ? e.message : String(e)}`);
+      const next = flight.queue.shift();
+      if (next === undefined) this.inFlight.delete(origin);
+      else void this.submitTurn(origin, next, say);
     }
   }
 

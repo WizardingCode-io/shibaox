@@ -16,10 +16,17 @@ const fakeOut = () => {
   const out: Out = { line: (l) => lines.push(l), obj: (o) => objs.push(o) };
   return { out, lines, objs };
 };
-const fakeExec = () => {
+const fakeExec = (visible: string[] = []) => {
   const calls: string[][] = [];
   const exec = async ({ argv }: { argv: string[] }) => {
     calls.push(argv);
+    // `zsh -lc 'printenv NAME'`: what a login shell would see
+    if (argv[0] === '/bin/zsh') {
+      const name = String(argv[2]).replace('printenv ', '');
+      return visible.includes(name)
+        ? { exitCode: 0, stdout: 'x\n', stderr: '', timedOut: false }
+        : { exitCode: 1, stdout: '', stderr: '', timedOut: false };
+    }
     return { exitCode: 0, stdout: '', stderr: '', timedOut: false };
   };
   return { calls, exec };
@@ -68,5 +75,28 @@ describe('shibaox daemon install / uninstall', () => {
     });
     expect(stopped).toBe(1);
     expect(o.lines.join('\n')).toContain('Stopped the running daemon');
+  });
+  it('warns about keys a login shell cannot see (exports living in ~/.zshrc)', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'cli-svc-'));
+    dirs.push(home);
+    const env = {
+      HOME: home,
+      SHIBAOX_HOME: join(home, '.shibaox'),
+      ANTHROPIC_API_KEY: 'k',
+      SHIBAOX_TELEGRAM_TOKEN: 't',
+    };
+    const { exec } = fakeExec(['SHIBAOX_TELEGRAM_TOKEN']);
+    const o = fakeOut();
+    await daemonInstall(o.out, {
+      env,
+      paths: homePaths(env),
+      exec,
+      uid: 501,
+      stopRunning: async () => false,
+    });
+    const text = o.lines.join('\n');
+    expect(text).toContain('ANTHROPIC_API_KEY');
+    expect(text).toContain('~/.zprofile');
+    expect(text).not.toContain('SHIBAOX_TELEGRAM_TOKEN');
   });
 });

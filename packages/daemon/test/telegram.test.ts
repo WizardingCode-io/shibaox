@@ -2,6 +2,7 @@ import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { inboxToken, telegramChannel } from '../src/channels/telegram.js';
 import type { InboxItem } from '../src/inbox.js';
+import { chunkBy } from '../src/runs/report.js';
 
 interface Call {
   method: string;
@@ -13,6 +14,7 @@ async function fakeTelegram() {
   const calls: Call[] = [];
   const updates: unknown[] = [];
   let messageId = 100;
+  let failNext: Record<string, unknown> | undefined;
   const server: Server = createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on('data', (c: Buffer) => chunks.push(c));
@@ -30,6 +32,12 @@ async function fakeTelegram() {
         const pending = updates.filter((u) => (u as { update_id: number }).update_id >= offset);
         return reply(pending);
       }
+      if (method === 'sendMessage' && failNext) {
+        const err = failNext;
+        failNext = undefined;
+        res.writeHead(Number(err.error_code ?? 400), { 'content-type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false, ...err }));
+      }
       if (method === 'sendMessage') return reply({ message_id: ++messageId });
       return reply(true);
     });
@@ -41,6 +49,9 @@ async function fakeTelegram() {
     calls,
     push(update: unknown) {
       updates.push(update);
+    },
+    failNext(err: Record<string, unknown>) {
+      failNext = err;
     },
     close: () => new Promise<void>((r) => server.close(() => r())),
   };
@@ -67,7 +78,12 @@ const human: InboxItem = {
 
 const message = (id: number, chatId: number, text: string) => ({
   update_id: id,
-  message: { message_id: 200 + id, text, chat: { id: chatId }, from: { id: chatId } },
+  message: {
+    message_id: 200 + id,
+    text,
+    chat: { id: chatId, type: 'private' },
+    from: { id: chatId },
+  },
 });
 const callback = (id: number, chatId: number, data: string) => ({
   update_id: id,
@@ -229,9 +245,15 @@ describe('telegram text', () => {
     });
     await channel.start?.();
     fake.push(message(1, 9, 'hack'));
-    fake.push(message(2, 7, 'olá'));
+    // a group with the configured id: text is taken from private chats only
+    fake.push({
+      update_id: 2,
+      message: { message_id: 202, text: 'from the group', chat: { id: 7, type: 'group' } },
+    });
+    fake.push(message(3, 7, 'olá'));
     await vi.waitFor(() => expect(received).toEqual([[7, 'olá']]));
     expect(logs.some((l) => l.includes('ignored message from chat 9'))).toBe(true);
+    expect(logs.some((l) => l.includes('group'))).toBe(true);
     expect(fake.calls.filter((c) => c.method === 'sendMessage')).toHaveLength(0);
     expect(fake.calls.find((c) => c.method === 'sendChatAction')?.body).toMatchObject({
       chat_id: 7,
@@ -298,5 +320,35 @@ describe('telegram text', () => {
     for (const s of sent) expect(String(s.body.text).length).toBeLessThanOrEqual(4000);
     await channel.say?.('plain');
     expect(fake.calls.at(-1)?.body).toMatchObject({ chat_id: 7, text: 'plain' });
+  });
+
+  it('escapes after chunking (no entity is ever split) and retries a rate-limited chunk', async () => {
+    fake = await fakeTelegram();
+    fake.failNext({
+      error_code: 429,
+      description: 'Too Many Requests',
+      parameters: { retry_after: 0 },
+    });
+    channel = telegramChannel({ token: 't', chatId: 7, apiBase: fake.apiBase, log: () => {} });
+    await channel.report?.({
+      runId: 'r',
+      workflow: 'chat',
+      status: 'completed',
+      project: '/w',
+      spentUsd: 0,
+      nodes: [{ id: 'reply', status: 'completed' }],
+      reply: '&'.repeat(6000),
+    });
+    const sent = fake.calls.filter((c) => c.method === 'sendMessage');
+    // 6000 '&' → escaped in pieces: every piece is whole entities, none over the limit
+    expect(sent.length).toBeGreaterThanOrEqual(3);
+    for (const s of sent) {
+      const text = String(s.body.text);
+      expect(text.length).toBeLessThanOrEqual(4096);
+      expect(text.replace(/&amp;/g, '')).toBe('');
+    }
+    // the first attempt was rate-limited and retried: one more call than pieces delivered
+    const pieces = chunkBy('&'.repeat(6000), 4000, (s) => s.replace(/&/g, '&amp;').length).length;
+    expect(sent.length).toBe(pieces + 1);
   });
 });
