@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MemoryEventStore, type TaskJob } from '@shibaox/core';
+import { forgetModels } from '@shibaox/providers';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DaemonClient, DaemonHttpError, type Envelope } from '../src/client.js';
 import { Daemon } from '../src/daemon.js';
@@ -15,6 +16,7 @@ const sample = fileURLToPath(new URL('../../../examples/sample-repo', import.met
 const tmpDirs: string[] = [];
 const daemons: Daemon[] = [];
 afterEach(async () => {
+  forgetModels();
   for (const d of daemons.splice(0)) await d.stop({ force: true }).catch(() => undefined);
   for (const d of tmpDirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
@@ -41,6 +43,7 @@ async function started(
     log: () => {},
     version: '9.9.9',
     vault: s.vault,
+    discovery: false, // tests never probe the developer's own local servers
     ...extra,
   });
   daemons.push(daemon);
@@ -130,6 +133,8 @@ describe('models endpoint', () => {
       provider: 'anthropic',
       model: 'claude-sonnet-5',
       configured: true,
+      pricing: { input_per_m: 3, output_per_m: 15 },
+      contextWindow: 200000,
     });
     expect(models.find((m) => m.ref === 'anthropic-subscription/claude-haiku-4-5')).toMatchObject({
       configured: true,
@@ -345,11 +350,15 @@ describe('daemon server and client', () => {
 describe('model discovery at start', () => {
   it('warms what the local servers and OpenRouter know so the first run has real cost and context', async () => {
     const { createServer } = await import('node:http');
+    let listings = 0;
     const server = createServer((req, res) => {
       res.setHeader('content-type', 'application/json');
-      if (req.url === '/v1/models') return res.end(JSON.stringify({ data: [{ id: 'qwen3' }] }));
+      if (req.url === '/v1/models') {
+        listings++;
+        return res.end(JSON.stringify({ data: [{ id: 'qwen3' }] }));
+      }
       if (req.url === '/api/v0/models')
-        return res.end(JSON.stringify({ data: [{ id: 'qwen3', max_context_length: 8192 }] }));
+        return res.end(JSON.stringify({ data: [{ id: 'qwen3', loaded_context_length: 8192 }] }));
       res.statusCode = 404;
       res.end('{}');
     });
@@ -357,7 +366,8 @@ describe('model discovery at start', () => {
     const port = (server.address() as { port: number }).port;
     try {
       const s = setup();
-      await started(s, {
+      const { daemon } = await started(s, {
+        discovery: true,
         extraProviders: [
           {
             id: 'lmstudio-test',
@@ -373,6 +383,9 @@ describe('model discovery at start', () => {
           },
         ],
       });
+      // asked while the warm-up is still running: one discovery, shared
+      await Promise.all([daemon.models(), daemon.models()]);
+      expect(listings).toBe(1);
       await vi.waitFor(
         () => expect(registryFor({}).contextWindow('lmstudio-test/qwen3')).toBe(8192),
         { timeout: 5000 },

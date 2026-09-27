@@ -85,6 +85,7 @@ describe('talking to the orchestrator from Telegram', () => {
       pollTimeoutSeconds: 0,
     });
     const daemon = new Daemon({
+      discovery: false,
       home: homePaths({ SHIBAOX_HOME: join(dir, 'home') }),
       store,
       channels: [channel],

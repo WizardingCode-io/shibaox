@@ -30,6 +30,7 @@ async function setup(extra: ConstructorParameters<typeof Daemon>[0] = {}) {
   const project = join(dir, 'proj');
   cpSync(sample, project, { recursive: true });
   const daemon = new Daemon({
+    discovery: false,
     home,
     store: new MemoryEventStore(),
     channels: [],

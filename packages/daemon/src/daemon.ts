@@ -42,6 +42,8 @@ export interface DaemonOptions {
   schedules?: (d: Daemon) => SchedulesApi & { start(): void; stop(): void };
   /** Whether the `claude` CLI is installed (tests inject it; probed with `which` by default). */
   claudeInstalled?: boolean;
+  /** Model discovery at start and before runs (default on; tests turn it off: it probes local servers). */
+  discovery?: boolean;
 }
 
 /** Turns kept per Telegram chat for the orchestrator's conversation. */
@@ -123,6 +125,7 @@ export class Daemon {
       config: this.config,
       log,
       env: this.env,
+      ready: opts.discovery === false ? undefined : () => this.models(),
       queryFn: opts.queryFn,
       graphify: opts.graphify,
       extraProviders: opts.extraProviders,
@@ -204,13 +207,25 @@ export class Daemon {
     this.warmModels(); // a new key may open a provider whose prices and windows runs need
   }
 
-  /** Every model a run can be pointed at; local servers are probed at most every 10 s (each `/model` keystroke asks). */
+  private modelsInFlight: Promise<ModelChoice[]> | undefined;
+  /**
+   * Every model a run can be pointed at. Local servers are probed at most every 10 s (each
+   * `/model` keystroke asks, every run start asks); callers arriving during a probe share it.
+   * OpenRouter's listing is cached for 10 minutes once it answers, so a failed probe (no
+   * network at login) is tried again on the next call.
+   */
   async models(): Promise<ModelChoice[]> {
     if (this.modelsCache && Date.now() - this.modelsCache.at < 10_000)
       return this.modelsCache.models;
-    const models = await discoverModels(registryFor(this.env, this.opts.extraProviders));
-    this.modelsCache = { at: Date.now(), models };
-    return models;
+    this.modelsInFlight ??= discoverModels(registryFor(this.env, this.opts.extraProviders))
+      .then((models) => {
+        this.modelsCache = { at: Date.now(), models };
+        return models;
+      })
+      .finally(() => {
+        this.modelsInFlight = undefined;
+      });
+    return this.modelsInFlight;
   }
 
   /**
@@ -219,6 +234,7 @@ export class Daemon {
    * opening `/model` first.
    */
   private warmModels(): void {
+    if (this.opts.discovery === false) return;
     void this.models().catch((e) => {
       this.opts.log?.(`model discovery: ${e instanceof Error ? e.message : String(e)}`);
     });

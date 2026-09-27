@@ -83,6 +83,22 @@ const submitMock = (
   });
 
 describe('RunManager', () => {
+  it('waits for `ready` (model discovery) before a run starts, so cost and context are known', async () => {
+    const s = setup();
+    let release: (() => void) | undefined;
+    const ready = vi.fn(() => new Promise<void>((r) => (release = r)));
+    const store = new MemoryEventStore();
+    const { manager: m } = manager(store, { vault: s.vault, ready });
+    const { runId } = await submitMock(m, s, 'inplace');
+    await vi.waitFor(() => expect(ready).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 50));
+    expect((await m.state(runId)).status).toBe('queued'); // not before discovery answers
+    release?.();
+    await vi.waitFor(async () => expect((await m.state(runId)).status).not.toBe('queued'), {
+      timeout: 10_000,
+    });
+  });
+
   it('submit queues a run, executes it and writes the vault note when it ends', async () => {
     const s = setup();
     const store = new MemoryEventStore();

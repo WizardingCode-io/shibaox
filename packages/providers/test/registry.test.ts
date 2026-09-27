@@ -87,6 +87,21 @@ describe('ProviderRegistry', () => {
   });
 });
 
+describe('listModels prices', () => {
+  it('catalog models carry their price and window; subscription models show no per-token price', () => {
+    const models = listModels(new ProviderRegistry(loadCatalog(), { OPENROUTER_API_KEY: 'k' }));
+    expect(models.find((m) => m.ref === 'openrouter/openai/gpt-5')).toMatchObject({
+      pricing: { input_per_m: 1.25, output_per_m: 10 },
+    });
+    expect(models.find((m) => m.ref === 'anthropic/claude-sonnet-5')).toMatchObject({
+      contextWindow: 200000,
+    });
+    const sub = models.find((m) => m.provider === 'anthropic-subscription');
+    expect(sub).toBeDefined();
+    expect(sub).not.toHaveProperty('pricing');
+  });
+});
+
 describe('context windows', () => {
   it('knows the window of catalog models and says nothing for the rest', () => {
     const reg = new ProviderRegistry(loadCatalog(), {});
@@ -185,7 +200,9 @@ describe('discoverModels', () => {
         free: true,
         contextWindow: 32768, // what it is loaded with, not the maximum
       });
-      expect(lm[1]?.contextWindow).toBe(131072);
+      // a model that is not loaded has no known window: LM Studio loads it with its own setting
+      expect(lm[1]?.contextWindow).toBeUndefined();
+      expect(reg.contextWindow('lmstudio/llama3.2')).toBeUndefined();
       // a local model costs nothing and its window is known to every registry from now on
       expect(
         reg.estimateCost('lmstudio/qwen/qwen3-coder-30b', { inputTokens: 1e6, outputTokens: 1e6 }),

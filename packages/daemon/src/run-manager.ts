@@ -79,6 +79,11 @@ export interface RunManagerOptions {
   vault?: string;
   mockScript?: MockScript;
   now?: () => string;
+  /**
+   * Awaited before a run starts: the daemon's model discovery, so the run's registry costs
+   * and measures with what the providers said (bounded by the probe timeouts; errors ignored).
+   */
+  ready?: () => Promise<unknown>;
   /** A run with an `origin` ended: the daemon reports it where it was asked for. */
   onFinished?: (
     state: RunState,
@@ -397,6 +402,7 @@ export class RunManager {
     let state: RunState;
     let prepared: Prepared;
     try {
+      await this.opts.ready?.().catch(() => undefined);
       state = await this.state(p.runId);
       prepared = this.prepared.get(p.runId) ?? (await this.rebuild(state));
     } catch (e) {

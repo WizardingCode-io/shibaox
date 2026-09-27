@@ -15,7 +15,7 @@ import {
   type RuntimeEvent,
   type TaskJob,
 } from '@shibaox/core';
-import { ProviderRegistry, rememberModel } from '@shibaox/providers';
+import { forgetModels, ProviderRegistry, rememberModel } from '@shibaox/providers';
 import { startFakeOpenAI } from '@shibaox/providers/testing';
 import { RoleSchema } from '@shibaox/schemas';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -25,6 +25,7 @@ import { DirectAdapter } from '../src/index.js';
 
 let fake: Awaited<ReturnType<typeof startFakeOpenAI>> | undefined;
 afterEach(async () => {
+  forgetModels();
   await fake?.close();
 });
 const registry = (baseURL: string) =>

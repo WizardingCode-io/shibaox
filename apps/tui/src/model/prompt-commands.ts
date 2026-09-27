@@ -93,10 +93,14 @@ export const DEFAULT_MODEL = 'default';
 /** Whether `ref` looks like `provider/model`. */
 export const isModelRef = (ref: string): boolean => /^[a-z0-9][a-z0-9-]*\/\S+$/i.test(ref);
 
+/** `1.25`, `10.00`, `0.004`: two decimals, more only when the price needs them, never "0.00" for a price. */
+const usd = (v: number): string =>
+  v === 0 ? '0.00' : v >= 0.1 ? v.toFixed(2) : v.toPrecision(2).replace(/\.?0+$/, '');
+
 /** `$0.30/$2.50 per M`, `free`, or nothing when the price is unknown. */
 export function priceLabel(m: Pick<ModelChoice, 'pricing' | 'free'>): string | undefined {
   if (m.pricing && (m.pricing.input_per_m > 0 || m.pricing.output_per_m > 0))
-    return `$${m.pricing.input_per_m.toFixed(2)}/$${m.pricing.output_per_m.toFixed(2)} per M`;
+    return `$${usd(m.pricing.input_per_m)}/$${usd(m.pricing.output_per_m)} per M`;
   if (m.free || (m.pricing && m.pricing.input_per_m === 0 && m.pricing.output_per_m === 0))
     return 'free';
   return undefined;

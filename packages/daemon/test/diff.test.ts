@@ -92,6 +92,7 @@ describe('GET /runs/:id/diff', () => {
     const project = repo();
     const home = homePaths({ SHIBAOX_HOME: join(dir, 'home') });
     const daemon = new Daemon({
+      discovery: false,
       home,
       store: new MemoryEventStore(),
       channels: [],

@@ -83,7 +83,7 @@ export class ProviderRegistry {
   /** Whether the provider is a server on this machine (its models cost nothing). */
   isLocal(id: string): boolean {
     const e = this.byId.get(id);
-    return e?.auth?.type === 'none' && isLocalUrl(e.base_url);
+    return !!e && e.auth?.type === 'none' && isLocalUrl(this.resolveBaseUrl(e));
   }
   resolveBaseUrl(e: ProviderEntry): string | undefined {
     if (e.base_url_env) return this.env[e.base_url_env] ?? undefined;
@@ -185,7 +185,7 @@ const remoteCache = new Map<string, { at: number; models: RemoteModel[] }>();
 
 /** OpenRouter prices are USD per token, as strings ("0.0000003"); the catalog counts per million. */
 function perMillion(v: unknown): number | undefined {
-  const n = typeof v === 'string' || typeof v === 'number' ? Number(v) : Number.NaN;
+  const n = (typeof v === 'string' && v !== '') || typeof v === 'number' ? Number(v) : Number.NaN;
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 1e6 * 1e6) / 1e6 : undefined;
 }
 
@@ -253,17 +253,13 @@ async function probeLmStudioWindows(
     });
     if (!res.ok) return out;
     const json = (await res.json()) as {
-      data?: { id?: unknown; max_context_length?: unknown; loaded_context_length?: unknown }[];
+      data?: { id?: unknown; loaded_context_length?: unknown }[];
     };
-    for (const m of json.data ?? []) {
-      const w =
-        typeof m.loaded_context_length === 'number'
-          ? m.loaded_context_length
-          : typeof m.max_context_length === 'number'
-            ? m.max_context_length
-            : undefined;
-      if (typeof m.id === 'string' && w) out.set(m.id, w);
-    }
+    // only a loaded model has a known window: LM Studio loads the others with its own
+    // setting, often far below `max_context_length`
+    for (const m of json.data ?? [])
+      if (typeof m.id === 'string' && typeof m.loaded_context_length === 'number')
+        out.set(m.id, m.loaded_context_length);
   } catch {
     // not LM Studio, or not answering: the window stays unknown
   }
@@ -370,13 +366,18 @@ export function listModels(
       const c = registry.isConfigured(e.id);
       const runtimeMissing = e.via_runtime && !runtimes.includes(e.via_runtime);
       const missing = runtimeMissing ? [`runtime ${e.via_runtime}`] : c.missing;
+      const ref = `${e.id}/${model}`;
+      const pricing = e.via_runtime ? undefined : e.pricing[model]; // a subscription has no per-token price
+      const contextWindow = registry.contextWindow(ref);
       out.push({
-        ref: `${e.id}/${model}`,
+        ref,
         provider: e.id,
         model,
         configured: c.ok && !runtimeMissing,
         ...(e.via_runtime ? { runtime: e.via_runtime } : {}),
         ...(missing.length > 0 ? { missing } : {}),
+        ...(pricing ? { pricing } : {}),
+        ...(contextWindow ? { contextWindow } : {}),
       });
     }
   return out;
