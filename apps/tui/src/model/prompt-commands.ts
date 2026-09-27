@@ -93,6 +93,32 @@ export const DEFAULT_MODEL = 'default';
 /** Whether `ref` looks like `provider/model`. */
 export const isModelRef = (ref: string): boolean => /^[a-z0-9][a-z0-9-]*\/\S+$/i.test(ref);
 
+/** `$0.30/$2.50 per M`, `free`, or nothing when the price is unknown. */
+export function priceLabel(m: Pick<ModelChoice, 'pricing' | 'free'>): string | undefined {
+  if (m.pricing && (m.pricing.input_per_m > 0 || m.pricing.output_per_m > 0))
+    return `$${m.pricing.input_per_m.toFixed(2)}/$${m.pricing.output_per_m.toFixed(2)} per M`;
+  if (m.free || (m.pricing && m.pricing.input_per_m === 0 && m.pricing.output_per_m === 0))
+    return 'free';
+  return undefined;
+}
+
+/** `128k ctx`, `1.0M ctx`. */
+export function windowLabel(tokens: number | undefined): string | undefined {
+  if (!tokens) return undefined;
+  return tokens >= 1_000_000
+    ? `${(tokens / 1_000_000).toFixed(1)}M ctx`
+    : `${Math.round(tokens / 1000)}k ctx`;
+}
+
+/** What a usable model's hint says: where it runs, what it costs, how much it holds. */
+function modelHint(m: ModelChoice): string {
+  if (m.local && m.available === false) return 'local (server not reachable)';
+  if (!m.local && !m.configured) return `needs ${m.missing?.join(', ') || 'configuration'}`;
+  return [m.local ? 'local' : (m.runtime ?? 'direct'), priceLabel(m), windowLabel(m.contextWindow)]
+    .filter((p): p is string => !!p)
+    .join(' · ');
+}
+
 /** `/model` values: org routing first, then the daemon's models, usable ones ahead, the others say what they miss. */
 export function modelValues(models: readonly ModelChoice[]): ValueChoice[] {
   return [
@@ -101,13 +127,7 @@ export function modelValues(models: readonly ModelChoice[]): ValueChoice[] {
       .sort((a, b) => Number(b.configured) - Number(a.configured))
       .map((m) => ({
         value: m.ref,
-        hint: m.local
-          ? m.available === false
-            ? 'local (server not reachable)'
-            : 'local'
-          : m.configured
-            ? (m.runtime ?? 'direct')
-            : `needs ${m.missing?.join(', ') || 'configuration'}`,
+        hint: modelHint(m),
         disabled: !m.configured || m.available === false,
       })),
   ];

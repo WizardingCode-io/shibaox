@@ -156,7 +156,8 @@ describe('adapter selection and start checks', () => {
       adapter: 'direct' as const,
       workflow: org.workflows['hello-feature'],
       env: {},
-      extraProviders: [unpricedFake],
+      // a hosted provider without prices (a local server would be free, not unpriced)
+      extraProviders: [{ ...unpricedFake, base_url: 'http://fake.invalid/v1' }],
     };
     const warned = buildRuntime({ ...common, budgetUsd: 5 }).warnings;
     expect(warned).toContain('model "fake/m" has no pricing: budget cannot be enforced for it');

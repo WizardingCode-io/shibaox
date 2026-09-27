@@ -41,7 +41,7 @@ describe('ProviderRegistry', () => {
     };
     for (const [ref, usd] of Object.entries(expected))
       expect(reg().estimateCost(ref, M), ref).toBeCloseTo(usd);
-    expect(reg().estimateCost('ollama/llama3.2', M)).toBeUndefined();
+    expect(reg().estimateCost('ollama/llama3.2', M)).toBe(0); // local: free
   });
   it('refuses to build a model for a via_runtime provider', () => {
     expect(() => reg().model('anthropic-subscription/claude-sonnet-4-5')).toThrow(/via_runtime/);
@@ -83,9 +83,7 @@ describe('ProviderRegistry', () => {
       outputTokens: 1_000_000,
     });
     expect(usd).toBeCloseTo(18);
-    expect(
-      r.estimateCost('ollama/llama3.2', { inputTokens: 10, outputTokens: 10 }),
-    ).toBeUndefined();
+    expect(r.estimateCost('ollama/llama3.2', { inputTokens: 10, outputTokens: 10 })).toBe(0); // a local server costs nothing
   });
 });
 
@@ -124,6 +122,20 @@ describe('discoverModels', () => {
         return res.end(
           JSON.stringify({
             data: [{ id: 'qwen/qwen3-coder-30b' }, { id: 'whisper-large-v3' }, { id: 'llama3.2' }],
+          }),
+        );
+      // LM Studio's own listing: the context length the model is loaded with
+      if (req.url === '/api/v0/models')
+        return res.end(
+          JSON.stringify({
+            data: [
+              {
+                id: 'qwen/qwen3-coder-30b',
+                max_context_length: 262144,
+                loaded_context_length: 32768,
+              },
+              { id: 'llama3.2', max_context_length: 131072 },
+            ],
           }),
         );
       res.statusCode = 404;
@@ -170,7 +182,15 @@ describe('discoverModels', () => {
         configured: true,
         local: true,
         available: true,
+        free: true,
+        contextWindow: 32768, // what it is loaded with, not the maximum
       });
+      expect(lm[1]?.contextWindow).toBe(131072);
+      // a local model costs nothing and its window is known to every registry from now on
+      expect(
+        reg.estimateCost('lmstudio/qwen/qwen3-coder-30b', { inputTokens: 1e6, outputTokens: 1e6 }),
+      ).toBe(0);
+      expect(reg.contextWindow('lmstudio/qwen/qwen3-coder-30b')).toBe(32768);
       const ol = models.filter((m) => m.provider === 'ollama');
       expect(ol).toEqual([
         {
@@ -180,6 +200,7 @@ describe('discoverModels', () => {
           configured: true,
           local: true,
           available: false,
+          free: true,
         },
       ]);
     } finally {
@@ -197,8 +218,16 @@ describe('discoverModels (OpenRouter)', () => {
           JSON.stringify({
             data: [
               { id: 'openai/gpt-5', context_length: 400000 },
-              { id: 'google/gemini-2.5-flash', context_length: 1048576 },
-              { id: 'mistralai/devstral-small', context_length: 128000 },
+              {
+                id: 'google/gemini-2.5-flash',
+                context_length: 1048576,
+                pricing: { prompt: '0.0000003', completion: '0.0000025' },
+              },
+              {
+                id: 'mistralai/devstral-small',
+                context_length: 128000,
+                pricing: { prompt: '0', completion: '0' },
+              },
             ],
           }),
         );
@@ -229,7 +258,30 @@ describe('discoverModels (OpenRouter)', () => {
         'openrouter/google/gemini-2.5-flash',
         'openrouter/mistralai/devstral-small',
       ]);
-      expect(withKey[1]).toMatchObject({ configured: true, contextWindow: 1048576 });
+      expect(withKey[1]).toMatchObject({
+        configured: true,
+        contextWindow: 1048576,
+        pricing: { input_per_m: 0.3, output_per_m: 2.5 },
+      });
+      expect(withKey[2]).toMatchObject({
+        free: true,
+        pricing: { input_per_m: 0, output_per_m: 0 },
+      });
+      // what discovery learned serves the cost and the context of runs, in any registry built later
+      const fresh = new ProviderRegistry([entry], { OPENROUTER_API_KEY: 'sk-or-x' });
+      expect(
+        fresh.estimateCost('openrouter/google/gemini-2.5-flash', {
+          inputTokens: 1e6,
+          outputTokens: 1e6,
+        }),
+      ).toBeCloseTo(2.8, 6);
+      expect(fresh.contextWindow('openrouter/google/gemini-2.5-flash')).toBe(1048576);
+      expect(
+        fresh.estimateCost('openrouter/mistralai/devstral-small', {
+          inputTokens: 5,
+          outputTokens: 5,
+        }),
+      ).toBe(0);
       // without the key: the catalog entry only, not configured
       const noKey = await discoverModels(new ProviderRegistry([entry], {}), { timeoutMs: 1000 });
       expect(noKey.map((m) => m.ref)).toEqual(['openrouter/openai/gpt-5']);

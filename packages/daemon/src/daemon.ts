@@ -174,14 +174,7 @@ export class Daemon {
           vault: opts.vault ?? (orgRoot ? vaultDir(loadOrg(orgRoot), {}) : undefined),
           log: opts.log,
         }),
-      models: async () => {
-        // local servers are probed at most every 10 s (each `/model` keystroke asks the list)
-        if (this.modelsCache && Date.now() - this.modelsCache.at < 10_000)
-          return this.modelsCache.models;
-        const models = await discoverModels(registryFor(this.env, opts.extraProviders));
-        this.modelsCache = { at: Date.now(), models };
-        return models;
-      },
+      models: () => this.models(),
       defaultOrg: () => this.defaultOrg(),
       keys: () => this.secrets.list(opts.env ?? process.env),
       setKey: (name, value) => {
@@ -208,6 +201,27 @@ export class Daemon {
     for (const k of Object.keys(this.env)) if (!(k in next)) delete this.env[k];
     Object.assign(this.env, next);
     this.modelsCache = undefined;
+    this.warmModels(); // a new key may open a provider whose prices and windows runs need
+  }
+
+  /** Every model a run can be pointed at; local servers are probed at most every 10 s (each `/model` keystroke asks). */
+  async models(): Promise<ModelChoice[]> {
+    if (this.modelsCache && Date.now() - this.modelsCache.at < 10_000)
+      return this.modelsCache.models;
+    const models = await discoverModels(registryFor(this.env, this.opts.extraProviders));
+    this.modelsCache = { at: Date.now(), models };
+    return models;
+  }
+
+  /**
+   * Discovery in the background: what the providers say about prices and context windows
+   * is remembered process-wide, so the first run costs and measures right without anyone
+   * opening `/model` first.
+   */
+  private warmModels(): void {
+    void this.models().catch((e) => {
+      this.opts.log?.(`model discovery: ${e instanceof Error ? e.message : String(e)}`);
+    });
   }
 
   /** `daemon 0.0.1 · 1 running · 0 queued · 2 need you` for `/status`. */
@@ -313,6 +327,7 @@ export class Daemon {
           })
         : undefined;
     await this.server.listen();
+    this.warmModels();
     writeFileSync(this.paths.pid, String(process.pid));
     for (const c of this.channels) await c.start?.();
     this.outbox?.start();

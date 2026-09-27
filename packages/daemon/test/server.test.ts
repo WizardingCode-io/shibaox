@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DaemonClient, DaemonHttpError, type Envelope } from '../src/client.js';
 import { Daemon } from '../src/daemon.js';
 import { homePaths } from '../src/home.js';
+import { registryFor } from '../src/runtime.js';
 import { scaffoldOrg } from '../src/templates.js';
 
 const sample = fileURLToPath(new URL('../../../examples/sample-repo', import.meta.url));
@@ -338,5 +339,46 @@ describe('daemon server and client', () => {
         resolve();
       });
     });
+  });
+});
+
+describe('model discovery at start', () => {
+  it('warms what the local servers and OpenRouter know so the first run has real cost and context', async () => {
+    const { createServer } = await import('node:http');
+    const server = createServer((req, res) => {
+      res.setHeader('content-type', 'application/json');
+      if (req.url === '/v1/models') return res.end(JSON.stringify({ data: [{ id: 'qwen3' }] }));
+      if (req.url === '/api/v0/models')
+        return res.end(JSON.stringify({ data: [{ id: 'qwen3', max_context_length: 8192 }] }));
+      res.statusCode = 404;
+      res.end('{}');
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const s = setup();
+      await started(s, {
+        extraProviders: [
+          {
+            id: 'lmstudio-test',
+            name: 'LM Studio (test)',
+            kind: 'openai-compatible',
+            base_url: `http://127.0.0.1:${port}/v1`,
+            auth: { type: 'none' },
+            models: [],
+            pricing: {},
+            verify: false,
+            context_window: {},
+            capabilities: { tools: true },
+          },
+        ],
+      });
+      await vi.waitFor(
+        () => expect(registryFor({}).contextWindow('lmstudio-test/qwen3')).toBe(8192),
+        { timeout: 5000 },
+      );
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
   });
 });

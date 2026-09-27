@@ -15,7 +15,7 @@ import {
   type RuntimeEvent,
   type TaskJob,
 } from '@shibaox/core';
-import { ProviderRegistry } from '@shibaox/providers';
+import { ProviderRegistry, rememberModel } from '@shibaox/providers';
 import { startFakeOpenAI } from '@shibaox/providers/testing';
 import { RoleSchema } from '@shibaox/schemas';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -684,6 +684,29 @@ describe('DirectAdapter', () => {
     });
     expect(usage[1]).not.toHaveProperty('contextWindow'); // the fake provider has no window
     expect(events.map((e) => e.type).slice(-2)).toEqual(['usage', 'result']);
+  });
+
+  it('a window and a price learned by discovery reach the usage and the cost', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI(() => ({ content: 'hi' }));
+    rememberModel('fake/learned', {
+      contextWindow: 65536,
+      pricing: { input_per_m: 1_000_000, output_per_m: 0 },
+    });
+    const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/learned',
+    });
+    const events: RuntimeEvent[] = [];
+    for await (const e of adapter.run(jobFor(ws), ctx())) events.push(e);
+    const usage = events.filter((e) => e.type === 'usage');
+    expect(usage[1]).toMatchObject({ contextWindow: 65536 });
+    const result = events.find((e) => e.type === 'result');
+    // $1 per token of input at that made-up price: the cost is the input tokens
+    expect(result?.type === 'result' && result.cost?.usd).toBe(
+      result?.type === 'result' ? result.cost?.inputTokens : -1,
+    );
   });
 
   it('a conversation task asks the model to answer in its text, not through finish', async () => {

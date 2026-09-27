@@ -8,6 +8,36 @@ const REQUIRED_ENV: Record<'aws' | 'gcp' | 'azure', string[]> = {
   azure: ['AZURE_RESOURCE_NAME', 'AZURE_API_KEY'],
 };
 
+/** Price per million tokens, as the catalog records it. */
+export interface Pricing {
+  input_per_m: number;
+  output_per_m: number;
+}
+/** What discovery learned about one model: the providers' own listings say more than the catalog. */
+export interface LearnedModel {
+  contextWindow?: number;
+  pricing?: Pricing;
+  /** Costs nothing: a local server, or a provider's free tier. */
+  free?: boolean;
+}
+/**
+ * Everything discovery learned, by ref, shared by every registry of the process: the daemon
+ * builds a registry per run, and a run started after `/model` (or after the warm-up at
+ * start) must cost and measure with what the providers said.
+ */
+const learned = new Map<string, LearnedModel>();
+export function rememberModel(ref: string, info: LearnedModel): void {
+  learned.set(ref, { ...learned.get(ref), ...info });
+}
+export const learnedModel = (ref: string): LearnedModel | undefined => learned.get(ref);
+/** Tests only: forget everything discovery learned. */
+export function forgetModels(): void {
+  learned.clear();
+}
+const isLocalUrl = (url: string | undefined): boolean =>
+  typeof url === 'string' && LOCAL_URL.test(url);
+const LOCAL_URL = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:|\/|$)/i;
+
 export class ProviderRegistry {
   private readonly byId = new Map<string, ProviderEntry>();
   constructor(
@@ -39,7 +69,7 @@ export class ProviderRegistry {
   envValue(name: string): string | undefined {
     return this.env[name];
   }
-  /** The model's context window in tokens, when the catalog records it. */
+  /** The model's context window in tokens: the catalog's, else what discovery learned. */
   contextWindow(ref: string): number | undefined {
     let parsed: { provider: string; model: string };
     try {
@@ -48,7 +78,12 @@ export class ProviderRegistry {
       return undefined;
     }
     const entry = this.byId.get(parsed.provider);
-    return entry?.context_window?.[parsed.model];
+    return entry?.context_window?.[parsed.model] ?? learned.get(ref)?.contextWindow;
+  }
+  /** Whether the provider is a server on this machine (its models cost nothing). */
+  isLocal(id: string): boolean {
+    const e = this.byId.get(id);
+    return e?.auth?.type === 'none' && isLocalUrl(e.base_url);
   }
   resolveBaseUrl(e: ProviderEntry): string | undefined {
     if (e.base_url_env) return this.env[e.base_url_env] ?? undefined;
@@ -94,12 +129,20 @@ export class ProviderRegistry {
       env: this.env,
     });
   }
+  /**
+   * What a call cost, from the catalog's prices, else the prices discovery learned from the
+   * provider; a local model costs nothing. Unknown when neither says.
+   */
   estimateCost(
     ref: string,
     usage: { inputTokens: number; outputTokens: number },
   ): number | undefined {
     const { provider, model } = this.parseRef(ref);
-    const p = this.get(provider).pricing[model];
+    const known = learned.get(ref);
+    const p =
+      this.get(provider).pricing[model] ??
+      known?.pricing ??
+      (known?.free || this.isLocal(provider) ? { input_per_m: 0, output_per_m: 0 } : undefined);
     if (!p) return undefined;
     return (
       (usage.inputTokens / 1_000_000) * p.input_per_m +
@@ -124,22 +167,34 @@ export interface ModelChoice {
   available?: boolean;
   /** Context window (tokens) when the provider's own listing says so. */
   contextWindow?: number;
+  /** Price per million tokens when the provider's listing says so. */
+  pricing?: Pricing;
+  /** Costs nothing: a local server, or a free model of a provider. */
+  free?: boolean;
 }
 
 const OPENROUTER_API = 'https://openrouter.ai/api/v1';
 /** Remote listings are big and slow: kept for ten minutes per provider. */
 const REMOTE_TTL_MS = 600_000;
-const remoteCache = new Map<
-  string,
-  { at: number; models: { id: string; contextWindow?: number }[] }
->();
+interface RemoteModel {
+  id: string;
+  contextWindow?: number;
+  pricing?: Pricing;
+}
+const remoteCache = new Map<string, { at: number; models: RemoteModel[] }>();
 
-/** What OpenRouter offers, with the key: every model id and its context length. */
+/** OpenRouter prices are USD per token, as strings ("0.0000003"); the catalog counts per million. */
+function perMillion(v: unknown): number | undefined {
+  const n = typeof v === 'string' || typeof v === 'number' ? Number(v) : Number.NaN;
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 1e6 * 1e6) / 1e6 : undefined;
+}
+
+/** What OpenRouter offers, with the key: every model id, its context length and its prices. */
 async function probeOpenRouter(
   e: ProviderEntry,
   apiKey: string,
   o: { fetch: typeof fetch; timeoutMs: number },
-): Promise<{ id: string; contextWindow?: number }[] | undefined> {
+): Promise<RemoteModel[] | undefined> {
   const hit = remoteCache.get(e.id);
   if (hit && Date.now() - hit.at < REMOTE_TTL_MS) return hit.models;
   try {
@@ -148,27 +203,72 @@ async function probeOpenRouter(
       signal: AbortSignal.timeout(o.timeoutMs),
     });
     if (!res.ok) return undefined;
-    const json = (await res.json()) as { data?: { id?: unknown; context_length?: unknown }[] };
+    const json = (await res.json()) as {
+      data?: { id?: unknown; context_length?: unknown; pricing?: Record<string, unknown> }[];
+    };
     const models = (json.data ?? [])
       .filter((m) => typeof m.id === 'string' && m.id)
-      .map((m) => ({
-        id: m.id as string,
-        ...(typeof m.context_length === 'number' ? { contextWindow: m.context_length } : {}),
-      }))
+      .map((m): RemoteModel => {
+        const input = perMillion(m.pricing?.prompt);
+        const output = perMillion(m.pricing?.completion);
+        return {
+          id: m.id as string,
+          ...(typeof m.context_length === 'number' ? { contextWindow: m.context_length } : {}),
+          ...(input !== undefined && output !== undefined
+            ? { pricing: { input_per_m: input, output_per_m: output } }
+            : {}),
+        };
+      })
       .sort((a, b) => a.id.localeCompare(b.id));
     remoteCache.set(e.id, { at: Date.now(), models });
+    for (const m of models)
+      rememberModel(`${e.id}/${m.id}`, {
+        contextWindow: m.contextWindow,
+        pricing: m.pricing,
+        free: m.pricing ? m.pricing.input_per_m === 0 && m.pricing.output_per_m === 0 : undefined,
+      });
     return models;
   } catch {
     return undefined;
   }
 }
 
-const LOCAL_URL = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:|\/|$)/i;
 /** Models a local server may list that are not chat models. */
 const NOT_A_CHAT_MODEL = /whisper|embed|tts|rerank|speech|vision-encoder/i;
 
-const isLocal = (e: ProviderEntry): boolean =>
-  e.auth?.type === 'none' && typeof e.base_url === 'string' && LOCAL_URL.test(e.base_url);
+const isLocal = (e: ProviderEntry): boolean => e.auth?.type === 'none' && isLocalUrl(e.base_url);
+
+/**
+ * LM Studio's own listing (`/api/v0/models` next to the OpenAI-compatible `/v1`): the context
+ * length each model is loaded with (else its maximum). Other local servers answer 404: nothing.
+ */
+async function probeLmStudioWindows(
+  baseUrl: string,
+  o: { fetch: typeof fetch; timeoutMs: number },
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  try {
+    const res = await o.fetch(`${baseUrl.replace(/\/v1\/?$/, '')}/api/v0/models`, {
+      signal: AbortSignal.timeout(o.timeoutMs),
+    });
+    if (!res.ok) return out;
+    const json = (await res.json()) as {
+      data?: { id?: unknown; max_context_length?: unknown; loaded_context_length?: unknown }[];
+    };
+    for (const m of json.data ?? []) {
+      const w =
+        typeof m.loaded_context_length === 'number'
+          ? m.loaded_context_length
+          : typeof m.max_context_length === 'number'
+            ? m.max_context_length
+            : undefined;
+      if (typeof m.id === 'string' && w) out.set(m.id, w);
+    }
+  } catch {
+    // not LM Studio, or not answering: the window stays unknown
+  }
+  return out;
+}
 
 /** The model ids an OpenAI-compatible server reports at `GET <base_url>/models`, or undefined when it does not answer. */
 async function probeModels(
@@ -218,6 +318,10 @@ export async function discoverModels(
             model: m.id,
             configured: true,
             ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
+            ...(m.pricing ? { pricing: m.pricing } : {}),
+            ...(m.pricing && m.pricing.input_per_m === 0 && m.pricing.output_per_m === 0
+              ? { free: true }
+              : {}),
           });
       continue;
     }
@@ -229,8 +333,14 @@ export async function discoverModels(
       ? await probeModels(e.base_url, { fetch: doFetch, timeoutMs })
       : undefined;
     const available = found !== undefined;
+    const windows =
+      available && e.base_url
+        ? await probeLmStudioWindows(e.base_url, { fetch: doFetch, timeoutMs })
+        : new Map<string, number>();
     const ids = [...(found ?? []), ...e.models.filter((m) => !(found ?? []).includes(m))];
-    for (const model of ids)
+    for (const model of ids) {
+      const contextWindow = windows.get(model);
+      if (contextWindow) rememberModel(`${e.id}/${model}`, { contextWindow, free: true });
       out.push({
         ref: `${e.id}/${model}`,
         provider: e.id,
@@ -238,7 +348,10 @@ export async function discoverModels(
         configured: true,
         local: true,
         available,
+        free: true,
+        ...(contextWindow ? { contextWindow } : {}),
       });
+    }
   }
   return out;
 }

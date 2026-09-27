@@ -369,6 +369,23 @@ test('/model lists the daemon models with their state; the choice travels with t
         configured: false,
         missing: ['OPENAI_API_KEY'],
       },
+      {
+        ref: 'openrouter/google/gemini-2.5-flash',
+        provider: 'openrouter',
+        model: 'google/gemini-2.5-flash',
+        configured: true,
+        contextWindow: 1048576,
+        pricing: { input_per_m: 0.3, output_per_m: 2.5 },
+      },
+      {
+        ref: 'lmstudio/qwen3',
+        provider: 'lmstudio',
+        model: 'qwen3',
+        configured: true,
+        local: true,
+        available: true,
+        free: true,
+      },
     ],
   });
   try {
@@ -376,6 +393,8 @@ test('/model lists the daemon models with their state; the choice travels with t
     expect(f).toContain('anthropic-subscription/claude-haiku-4-5');
     expect(f).toContain('openai/gpt-5');
     expect(f).toContain('OPENAI_API_KEY'); // why it cannot be used yet
+    expect(f).toContain('$0.30/$2.50 per M · 1.0M ctx'); // what a model costs and holds
+    expect(f).toContain('local · free');
     f = await m.type('haiku');
     await m.setup.mockInput.pressEnter();
     f = await m.frame();
