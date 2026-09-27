@@ -1,3 +1,4 @@
+export * from './conversation.js';
 export * from './events/memory-store.js';
 export * from './events/store.js';
 export * from './executors/code.js';

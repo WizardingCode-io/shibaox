@@ -9,6 +9,7 @@ import {
   type ExecutionContext,
   type RuntimeAdapter,
   type RuntimeEvent,
+  splitConversation,
   type TaskJob,
 } from '@shibaox/core';
 import {
@@ -123,7 +124,8 @@ export class DirectAdapter implements RuntimeAdapter {
     }
     const preamble = this.opts.preamble?.(job);
     const rules = job.conversation ? CHAT_RULES : RULES;
-    return `${prompt}\n\n${rules}${preamble ? `\n\n${preamble}` : ''}`;
+    const { summary } = splitConversation(conversationOf(job.input));
+    return `${prompt}\n\n${rules}${preamble ? `\n\n${preamble}` : ''}${summary ? `\n\nEarlier in this conversation (condensed):\n${summary}` : ''}`;
   }
 
   private userMessage(job: TaskJob): string {
@@ -193,7 +195,7 @@ export class DirectAdapter implements RuntimeAdapter {
           })
         : undefined;
       messages = [
-        ...conversationOf(job.input).map((m) => ({ role: m.role, content: m.content })),
+        ...splitConversation(conversationOf(job.input)).turns,
         { role: 'user' as const, content: this.userMessage(job) },
       ];
       const model = this.opts.registry.model(ref);

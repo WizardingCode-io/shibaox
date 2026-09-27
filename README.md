@@ -298,6 +298,14 @@ ends (`event: true` on `POST /runs`) never gets `start_workflow`, so nothing re-
 without you. Memory notes reach only roles with the `memory` capability, quoted as data. Opened in your home directory itself, the dashboard works in
 `~/.shibaox/workspace`.
 
+**Long conversations.** Each turn carries the conversation so far as `messages`. When that
+outgrows about 32k tokens (estimated), the daemon folds the oldest turns into one summary
+written by the org's `cheap` tier (else `strong`; without a callable model the turns are cut
+to lines), marked `summary: true` and kept first in the run's `messages`; the newest turns
+stay whole. The adapters put the summary in the system prompt, the dashboard and Telegram
+continue from the compacted thread, and `POST /runs` answers with the `messages` it used
+(warning `conversation compacted`).
+
 ## Providers
 
 Phase 1B-1 adds real models. Task nodes can run on the **direct** adapter (an AI SDK agent

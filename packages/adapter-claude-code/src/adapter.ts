@@ -9,6 +9,7 @@ import {
   type ExecutionContext,
   type RuntimeAdapter,
   type RuntimeEvent,
+  splitConversation,
   type TaskJob,
 } from '@shibaox/core';
 import { describeError } from '@shibaox/providers';
@@ -178,12 +179,12 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     };
     // the conversation is transcribed ahead of the task; it never travels inside the input JSON
     const { messages: _messages, ...input } = job.input;
-    const conversation = conversationOf(job.input);
+    const { summary, turns } = splitConversation(conversationOf(job.input));
     const transcript =
-      conversation.length > 0
+      turns.length > 0
         ? [
             'Conversation so far:',
-            ...conversation.map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`),
+            ...turns.map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`),
           ].join('\n')
         : undefined;
     // a resumed session already has the task: it only needs to know what was decided
@@ -191,6 +192,7 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
       job.resumeSessionId !== undefined
         ? (job.resumeNote ?? 'Continue the task.')
         : [
+            ...(summary ? [`Earlier in this conversation (condensed):\n${summary}`] : []),
             ...(transcript ? [transcript] : []),
             `Task: ${job.instruction}`,
             `Input: ${JSON.stringify(input)}`,

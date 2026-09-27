@@ -1,4 +1,4 @@
-import type { RunState, RunStatus } from '@shibaox/core';
+import { conversationOf, type RunState, type RunStatus } from '@shibaox/core';
 import type { Envelope, InboxId, SubmitRequest } from '@shibaox/daemon';
 import type { ChatMessage } from '@shibaox/schemas';
 import {
@@ -108,16 +108,15 @@ export function DataProvider(
     const previousId = turns[turns.length - 1] ?? rootId;
     const previous = state.states[previousId];
     if (!previous) return undefined;
-    // the conversation so far travels as structured messages; the input is the new turn only
-    const messages: ChatMessage[] = turns.flatMap((id) => {
-      const st = state.states[id];
-      if (!st) return [];
-      const reply = replyOf(id);
-      return [
-        { role: 'user' as const, content: requestText(st.input) },
-        ...(reply ? [{ role: 'assistant' as const, content: reply }] : []),
-      ];
-    });
+    // the conversation so far travels as structured messages; the input is the new turn only.
+    // It builds on the thread the daemon kept for the previous run (it may have compacted
+    // the oldest turns into a summary) plus that run's own request and reply.
+    const reply = replyOf(previousId);
+    const messages: ChatMessage[] = [
+      ...conversationOf(previous.input),
+      { role: 'user' as const, content: requestText(previous.input) },
+      ...(reply ? [{ role: 'assistant' as const, content: reply }] : []),
+    ];
     const model = state.models[rootId] ?? previous.model;
     const runId = await poller.submit({
       orgRoot: previous.orgRoot ?? '',

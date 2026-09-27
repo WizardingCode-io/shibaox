@@ -148,6 +148,74 @@ describe('talking to the orchestrator from Telegram', () => {
     });
   });
 
+  it('a long Telegram thread is compacted by the daemon and the chat carries the compacted thread on', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tgd-'));
+    tmp.push(dir);
+    scaffoldOrg(dir);
+    const project = join(dir, 'proj');
+    cpSync(sample, project, { recursive: true });
+    fake = await fakeTelegram();
+    const store = new MemoryEventStore();
+    const channel = telegramChannel({
+      token: 't',
+      chatId: 7,
+      apiBase: fake.apiBase,
+      log: () => {},
+      pollTimeoutSeconds: 0,
+    });
+    const daemon = new Daemon({
+      discovery: false,
+      home: homePaths({ SHIBAOX_HOME: join(dir, 'home') }),
+      store,
+      channels: [channel],
+      env: {},
+      log: () => {},
+      vault: join(dir, 'vault'),
+      conversationTokens: 120,
+      summarize: async () => 'SUMMARY of the earlier chat',
+      config: {
+        max_concurrent_runs: 2,
+        approval_timeout_minutes: 1,
+        channels: {
+          macos: { enabled: false },
+          telegram: {
+            bot_token_env: 'X',
+            chat_id: 7,
+            org: join(dir, 'org'),
+            project,
+            workflow: 'chat',
+            adapter: 'mock',
+          },
+        },
+      },
+    });
+    daemons.push(daemon);
+    await daemon.start();
+    const long = 'palavra '.repeat(60);
+    for (let i = 1; i <= 4; i++) {
+      fake.push(message(i, 7, `${i} ${long}`));
+      await vi.waitFor(async () => expect(await daemon.runs.list()).toHaveLength(i), {
+        timeout: 5000,
+      });
+      await vi.waitFor(() =>
+        expect(fake?.calls.filter((c) => c.method === 'sendMessage')).toHaveLength(i),
+      );
+    }
+    const runs = await daemon.runs.list();
+    const last = runs.find(async (r) => (await await0(store, r.runId)).startsWith('4 '));
+    const specs = await Promise.all(runs.map((r) => await0(store, r.runId)));
+    const fourth = runs[specs.findIndex((sp) => sp.startsWith('4 '))];
+    expect(fourth ?? last).toBeDefined();
+    const created = (await store.read(fourth?.runId ?? ''))[0];
+    const messages =
+      created?.type === 'RunCreated'
+        ? (created.input.messages as { role: string; content: string; summary?: boolean }[])
+        : [];
+    expect(messages[0]).toMatchObject({ summary: true, content: 'SUMMARY of the earlier chat' });
+    expect(messages.filter((m) => m.summary)).toHaveLength(1);
+    expect(messages.length).toBeLessThan(7); // not the whole thread again
+  });
+
   it('without org and project in daemon.yaml the text gets an explanation', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tgd-'));
     tmp.push(dir);

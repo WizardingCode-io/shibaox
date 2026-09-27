@@ -454,6 +454,30 @@ describe('ClaudeCodeAdapter (3A)', () => {
     expect(prompt).toContain('Task: add /health');
     expect(prompt).not.toContain('"messages"');
   });
+  it('a conversation summary is transcribed ahead of the turns', async () => {
+    const q = fakeQuery(() => [msg.init(), msg.success('ok')]);
+    const adapter = new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q });
+    await collectRun(
+      adapter,
+      job({
+        input: {
+          spec: 'and now?',
+          messages: [
+            { role: 'user', content: 'They agreed on a /health route.', summary: true },
+            { role: 'user', content: 'hello' },
+            { role: 'assistant', content: 'hi' },
+          ],
+        },
+      }),
+      ctx(),
+    );
+    const prompt = q.calls[0]?.prompt ?? '';
+    expect(
+      prompt.startsWith(
+        'Earlier in this conversation (condensed):\nThey agreed on a /health route.\n\nConversation so far:\nUser: hello\nAssistant: hi',
+      ),
+    ).toBe(true);
+  });
   it('applies the role limits, the preamble and the extra tools as an in-process MCP server', async () => {
     const q = fakeQuery(() => [msg.init(), msg.success('ok')]);
     const adapter = new ClaudeCodeAdapter({

@@ -83,6 +83,31 @@ const submitMock = (
   });
 
 describe('RunManager', () => {
+  it('compacts a long conversation at submit with the summariser and returns the thread it used', async () => {
+    const s = setup();
+    const store = new MemoryEventStore();
+    const summarize = vi.fn(async () => 'they built /health and tests');
+    const { manager: m } = manager(store, { vault: s.vault, summarize, conversationTokens: 300 });
+    const messages = Array.from({ length: 12 }, (_, i) => [
+      { role: 'user' as const, content: `question ${i} ${'lorem '.repeat(30)}` },
+      { role: 'assistant' as const, content: `answer ${i} ${'ipsum '.repeat(30)}` },
+    ]).flat();
+    const { runId, messages: used } = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'chat',
+      input: 'and now?',
+      adapter: 'mock',
+      workspace: 'inplace',
+      messages,
+    });
+    expect(summarize).toHaveBeenCalledTimes(1);
+    expect(used?.[0]).toMatchObject({ summary: true, content: 'they built /health and tests' });
+    expect(used?.length ?? 0).toBeLessThan(messages.length);
+    const created = (await store.read(runId))[0];
+    expect(created?.type === 'RunCreated' && created.input.messages).toEqual(used);
+  });
+
   it('waits for `ready` (model discovery) before a run starts, so cost and context are known', async () => {
     const s = setup();
     let release: (() => void) | undefined;

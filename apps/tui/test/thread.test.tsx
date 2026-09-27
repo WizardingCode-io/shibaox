@@ -133,3 +133,78 @@ test('a finished run shows the prompt; the next request runs in the same tab, af
     setup.renderer.destroy();
   }
 });
+
+test('the next turn builds on the thread the daemon kept for the previous run (compacted), not on every run', async () => {
+  const client = new FakeDaemonClient();
+  const r1 = state('r1', 'add a health endpoint');
+  r1.input = {
+    spec: 'add a health endpoint',
+    messages: [
+      { role: 'user', content: 'Earlier: the schema was agreed.', summary: true },
+      { role: 'user', content: 'what schema?' },
+      { role: 'assistant', content: 'The one in docs.' },
+    ],
+  };
+  client.states.set('r1', r1);
+  client.runs = [run('r1')];
+  client.history.set('r1', [
+    {
+      kind: 'run',
+      seq: 1,
+      cursor: '1:0',
+      event: { runId: 'r1', at: 'x', seq: 1, type: 'NodeStarted', nodeId: 'analyse' },
+    } as unknown as Envelope,
+    {
+      kind: 'runtime',
+      seq: 2,
+      cursor: '0:2',
+      event: {
+        runId: 'r1',
+        nodeId: 'analyse',
+        seq: 2,
+        at: 'x',
+        event: { type: 'text', text: 'Sure, here is the endpoint.' },
+      },
+    } as unknown as Envelope,
+    end('completed'),
+  ]);
+  client.submitResult = { runId: 'r2', warnings: [] };
+  let hooks: AppHooks | undefined;
+  const setup = await testRender(
+    () => (
+      <App
+        client={client}
+        version="0.0.1"
+        home="/tmp/shx-home"
+        cwd="/tmp"
+        env={{ SHIBAOX_NO_MOTION: '1' }}
+        onExit={() => {}}
+        onMount={(h) => {
+          hooks = h;
+          h.data.openRun('r1');
+        }}
+      />
+    ),
+    { width: 120, height: 34, exitOnCtrlC: false },
+  );
+  try {
+    await settle();
+    await setup.renderOnce();
+    await settle();
+    client.states.set('r2', state('r2', 'now add tests for it', 'running'));
+    client.runs = [run('r1'), run('r2', 'running')];
+    await hooks?.data.continueRun('r1', 'now add tests for it');
+    const submit = client.calls.find((c) => c.method === 'submitRun')?.args[0] as {
+      messages?: { role: string; content: string; summary?: boolean }[];
+    };
+    expect(submit.messages).toEqual([
+      { role: 'user', content: 'Earlier: the schema was agreed.', summary: true },
+      { role: 'user', content: 'what schema?' },
+      { role: 'assistant', content: 'The one in docs.' },
+      { role: 'user', content: 'add a health endpoint' },
+      { role: 'assistant', content: 'Sure, here is the endpoint.' },
+    ]);
+  } finally {
+    setup.renderer.destroy();
+  }
+});

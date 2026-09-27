@@ -687,6 +687,37 @@ describe('DirectAdapter', () => {
     expect(events.map((e) => e.type).slice(-2)).toEqual(['usage', 'result']);
   });
 
+  it('a conversation summary goes to the system prompt; only the turns are messages', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI(() => ({ content: 'ok' }));
+    const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    const job = {
+      ...jobFor(ws),
+      input: {
+        spec: 'and now?',
+        messages: [
+          { role: 'user', content: 'Earlier they agreed on a /health route.', summary: true },
+          { role: 'user', content: 'add /health' },
+          { role: 'assistant', content: 'done' },
+        ],
+      },
+    };
+    for await (const _ of adapter.run(job, ctx())) {
+      // drain
+    }
+    const req = fake.requests[0] as { messages: { role: string; content: string }[] };
+    const system = req.messages.find((m) => m.role === 'system')?.content ?? '';
+    expect(system).toContain('Earlier in this conversation (condensed):');
+    expect(system).toContain('Earlier they agreed on a /health route.');
+    const turns = req.messages.filter((m) => m.role !== 'system').map((m) => m.content);
+    expect(turns[0]).toBe('add /health');
+    expect(turns.some((t) => t.includes('Earlier they agreed'))).toBe(false);
+  });
+
   it('a window and a price learned by discovery reach the usage and the cost', async () => {
     const ws = mkdtempSync(join(tmpdir(), 'ws-'));
     fake = await startFakeOpenAI(() => ({ content: 'hi' }));

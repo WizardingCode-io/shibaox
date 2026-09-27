@@ -4,7 +4,7 @@ import { type EventStore, type MockScript, runArgv } from '@shibaox/core';
 import type { Graphify } from '@shibaox/memory';
 import { OutboxRepo, SchedulesRepo, SqliteEventStore } from '@shibaox/persistence-sqlite';
 import { discoverModels, type ModelChoice, type ProviderEntry } from '@shibaox/providers';
-import { type ChatMessage, loadOrg } from '@shibaox/schemas';
+import { type ChatMessage, loadOrg, type Org } from '@shibaox/schemas';
 import { macosChannel } from './channels/macos.js';
 import { OutboxWorker } from './channels/outbox.js';
 import { inboxToken, telegramChannel } from './channels/telegram.js';
@@ -17,6 +17,7 @@ import { RunManager } from './run-manager.js';
 import { vaultDir } from './runs/notes.js';
 import { profileFor } from './runs/profile.js';
 import { buildRunReport } from './runs/report.js';
+import { orgSummarizer } from './runs/summarize.js';
 import { registryFor } from './runtime.js';
 import { Scheduler } from './scheduler.js';
 import { SecretsStore } from './secrets.js';
@@ -44,6 +45,10 @@ export interface DaemonOptions {
   claudeInstalled?: boolean;
   /** Model discovery at start and before runs (default on; tests turn it off: it probes local servers). */
   discovery?: boolean;
+  /** Conversation summariser (tests inject one); by default the org's cheap tier. */
+  summarize?: (transcript: string, org: Org) => Promise<string>;
+  /** Tokens a conversation may carry before it is compacted (tests lower it). */
+  conversationTokens?: number;
 }
 
 /** Turns kept per Telegram chat for the orchestrator's conversation. */
@@ -126,6 +131,8 @@ export class Daemon {
       log,
       env: this.env,
       ready: opts.discovery === false ? undefined : () => this.models(),
+      summarize: opts.summarize ?? orgSummarizer(() => registryFor(this.env, opts.extraProviders)),
+      conversationTokens: opts.conversationTokens,
       queryFn: opts.queryFn,
       graphify: opts.graphify,
       extraProviders: opts.extraProviders,
@@ -291,7 +298,7 @@ export class Daemon {
     const messages = [...(this.threads.get(origin) ?? [])];
     this.remember(origin, { role: 'user', content: text });
     try {
-      const { runId } = await this.runs.submit({
+      const { runId, messages: used } = await this.runs.submit({
         orgRoot: tg.org,
         project: tg.project,
         workflow: tg.workflow,
@@ -302,6 +309,9 @@ export class Daemon {
         origin,
       });
       flight.runId = runId;
+      // the daemon may have compacted the thread: the chat goes on from what the run got
+      if (used && used !== messages)
+        this.threads.set(origin, [...used, { role: 'user', content: text }]);
     } catch (e) {
       this.threads.set(origin, messages);
       await say(`✗ could not start: ${e instanceof Error ? e.message : String(e)}`);

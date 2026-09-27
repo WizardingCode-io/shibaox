@@ -11,5 +11,7 @@ export type ModelTier = z.infer<typeof ModelTierSchema>;
 export const ChatMessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
   content: z.string(),
+  /** A condensation of older turns the daemon folded away (one per conversation, first). */
+  summary: z.boolean().optional(),
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
