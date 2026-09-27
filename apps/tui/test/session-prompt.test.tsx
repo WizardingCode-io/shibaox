@@ -175,8 +175,16 @@ test('/model in the run tab sets the model of the next turn and shows it in the 
     expect(f).toContain('anthropic-subscription/claude-sonnet-5');
     await m.setup.mockInput.pressEnter();
     f = await m.frame();
-    expect(f).toContain('anthropic-subscription/claude-sonnet-5');
+    // the context line (under the prompt), not only the toast
+    const under = f.slice(f.indexOf('› Continue'));
+    expect(under).toContain('anthropic-subscription/claude-sonnet-5');
     expect(f).toContain('Continue');
+    // a ref that is not provider/model is refused
+    await m.type('/model zzz'); // nothing in the list looks like it, and it is no provider/model
+    await m.setup.mockInput.pressEnter();
+    await m.frame();
+    // refused: the tab keeps the model chosen before (the error toast queues behind the first one)
+    expect(m.hooks()?.data.state.models.r1).toBe('anthropic-subscription/claude-sonnet-5');
     m.client.submitResult = { runId: 'r2', warnings: [] };
     await m.type('e agora?');
     await m.setup.mockInput.pressEnter();

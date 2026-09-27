@@ -141,13 +141,13 @@ export class RunManager {
     assertProjectDir(project);
     const wf = org.workflows[req.workflow];
     if (!wf) throw new Error(`workflow "${req.workflow}" is not defined in the org`);
-    const adapter = req.model
-      ? adapterForModel(
-          req.model,
-          registryFor(this.opts.env ?? process.env, this.opts.extraProviders),
-        )
-      : effectiveAdapter(req.adapter, org);
     const warnings: string[] = [];
+    // an explicit mock adapter never calls a model: a chosen model is set aside with a warning
+    const model = req.adapter === 'mock' ? undefined : req.model;
+    if (req.model && !model) warnings.push(`adapter mock: the model ${req.model} is not used`);
+    const adapter = model
+      ? adapterForModel(model, registryFor(this.opts.env ?? process.env, this.opts.extraProviders))
+      : effectiveAdapter(req.adapter, org);
     const mode = await workspaceMode(project, req.workspace, (l) => warnings.push(l));
     const budgetUsd = req.budgetUsd ?? org.org.budgets.per_run_usd;
     const runId = randomUUID();
@@ -169,7 +169,7 @@ export class RunManager {
       project,
       workspaceMode: mode,
       origin: req.origin,
-      model: req.model,
+      model,
       warn: (w) => warnings.push(w),
     });
     const ws = await createRunWorkspace({ project, runId, mode });
@@ -191,7 +191,7 @@ export class RunManager {
       orgRoot,
       parentRunId: req.parentRunId,
       origin: req.origin,
-      model: req.model,
+      model,
     });
     this.prepared.set(runId, { engine, org, adapter });
     this.enqueue({ runId, action: 'run', settle: [] });

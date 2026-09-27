@@ -181,19 +181,27 @@ export async function discoverModels(
   return out;
 }
 
+/** The runtimes a run can go through today (a provider on another runtime is not usable). */
+export const KNOWN_RUNTIMES = ['claude-code'];
+
 /** Every model the catalog names, with its state in this environment. */
-export function listModels(registry: ProviderRegistry): ModelChoice[] {
+export function listModels(
+  registry: ProviderRegistry,
+  runtimes: readonly string[] = KNOWN_RUNTIMES,
+): ModelChoice[] {
   const out: ModelChoice[] = [];
   for (const e of registry.list())
     for (const model of e.models) {
       const c = registry.isConfigured(e.id);
+      const runtimeMissing = e.via_runtime && !runtimes.includes(e.via_runtime);
+      const missing = runtimeMissing ? [`runtime ${e.via_runtime}`] : c.missing;
       out.push({
         ref: `${e.id}/${model}`,
         provider: e.id,
         model,
-        configured: c.ok,
+        configured: c.ok && !runtimeMissing,
         ...(e.via_runtime ? { runtime: e.via_runtime } : {}),
-        ...(c.missing.length > 0 ? { missing: c.missing } : {}),
+        ...(missing.length > 0 ? { missing } : {}),
       });
     }
   return out;

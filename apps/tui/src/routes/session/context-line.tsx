@@ -75,7 +75,7 @@ export function ContextLine(props: { runId: string; elapsed?: string }): JSX.Ele
   const org = createMemo(() => orgOf(state()?.orgRoot));
   const usage = createMemo(() => runUsage(data.timeline(latest())()));
   // the model at work; before any usage, the one chosen for the tab or recorded on the run
-  const model = () => usage()?.model ?? data.state.models[props.runId] ?? state()?.model;
+  const model = () => data.state.models[props.runId] ?? usage()?.model ?? state()?.model;
   const planned = () => plannedModel(org(), state());
   const ctx = () => contextLabel(usage());
   const branch = () => state()?.branch ?? profile()?.branch;

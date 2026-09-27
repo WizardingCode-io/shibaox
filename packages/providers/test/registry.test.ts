@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { describe, expect, it } from 'vitest';
-import { discoverModels, loadCatalog, ProviderRegistry } from '../src/index.js';
+import { discoverModels, listModels, loadCatalog, ProviderRegistry } from '../src/index.js';
 
 describe('ProviderRegistry', () => {
   const reg = (env: Record<string, string> = {}) => new ProviderRegistry(loadCatalog(), env);
@@ -97,6 +97,22 @@ describe('context windows', () => {
     expect(reg.contextWindow('openai/gpt-5')).toBe(400_000);
     expect(reg.contextWindow('xai/grok-4')).toBeUndefined();
     expect(reg.contextWindow('nope/x')).toBeUndefined();
+  });
+});
+
+describe('listModels runtimes', () => {
+  it('marks providers on runtimes this build lacks as not configured', () => {
+    const reg = new ProviderRegistry(loadCatalog(), {});
+    const models = listModels(reg);
+    expect(models.find((m) => m.ref === 'anthropic-subscription/claude-sonnet-5')).toMatchObject({
+      configured: true,
+      runtime: 'claude-code',
+    });
+    expect(models.find((m) => m.ref === 'openai-codex-subscription/gpt-5-codex')).toMatchObject({
+      configured: false,
+      runtime: 'codex',
+      missing: ['runtime codex'],
+    });
   });
 });
 

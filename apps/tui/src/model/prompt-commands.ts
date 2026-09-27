@@ -78,21 +78,30 @@ export interface PromptCommandSpec {
   values?: () => readonly (string | ValueChoice)[];
 }
 
-/** `/model` values: the daemon's models, configured ones first, the others say what they miss. */
+/** The `/model` value that goes back to the org's routing (per-role tiers). */
+export const DEFAULT_MODEL = 'default';
+
+/** Whether `ref` looks like `provider/model`. */
+export const isModelRef = (ref: string): boolean => /^[a-z0-9][a-z0-9-]*\/\S+$/i.test(ref);
+
+/** `/model` values: org routing first, then the daemon's models, usable ones ahead, the others say what they miss. */
 export function modelValues(models: readonly ModelChoice[]): ValueChoice[] {
-  return [...models]
-    .sort((a, b) => Number(b.configured) - Number(a.configured))
-    .map((m) => ({
-      value: m.ref,
-      hint: m.local
-        ? m.available === false
-          ? 'local (server not reachable)'
-          : 'local'
-        : m.configured
-          ? (m.runtime ?? 'direct')
-          : `needs ${m.missing?.join(', ') || 'configuration'}`,
-      disabled: !m.configured || m.available === false,
-    }));
+  return [
+    { value: DEFAULT_MODEL, hint: 'org routing' },
+    ...[...models]
+      .sort((a, b) => Number(b.configured) - Number(a.configured))
+      .map((m) => ({
+        value: m.ref,
+        hint: m.local
+          ? m.available === false
+            ? 'local (server not reachable)'
+            : 'local'
+          : m.configured
+            ? (m.runtime ?? 'direct')
+            : `needs ${m.missing?.join(', ') || 'configuration'}`,
+        disabled: !m.configured || m.available === false,
+      })),
+  ];
 }
 
 /** The model spec of a `/model` command for both prompts. */
@@ -150,9 +159,9 @@ export function parsePromptCommand(
 /** Rows the suggestion list shows at most. */
 export const SUGGESTIONS = 10;
 
-function rank(query: string, targets: readonly string[]): string[] {
-  if (!query) return targets.slice(0, SUGGESTIONS);
-  return fuzzysort.go(query, targets, { limit: SUGGESTIONS }).map((r) => r.target);
+function rank(query: string, targets: readonly string[], limit = SUGGESTIONS): string[] {
+  if (!query) return targets.slice(0, limit);
+  return fuzzysort.go(query, targets, { limit }).map((r) => r.target);
 }
 
 export interface Suggestion {
@@ -184,14 +193,16 @@ export function completeCommand(
     typeof v === 'string' ? { value: v } : v,
   );
   const byValue = new Map(values.map((v) => [v.value, v]));
+  // rank everything, then put the usable values first and only then cut the list: a usable
+  // match must never be pushed out by better-scoring values that cannot run
   const ranked = rank(
     arg,
     values.map((v) => v.value),
+    Number.POSITIVE_INFINITY,
   );
-  // usable values first, whatever the match score: enter must never pick one that cannot run
   const usable = ranked.filter((v) => !byValue.get(v)?.disabled);
   const rest = ranked.filter((v) => byValue.get(v)?.disabled);
-  return [...usable, ...rest].map((v) => ({
+  return [...usable, ...rest].slice(0, SUGGESTIONS).map((v) => ({
     label: v,
     insert: `/${name} ${v}`,
     hint: byValue.get(v)?.hint,
@@ -216,7 +227,8 @@ export function applyPromptCommand(
   };
   switch (cmd.command as CommandName) {
     case 'model': {
-      if (!/^[a-z0-9][a-z0-9-]*\/\S+$/i.test(cmd.arg))
+      if (cmd.arg === DEFAULT_MODEL) return { ...ctx, model: undefined };
+      if (!isModelRef(cmd.arg))
         return { error: 'Model must look like provider/model (see /model for the list)' };
       return { ...ctx, model: cmd.arg };
     }
@@ -238,7 +250,8 @@ export function applyPromptCommand(
     case 'adapter': {
       const a = ADAPTERS.find((x) => x === cmd.arg);
       if (!a) return { error: `Adapter must be one of ${ADAPTERS.join(', ')}` };
-      return { ...ctx, adapter: a };
+      // an adapter chosen by hand replaces the model (which would otherwise decide it)
+      return { ...ctx, adapter: a, model: undefined };
     }
     case 'budget': {
       const n = Number(cmd.arg);

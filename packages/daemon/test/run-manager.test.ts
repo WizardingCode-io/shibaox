@@ -226,6 +226,20 @@ describe('RunManager', () => {
         model: 'nope/x',
       }),
     ).rejects.toThrow(/unknown provider "nope"/);
+    // an explicit mock adapter never makes model calls, whatever model was chosen
+    const mock = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'chat',
+      input: 'x',
+      workspace: 'inplace',
+      adapter: 'mock',
+      model: 'anthropic-subscription/claude-haiku-4-5',
+    });
+    expect(mock.warnings).toEqual(expect.arrayContaining([expect.stringContaining('mock')]));
+    const mockCreated = (await store.read(mock.runId))[0];
+    expect(mockCreated?.type === 'RunCreated' && mockCreated.adapter).toBe('mock');
+    expect(mockCreated?.type === 'RunCreated' && mockCreated.model).toBeUndefined();
   });
 
   it('a claude-code chat run gets the shibaox MCP tools and the project preamble; memory reaches memory roles only', async () => {

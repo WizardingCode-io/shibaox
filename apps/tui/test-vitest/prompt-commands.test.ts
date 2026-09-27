@@ -1,4 +1,5 @@
 import { homedir, tmpdir } from 'node:os';
+import type { ModelChoice } from '@shibaox/daemon';
 import { describe, expect, it } from 'vitest';
 import {
   applyPromptCommand,
@@ -79,5 +80,40 @@ describe('prompt commands', () => {
       workspace: undefined,
       budgetUsd: 2,
     });
+  });
+});
+
+describe('/model values', () => {
+  const choice = (ref: string, configured: boolean): ModelChoice => {
+    const [provider, ...rest] = ref.split('/');
+    return { ref, provider: provider ?? '', model: rest.join('/'), configured };
+  };
+  it('offers "default" (org routing) first and keeps usable models ahead of the top-10 cut', () => {
+    const many = Array.from({ length: 20 }, (_, i) => choice(`dead-${i}/deep-${i}`, false));
+    const models = [...many, choice('anthropic-subscription/deep-thinker', true)];
+    const cmds = homeCommands([], models);
+    const list = completeCommand('/model ', { commands: cmds });
+    expect(list[0]).toMatchObject({ label: 'default', hint: 'org routing' });
+    const d = completeCommand('/model d', { commands: cmds }).map((s) => s.label);
+    expect(d.length).toBeLessThanOrEqual(10);
+    const usable = d.indexOf('anthropic-subscription/deep-thinker');
+    expect(usable).toBeGreaterThanOrEqual(0);
+    for (const dead of d.filter((l) => l.startsWith('dead-')))
+      expect(d.indexOf(dead)).toBeGreaterThan(usable);
+  });
+  it('"default" clears the model; a ref must look like provider/model', () => {
+    const withModel = { ...ctx, model: 'a/b' };
+    expect(
+      applyPromptCommand(withModel, { command: 'model', arg: 'default' }, { cwd: '/x' }),
+    ).toEqual({ ...ctx, model: undefined });
+    expect(applyPromptCommand(ctx, { command: 'model', arg: 'nope' }, { cwd: '/x' })).toMatchObject(
+      {
+        error: expect.stringContaining('provider/model'),
+      },
+    );
+    // picking an adapter by hand drops the model (the model decides the adapter otherwise)
+    expect(
+      applyPromptCommand(withModel, { command: 'adapter', arg: 'mock' }, { cwd: '/x' }),
+    ).toEqual({ ...ctx, adapter: 'mock', model: undefined });
   });
 });

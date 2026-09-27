@@ -381,6 +381,22 @@ test('/model lists the daemon models with their state; the choice travels with t
     f = await m.frame();
     expect(f).toContain('model anthropic-subscription/claude-haiku-4-5');
     expect(f).not.toContain('adapter '); // implied by the model
+    // choosing an adapter by hand drops the model; "default" does too
+    await m.type('/adapter direct');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).toContain('adapter direct');
+    expect(f).not.toContain('model anthropic');
+    await m.type('/model haiku');
+    await m.setup.mockInput.pressEnter();
+    await m.type('/model default');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).not.toContain('model anthropic');
+    await m.type('/model haiku');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).toContain('model anthropic-subscription/claude-haiku-4-5');
     await m.type('olá');
     await m.setup.mockInput.pressEnter();
     await m.frame();

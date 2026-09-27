@@ -186,6 +186,7 @@ export function DataProvider(
       release(id);
     }
     set('threads', runId, undefined as never);
+    set('models', runId, undefined as never);
     if (state.active === runId) activate(state.open[Math.min(i, state.open.length - 1)]);
   };
   const nextTab = (direction: 1 | -1) => {

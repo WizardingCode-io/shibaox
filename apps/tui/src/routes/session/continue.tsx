@@ -4,7 +4,12 @@ import { useClient } from '../../context/client.js';
 import { useCommands } from '../../context/commands.js';
 import { useData } from '../../context/data.js';
 import { useKeys } from '../../context/keys.js';
-import { modelCommand, type PromptCommandSpec } from '../../model/prompt-commands.js';
+import {
+  DEFAULT_MODEL,
+  isModelRef,
+  modelCommand,
+  type PromptCommandSpec,
+} from '../../model/prompt-commands.js';
 import { useDialog } from '../../ui/dialog.js';
 import { useToast } from '../../ui/toast.js';
 
@@ -74,8 +79,18 @@ export function ContinuePrompt(props: {
       onSubmit={props.onSubmit}
       onCommand={(cmd) => {
         if (cmd.command === 'model') {
-          data.setModel(props.runId, cmd.arg);
-          toast.show({ message: `Next turns run on ${cmd.arg}`, variant: 'info' });
+          if (cmd.arg === DEFAULT_MODEL) {
+            data.setModel(props.runId, undefined);
+            toast.show({ message: 'Next turns follow the org routing', variant: 'info' });
+          } else if (!isModelRef(cmd.arg)) {
+            toast.show({
+              message: 'Model must look like provider/model (see /model for the list)',
+              variant: 'error',
+            });
+          } else {
+            data.setModel(props.runId, cmd.arg);
+            toast.show({ message: `Next turns run on ${cmd.arg}`, variant: 'info' });
+          }
           return;
         }
         registry
