@@ -17,6 +17,22 @@ const valid = {
   },
 };
 
+describe('conversation workflows', () => {
+  it('accepts conversation: true and leaves it unset otherwise', () => {
+    const wf = WorkflowSchema.parse({
+      workflow: 'chat',
+      conversation: true,
+      start: 'reply',
+      nodes: { reply: { type: 'task', role: 'assistant' } },
+    });
+    expect(wf.conversation).toBe(true);
+    expect(
+      WorkflowSchema.parse({ workflow: 'x', start: 'a', nodes: { a: { type: 'task', role: 'r' } } })
+        .conversation,
+    ).toBeUndefined();
+  });
+});
+
 describe('WorkflowSchema', () => {
   it('accepts a valid workflow and applies defaults', () => {
     const wf = WorkflowSchema.parse(valid);

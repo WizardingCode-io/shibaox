@@ -71,7 +71,8 @@ finished or needs something. Summarise the outcome for the user in one or two li
 Pushing, deploying and publishing are only done through approved tool calls.
 `,
   'org/workflows/chat.yaml': `workflow: chat
-description: Talk with the assistant; the default entry of the dashboard.
+description: Talk with the orchestrator; the default entry of the dashboard.
+conversation: true
 start: reply
 nodes:
   reply: { type: task, role: assistant, instruction: "Reply to the user." }

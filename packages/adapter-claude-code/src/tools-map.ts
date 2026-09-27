@@ -15,7 +15,8 @@ export const WEB_TOOLS = ['WebFetch', 'WebSearch'];
 
 /**
  * Rules denied to every role; `git push` is lifted only so it can reach the approval callback,
- * the web tools only for roles with a network allowlist (`canUseTool` checks the host).
+ * the web tools only for roles with a network allowlist. `WebFetch` never gets an allow rule
+ * (an allow rule skips `canUseTool`, which is where the host is checked); `WebSearch` does.
  */
 export const ALWAYS_DENY = ['Bash(rm -rf *)', 'Bash(git push *)', 'Bash(git push)', ...WEB_TOOLS];
 
@@ -33,5 +34,5 @@ export function mapRoleTools(role: Role): { allowedTools: string[]; disallowedTo
   const disallowedTools = ALWAYS_DENY.filter(
     (d) => !(needsPushApproval && d.startsWith('Bash(git push')) && !(web && WEB_TOOLS.includes(d)),
   );
-  return { allowedTools: [...allowedTools, ...(web ? WEB_TOOLS : [])], disallowedTools };
+  return { allowedTools: [...allowedTools, ...(web ? ['WebSearch'] : [])], disallowedTools };
 }

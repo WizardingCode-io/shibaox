@@ -191,7 +191,7 @@ printed; `q` leaves it running in the daemon.
 
 ## The orchestrator
 
-The org template ships an `assistant` role and a one-node `chat` workflow: the orchestrator
+The org template ships an `assistant` role and a `chat` workflow marked `conversation: true`: the orchestrator
 you talk to in the dashboard. It answers in your language, **acts** (reads and writes files in
 the project, runs the programs listed in its `tools`, fetches pages), **dispatches** larger
 work to the org's workflows with a `start_workflow` tool (the run gets `parentRunId` and joins
@@ -215,9 +215,11 @@ model_tier: cheap                      # the conversation runs on the cheap tier
 With `permissions.network` set, the direct adapter exposes `web_fetch` (GET as text, HTML
 reduced to text, 200 kB) and the Claude Code adapter allows `WebFetch`/`WebSearch`, both
 checked against the allowlist per host (redirects included). `write` in `tools` is what lets
-the direct adapter write files (`write_file`); programs run by allowlist as before. A chat
-turn runs **in place** on your checkout; dispatched team runs use the org default (a worktree
-in a git repository). Opened in your home directory itself, the dashboard works in
+the direct adapter write files (`write_file`); programs run by allowlist as before. A
+`conversation: true` workflow runs **in place** on your checkout; dispatched team runs use the
+org default (a worktree in a git repository). The turn shibaox submits when a dispatched run
+ends (`event: true` on `POST /runs`) never gets `start_workflow`, so nothing re-dispatches
+without you. Memory notes reach only roles with the `memory` capability, quoted as data. Opened in your home directory itself, the dashboard works in
 `~/.shibaox/workspace`.
 
 ## Providers

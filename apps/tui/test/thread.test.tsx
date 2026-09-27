@@ -91,10 +91,8 @@ test('a finished run shows the prompt; the next request runs in the same tab, af
     return setup.captureCharFrame();
   };
   try {
-    // a one-task workflow reads as a conversation: the reply arrives with the stream
     let f = await frame();
-    for (let i = 0; i < 40 && !f.includes('Sure, here is the endpoint.'); i++) f = await frame();
-    expect(f).toContain('Sure, here is the endpoint.');
+    expect(f).toContain('✓ Done'); // a one-task workflow without `conversation: true` is a normal run
     expect(f).toContain('› ');
     expect(f).toContain('Continue');
     // the follow-up run exists on the daemon once submitted

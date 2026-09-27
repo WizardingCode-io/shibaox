@@ -3,7 +3,6 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { QueryFn } from '@shibaox/adapter-claude-code';
 import {
-  type AgentTool,
   type EventStore,
   isTerminal,
   type MockScript,
@@ -23,7 +22,7 @@ import type { InboxAnswer, InboxItem, InboxService } from './inbox.js';
 import { type DiffResult, diffWorkspace, worktreeBase } from './runs/diff.js';
 import { type GraphMode, prepareGraph } from './runs/graph.js';
 import { finishRun, vaultDir } from './runs/notes.js';
-import { memoryTools, orchestrationTools } from './runs/orchestration.js';
+import { memoryTools, orchestrationTools, toolsForRole } from './runs/orchestration.js';
 import { profileFor } from './runs/profile.js';
 import {
   assertProjectDir,
@@ -56,6 +55,8 @@ export interface SubmitRequest {
   messages?: ChatMessage[];
   /** The run this one is dispatched from (`start_workflow`). */
   parentRunId?: string;
+  /** A turn shibaox submits itself (a dispatched run ended): rendered quietly, never re-dispatches. */
+  event?: boolean;
 }
 
 export interface RunManagerOptions {
@@ -154,7 +155,11 @@ export class RunManager {
     const messages = req.messages?.filter((m) => m && typeof m.content === 'string') ?? [];
     await engine.create({
       workflow: req.workflow,
-      input: { spec: req.input, ...(messages.length > 0 ? { messages } : {}) },
+      input: {
+        spec: req.input,
+        ...(messages.length > 0 ? { messages } : {}),
+        ...(req.event ? { event: true } : {}),
+      },
       workspace,
       budgetUsd,
       adapter,
@@ -522,9 +527,10 @@ export class RunManager {
   }
 
   /**
-   * What every task of a run gets from the daemon: the project preamble (profile + memory)
-   * for all roles, `start_workflow` for roles with the `orchestrate` capability and
-   * `remember`/`recall` for roles with `memory`.
+   * What every task of a run gets from the daemon: the project profile line for all roles, the
+   * memory notes (as data) for roles with the `memory` capability, `start_workflow` for roles
+   * with `orchestrate` (never on event turns) and `remember`/`recall` for `memory`. The profile
+   * is computed when the first task starts, not on submit.
    */
   private taskTools(
     org: Org,
@@ -540,12 +546,18 @@ export class RunManager {
     if (!project || r.adapter === 'mock') return undefined;
     const vault = vaultDir(org, { vault: this.opts.vault });
     const log = this.opts.log;
+    let profiled = false;
     let profileSummary: string | undefined;
-    try {
-      profileSummary = profileFor(project, { vault, log }).summary;
-    } catch (e) {
-      log(`warn: project profile: ${e instanceof Error ? e.message : String(e)}`);
-    }
+    const summary = () => {
+      if (profiled) return profileSummary;
+      profiled = true;
+      try {
+        profileSummary = profileFor(project, { vault, log }).summary;
+      } catch (e) {
+        log(`warn: project profile: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      return profileSummary;
+    };
     let notes: MemoryNotes | undefined;
     if (vault)
       try {
@@ -558,35 +570,33 @@ export class RunManager {
       description: w.description,
     }));
     const current = r.workflow?.workflow ?? '';
+    const orchestration = r.runId
+      ? orchestrationTools({
+          runId: r.runId,
+          current,
+          workflows,
+          startWorkflow: async (workflow, request) => {
+            const { runId } = await this.submit({
+              orgRoot: org.root,
+              project,
+              workflow,
+              input: request,
+              adapter: r.adapter,
+              parentRunId: r.runId,
+            });
+            return { runId };
+          },
+        })
+      : [];
+    const memory = notes ? memoryTools(notes) : [];
     return {
-      preamble: () => {
-        const p = notes?.preamble({ profileSummary });
+      preamble: (job) => {
+        const profileSummary = summary();
+        const withNotes = job.role.capabilities.includes('memory') ? notes : undefined;
+        const p = withNotes?.preamble({ profileSummary });
         return p || (profileSummary ? `Project: ${profileSummary}` : undefined);
       },
-      extra: (job) => {
-        const out: AgentTool[] = [];
-        if (job.role.capabilities.includes('orchestrate') && r.runId)
-          out.push(
-            ...orchestrationTools({
-              runId: r.runId,
-              current,
-              workflows,
-              startWorkflow: async (workflow, request) => {
-                const { runId } = await this.submit({
-                  orgRoot: org.root,
-                  project,
-                  workflow,
-                  input: request,
-                  adapter: r.adapter,
-                  parentRunId: r.runId,
-                });
-                return { runId };
-              },
-            }),
-          );
-        if (job.role.capabilities.includes('memory') && notes) out.push(...memoryTools(notes));
-        return out;
-      },
+      extra: (job) => toolsForRole(job.role, job.input, { orchestration, memory }),
     };
   }
 

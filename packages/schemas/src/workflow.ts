@@ -69,6 +69,8 @@ export const WorkflowSchema = z
     workflow: Id,
     team: Id.optional(),
     description: z.string().optional(),
+    /** A conversation with the orchestrator: runs in place and reads as messages in the dashboard. */
+    conversation: z.boolean().optional(),
     start: Id,
     nodes: z.record(z.string(), WorkflowNodeSchema),
   })

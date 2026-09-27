@@ -12,6 +12,7 @@ const chatState = (runId: string, over: Partial<RunState> = {}): RunState =>
     workflow: 'chat',
     workflowSnapshot: {
       workflow: 'chat',
+      conversation: true,
       start: 'reply',
       nodes: { reply: { type: 'task', role: 'assistant' } },
     },
@@ -141,7 +142,7 @@ test('a run dispatched from the conversation joins its tab; when it ends the con
     client.states.set(
       'r2',
       chatState('r2', {
-        input: { spec: '[event] workflow hello-feature finished: completed' },
+        input: { spec: 'workflow hello-feature finished: completed', event: true },
       } as Partial<RunState>),
     );
     client.pushFrame('c1', end('completed'));
@@ -149,12 +150,16 @@ test('a run dispatched from the conversation joins its tab; when it ends the con
     for (let i = 0; i < 40 && !client.calls.some((c) => c.method === 'submitRun'); i++)
       f = await frame();
     const submit = client.calls.find((c) => c.method === 'submitRun')?.args[0] as
-      | { input: string; messages?: { role: string; content: string }[]; workflow: string }
+      | {
+          input: string;
+          messages?: { role: string; content: string }[];
+          workflow: string;
+          event?: boolean;
+        }
       | undefined;
     expect(submit?.workflow).toBe('chat');
-    expect(submit?.input.startsWith('[event] workflow hello-feature finished: completed')).toBe(
-      true,
-    );
+    expect(submit?.event).toBe(true);
+    expect(submit?.input.startsWith('workflow hello-feature finished: completed')).toBe(true);
     expect(submit?.input).toContain('added /health');
     expect(submit?.input).toContain('shibaox/c1');
     expect(submit?.messages).toEqual([
@@ -163,6 +168,52 @@ test('a run dispatched from the conversation joins its tab; when it ends the con
     ]);
     expect(hooks?.data.threadOf('r1')).toEqual(['r1', 'c1', 'r2']);
     expect(client.calls.filter((c) => c.method === 'submitRun')).toHaveLength(1); // once per child
+  } finally {
+    setup.renderer.destroy();
+  }
+});
+
+test('children that had already ended when their tab was opened are not reported again', async () => {
+  const client = new FakeDaemonClient();
+  client.runs = [run('r1', 'chat', 'completed'), run('c1', 'hello-feature', 'completed', 'r1')];
+  client.states.set('r1', chatState('r1'));
+  client.states.set('c1', childState('c1', 'r1', 'completed'));
+  client.history.set('r1', [end('completed')]);
+  client.history.set('c1', [end('completed')]);
+  let hooks: AppHooks | undefined;
+  const setup = await testRender(
+    () => (
+      <App
+        client={client}
+        version="0.0.1"
+        home="/tmp/shx-home"
+        cwd="/tmp"
+        env={{ SHIBAOX_NO_MOTION: '1' }}
+        onExit={() => {}}
+        onMount={(h) => {
+          hooks = h;
+          h.data.openRun('r1');
+        }}
+      />
+    ),
+    { width: 110, height: 34, exitOnCtrlC: false },
+  );
+  const frame = async () => {
+    await settle();
+    await setup.renderOnce();
+    await settle();
+    await setup.renderOnce();
+    return setup.captureCharFrame();
+  };
+  try {
+    await frame();
+    await hooks?.data.poller.tick();
+    let f = await frame();
+    for (let i = 0; i < 20 && !f.includes('→ hello-feature'); i++) f = await frame();
+    expect(hooks?.data.threadOf('r1')).toEqual(['r1', 'c1']);
+    expect(f).toContain('→ hello-feature');
+    await frame();
+    expect(client.calls.filter((c) => c.method === 'submitRun')).toHaveLength(0);
   } finally {
     setup.renderer.destroy();
   }

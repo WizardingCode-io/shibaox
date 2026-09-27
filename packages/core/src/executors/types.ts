@@ -119,6 +119,11 @@ export interface AgentTool {
   execute(input: Record<string, unknown>): Promise<unknown>;
 }
 
+/** A turn submitted by shibaox itself (a dispatched run ended), never by the user. */
+export function isEventTurn(input: Record<string, unknown>): boolean {
+  return input.event === true;
+}
+
 /** The conversation carried in a run's input (`input.messages`), well-formed turns only. */
 export function conversationOf(input: Record<string, unknown>): ChatMessage[] {
   const raw = input.messages;

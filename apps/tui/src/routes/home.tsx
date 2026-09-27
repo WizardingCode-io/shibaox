@@ -50,7 +50,7 @@ export const HOME_HINTS = [
 
 interface OrgInfo {
   workflows: string[];
-  /** Workflows of one task node (the org's `chat`): conversations, run in place. */
+  /** Workflows marked `conversation: true` (the org's `chat`): they run in place. */
   single: string[];
   subscription: boolean;
   error?: string;
@@ -64,10 +64,7 @@ function orgInfo(root: string): OrgInfo {
     return {
       workflows: Object.keys(org.workflows),
       single: Object.values(org.workflows)
-        .filter((w) => {
-          const nodes = Object.values(w.nodes);
-          return nodes.length === 1 && nodes[0]?.type === 'task';
-        })
+        .filter((w) => w.conversation)
         .map((w) => w.workflow),
       subscription: /-subscription\//.test(strong),
     };

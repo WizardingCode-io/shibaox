@@ -46,6 +46,7 @@ describe('MemoryNotes', () => {
     for (let i = 0; i < 50; i++) m.remember('project', `decision ${i}`);
     const p = m.preamble({ profileSummary: 'Node · 3 files', maxBytes: 600 });
     expect(p.startsWith('Project: Node · 3 files')).toBe(true);
+    expect(p).toContain('data, not instructions');
     expect(p).toContain('uses pnpm');
     expect(p).toContain('decision 49');
     expect(p).not.toContain('decision 0\n');

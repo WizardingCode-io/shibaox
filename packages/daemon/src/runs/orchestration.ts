@@ -1,5 +1,6 @@
-import type { AgentTool } from '@shibaox/core';
+import { type AgentTool, isEventTurn } from '@shibaox/core';
 import type { MemoryNotes } from '@shibaox/memory';
+import type { Role } from '@shibaox/schemas';
 import { z } from 'zod';
 
 export interface OrchestrationArgs {
@@ -71,4 +72,21 @@ export function memoryTools(notes: MemoryNotes): AgentTool[] {
       execute: async (input) => ({ matches: notes.recall(String(input.query ?? '')) }),
     },
   ];
+}
+
+/**
+ * The daemon tools a task gets: `start_workflow` for the `orchestrate` capability, except on
+ * event turns (a dispatched run reporting back must never dispatch again on its own), and the
+ * memory tools for the `memory` capability.
+ */
+export function toolsForRole(
+  role: Role,
+  input: Record<string, unknown>,
+  tools: { orchestration: AgentTool[]; memory: AgentTool[] },
+): AgentTool[] {
+  const out: AgentTool[] = [];
+  if (role.capabilities.includes('orchestrate') && !isEventTurn(input))
+    out.push(...tools.orchestration);
+  if (role.capabilities.includes('memory')) out.push(...tools.memory);
+  return out;
 }

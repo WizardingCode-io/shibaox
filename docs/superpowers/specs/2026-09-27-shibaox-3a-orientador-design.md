@@ -27,7 +27,7 @@ equipas por stack (3C), equipas de outros domínios (3D), desktop.
   conversa transcrita no prompt (`Conversation so far:` + `User:`/`Assistant:`) antes de
   `Task:`. Retomar sessões Claude Code entre runs fica para depois (sessão por cwd,
   callbacks de permissão por run: não testado; a transcrição é determinista).
-- Runs de chat no painel (o snapshot tem um único nó, do tipo `task`): sem cabeçalho de nó,
+- Runs de chat no painel (workflow marcado `conversation: true`): sem cabeçalho de nó,
   sem linha `■ done`, sem cartão-resumo quando termina bem (o resumo fica quando falha ou é
   cancelado); o texto do orientador é a resposta. O custo continua na sidebar.
 
@@ -71,6 +71,9 @@ equipas por stack (3C), equipas de outros domínios (3D), desktop.
 ## 4. Despacho
 
 - `RunCreated.parentRunId?` (schema, reducer, `RunState`, `RunSummaryPlus`), `SubmitRequest.parentRunId?`.
+  O run filho herda org, projeto e adapter; o modo de workspace é o da org (worktree num
+  repositório), não o do pai (o chat corre `inplace`). O turno que o painel submete quando um
+  filho termina leva `event: true` e nunca recebe `start_workflow`.
 - Ferramenta `start_workflow({ workflow, request })` para papéis com a capability
   `orchestrate`: submete um run do mesmo org/projeto/adapter com `parentRunId` = o run do
   orientador, e devolve `{ runId, workflow, status: 'queued' }` sem esperar. A descrição da

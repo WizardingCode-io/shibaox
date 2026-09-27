@@ -13,7 +13,7 @@ import {
 } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
 import { money } from '../model/format.js';
-import { type Card, EVENT_PREFIX, reduceTimeline } from '../model/stream.js';
+import { type Card, reduceTimeline } from '../model/stream.js';
 import { requestText } from '../routes/session/request.js';
 import type { DaemonClientLike } from './client.js';
 import { type DataState, FRAME_LIMIT, initialData } from './data-state.js';
@@ -35,7 +35,7 @@ export interface Data {
   /** The runs of the tab that holds `runId`, oldest first. */
   threadOf(runId: string): string[];
   /** Submits the next turn in the tab of `rootId` (same org, project, workflow and adapter; the conversation so far travels as `messages`). */
-  continueRun(rootId: string, text: string): Promise<string | undefined>;
+  continueRun(rootId: string, text: string, o?: { event?: boolean }): Promise<string | undefined>;
   activate(runId?: string): void;
   nextTab(direction: 1 | -1): void;
   markRead(runId: string): void;
@@ -101,7 +101,7 @@ export function DataProvider(
       .flatMap((b) => (b.kind === 'text' && !b.parentId ? [b.text.trim()] : []))
       .join('\n')
       .trim();
-  const continueRun = async (rootId: string, text: string) => {
+  const continueRun = async (rootId: string, text: string, o: { event?: boolean } = {}) => {
     const turns = turnsOf(rootId);
     const previousId = turns[turns.length - 1] ?? rootId;
     const previous = state.states[previousId];
@@ -122,6 +122,7 @@ export function DataProvider(
       workflow: previous.workflow,
       input: text,
       messages,
+      ...(o.event ? { event: true } : {}),
       adapter: previous.adapter as SubmitRequest['adapter'],
       workspace: previous.workspaceMode,
       budgetUsd: previous.budgetUsd,
@@ -142,7 +143,7 @@ export function DataProvider(
       .map(([id, n]) => `${id}: ${String(n.summary).replace(/\s+/g, ' ').slice(0, 200)}`);
     const files = timeline(st.runId)().find((c) => c.kind === 'summary');
     const parts = [
-      `${EVENT_PREFIX}workflow ${st.workflow} finished: ${status}`,
+      `workflow ${st.workflow} finished: ${status}`,
       `${nodes.length} node${nodes.length === 1 ? '' : 's'}`,
       money(st.spentUsd),
       ...(files?.kind === 'summary' && files.files.length > 0
@@ -210,6 +211,9 @@ export function DataProvider(
     return entry.cards;
   };
 
+  // children whose end was already history when they joined a tab are never reported again
+  const reported = new Set<string>();
+  const TERMINAL = new Set<string>(['completed', 'failed', 'cancelled']);
   // a run dispatched from a conversation (`parentRunId`) joins the tab of its parent
   createEffect(() => {
     if (props.single) return;
@@ -217,12 +221,12 @@ export function DataProvider(
       if (!r.parentRunId) continue;
       const root = rootOf(r.parentRunId);
       if (!root || threadOf(root).includes(r.runId)) continue;
+      if (TERMINAL.has(r.status)) reported.add(r.runId);
       set('threads', root, (t = [root]) => [...t, r.runId]);
       poller.subscribe(r.runId);
     }
   });
   // when a dispatched run ends, the conversation continues with an event for the orchestrator
-  const reported = new Set<string>();
   createEffect(() => {
     if (props.single) return;
     for (const root of state.open)
@@ -231,7 +235,7 @@ export function DataProvider(
         const status = state.ended[id];
         if (!st?.parentRunId || !status || reported.has(id)) continue;
         reported.add(id);
-        void continueRun(root, eventText(st, status));
+        void continueRun(root, eventText(st, status), { event: true });
       }
   });
 

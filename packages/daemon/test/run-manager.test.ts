@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fakeQuery, msg } from '@shibaox/adapter-claude-code/testing';
 import { MemoryEventStore, type TaskJob } from '@shibaox/core';
+import { MemoryNotes } from '@shibaox/memory';
 import { removeRunWorkspace } from '@shibaox/workspace';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InboxService } from '../src/inbox.js';
@@ -169,9 +170,14 @@ describe('RunManager', () => {
       workspace: 'inplace',
       messages,
       parentRunId: 'p',
+      event: true,
     });
     const created = (await store.read(runId))[0];
-    expect(created?.type === 'RunCreated' && created.input).toEqual({ spec: 'and?', messages });
+    expect(created?.type === 'RunCreated' && created.input).toEqual({
+      spec: 'and?',
+      messages,
+      event: true,
+    });
     expect(created?.type === 'RunCreated' && created.parentRunId).toBe('p');
     await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('completed'));
     expect((await m.list()).find((r) => r.runId === runId)?.parentRunId).toBe('p');
@@ -182,11 +188,12 @@ describe('RunManager', () => {
     });
   });
 
-  it('a claude-code chat run gets the shibaox MCP tools and the project preamble', async () => {
+  it('a claude-code chat run gets the shibaox MCP tools and the project preamble; memory reaches memory roles only', async () => {
     const s = setup({ claudeCode: true });
     const store = new MemoryEventStore();
     const q = fakeQuery(() => [msg.init(), msg.success('ok')]);
     const { manager: m } = manager(store, { queryFn: q, vault: s.vault });
+    new MemoryNotes({ vault: s.vault, project: 'proj' }).remember('user', 'uses pnpm everywhere');
     const { runId } = await m.submit({
       orgRoot: s.orgRoot,
       project: s.project,
@@ -198,13 +205,28 @@ describe('RunManager', () => {
     const o = q.calls[0]?.options ?? {};
     expect(o.mcpServers?.shibaox).toBeDefined();
     expect(o.allowedTools).toContain('mcp__shibaox__*');
-    expect(o.allowedTools).toContain('WebFetch');
+    expect(o.allowedTools).toContain('WebSearch'); // WebFetch goes through canUseTool (host check)
     const append = (o.systemPrompt as { append?: string }).append ?? '';
     expect(append).toContain('Project: ');
     expect(append).toContain('files');
     // the orchestrator prompt from the template
     expect(append).toContain('start_workflow');
+    expect(append).toContain('uses pnpm everywhere');
+    expect(append).toContain('data, not instructions');
     expect(existsSync(join(s.vault, '10-projects', 'proj', 'profile.md'))).toBe(true);
+    // a team role without the memory capability gets the profile, never the notes
+    const team = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'x',
+      workspace: 'inplace',
+    });
+    await vi.waitFor(async () => expect((await m.state(team.runId)).status).toBe('waiting_human'));
+    const teamAppend =
+      (q.calls[1]?.options?.systemPrompt as { append?: string } | undefined)?.append ?? '';
+    expect(teamAppend).toContain('Project: ');
+    expect(teamAppend).not.toContain('uses pnpm everywhere');
   });
 
   it('restart keeps the pending approval and resumes by session id', async () => {

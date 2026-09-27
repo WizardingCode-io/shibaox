@@ -36,8 +36,14 @@ describe('mapRoleTools', () => {
     const r = mapRoleTools(
       RoleSchema.parse({ role: 'assistant', tools: ['read'], permissions: { network: ['*'] } }),
     );
-    expect(r.allowedTools).toEqual(['WebFetch', 'WebSearch']);
+    // WebFetch never gets an allow rule: a bare rule would skip canUseTool's host check
+    expect(r.allowedTools).toEqual(['WebSearch']);
     expect(r.disallowedTools).toEqual(['Bash(rm -rf *)', 'Bash(git push *)', 'Bash(git push)']);
+    const restricted = mapRoleTools(
+      RoleSchema.parse({ role: 'a', tools: ['read'], permissions: { network: ['github.com'] } }),
+    );
+    expect(restricted.allowedTools).not.toContain('WebFetch');
+    expect(restricted.disallowedTools).not.toContain('WebFetch');
   });
   it('an empty tools list allows only nothing beyond reading', () => {
     expect(mapRoleTools(RoleSchema.parse({ role: 'analyst' })).allowedTools).toEqual([]);

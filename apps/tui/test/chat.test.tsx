@@ -12,6 +12,7 @@ const chatState = (runId: string, over: Partial<RunState> = {}): RunState =>
     workflow: 'chat',
     workflowSnapshot: {
       workflow: 'chat',
+      conversation: true,
       start: 'reply',
       nodes: { reply: { type: 'task', role: 'assistant', instruction: 'Reply to the user.' } },
     },

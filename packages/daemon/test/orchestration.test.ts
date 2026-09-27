@@ -3,8 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MemoryNotes } from '@shibaox/memory';
+import { RoleSchema } from '@shibaox/schemas';
 import { describe, expect, it } from 'vitest';
-import { memoryTools, orchestrationTools } from '../src/runs/orchestration.js';
+import { z } from 'zod';
+import { memoryTools, orchestrationTools, toolsForRole } from '../src/runs/orchestration.js';
 import { profileFor } from '../src/runs/profile.js';
 
 const sample = fileURLToPath(new URL('../../../examples/sample-repo', import.meta.url));
@@ -43,6 +45,29 @@ describe('orchestrationTools', () => {
     expect(await t?.execute({ workflow: 'chat', request: 'x' })).toMatchObject({
       error: expect.stringContaining('chat'),
     });
+  });
+});
+
+describe('toolsForRole', () => {
+  const orchestration = [
+    { name: 'start_workflow', description: '', input: z.object({}), execute: async () => ({}) },
+  ];
+  const memory = [
+    { name: 'remember', description: '', input: z.object({}), execute: async () => ({}) },
+  ];
+  const role = (capabilities: string[]) => RoleSchema.parse({ role: 'r', capabilities });
+  it('follows the role capabilities and drops start_workflow on event turns', () => {
+    const names = (r: ReturnType<typeof role>, input: Record<string, unknown>) =>
+      toolsForRole(r, input, { orchestration, memory }).map((t) => t.name);
+    expect(names(role(['orchestrate', 'memory']), { spec: 'olá' })).toEqual([
+      'start_workflow',
+      'remember',
+    ]);
+    expect(names(role(['orchestrate', 'memory']), { spec: 'x', event: true })).toEqual([
+      'remember',
+    ]);
+    expect(names(role(['memory']), { spec: 'x' })).toEqual(['remember']);
+    expect(names(role([]), { spec: 'x' })).toEqual([]);
   });
 });
 

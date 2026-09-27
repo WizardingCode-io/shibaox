@@ -77,14 +77,15 @@ export type Card =
 
 export const CARD_LIMIT = 5000;
 
-/** A conversation turn: the workflow is one task node (the org's `chat`), read as a message. */
+/** A conversation turn: a run of a workflow marked `conversation: true` (the org's `chat`). */
 export function isChatRun(state: RunState | undefined): boolean {
-  const nodes = Object.values(state?.workflowSnapshot?.nodes ?? {});
-  return nodes.length === 1 && nodes[0]?.type === 'task';
+  return state?.workflowSnapshot?.conversation === true;
 }
 
-/** The text a run's input asks for; `[event] …` inputs come from shibaox, not from the user. */
-export const EVENT_PREFIX = '[event] ';
+/** A turn shibaox submitted itself (a dispatched run ended), never typed by the user. */
+export function isEventRun(state: RunState | undefined): boolean {
+  return state?.input.event === true;
+}
 const SUMMARY_LIMIT = 80;
 
 /** Run events after which the dashboard refreshes the run's state. */

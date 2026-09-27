@@ -2,7 +2,7 @@ import { TextAttributes } from '@opentui/core';
 import { type JSX, Show } from 'solid-js';
 import { useData } from '../../context/data.js';
 import { shortId } from '../../model/format.js';
-import { EVENT_PREFIX } from '../../model/stream.js';
+import { isEventRun } from '../../model/stream.js';
 import { useTheme } from '../../theme/context.js';
 
 /** The text a run was asked for, from its state (`input.spec` for daemon and inline runs). */
@@ -34,7 +34,7 @@ export function RequestBlock(props: { runId: string }): JSX.Element {
     return parts.filter(Boolean).join(' · ');
   };
   const text = () => requestText(state()?.input);
-  const event = () => text().startsWith(EVENT_PREFIX);
+  const event = () => isEventRun(state());
   const child = () => state()?.parentRunId !== undefined;
   const workflow = () => summary()?.workflow ?? state()?.workflow ?? '';
   return (
@@ -45,7 +45,7 @@ export function RequestBlock(props: { runId: string }): JSX.Element {
         <box width="100%" flexShrink={0} marginBottom={1} paddingLeft={1}>
           <text fg={theme.text.muted} wrapMode="word">
             <span style={{ fg: theme.text.action.primary.selected }}>{'↳ '}</span>
-            {text().slice(EVENT_PREFIX.length)}
+            {text()}
           </text>
         </box>
       }
