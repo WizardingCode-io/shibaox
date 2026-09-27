@@ -99,11 +99,6 @@ export function TiersDialog(props: { orgRoot: string; onSaved?: () => void }): J
         setPick((c) => Math.min(choices().length - 1, c + 1));
         return true;
       }
-      if (key.name === 'escape') {
-        setEditing(undefined);
-        setQuery('');
-        return true;
-      }
       return false;
     }
     if (key.name === 'up') {
@@ -136,8 +131,14 @@ export function TiersDialog(props: { orgRoot: string; onSaved?: () => void }): J
   const start = () =>
     Math.max(0, Math.min(pick() - Math.floor(VISIBLE / 2), choices().length - VISIBLE));
   const title = () => `Tiers · ${config()?.organization ?? ''}`;
+  // the Dialog sees escape first (its handler is the newest): back out of the list, else close
+  const back = () => {
+    if (!editing()) return dialog.close();
+    setEditing(undefined);
+    setQuery('');
+  };
   return (
-    <Dialog size="large" title={title()} onClose={() => dialog.close()}>
+    <Dialog size="large" title={title()} onClose={back}>
       <box flexDirection="column" width="100%">
         <Show when={config.error}>
           <text fg={theme.text.feedback.error}>

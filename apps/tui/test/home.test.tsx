@@ -562,7 +562,16 @@ test('/tiers shows the org tiers and changes one through the daemon', async () =
       join(m.dir, 'org'),
       { tiers: { strong: 'openrouter/openai/gpt-5' } },
     ]);
+    // escape inside the model list goes back to the rows; a second one closes the dialog
+    await m.setup.mockInput.pressEnter();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(await m.frame()).toContain('type to filter');
     await m.setup.mockInput.pressEscape();
+    f = await m.frame();
+    expect(f).toContain('Tiers');
+    expect(f).not.toContain('type to filter');
+    await m.setup.mockInput.pressEscape();
+    expect(await m.frame()).not.toContain('Tiers ·');
   } finally {
     m.done();
   }
