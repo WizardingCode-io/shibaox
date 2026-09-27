@@ -66,6 +66,8 @@ export interface PromptCommand {
 export interface ValueChoice {
   value: string;
   hint?: string;
+  /** Listed after the usable values whatever the match (a model whose key is missing). */
+  disabled?: boolean;
 }
 
 /** A `/command` a prompt offers: its kind decides what enter does, `values` feed the list. */
@@ -85,6 +87,7 @@ export function modelValues(models: readonly ModelChoice[]): ValueChoice[] {
       hint: m.configured
         ? (m.runtime ?? 'direct')
         : `needs ${m.missing?.join(', ') || 'configuration'}`,
+      disabled: !m.configured,
     }));
 }
 
@@ -176,11 +179,19 @@ export function completeCommand(
   const values = (byName.get(name)?.values?.() ?? []).map((v) =>
     typeof v === 'string' ? { value: v } : v,
   );
-  const hints = new Map(values.map((v) => [v.value, v.hint]));
-  return rank(
+  const byValue = new Map(values.map((v) => [v.value, v]));
+  const ranked = rank(
     arg,
     values.map((v) => v.value),
-  ).map((v) => ({ label: v, insert: `/${name} ${v}`, hint: hints.get(v) }));
+  );
+  // usable values first, whatever the match score: enter must never pick one that cannot run
+  const usable = ranked.filter((v) => !byValue.get(v)?.disabled);
+  const rest = ranked.filter((v) => byValue.get(v)?.disabled);
+  return [...usable, ...rest].map((v) => ({
+    label: v,
+    insert: `/${name} ${v}`,
+    hint: byValue.get(v)?.hint,
+  }));
 }
 
 export function expandHome(p: string): string {

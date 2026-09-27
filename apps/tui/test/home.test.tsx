@@ -347,6 +347,14 @@ test('opened in the home directory itself, the project is ~/.shibaox/workspace',
 test('/model lists the daemon models with their state; the choice travels with the run and is remembered', async () => {
   const m = await mount({
     models: [
+      // the unconfigured twin matches "haiku" just as well: it must never win the enter
+      {
+        ref: 'anthropic/claude-haiku-4-5',
+        provider: 'anthropic',
+        model: 'claude-haiku-4-5',
+        configured: false,
+        missing: ['ANTHROPIC_API_KEY'],
+      },
       {
         ref: 'anthropic-subscription/claude-haiku-4-5',
         provider: 'anthropic-subscription',
