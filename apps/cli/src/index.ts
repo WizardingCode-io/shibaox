@@ -2,7 +2,13 @@
 import { ADAPTER_IDS, type AdapterId, type GraphMode } from '@shibaox/daemon';
 import { Command, InvalidArgumentError, Option } from 'commander';
 import { connect } from './client.js';
-import { daemonStart, daemonStatus, daemonStop } from './commands/daemon.js';
+import {
+  daemonInstall,
+  daemonStart,
+  daemonStatus,
+  daemonStop,
+  daemonUninstall,
+} from './commands/daemon.js';
 import { doctorCommand } from './commands/doctor.js';
 import { graphBuild, graphQuery, graphUpdate } from './commands/graph.js';
 import { answerCommand, inboxCommand } from './commands/inbox.js';
@@ -229,6 +235,18 @@ daemon
 daemon.command('status').action(async function (this: Command) {
   exitWith(await daemonStatus(out(this)));
 });
+daemon
+  .command('install')
+  .description('run the daemon as a launchd service (starts at login, restarts if it exits)')
+  .action(async function (this: Command) {
+    exitWith(await daemonInstall(out(this)));
+  });
+daemon
+  .command('uninstall')
+  .description('remove the launchd service')
+  .action(async function (this: Command) {
+    exitWith(await daemonUninstall(out(this)));
+  });
 
 const providers = program.command('providers').description('model providers from the catalog');
 providers

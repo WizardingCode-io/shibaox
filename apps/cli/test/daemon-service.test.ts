@@ -1,0 +1,72 @@
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { homePaths, LAUNCHD_LABEL, plistPath } from '@shibaox/daemon';
+import { afterEach, describe, expect, it } from 'vitest';
+import { daemonInstall, daemonUninstall, serviceLine } from '../src/commands/daemon.js';
+import type { Out } from '../src/output.js';
+
+const dirs: string[] = [];
+afterEach(() => {
+  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+});
+const fakeOut = () => {
+  const lines: string[] = [];
+  const objs: unknown[] = [];
+  const out: Out = { line: (l) => lines.push(l), obj: (o) => objs.push(o) };
+  return { out, lines, objs };
+};
+const fakeExec = () => {
+  const calls: string[][] = [];
+  const exec = async ({ argv }: { argv: string[] }) => {
+    calls.push(argv);
+    return { exitCode: 0, stdout: '', stderr: '', timedOut: false };
+  };
+  return { calls, exec };
+};
+
+describe('shibaox daemon install / uninstall', () => {
+  it('writes the agent, loads it and says where; uninstall removes it', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'cli-svc-'));
+    dirs.push(home);
+    const env = { HOME: home, SHIBAOX_HOME: join(home, '.shibaox') };
+    const paths = homePaths(env);
+    const { calls, exec } = fakeExec();
+    const o = fakeOut();
+    // no daemon is running: nothing to stop first
+    expect(
+      await daemonInstall(o.out, { env, paths, exec, uid: 501, stopRunning: async () => false }),
+    ).toBe(0);
+    expect(existsSync(plistPath(env))).toBe(true);
+    expect(o.lines.join('\n')).toContain('launchd');
+    expect(o.lines.join('\n')).toContain(plistPath(env));
+    expect(calls.some((c) => c[1] === 'bootstrap')).toBe(true);
+    expect(await serviceLine({ env, exec, uid: 501 })).toBe('service: launchd (installed)');
+    const u = fakeOut();
+    expect(await daemonUninstall(u.out, { env, paths, exec, uid: 501 })).toBe(0);
+    expect(existsSync(plistPath(env))).toBe(false);
+    expect(u.lines.join('\n')).toContain('removed');
+    expect(await serviceLine({ env, exec, uid: 501 })).toBe('service: not installed');
+    expect(calls.some((c) => c[1] === 'bootout' && c[2] === `gui/501/${LAUNCHD_LABEL}`)).toBe(true);
+  });
+  it('stops a detached daemon before launchd takes over', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'cli-svc-'));
+    dirs.push(home);
+    const env = { HOME: home, SHIBAOX_HOME: join(home, '.shibaox') };
+    const { exec } = fakeExec();
+    const o = fakeOut();
+    let stopped = 0;
+    await daemonInstall(o.out, {
+      env,
+      paths: homePaths(env),
+      exec,
+      uid: 501,
+      stopRunning: async () => {
+        stopped++;
+        return true;
+      },
+    });
+    expect(stopped).toBe(1);
+    expect(o.lines.join('\n')).toContain('Stopped the running daemon');
+  });
+});

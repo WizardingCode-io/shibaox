@@ -20,4 +20,5 @@ export * from './runtime.js';
 export * from './runtime-buffer.js';
 export * from './scheduler.js';
 export * from './server.js';
+export * from './service.js';
 export * from './templates.js';

@@ -1,5 +1,11 @@
 import { runCommand } from '@shibaox/core';
-import { DaemonClient, DaemonUnavailableError, homePaths, loadDaemonConfig } from '@shibaox/daemon';
+import {
+  DaemonClient,
+  DaemonUnavailableError,
+  homePaths,
+  loadDaemonConfig,
+  serviceStatus,
+} from '@shibaox/daemon';
 import { CLI_VERSION } from '../version.js';
 
 interface CheckLine {
@@ -41,6 +47,20 @@ export async function doctorCommand(): Promise<number> {
   lines.push(await which('codex'));
   lines.push(await which('cursor'));
   lines.push(await daemonLine());
+  if (process.platform === 'darwin') {
+    const s = await serviceStatus();
+    lines.push({
+      name: 'service',
+      ok: s === 'installed',
+      detail:
+        s === 'installed'
+          ? 'launchd (starts at login)'
+          : s === 'not-loaded'
+            ? 'plist present but not loaded: shibaox daemon install'
+            : 'not installed (shibaox daemon install keeps the daemon running 24h)',
+      required: false,
+    });
+  }
   lines.push(await telegramLine());
   lines.push(await claudeAuthLine());
   // a Claude subscription (claude auth) replaces the API key; neither is needed for mock runs
