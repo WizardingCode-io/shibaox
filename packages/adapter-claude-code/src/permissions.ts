@@ -2,7 +2,7 @@ import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import type { CanUseTool, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
-import { type ApprovalHandler, argvHash } from '@shibaox/core';
+import { type ApprovalHandler, argvHash, hostAllowed } from '@shibaox/core';
 import type { Role } from '@shibaox/schemas';
 import { type ApprovalCategory, analyseBashCommand, type ToolCategory } from './bash-command.js';
 import { FILE_TOOLS } from './tools-map.js';
@@ -110,6 +110,24 @@ export function buildCanUseTool(args: CanUseToolArgs): CanUseTool {
         return deny(toolName, input, notAllowed(toolName));
       const violation = fileToolViolation(toolName, input, args.cwd);
       if (violation) return deny(toolName, input, violation);
+      return { behavior: 'allow', updatedInput: input };
+    }
+    if (toolName === 'WebFetch' || toolName === 'WebSearch') {
+      const network = args.role.permissions.network;
+      if (network.length === 0) return deny(toolName, input, notAllowed(toolName));
+      if (toolName === 'WebSearch') return { behavior: 'allow', updatedInput: input };
+      let host: string;
+      try {
+        host = new URL(String(input.url ?? '')).hostname;
+      } catch {
+        return deny(toolName, input, `invalid url "${String(input.url ?? '')}"`);
+      }
+      if (!hostAllowed(host, network))
+        return deny(
+          toolName,
+          input,
+          `host "${host}" is not allowed (network: ${network.join(', ')})`,
+        );
       return { behavior: 'allow', updatedInput: input };
     }
     if (toolName !== 'Bash') return deny(toolName, input, notAllowed(toolName));

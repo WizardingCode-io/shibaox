@@ -1,16 +1,19 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Options, query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import type {
-  ApprovalHandler,
-  Capability,
-  ExecutionContext,
-  RuntimeAdapter,
-  RuntimeEvent,
-  TaskJob,
+import {
+  type AgentTool,
+  type ApprovalHandler,
+  type Capability,
+  conversationOf,
+  type ExecutionContext,
+  type RuntimeAdapter,
+  type RuntimeEvent,
+  type TaskJob,
 } from '@shibaox/core';
 import { describeError } from '@shibaox/providers';
 import type { ApprovalCategory } from './bash-command.js';
+import { sdkMcpServer } from './mcp.js';
 import { buildCanUseTool } from './permissions.js';
 import { mapRoleTools } from './tools-map.js';
 
@@ -36,6 +39,10 @@ export interface ClaudeCodeAdapterOptions {
   queryFn?: QueryFn;
   /** Extra env for the Claude Code process (static or per job), merged over the minimal inherited env. */
   env?: Record<string, string> | ((job: TaskJob) => Record<string, string>);
+  /** Tools the daemon adds for this job (orchestration, memory), served in-process as MCP `shibaox`. */
+  extraTools?: (job: TaskJob) => AgentTool[];
+  /** Context appended to the role prompt (project profile, memory). */
+  preamble?: (job: TaskJob) => string | undefined;
 }
 
 const RULES =
@@ -98,7 +105,8 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
       const p = join(this.opts.orgRoot, job.role.system_prompt);
       if (existsSync(p)) prompt = readFileSync(p, 'utf8');
     }
-    return `${prompt}\n\n${RULES}`;
+    const preamble = this.opts.preamble?.(job);
+    return `${prompt}\n\n${RULES}${preamble ? `\n\n${preamble}` : ''}`;
   }
 
   async *run(job: TaskJob, ctx: ExecutionContext): AsyncIterable<RuntimeEvent> {
@@ -119,7 +127,18 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     });
 
     const { allowedTools, disallowedTools } = mapRoleTools(job.role);
-    const mcpServers = this.opts.mcpServers?.(job) ?? {};
+    const extra = this.opts.extraTools?.(job) ?? [];
+    const mcpServers: McpServers = {
+      ...this.opts.mcpServers?.(job),
+      ...(extra.length > 0 ? { shibaox: sdkMcpServer('shibaox', extra) } : {}),
+    };
+    const roleBudget = job.role.budget_usd;
+    const maxBudgetUsd =
+      roleBudget === undefined
+        ? job.budgetRemainingUsd
+        : job.budgetRemainingUsd === undefined
+          ? roleBudget
+          : Math.min(roleBudget, job.budgetRemainingUsd);
     const options: Options = {
       systemPrompt: { type: 'preset', preset: 'claude_code', append: this.rolePrompt(job) },
       cwd: job.workspace,
@@ -139,8 +158,8 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
           deferred = { category, approvalId };
         },
       }),
-      maxTurns: this.opts.maxTurns ?? 60,
-      maxBudgetUsd: job.budgetRemainingUsd,
+      maxTurns: job.role.max_turns ?? this.opts.maxTurns ?? 60,
+      maxBudgetUsd,
       mcpServers,
       settingSources: [],
       outputFormat: job.outputSchema
@@ -154,13 +173,24 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
         { subscription: isSubscriptionRef(this.opts.modelRef?.(job)) },
       ),
     };
+    // the conversation is transcribed ahead of the task; it never travels inside the input JSON
+    const { messages: _messages, ...input } = job.input;
+    const conversation = conversationOf(job.input);
+    const transcript =
+      conversation.length > 0
+        ? [
+            'Conversation so far:',
+            ...conversation.map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`),
+          ].join('\n')
+        : undefined;
     // a resumed session already has the task: it only needs to know what was decided
     const prompt =
       job.resumeSessionId !== undefined
         ? (job.resumeNote ?? 'Continue the task.')
         : [
+            ...(transcript ? [transcript] : []),
             `Task: ${job.instruction}`,
-            `Input: ${JSON.stringify(job.input)}`,
+            `Input: ${JSON.stringify(input)}`,
             `Previous outputs: ${JSON.stringify(job.context.previousOutputs).slice(0, 60_000)}`,
             `Last gate report: ${JSON.stringify(job.context.lastGateReport ?? null).slice(0, 20_000)}`,
             ...(job.resumeNote ? [job.resumeNote] : []),

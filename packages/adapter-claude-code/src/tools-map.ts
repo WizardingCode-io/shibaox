@@ -10,14 +10,14 @@ export const FILE_TOOLS: Record<string, string[]> = {
   write: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'],
 };
 
-/** Rules denied to every role; `git push` is lifted only so it can reach the approval callback. */
-export const ALWAYS_DENY = [
-  'Bash(rm -rf *)',
-  'Bash(git push *)',
-  'Bash(git push)',
-  'WebFetch',
-  'WebSearch',
-];
+/** The web tools: denied unless the role has a `permissions.network` allowlist. */
+export const WEB_TOOLS = ['WebFetch', 'WebSearch'];
+
+/**
+ * Rules denied to every role; `git push` is lifted only so it can reach the approval callback,
+ * the web tools only for roles with a network allowlist (`canUseTool` checks the host).
+ */
+export const ALWAYS_DENY = ['Bash(rm -rf *)', 'Bash(git push *)', 'Bash(git push)', ...WEB_TOOLS];
 
 /**
  * Maps a role's `tools` to Claude Code allow/deny rules. File tools, git and deploy-capable
@@ -29,8 +29,9 @@ export function mapRoleTools(role: Role): { allowedTools: string[]; disallowedTo
     GATED_PROGRAMS.includes(t) || FILE_TOOLS[t] ? [] : [`Bash(${t} *)`],
   );
   const needsPushApproval = role.permissions.approval_required.includes('push');
+  const web = role.permissions.network.length > 0;
   const disallowedTools = ALWAYS_DENY.filter(
-    (d) => !(needsPushApproval && d.startsWith('Bash(git push')),
+    (d) => !(needsPushApproval && d.startsWith('Bash(git push')) && !(web && WEB_TOOLS.includes(d)),
   );
-  return { allowedTools, disallowedTools };
+  return { allowedTools: [...allowedTools, ...(web ? WEB_TOOLS : [])], disallowedTools };
 }

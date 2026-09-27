@@ -10,6 +10,7 @@ import {
 } from '@shibaox/core';
 import { RoleSchema } from '@shibaox/schemas';
 import { afterEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { ClaudeCodeAdapter } from '../src/index.js';
 import { fakeQuery, msg } from '../src/testing/fake-query.js';
 
@@ -426,5 +427,61 @@ describe('file tools are scoped to the workspace', () => {
     expect((await decide('Read', { file_path: 'src/a.ts' }, [])).decision).toMatchObject({
       behavior: 'deny',
     });
+  });
+});
+
+describe('ClaudeCodeAdapter (3A)', () => {
+  it('transcribes the conversation before the task and keeps it out of the input JSON', async () => {
+    const q = fakeQuery(() => [msg.init(), msg.success('ok')]);
+    const adapter = new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q });
+    await collectRun(
+      adapter,
+      job({
+        input: {
+          spec: 'and now?',
+          messages: [
+            { role: 'user', content: 'hello' },
+            { role: 'assistant', content: 'hi' },
+          ],
+        },
+      }),
+      ctx(),
+    );
+    const prompt = q.calls[0]?.prompt ?? '';
+    expect(prompt.startsWith('Conversation so far:\nUser: hello\nAssistant: hi')).toBe(true);
+    expect(prompt).toContain('Task: add /health');
+    expect(prompt).not.toContain('"messages"');
+  });
+  it('applies the role limits, the preamble and the extra tools as an in-process MCP server', async () => {
+    const q = fakeQuery(() => [msg.init(), msg.success('ok')]);
+    const adapter = new ClaudeCodeAdapter({
+      approvals: new AutoApproveApprovals(),
+      queryFn: q,
+      preamble: () => 'Project: Node · 3 files',
+      extraTools: () => [
+        { name: 'ping', description: 'pong', input: z.object({}), execute: async () => ({}) },
+      ],
+    });
+    const role = RoleSchema.parse({
+      role: 'assistant',
+      tools: ['read'],
+      max_turns: 7,
+      budget_usd: 0.5,
+    });
+    await collectRun(adapter, job({ role, budgetRemainingUsd: 2 }), ctx());
+    const o = q.calls[0]?.options ?? {};
+    expect(o.maxTurns).toBe(7);
+    expect(o.maxBudgetUsd).toBe(0.5);
+    const sp = o.systemPrompt as { append?: string };
+    expect(sp.append).toContain('Project: Node · 3 files');
+    expect(o.mcpServers?.shibaox).toBeDefined();
+    expect(o.allowedTools).toContain('mcp__shibaox__*');
+  });
+  it('the job budget wins when it is smaller than the role budget', async () => {
+    const q = fakeQuery(() => [msg.init(), msg.success('ok')]);
+    const adapter = new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q });
+    const role = RoleSchema.parse({ role: 'assistant', budget_usd: 5 });
+    await collectRun(adapter, job({ role, budgetRemainingUsd: 0.2 }), ctx());
+    expect(q.calls[0]?.options?.maxBudgetUsd).toBe(0.2);
   });
 });

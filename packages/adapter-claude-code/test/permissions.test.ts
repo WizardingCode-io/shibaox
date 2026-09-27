@@ -332,3 +332,22 @@ describe('buildCanUseTool', () => {
     expect(await can(...bash("git config alias.p 'push'"))).toMatchObject({ behavior: 'deny' });
   });
 });
+
+describe('web tools', () => {
+  const webRole = (network: string[]) =>
+    RoleSchema.parse({ role: 'assistant', tools: ['read'], permissions: { network } });
+  it('WebFetch is allowed for hosts in the allowlist only; WebSearch needs any allowlist', async () => {
+    const can = (network: string[]) =>
+      buildCanUseTool({ ...base, role: webRole(network), approvals: new DenyApprovals() });
+    const fetchGh = ['WebFetch', { url: 'https://api.github.com/repos' }, opts] as const;
+    expect((await can(['github.com'])(...fetchGh)).behavior).toBe('allow');
+    expect((await can(['*'])(...fetchGh)).behavior).toBe('allow');
+    const denied = await can(['example.com'])(...fetchGh);
+    expect(denied.behavior).toBe('deny');
+    expect(message(denied)).toContain('api.github.com');
+    expect((await can([])(...fetchGh)).behavior).toBe('deny');
+    expect((await can(['github.com'])('WebSearch', { query: 'x' }, opts)).behavior).toBe('allow');
+    expect((await can([])('WebSearch', { query: 'x' }, opts)).behavior).toBe('deny');
+    expect((await can(['*'])('WebFetch', { url: 'not a url' }, opts)).behavior).toBe('deny');
+  });
+});

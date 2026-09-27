@@ -32,6 +32,13 @@ describe('mapRoleTools', () => {
     expect(r.disallowedTools).not.toContain('Bash(git push *)');
     expect(r.allowedTools).toEqual([]);
   });
+  it('a network allowlist lifts the web tools', () => {
+    const r = mapRoleTools(
+      RoleSchema.parse({ role: 'assistant', tools: ['read'], permissions: { network: ['*'] } }),
+    );
+    expect(r.allowedTools).toEqual(['WebFetch', 'WebSearch']);
+    expect(r.disallowedTools).toEqual(['Bash(rm -rf *)', 'Bash(git push *)', 'Bash(git push)']);
+  });
   it('an empty tools list allows only nothing beyond reading', () => {
     expect(mapRoleTools(RoleSchema.parse({ role: 'analyst' })).allowedTools).toEqual([]);
   });
