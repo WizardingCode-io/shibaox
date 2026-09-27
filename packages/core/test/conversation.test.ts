@@ -59,7 +59,7 @@ describe('compactConversation', () => {
     const out = await compactConversation(messages, { maxTokens: 200, summarize });
     expect(out[0]?.summary).toBe(true);
     expect(out[0]?.content).toMatch(/Assistant: answer \d+/); // the newest dropped turn
-    expect(out[0]?.content).toContain('earlier turn(s) omitted');
+    expect(out[0]?.content).toContain('earlier message(s) omitted');
     expect(estimateTokens(out[0]?.content ?? '')).toBeLessThanOrEqual(100);
   });
 });
@@ -70,7 +70,7 @@ describe('compactConversation without a model (condense)', () => {
     const out = condense('S'.repeat(4000), turns, 300);
     expect(out).toContain('question 30'); // the newest dropped turn is there
     expect(out).not.toContain('question 1 '); // the oldest are what goes
-    expect(out).toMatch(/\d+ earlier turn\(s\) omitted/);
+    expect(out).toMatch(/\d+ earlier message\(s\) omitted/);
     expect(out.startsWith('S')).toBe(true);
     expect(out.indexOf('SSSS')).toBeLessThan(out.indexOf('question')); // summary first, but capped
     expect(estimateTokens(out)).toBeLessThanOrEqual(320);

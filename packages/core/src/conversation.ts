@@ -49,7 +49,7 @@ export function condense(
   const omitted = lines.length - kept.length;
   return [
     ...(head ? [head] : []),
-    ...(omitted > 0 ? [`… ${omitted} earlier turn(s) omitted.`] : []),
+    ...(omitted > 0 ? [`… ${omitted} earlier message(s) omitted.`] : []),
     ...kept,
   ].join('\n');
 }
