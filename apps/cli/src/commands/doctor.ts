@@ -4,6 +4,7 @@ import {
   DaemonUnavailableError,
   homePaths,
   loadDaemonConfig,
+  SecretsStore,
   serviceStatus,
 } from '@shibaox/daemon';
 import { CLI_VERSION } from '../version.js';
@@ -65,13 +66,17 @@ export async function doctorCommand(): Promise<number> {
   lines.push(await claudeAuthLine());
   // a Claude subscription (claude auth) replaces the API key; neither is needed for mock runs
   const claudeOk = lines.some((l) => l.name === 'claude auth' && l.ok);
-  for (const env of ['ANTHROPIC_API_KEY', 'TYPESAFE_API_KEY']) {
-    const set = Boolean(process.env[env]);
+  const vault = new SecretsStore(homePaths().secrets);
+  const withVault = vault.env(process.env);
+  for (const env of ['ANTHROPIC_API_KEY', 'TYPESAFE_API_KEY', 'OPENROUTER_API_KEY']) {
+    const set = Boolean(withVault[env]);
     lines.push({
       name: env,
       ok: set,
       detail: set
-        ? 'set'
+        ? vault.get(env)
+          ? 'set (vault)'
+          : 'set (shell env)'
         : env === 'ANTHROPIC_API_KEY' && claudeOk
           ? 'missing (fine: subscription roles use the claude login)'
           : 'missing',
@@ -129,7 +134,7 @@ async function telegramLine(): Promise<CheckLine> {
       detail: 'not configured (daemon.yaml channels.telegram)',
       required: false,
     };
-  const token = process.env[tg.bot_token_env];
+  const token = new SecretsStore(paths.secrets).env(process.env)[tg.bot_token_env];
   if (!token)
     return { name: 'telegram', ok: false, detail: `${tg.bot_token_env} not set`, required: false };
   // the daemon read the env when it started: a token exported later is not there yet

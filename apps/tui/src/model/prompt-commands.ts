@@ -28,6 +28,8 @@ export const COMMANDS = [
   'budget',
   'workspace',
   'runs',
+  'keys',
+  'key',
   'help',
 ] as const;
 export type CommandName = (typeof COMMANDS)[number];
@@ -42,6 +44,8 @@ export const COMMAND_KIND: Record<CommandName, 'choice' | 'text' | 'action'> = {
   org: 'text',
   budget: 'text',
   runs: 'action',
+  keys: 'action',
+  key: 'text',
   help: 'action',
 };
 
@@ -55,6 +59,8 @@ export const COMMAND_HINT: Record<CommandName, string> = {
   org: 'type the org directory and press enter',
   budget: 'type the budget in USD and press enter',
   runs: 'open a run',
+  keys: 'the key vault: which API keys and tokens are set',
+  key: 'type NAME VALUE (e.g. OPENROUTER_API_KEY sk-or-…) and press enter',
   help: 'show the keys',
 };
 export interface PromptCommand {

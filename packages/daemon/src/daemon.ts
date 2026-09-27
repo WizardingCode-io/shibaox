@@ -18,6 +18,7 @@ import { profileFor } from './runs/profile.js';
 import { buildRunReport } from './runs/report.js';
 import { registryFor } from './runtime.js';
 import { Scheduler } from './scheduler.js';
+import { SecretsStore } from './secrets.js';
 import { DaemonServer, type Health, type SchedulesApi } from './server.js';
 
 export interface DaemonOptions {
@@ -52,6 +53,10 @@ export class Daemon {
   readonly runs: RunManager;
   readonly channels: Channel[];
   readonly version: string;
+  /** The key vault; its values sit on top of the environment the daemon was started with. */
+  readonly secrets: SecretsStore;
+  /** The environment the runtimes and providers see: the shell's, with the vault on top (live). */
+  readonly env: NodeJS.ProcessEnv;
   private readonly server: DaemonServer;
   private readonly startedAt = Date.now();
   private readonly ownsStore: boolean;
@@ -71,11 +76,14 @@ export class Daemon {
     this.store = opts.store ?? new SqliteEventStore(this.paths.db);
     this.version = opts.version ?? '0.0.0';
     const log = opts.log ?? ((l: string) => console.log(l));
+    this.secrets = new SecretsStore(this.paths.secrets);
+    // one live object: a key set through the API is seen by the next run without a restart
+    this.env = this.secrets.env(opts.env ?? process.env);
     this.channels =
       opts.channels ??
       defaultChannels(
         this.config,
-        opts.env ?? process.env,
+        this.env,
         log,
         async (token) => {
           const items = await this.inbox.list();
@@ -111,7 +119,7 @@ export class Daemon {
       inbox: this.inbox,
       config: this.config,
       log,
-      env: opts.env,
+      env: this.env,
       queryFn: opts.queryFn,
       graphify: opts.graphify,
       extraProviders: opts.extraProviders,
@@ -167,17 +175,35 @@ export class Daemon {
         // local servers are probed at most every 10 s (each `/model` keystroke asks the list)
         if (this.modelsCache && Date.now() - this.modelsCache.at < 10_000)
           return this.modelsCache.models;
-        const models = await discoverModels(
-          registryFor(opts.env ?? process.env, opts.extraProviders),
-        );
+        const models = await discoverModels(registryFor(this.env, opts.extraProviders));
         this.modelsCache = { at: Date.now(), models };
         return models;
+      },
+      keys: () => this.secrets.list(opts.env ?? process.env),
+      setKey: (name, value) => {
+        this.secrets.set(name, value);
+        this.refreshEnv(opts.env ?? process.env);
+        log(`key set: ${name}`);
+      },
+      unsetKey: (name) => {
+        const removed = this.secrets.unset(name);
+        this.refreshEnv(opts.env ?? process.env);
+        if (removed) log(`key removed: ${name}`);
+        return removed;
       },
       onShutdown: (o) => {
         void this.stop(o);
       },
       log,
     });
+  }
+
+  /** Rebuilds the live environment in place after the vault changed (nothing holds a copy). */
+  private refreshEnv(base: NodeJS.ProcessEnv): void {
+    const next = this.secrets.env(base);
+    for (const k of Object.keys(this.env)) if (!(k in next)) delete this.env[k];
+    Object.assign(this.env, next);
+    this.modelsCache = undefined;
   }
 
   /** `daemon 0.0.1 · 1 running · 0 queued · 2 need you` for `/status`. */

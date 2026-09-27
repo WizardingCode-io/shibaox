@@ -9,6 +9,8 @@ export interface HomePaths {
   log: string;
   config: string;
   db: string;
+  /** The key vault (`secrets.json`, 0600). */
+  secrets: string;
 }
 
 /** `$SHIBAOX_HOME`, else `~/.shibaox`; the directory is created (0700). */
@@ -22,5 +24,6 @@ export function homePaths(env: NodeJS.ProcessEnv = process.env): HomePaths {
     log: join(root, 'daemon.log'),
     config: join(root, 'daemon.yaml'),
     db: join(root, 'events.db'),
+    secrets: join(root, 'secrets.json'),
   };
 }

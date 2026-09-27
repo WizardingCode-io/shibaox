@@ -8,6 +8,7 @@ import {
   homePaths,
   installService,
   loadDaemonConfig,
+  SecretsStore,
   type ServiceArgs,
   serviceStatus,
   uninstallService,
@@ -152,13 +153,15 @@ export async function hiddenFromLoginShell(
       return undefined;
     }
   })();
+  // keys in the shibaox vault reach the service whatever the shell does
+  const vault = new SecretsStore(homePaths(env).secrets);
   const names = [
     'ANTHROPIC_API_KEY',
     'OPENAI_API_KEY',
     'OPENROUTER_API_KEY',
     'TYPESAFE_API_KEY',
     tokenEnv ?? 'SHIBAOX_TELEGRAM_TOKEN',
-  ].filter((n) => env[n]);
+  ].filter((n) => env[n] && !vault.get(n));
   const missing: string[] = [];
   for (const name of names) {
     const r = await exec({

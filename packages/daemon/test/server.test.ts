@@ -66,6 +66,28 @@ async function collect(events: AsyncIterable<Envelope>, until: (e: Envelope) => 
   return out;
 }
 
+describe('keys endpoints', () => {
+  it('PUT/GET/DELETE /keys manage the vault and the daemon uses a new key at once', async () => {
+    const s = setup();
+    const { client } = await started(s, { env: {} });
+    expect((await client.models()).find((m) => m.ref === 'openai/gpt-5')?.configured).toBe(false);
+    await client.setKey('OPENAI_API_KEY', 'sk-test-1234567890');
+    const keys = await client.keys();
+    expect(keys.find((k) => k.name === 'OPENAI_API_KEY')).toMatchObject({
+      set: true,
+      source: 'vault',
+      masked: 'sk-t…7890',
+    });
+    expect(JSON.stringify(keys)).not.toContain('sk-test-1234567890');
+    // no restart: the models list already sees the provider as configured
+    expect((await client.models()).find((m) => m.ref === 'openai/gpt-5')?.configured).toBe(true);
+    await client.unsetKey('OPENAI_API_KEY');
+    expect((await client.keys()).find((k) => k.name === 'OPENAI_API_KEY')?.set).toBe(false);
+    expect((await client.models()).find((m) => m.ref === 'openai/gpt-5')?.configured).toBe(false);
+    await expect(client.setKey('bad name', 'x')).rejects.toMatchObject({ status: 400 });
+  });
+});
+
 describe('models endpoint', () => {
   it('GET /models lists the catalog refs with whether they are configured', async () => {
     const s = setup();

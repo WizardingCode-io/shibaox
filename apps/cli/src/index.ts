@@ -13,6 +13,7 @@ import { doctorCommand } from './commands/doctor.js';
 import { graphBuild, graphQuery, graphUpdate } from './commands/graph.js';
 import { answerCommand, inboxCommand } from './commands/inbox.js';
 import { initCommand } from './commands/init.js';
+import { keysList, keysSet, keysUnset } from './commands/keys.js';
 import { modelsCommand } from './commands/models.js';
 import { providersListCommand, providersTestCommand } from './commands/providers.js';
 import {
@@ -174,6 +175,28 @@ program
   .option('--note <text>')
   .action(async function (this: Command, id: string, o: { note?: string }) {
     exitWith(await answerCommand(id, false, o, out(this)));
+  });
+
+const keys = program
+  .command('keys')
+  .description(
+    'the key vault (API keys, tokens) shibaox uses; shared by the CLI, the dashboard and the daemon',
+  );
+keys.command('list').action(async function (this: Command) {
+  exitWith(await keysList(out(this)));
+});
+keys
+  .command('set')
+  .argument('<name>', 'the key name, e.g. OPENROUTER_API_KEY')
+  .argument('[value]', 'the value (or pipe it on stdin)')
+  .action(async function (this: Command, name: string, value: string | undefined) {
+    exitWith(await keysSet(name, value, out(this)));
+  });
+keys
+  .command('unset')
+  .argument('<name>')
+  .action(async function (this: Command, name: string) {
+    exitWith(await keysUnset(name, out(this)));
   });
 
 const schedule = program.command('schedule').description('cron schedules that submit runs');

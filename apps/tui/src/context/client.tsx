@@ -4,6 +4,7 @@ import type {
   Envelope,
   Health,
   InboxItem,
+  KeyRow,
   ModelChoice,
   RunSummaryPlus,
   SubmitRequest,
@@ -30,6 +31,9 @@ export interface DaemonClientLike {
   diff(id: string): Promise<DiffResult>;
   projectProfile(path: string, orgRoot?: string): Promise<ProjectProfile>;
   models(): Promise<ModelChoice[]>;
+  keys(): Promise<KeyRow[]>;
+  setKey(name: string, value: string): Promise<{ name: string; set: true }>;
+  unsetKey(name: string): Promise<{ name: string; removed: boolean }>;
 }
 
 const Context = createContext<DaemonClientLike>();

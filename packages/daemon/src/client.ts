@@ -5,6 +5,7 @@ import type { ModelChoice } from '@shibaox/providers';
 import type { InboxItem } from './inbox.js';
 import type { RunSummaryPlus, SubmitRequest } from './run-manager.js';
 import type { DiffResult } from './runs/diff.js';
+import type { KeyRow } from './secrets.js';
 import type { Envelope, Health } from './server.js';
 
 export type { Envelope, Health } from './server.js';
@@ -106,6 +107,16 @@ export class DaemonClient {
   }
   getRun(id: string): Promise<RunState> {
     return this.json('GET', `/runs/${encodeURIComponent(id)}`);
+  }
+  /** The key vault, masked. */
+  keys(): Promise<KeyRow[]> {
+    return this.json('GET', '/keys');
+  }
+  setKey(name: string, value: string): Promise<{ name: string; set: true }> {
+    return this.json('PUT', `/keys/${encodeURIComponent(name)}`, { value });
+  }
+  unsetKey(name: string): Promise<{ name: string; removed: boolean }> {
+    return this.json('DELETE', `/keys/${encodeURIComponent(name)}`);
   }
   /** The models a run can be pointed at (`/model`), with whether the daemon can use them. */
   models(): Promise<ModelChoice[]> {

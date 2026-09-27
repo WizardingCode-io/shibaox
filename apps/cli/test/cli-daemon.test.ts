@@ -179,6 +179,26 @@ describe('shibaox CLI against a daemon', () => {
     expect(st[0]?.version).toBe('0.0.1');
   });
 
+  it('keys set/list/unset round-trip through the daemon', async () => {
+    const { cli } = await setup();
+    const set = await cli('keys', 'set', 'OPENROUTER_API_KEY', 'sk-or-1234567890');
+    expect(set.code).toBe(0);
+    expect(set.stdout).toContain('OPENROUTER_API_KEY');
+    expect(set.stdout).not.toContain('1234567890');
+    const list = await cli('keys', 'list');
+    expect(list.stdout).toContain('OPENROUTER_API_KEY');
+    expect(list.stdout).toContain('sk-o…7890');
+    expect(list.stdout).toContain('TYPESAFE_API_KEY');
+    const unset = await cli('keys', 'unset', 'OPENROUTER_API_KEY');
+    expect(unset.code).toBe(0);
+    const after = await cli('keys', 'list', '--json');
+    const rows = after.stdout
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l) as { name: string; set: boolean });
+    expect(rows.find((r) => r.name === 'OPENROUTER_API_KEY')?.set).toBe(false);
+  });
+
   it('schedule add/list/rm round-trip', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cli-d-'));
     tmpDirs.push(dir);

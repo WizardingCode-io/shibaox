@@ -13,6 +13,7 @@ import {
   Show,
 } from 'solid-js';
 import { HelpDialog } from '../component/dialogs/help.js';
+import { KeysDialog } from '../component/dialogs/keys.js';
 import { RunsDialog } from '../component/dialogs/runs.js';
 import { KeyHints } from '../component/footer.js';
 import { Logo } from '../component/logo.js';
@@ -166,6 +167,19 @@ export function Home(): JSX.Element {
     setHint(undefined);
     if (cmd.command === 'help') return dialog.open(() => <HelpDialog />);
     if (cmd.command === 'runs') return dialog.open(() => <RunsDialog />);
+    if (cmd.command === 'keys') return dialog.open(() => <KeysDialog />);
+    if (cmd.command === 'key') {
+      const [name, ...rest] = cmd.arg.split(/\s+/);
+      const value = rest.join(' ').trim();
+      if (!name || !value) return setError('Usage: /key NAME VALUE');
+      void client
+        .setKey(name, value)
+        .then(() => toast.show({ message: `${name} saved in the vault`, variant: 'success' }))
+        .catch((e: unknown) =>
+          setError(`Could not save ${name}: ${e instanceof Error ? e.message : String(e)}`),
+        );
+      return;
+    }
     const next = applyPromptCommand(ctx(), cmd, { cwd: config.cwd });
     if ('error' in next) return setError(next.error);
     setCtx(next);
@@ -196,7 +210,6 @@ export function Home(): JSX.Element {
 
   const notice = () => error() ?? org().error;
   const mockNotice = () => (ctx().adapter === 'mock' ? MOCK_NOTICE : undefined);
-  void toast;
   const contextFooter = () => {
     const c = ctx();
     const muted = theme.text.muted;

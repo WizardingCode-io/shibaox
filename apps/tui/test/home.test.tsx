@@ -413,3 +413,38 @@ test('/model lists the daemon models with their state; the choice travels with t
     m.done();
   }
 });
+
+test('/keys shows the vault and /key sets a key through the daemon', async () => {
+  const m = await mount();
+  try {
+    m.client.keyRows = [
+      { name: 'OPENROUTER_API_KEY', description: 'OpenRouter', set: false },
+      { name: 'ANTHROPIC_API_KEY', description: 'Anthropic (API key)', set: true, source: 'env' },
+      {
+        name: 'TYPESAFE_API_KEY',
+        description: 'Jev decisions and checks',
+        set: true,
+        source: 'vault',
+        masked: 'ts_1…cdef',
+      },
+    ];
+    let f = await m.type('/keys');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).toContain('Keys');
+    expect(f).toContain('OPENROUTER_API_KEY');
+    expect(f).toContain('ts_1…cdef');
+    expect(f).toContain('env');
+    expect(f).toContain('/key NAME value');
+    await m.setup.mockInput.pressEscape();
+    await m.frame(); // the prompt takes the focus back after the dialog
+    await m.type('/key OPENROUTER_API_KEY sk-or-1234567890');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    const call = m.client.calls.find((c) => c.method === 'setKey');
+    expect(call?.args).toEqual(['OPENROUTER_API_KEY', 'sk-or-1234567890']);
+    expect(f).not.toContain('sk-or-1234567890'); // the value never stays on screen
+  } finally {
+    m.done();
+  }
+});

@@ -164,10 +164,21 @@ channels:
     # adapter: claude-code
 ```
 
-- **Environment.** The daemon keeps the environment of the shell that started it: provider
-  keys, `TYPESAFE_API_KEY` and the Telegram token are read once, at start. After exporting or
-  changing a key, restart it (`shibaox daemon stop && shibaox daemon start --detach`).
-  `shibaox doctor` warns when the running daemon lacks a channel your shell could provide.
+- **Keys.** API keys and tokens live in shibaox's own vault, `~/.shibaox/secrets.json`
+  (0600, inside the 0700 home), shared by the daemon, the CLI and the dashboard through the
+  daemon's API (`GET /keys` masked, `PUT /keys/:name`, `DELETE /keys/:name`):
+
+  ```sh
+  shibaox keys list                              # every key shibaox knows, set or missing, where from
+  shibaox keys set OPENROUTER_API_KEY sk-or-...   # or: echo sk-or-... | shibaox keys set OPENROUTER_API_KEY
+  shibaox keys unset OPENROUTER_API_KEY
+  ```
+
+  In the dashboard `/keys` shows the vault and `/key NAME value` sets one. A key set this way
+  is used by the next run at once (no restart), reaches the launchd service whatever your
+  shell exports, and wins over the environment. The shell environment stays a fallback:
+  keys exported there still work, and `doctor` says which of the two a key comes from. The
+  Telegram token is read when the daemon starts: set it, then restart once.
 
 `shibaox doctor` reports the daemon (and whether it is older than the CLI), Telegram
 (`getMe` with the configured token) and the `claude` login.
@@ -300,7 +311,7 @@ Each provider reads its key from the variable shown by `providers list` (for exa
 
 | Variable | Used for |
 | --- | --- |
-| `TYPESAFE_API_KEY` | Jev: `decide` nodes and `jev` gate checks. Without it `jev` checks fail. `shibaox init` ships the `spec` jev check in `org/gates/tests.yaml` commented out; uncomment it once the key is set. |
+| `TYPESAFE_API_KEY` | Jev: `decide` nodes and `jev` gate checks (`shibaox keys set TYPESAFE_API_KEY …`). Without it `decide` nodes fall back to an LLM lead on the `strong` tier and `jev` checks fail. `shibaox init` ships the `spec` jev check in `org/gates/tests.yaml` commented out; uncomment it once the key is set. |
 | `SHIBAOX_JEV_BASE_URL` | optional Jev endpoint override |
 | `SHIBAOX_REAL_TESTS=1` | enables `apps/cli/test/real.test.ts` (real calls, needs keys) |
 

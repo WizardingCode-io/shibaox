@@ -13,6 +13,7 @@ import type { ModelChoice } from '@shibaox/providers';
 import { AlreadyResolvedError, type InboxService, NotFoundError } from './inbox.js';
 import type { RunManager, SubmitRequest } from './run-manager.js';
 import type { RuntimeEnvelope } from './runtime-buffer.js';
+import type { KeyRow } from './secrets.js';
 
 export interface Health {
   version: string;
@@ -57,6 +58,10 @@ export interface ServerDeps {
   profile: (path: string, orgRoot?: string) => ProjectProfile;
   /** The models of the catalog and the local servers, and whether this daemon can use them. */
   models: () => Promise<ModelChoice[]>;
+  /** The key vault, masked; set/unset take effect at once. */
+  keys: () => KeyRow[];
+  setKey: (name: string, value: string) => void;
+  unsetKey: (name: string) => boolean;
   onShutdown: (o: { force?: boolean }) => void;
   log: (line: string) => void;
 }
@@ -214,6 +219,21 @@ export class DaemonServer {
 
     if (method === 'GET' && path === '/health') return send(res, 200, this.deps.health());
     if (method === 'GET' && path === '/models') return send(res, 200, await this.deps.models());
+    if (method === 'GET' && path === '/keys') return send(res, 200, this.deps.keys());
+    const keyName = param(/^\/keys\/([^/]+)$/);
+    if (keyName !== undefined && method === 'PUT') {
+      const body = asRecord(await readBody(req));
+      if (typeof body.value !== 'string')
+        throw new HttpError(400, 'bad_request', '"value" is required');
+      try {
+        this.deps.setKey(keyName, body.value);
+      } catch (e) {
+        throw new HttpError(400, 'bad_request', e instanceof Error ? e.message : String(e));
+      }
+      return send(res, 200, { name: keyName, set: true });
+    }
+    if (keyName !== undefined && method === 'DELETE')
+      return send(res, 200, { name: keyName, removed: this.deps.unsetKey(keyName) });
     if (method === 'GET' && path === '/projects/profile') {
       const p = url.searchParams.get('path') ?? '';
       if (!p) throw new HttpError(400, 'bad_request', '"path" is required');

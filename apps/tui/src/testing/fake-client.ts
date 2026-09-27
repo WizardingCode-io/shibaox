@@ -4,6 +4,7 @@ import type {
   Envelope,
   Health,
   InboxItem,
+  KeyRow,
   ModelChoice,
   RunSummaryPlus,
   SubmitRequest,
@@ -42,6 +43,8 @@ export class FakeDaemonClient implements DaemonClientLike {
   profiles = new Map<string, ProjectProfile>();
   /** What `/model` offers. */
   modelChoices: ModelChoice[] = [];
+  /** What `/keys` shows. */
+  keyRows: KeyRow[] = [];
   private readonly streams = new Map<string, Stream>();
 
   private record(method: string, args: unknown[]): void {
@@ -110,6 +113,21 @@ export class FakeDaemonClient implements DaemonClientLike {
     const d = this.diffs.get(id);
     if (!d) throw new DaemonHttpError(404, 'no_workspace', 'The run workspace is gone');
     return d;
+  }
+
+  async keys(): Promise<KeyRow[]> {
+    this.record('keys', []);
+    return this.keyRows;
+  }
+
+  async setKey(name: string, value: string): Promise<{ name: string; set: true }> {
+    this.record('setKey', [name, value]);
+    return { name, set: true };
+  }
+
+  async unsetKey(name: string): Promise<{ name: string; removed: boolean }> {
+    this.record('unsetKey', [name]);
+    return { name, removed: true };
   }
 
   async models(): Promise<ModelChoice[]> {
