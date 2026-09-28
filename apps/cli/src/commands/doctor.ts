@@ -38,6 +38,13 @@ export function installLine(o: { root: string; env: NodeJS.ProcessEnv; cli?: str
   const app = resolve(o.env.SHIBAOX_APP || join(o.root, 'app'));
   const bin = join(o.root, 'bin');
   const cli = resolve(o.cli ?? process.argv[1] ?? '');
+  if (/\/node_modules\/shibaox\//.test(cli))
+    return {
+      name: 'install',
+      ok: true,
+      detail: `installed from npm (${cli.replace(/\/dist\/.*$/, '')}); update with: npm i -g shibaox@latest`,
+      required: false,
+    };
   if (!cli.startsWith(`${app}/`)) {
     // apps/cli/dist/index.js → the checkout root, three levels up
     const checkout = resolve(cli, '..', '..', '..', '..');

@@ -41,6 +41,14 @@ export async function upgradeCommand(d: UpgradeDeps): Promise<number> {
     const r = await exec({ argv: ['git', ...args], cwd: app, timeoutMs: 60_000 });
     return r.exitCode === 0 ? r.stdout.trim() : undefined;
   };
+  const cliPath = d.cli ?? process.argv[1];
+  if (cliPath && /\/node_modules\/shibaox\//.test(resolve(cliPath))) {
+    out.line(
+      'This shibaox was installed from npm: update it with `npm i -g shibaox@latest`, then `shibaox daemon stop` so the daemon restarts on the new build.',
+    );
+    out.obj({ upgraded: false, npm: true });
+    return 1;
+  }
   if (!existsSync(join(app, '.git'))) {
     out.line(
       `No installer checkout at ${app}: this shibaox runs from elsewhere. Upgrade it the way it was installed (git pull && pnpm install && pnpm build in its checkout), or install with scripts/install.sh.`,

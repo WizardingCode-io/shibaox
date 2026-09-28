@@ -18,15 +18,26 @@ export const NO_TUI_MESSAGE =
  * The terminal UI package root: the sibling package in the monorepo layout, else the
  * `@wizardingcode/shibaox-tui` package an npm install placed next to us (Bun runs its source).
  */
-export function resolveTuiRoot(): string {
-  const sibling = fileURLToPath(new URL('../../../tui/', import.meta.url));
+export function resolveTuiRoot(fromUrl: string = import.meta.url): string {
+  const sibling = fileURLToPath(new URL('../../../tui/', fromUrl));
   if (existsSync(join(sibling, 'src', 'main.tsx'))) return sibling;
+  const require = createRequire(fromUrl);
   try {
-    const pkg = createRequire(import.meta.url).resolve('@wizardingcode/shibaox-tui/package.json');
-    return dirname(pkg);
+    return dirname(require.resolve('@wizardingcode/shibaox-tui/package.json'));
   } catch {
-    return sibling;
+    // an exports map without ./package.json: resolve the main export and walk up to the package
   }
+  try {
+    let dir = dirname(require.resolve('@wizardingcode/shibaox-tui'));
+    for (let i = 0; i < 6; i++) {
+      if (existsSync(join(dir, 'package.json')) && existsSync(join(dir, 'src', 'main.tsx')))
+        return dir;
+      dir = dirname(dir);
+    }
+  } catch {
+    // not installed as a package either
+  }
+  return sibling;
 }
 export const TUI_ROOT = resolveTuiRoot();
 export const TUI_ENTRY = join(TUI_ROOT, 'src/main.tsx');
