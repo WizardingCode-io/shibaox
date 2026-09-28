@@ -41,6 +41,9 @@ describe('run workspaces', () => {
     expect(exclude).toContain('graphify-out/\n');
     const diff = await diffRunWorkspace(ws.path);
     expect(diff).toContain('b.txt');
+    // a new file the agent wrote (untracked) shows with its content, like any other addition
+    expect(diff).toContain('+++ b/b.txt');
+    expect(diff).toContain('+b');
     const list = await listRunWorkspaces(project);
     expect(list.map((w) => w.runId)).toEqual(['r1']);
     await removeRunWorkspace({ project, runId: 'r1', deleteBranch: true });
