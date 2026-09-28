@@ -1,4 +1,4 @@
-import { SUMMARY_PROMPT } from '@shibaox/core';
+import { type DescribeRequest, SUMMARY_PROMPT } from '@shibaox/core';
 import { LlmClient, type ProviderRegistry } from '@shibaox/providers';
 import type { Org } from '@shibaox/schemas';
 
@@ -48,6 +48,45 @@ export function orgSummarizer(
       });
       // a thinking model's reasoning is not the summary
       return r.text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    };
+  };
+}
+
+const COMMIT_PROMPT =
+  'Write the git commit message for this change: a title of at most 72 characters in the imperative (a conventional prefix like feat:, fix:, chore: when it fits), a blank line, then a short body saying what changed and why, from the request and the diff. Plain text only, no code fences, no quotes around it.';
+const PR_PROMPT =
+  'Write the pull request description for this change in Markdown: a one-paragraph summary, a "Changes" list, and a "How to test" section, from the request, what each step did and the diff. No title line: the title is set separately.';
+
+/** Writes commit messages and PR bodies with the same model choice as the summariser. */
+export function changeDescriber(
+  registry: () => ProviderRegistry,
+): (org: Org, model: string | undefined) => ((r: DescribeRequest) => Promise<string>) | undefined {
+  return (org, model) => {
+    const reg = registry();
+    const ref =
+      directRef(reg, org.models.tiers.cheap) ??
+      directRef(reg, org.models.tiers.strong) ??
+      directRef(reg, model);
+    if (!ref) return undefined;
+    return async (r) => {
+      const steps = r.summaries.map((s) => `- ${s.nodeId}: ${s.summary}`).join('\n');
+      const out = await new LlmClient(reg).generate(ref, {
+        system: r.kind === 'commit' ? COMMIT_PROMPT : PR_PROMPT,
+        messages: [
+          {
+            role: 'user',
+            content: `Request:\n${r.spec}\n\nSteps:\n${steps || '(none)'}\n\nDiff:\n${r.diff.slice(0, 40_000)}`,
+          },
+        ],
+        maxSteps: 1,
+        maxRetries: 1,
+        maxOutputTokens: r.kind === 'commit' ? 400 : 900,
+        signal: AbortSignal.timeout(SUMMARY_TIMEOUT_MS),
+      });
+      return out.text
+        .replace(/<think>[\s\S]*?<\/think>/gi, '')
+        .replace(/^```[a-z]*\n?|\n?```$/g, '')
+        .trim();
     };
   };
 }

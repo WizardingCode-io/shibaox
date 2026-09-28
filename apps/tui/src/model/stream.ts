@@ -212,7 +212,7 @@ function newCard(state: RunState | undefined, nodeId: string): Card {
         kind: 'node',
         key: `card:${nodeId}`,
         nodeId,
-        type: def?.type === 'code' ? 'code' : 'task',
+        type: def?.type === 'code' || def?.type === 'git' ? 'code' : 'task',
         role: def?.type === 'task' ? def.role : undefined,
         runtime: def?.type === 'task' ? state?.adapter : undefined,
         status,

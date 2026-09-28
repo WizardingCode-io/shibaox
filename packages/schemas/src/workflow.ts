@@ -33,6 +33,23 @@ export const GateNodeSchema = z.object({
   on_fail: Id,
   max_retries: z.number().int().min(0).default(3),
 });
+/**
+ * A git step the daemon runs itself (trusted org config, like `code`): `commit` the workspace,
+ * open a `pr` (push + `gh pr create`), or `merge` the run branch on the base through the
+ * project's merge queue (rebase, tests, fast-forward, push when there is a remote).
+ */
+export const GitNodeSchema = z.object({
+  type: z.literal('git'),
+  action: z.enum(['commit', 'pr', 'merge']),
+  /** Commit message / PR body; generated from the request and the run when absent. */
+  message: z.string().optional(),
+  /** Base branch for `pr` and `merge` (default: the repository's default branch, else main). */
+  base: z.string().optional(),
+  /** Test command run before a merge (default: detected from the workspace; none skips). */
+  tests: z.string().optional(),
+  timeout_ms: z.number().int().positive().default(600_000),
+  next: Id.optional(),
+});
 export const ParallelNodeSchema = z.object({
   type: z.literal('parallel'),
   branches: z.array(Id).min(1),
@@ -45,6 +62,7 @@ export const WorkflowNodeSchema = z.discriminatedUnion('type', [
   HumanNodeSchema,
   DecideNodeSchema,
   GateNodeSchema,
+  GitNodeSchema,
   ParallelNodeSchema,
 ]);
 export type WorkflowNode = z.infer<typeof WorkflowNodeSchema>;
@@ -54,6 +72,7 @@ export function transitionsOf(node: WorkflowNode): string[] {
     case 'task':
     case 'code':
     case 'human':
+    case 'git':
       return node.next ? [node.next] : [];
     case 'decide':
       return Object.values(node.next);

@@ -445,3 +445,45 @@ describe('orgSummarizer', () => {
     expect(kept.at(-1)).toEqual({ role: 'user', content: '49' });
   });
 });
+
+describe('changeDescriber', () => {
+  it('writes a commit message from the diff with the cheap tier and strips thinking', async () => {
+    const { startFakeOpenAI } = await import('@shibaox/providers/testing');
+    const { changeDescriber } = await import('../src/runs/summarize.js');
+    const { ProviderRegistry } = await import('@shibaox/providers');
+    const { loadOrg } = await import('@shibaox/schemas');
+    const fake = await startFakeOpenAI(() => ({
+      content: '<think>x</think>feat: add hello\n\nAdds hello.txt.',
+    }));
+    try {
+      const entry = {
+        id: 'fake',
+        name: 'Fake',
+        kind: 'openai-compatible' as const,
+        base_url: fake.baseURL,
+        auth: { type: 'none' as const },
+        models: ['m'],
+        pricing: {},
+        verify: false,
+        context_window: {},
+        capabilities: { tools: true },
+      };
+      const s = setup();
+      const org = loadOrg(s.orgRoot);
+      const describe = changeDescriber(() => new ProviderRegistry([entry], {}))(org, 'fake/m');
+      expect(describe).toBeDefined();
+      const text = await describe?.({
+        kind: 'commit',
+        spec: 'add hello',
+        summaries: [],
+        diff: '+hello',
+      });
+      expect(text).toBe('feat: add hello\n\nAdds hello.txt.');
+      const req = fake.requests[0] as { messages: { role: string; content: string }[] };
+      expect(req.messages.find((m) => m.role === 'system')?.content).toMatch(/commit message/i);
+      expect(req.messages.find((m) => m.role === 'user')?.content).toContain('+hello');
+    } finally {
+      await fake.close();
+    }
+  });
+});

@@ -83,6 +83,42 @@ const submitMock = (
   });
 
 describe('RunManager', () => {
+  it('a workflow with git nodes commits the worktree and lands it on main', async () => {
+    const s = setup({ git: true });
+    writeFileSync(
+      join(s.orgRoot, 'workflows', 'land.yaml'),
+      'workflow: land\nteam: engineering\nstart: implement\nnodes:\n  implement: { type: task, role: backend, instruction: "write it", next: commit }\n  commit: { type: git, action: commit, next: merge }\n  merge: { type: git, action: merge, tests: "true" }\n',
+    );
+    const store = new MemoryEventStore();
+    const { manager: m } = manager(store, {
+      vault: s.vault,
+      mockScript: (job) => {
+        writeFileSync(join(job.workspace, 'landed.txt'), 'ok\n');
+        return { output: { did: 'wrote landed.txt' }, summary: 'wrote landed.txt' };
+      },
+    });
+    const { runId } = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'land',
+      input: 'Land a file',
+      adapter: 'mock',
+      workspace: 'worktree',
+    });
+    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('completed'), {
+      timeout: 20_000,
+    });
+    const st = await m.state(runId);
+    expect(st.nodes.commit?.output).toMatchObject({ committed: true });
+    expect(st.nodes.merge?.output).toMatchObject({ merged: true, base: 'main' });
+    const log = execFileSync('git', ['log', '--format=%s', 'main'], {
+      cwd: s.project,
+      encoding: 'utf8',
+    });
+    expect(log.split('\n')[0]).toBe('Land a file');
+    expect(log).toContain('Land a file');
+  });
+
   it('compacts a long conversation at submit with the summariser and returns the thread it used', async () => {
     const s = setup();
     const store = new MemoryEventStore();

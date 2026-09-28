@@ -36,6 +36,7 @@ export function readyNodes(state: RunState, workflow: Workflow): string[] {
       case 'task':
       case 'code':
       case 'human':
+      case 'git':
         if (p.status === 'completed' && node.next) targets.push(node.next);
         break;
       case 'decide': {

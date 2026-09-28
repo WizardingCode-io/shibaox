@@ -64,6 +64,29 @@ describe('WorkflowSchema', () => {
     expect(WorkflowSchema.safeParse({ ...valid, start: 'zzz' }).success).toBe(false);
   });
 
+  it('a git node names its action (commit, pr, merge) and its next node', () => {
+    const wf = WorkflowSchema.parse({
+      workflow: 'land',
+      team: 'engineering',
+      start: 'commit',
+      nodes: {
+        commit: { type: 'git', action: 'commit', next: 'pr' },
+        pr: { type: 'git', action: 'pr', base: 'main', next: 'merge' },
+        merge: { type: 'git', action: 'merge', tests: 'pnpm test' },
+      },
+    });
+    expect(wf.nodes.commit).toMatchObject({ type: 'git', action: 'commit', timeout_ms: 600_000 });
+    expect(transitionsOf(wf.nodes.commit as never)).toEqual(['pr']);
+    expect(transitionsOf(wf.nodes.merge as never)).toEqual([]);
+    expect(() =>
+      WorkflowSchema.parse({
+        workflow: 'x',
+        team: 't',
+        start: 'g',
+        nodes: { g: { type: 'git', action: 'rebase' } },
+      }),
+    ).toThrow();
+  });
   it('transitionsOf lists every outgoing node id', () => {
     const wf = WorkflowSchema.parse(valid);
     expect(transitionsOf(wf.nodes.g!)).toEqual(['d', 'a']);

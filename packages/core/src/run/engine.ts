@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Org, RunEvent, Workflow, WorkflowNode } from '@shibaox/schemas';
 import type { EventStore, RunSummary } from '../events/store.js';
 import { runCommand } from '../executors/code.js';
+import { type DescribeRequest, runGitNode } from '../executors/git.js';
 import {
   AdapterError,
   collectRun,
@@ -13,6 +14,7 @@ import { type CheckRunners, defaultCheckRunners, runGate } from '../gates/engine
 import { injectTeamGates } from '../org/inject-gates.js';
 import type { ApprovalHandler } from './approvals.js';
 import type { Decider, HumanHandler } from './deciders.js';
+import type { MergeQueue } from './merge-queue.js';
 import { isTerminal, replay } from './reducer.js';
 import { isStalled, readyNodes } from './scheduler.js';
 import type { PendingApproval, RunState } from './state.js';
@@ -44,6 +46,10 @@ export interface EngineDeps {
   /** Every RuntimeEvent a task adapter yields, for streaming (never persisted here). */
   onRuntimeEvent?: (runId: string, nodeId: string, e: RuntimeEvent) => void;
   checkRunners?: CheckRunners;
+  /** Writes commit messages and PR bodies for `git` nodes (absent: deterministic text). */
+  describeChange?: (r: DescribeRequest) => Promise<string>;
+  /** Merges of `git` nodes go through this queue, one project at a time. */
+  mergeQueue?: MergeQueue;
   log?: (line: string) => void;
   now?: () => string;
   maxSteps?: number;
@@ -480,6 +486,32 @@ export class RunEngine {
             at: at(),
             output: { exitCode: r.exitCode, stdout: r.stdout },
             summary: `ran ${node.command}`,
+          });
+          return;
+        }
+        case 'git': {
+          const summaries = Object.entries(state.nodes)
+            .filter(([id, n]) => id !== nodeId && n.summary)
+            .map(([id, n]) => ({ nodeId: id, summary: n.summary as string }));
+          const r = await runGitNode(node, {
+            runId,
+            workspace: state.workspace,
+            project: state.project ?? state.workspace,
+            branch: state.branch,
+            spec:
+              typeof state.input.spec === 'string' ? state.input.spec : JSON.stringify(state.input),
+            summaries,
+            describe: this.deps.describeChange,
+            queue: this.deps.mergeQueue,
+            log: (l) => this.log(`[${runId}] ${nodeId}: ${l}`),
+          });
+          await this.emit({
+            type: 'NodeCompleted',
+            runId,
+            nodeId,
+            at: at(),
+            output: r.output,
+            summary: r.summary,
           });
           return;
         }

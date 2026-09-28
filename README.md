@@ -298,6 +298,19 @@ ends (`event: true` on `POST /runs`) never gets `start_workflow`, so nothing re-
 without you. Memory notes reach only roles with the `memory` capability, quoted as data. Opened in your home directory itself, the dashboard works in
 `~/.shibaox/workspace`.
 
+**Git cycle.** A `git` node is a step the daemon runs itself (trusted org config, like
+`code`): `{ type: git, action: commit }` commits the workspace with a message written by the
+`cheap` tier from the request and the diff (deterministic text without a callable model;
+`message:` fixes it; trailer `Shibaox-Run: <id>`); `{ type: git, action: pr, base?: main }`
+pushes the run branch and opens a pull request with `gh` (body generated the same way; an
+open PR for the branch is reused); `{ type: git, action: merge, tests?: "pnpm test" }` lands
+the run branch on the base through the project's **merge queue** (one merge at a time per
+project, in order): rebase on the base, run the tests (detected when not given), fast-forward
+the base, push it when there is an `origin`. A conflict or a failing test fails the node and
+leaves the base untouched. Outside a git repository these nodes complete with `committed:
+false` / `merged: false` and a reason. The template's `land-feature` workflow is
+`hello-feature` plus a human approval, `commit` and `merge`.
+
 **Long conversations.** Each turn carries the conversation so far as `messages`. When that
 outgrows about 32k tokens (estimated), the daemon folds the oldest turns into one summary
 written by the org's `cheap` tier (else `strong`; without a callable model the turns are cut

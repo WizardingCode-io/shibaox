@@ -28,6 +28,7 @@ import {
 } from '@shibaox/providers';
 import type { Org, Role, Workflow } from '@shibaox/schemas';
 import { diffRunWorkspace } from '@shibaox/workspace';
+import { changeDescriber } from './runs/summarize.js';
 
 export const AVAILABLE_RUNTIMES = ['mock', 'direct', 'claude-code'];
 export const ADAPTER_IDS = ['mock', 'direct', 'claude-code'] as const;
@@ -292,6 +293,7 @@ export function buildRuntime(o: RuntimeOptions) {
   const engine = new RunEngine({
     store: o.store,
     org: o.org,
+    describeChange: real ? changeDescriber(() => registry)(o.org, o.model) : undefined,
     adapters: {
       mock: mockAdapter(o.mockScript),
       direct: new DirectAdapter({

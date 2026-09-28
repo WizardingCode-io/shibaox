@@ -34,7 +34,7 @@ gates: {}
 lead: team-leader
 roles: [team-leader, analyst, backend]
 gates: [tests]
-workflows: [hello-feature]
+workflows: [hello-feature, land-feature]
 `,
   'org/roles/team-leader.yaml': `role: team-leader
 description: Judges readiness, approves or sends back.
@@ -109,6 +109,20 @@ nodes:
   qa:        { type: gate, gates: [tests], on_pass: judge, on_fail: implement, max_retries: 2 }
   judge:     { type: decide, by: team-leader, question: "Is the work ready to ship?", options: [ship, rework], next: { ship: ship, rework: implement } }
   ship:      { type: human, action: approve-push, prompt: "Approve the push?" }
+`,
+  'org/workflows/land-feature.yaml': `workflow: land-feature
+team: engineering
+description: Analyse, implement, test, judge, approve, commit and land on the base branch (pushed when there is a remote).
+start: analyse
+nodes:
+  analyse:   { type: task, role: analyst, instruction: "Analyse the request and list the files to touch.", next: implement }
+  implement: { type: task, role: backend, instruction: "Implement the request. Keep tests green.", next: qa }
+  qa:        { type: gate, gates: [tests], on_pass: judge, on_fail: implement, max_retries: 2 }
+  judge:     { type: decide, by: team-leader, question: "Is the work ready to ship?", options: [ship, rework], next: { ship: ship, rework: implement } }
+  ship:      { type: human, action: approve-push, prompt: "Land this on the base branch (and push it)?", next: commit }
+  commit:    { type: git, action: commit, next: merge }
+  merge:     { type: git, action: merge }
+  # for a pull request instead: pr: { type: git, action: pr }   (needs a remote "origin" and gh)
 `,
   'org/prompts/team-leader.md':
     '# Team leader\nYou judge whether work is ready. Be strict about tests and scope.\n',

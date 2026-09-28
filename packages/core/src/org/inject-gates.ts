@@ -5,6 +5,7 @@ function redirect(node: WorkflowNode, from: string, to: string): WorkflowNode {
     case 'task':
     case 'code':
     case 'human':
+    case 'git':
       return node.next === from ? { ...node, next: to } : node;
     case 'decide':
       return {
