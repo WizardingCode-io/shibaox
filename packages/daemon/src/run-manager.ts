@@ -168,6 +168,7 @@ export class RunManager {
     const adapter = model
       ? adapterForModel(model, registryFor(this.opts.env ?? process.env, this.opts.extraProviders))
       : effectiveAdapter(req.adapter, org);
+    if (model) await this.assertListed(model);
     const mode = await workspaceMode(project, req.workspace, (l) => warnings.push(l));
     const budgetUsd = req.budgetUsd ?? org.org.budgets.per_run_usd;
     const runId = randomUUID();
@@ -420,6 +421,24 @@ export class RunManager {
     } finally {
       this.pumping = false;
     }
+  }
+
+  /**
+   * A model name is checked against the provider's own listing when there is one (OpenRouter
+   * with a key, a local server that answered): a typo fails here, not minutes later at the
+   * provider. Providers without a live listing are not judged.
+   */
+  private async assertListed(model: string): Promise<void> {
+    const listing = await this.opts.ready?.().catch(() => undefined);
+    if (!Array.isArray(listing)) return;
+    const provider = model.slice(0, model.indexOf('/'));
+    const offered = (listing as { ref?: string; provider?: string; listed?: boolean }[]).filter(
+      (m) => m.provider === provider && m.listed,
+    );
+    if (offered.length > 0 && !offered.some((m) => m.ref === model))
+      throw new Error(
+        `model "${model}" is not offered by ${provider} (see /model or \`shibaox models\` for what it lists)`,
+      );
   }
 
   /** Starts one claimed run if its org has capacity; otherwise re-queues it. */

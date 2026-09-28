@@ -253,3 +253,46 @@ describe('talking to the orchestrator from Telegram', () => {
     expect(await daemon.runs.list()).toEqual([]);
   });
 });
+
+describe('telegram token without a restart', () => {
+  it('setting the token in the vault starts the channel; removing it stops it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tgd-'));
+    tmp.push(dir);
+    scaffoldOrg(dir);
+    const project = join(dir, 'proj');
+    cpSync(sample, project, { recursive: true });
+    fake = await fakeTelegram();
+    const home = homePaths({ SHIBAOX_HOME: join(dir, 'home') });
+    const daemon = new Daemon({
+      discovery: false,
+      home,
+      store: new MemoryEventStore(),
+      env: {}, // no token anywhere yet
+      log: () => {},
+      vault: join(dir, 'vault'),
+      telegramApiBase: fake.apiBase,
+      config: {
+        max_concurrent_runs: 2,
+        approval_timeout_minutes: 1,
+        channels: {
+          macos: { enabled: false },
+          telegram: { bot_token_env: 'SHIBAOX_TELEGRAM_TOKEN', chat_id: 7, workflow: 'chat' },
+        },
+      },
+    });
+    daemons.push(daemon);
+    await daemon.start();
+    const { DaemonClient } = await import('../src/client.js');
+    const client = new DaemonClient(home.socket);
+    expect((await client.health()).channels).not.toContain('telegram');
+    await client.setKey('SHIBAOX_TELEGRAM_TOKEN', 't');
+    await vi.waitFor(() => expect(fake?.calls.some((c) => c.method === 'getUpdates')).toBe(true), {
+      timeout: 5000,
+    });
+    expect((await client.health()).channels).toContain('telegram');
+    await client.unsetKey('SHIBAOX_TELEGRAM_TOKEN');
+    await vi.waitFor(async () =>
+      expect((await client.health()).channels).not.toContain('telegram'),
+    );
+  });
+});

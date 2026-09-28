@@ -180,6 +180,31 @@ describe('shibaox CLI against a daemon', () => {
     expect(st[0]?.version).toBe('0.0.1');
   });
 
+  it('daemon stop waits for the active runs and says so', async () => {
+    const { org, project, cli } = await setup({
+      mockScript: async (job: TaskJob) => {
+        await new Promise((r) => setTimeout(r, 1500));
+        return { output: {}, summary: job.instruction };
+      },
+    });
+    const started = await cli(
+      'run',
+      'hello-feature',
+      '--org',
+      org,
+      '--project',
+      project,
+      '--input',
+      'x',
+      '--detach',
+    );
+    expect(started.code).toBe(0);
+    const stop = await cli('daemon', 'stop');
+    expect(stop.code).toBe(0);
+    expect(stop.stdout).toMatch(/waiting for 1 active run/);
+    expect(stop.stdout).toMatch(/Stopped\./);
+  });
+
   it('tiers list/set change the org models without editing YAML', async () => {
     const { org, cli } = await setup();
     const list = await cli('tiers', '--org', org);

@@ -198,8 +198,10 @@ describe('discoverModels', () => {
         local: true,
         available: true,
         free: true,
+        listed: true,
         contextWindow: 32768, // what it is loaded with, not the maximum
       });
+      expect(lm[1]).toMatchObject({ listed: true }); // the server lists llama3.2 too
       // a model that is not loaded has no known window: LM Studio loads it with its own setting
       expect(lm[1]?.contextWindow).toBeUndefined();
       expect(reg.contextWindow('lmstudio/llama3.2')).toBeUndefined();
@@ -217,7 +219,7 @@ describe('discoverModels', () => {
           configured: true,
           local: true,
           available: false,
-          free: true,
+          free: true, // no `listed`: the server did not answer, the catalog is not authoritative
         },
       ]);
     } finally {
@@ -279,6 +281,7 @@ describe('discoverModels (OpenRouter)', () => {
       expect(withKey[0]).toMatchObject({ ref: 'openrouter/openai/gpt-5', contextWindow: 400000 });
       expect(withKey[1]).toMatchObject({
         configured: true,
+        listed: true, // from the provider's own listing: an authoritative name
         contextWindow: 1048576,
         pricing: { input_per_m: 0.3, output_per_m: 2.5 },
       });

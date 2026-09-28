@@ -110,9 +110,15 @@ shibaox daemon uninstall
   The agent runs the CLI through `/bin/zsh -lc`, so it gets the environment of a **login**
   shell: exports in `~/.zprofile` or `~/.zshenv` reach it, exports only in `~/.zshrc` do not
   (`daemon install` checks the keys your shell has and says which ones the service would
-  miss); nothing is copied into the plist. `daemon stop` says when launchd will start it
-  again; `daemon status` and `doctor` show the service. Reinstall after upgrading Node: the
-  agent records the `node` binary it was installed with.
+  miss); nothing is copied into the plist. The plist runs `~/.shibaox/daemon.sh`, a launcher
+  that records the `node` and CLI paths of the install and, when either moved (a Node
+  upgrade under nvm or brew), falls back to the login shell's `node` and to `shibaox` on the
+  PATH, so the service survives upgrades; `daemon status` and `doctor` say when the recorded
+  paths are gone and a `daemon install` is due. `daemon stop` stays until the daemon is gone,
+  saying how many runs it waits for (`--force` cancels them), then when launchd will start it
+  again. Relative `org`/`project` in `daemon.yaml` resolve next to that file. Text messages
+  that piled up on Telegram while the daemon was down: only the last one is answered, and the
+  chat is told how many were skipped.
 
 - **Files.** `daemon.sock` (0600, HTTP JSON + SSE, no authentication: only your user reaches
   it), `daemon.pid`, `daemon.log`, `daemon.yaml`, `events.db` (one SQLite database for every
@@ -178,7 +184,11 @@ channels:
   is used by the next run at once (no restart), reaches the launchd service whatever your
   shell exports, and wins over the environment. The shell environment stays a fallback:
   keys exported there still work, and `doctor` says which of the two a key comes from. The
-  Telegram token is read when the daemon starts: set it, then restart once.
+  Telegram channel follows the token in the vault: set `SHIBAOX_TELEGRAM_TOKEN` and it starts
+  polling at once; remove it and it stops; change it and it restarts, no daemon restart needed.
+  A run's `--model` / `/model` is checked against the provider's own listing when there is one
+  (OpenRouter with a key, a local server that answers): a typo is refused at submit instead of
+  failing minutes later.
 
 - **Tiers.** Which model each tier of an org runs on (`strong`, `cheap`, `decision`), the
   `judge` model, the default `adapter` and the budget per run are set without editing YAML,

@@ -13,6 +13,8 @@ export interface HomePaths {
   secrets: string;
   /** The default org (`org/`), used by projects without one. */
   org: string;
+  /** The launchd service's launcher script (`daemon.sh`), written by `daemon install`. */
+  launcher: string;
 }
 
 /** `$SHIBAOX_HOME`, else `~/.shibaox`; the directory is created (0700). */
@@ -28,5 +30,6 @@ export function homePaths(env: NodeJS.ProcessEnv = process.env): HomePaths {
     db: join(root, 'events.db'),
     secrets: join(root, 'secrets.json'),
     org: join(root, 'org'),
+    launcher: join(root, 'daemon.sh'),
   };
 }

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
 import { runArgv } from '@shibaox/core';
@@ -29,8 +29,8 @@ const sh = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
  * the same environment as your terminal (provider keys, the Telegram token) without any
  * secret in the plist; restarted when it exits; output appended to `daemon.log`.
  */
-export function renderPlist(o: { node: string; cli: string; paths: HomePaths }): string {
-  const command = `exec ${sh(o.node)} ${sh(o.cli)} daemon start`;
+export function renderPlist(o: { launcher: string; paths: HomePaths }): string {
+  const command = `exec ${sh(o.launcher)}`;
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
@@ -62,7 +62,39 @@ async function launchctl(exec: Exec, args: string[]) {
   return exec({ argv: ['launchctl', ...args], cwd: '/', timeoutMs: 20_000 });
 }
 
-/** Writes the plist and loads it (`bootstrap`, else `load -w`); an older copy is booted out first. */
+/**
+ * The launcher the service runs: the recorded node and CLI, but resolved again at launch when
+ * either moved (a Node upgrade under nvm or brew), so the service never strands itself.
+ */
+export function renderLauncher(o: { node: string; cli: string }): string {
+  return [
+    '#!/bin/sh',
+    '# Written by `shibaox daemon install`; launchd runs it through a login shell.',
+    `node=${sh(o.node)}`,
+    `cli=${sh(o.cli)}`,
+    'if [ ! -x "$node" ]; then node="$(command -v node 2>/dev/null)"; fi',
+    'if [ ! -f "$cli" ]; then',
+    '  bin="$(command -v shibaox 2>/dev/null)"',
+    '  if [ -n "$bin" ]; then exec "$bin" daemon start; fi',
+    'fi',
+    'exec "$node" "$cli" daemon start',
+    '',
+  ].join('\n');
+}
+
+/** The node and CLI the installed launcher records, and whether either is gone (reinstall). */
+export function servicePaths(
+  paths: HomePaths,
+): { node: string; cli: string; stale: boolean } | undefined {
+  if (!existsSync(paths.launcher)) return undefined;
+  const text = readFileSync(paths.launcher, 'utf8');
+  const node = /^node='((?:[^']|'\\'')*)'$/m.exec(text)?.[1]?.replace(/'\\''/g, "'");
+  const cli = /^cli='((?:[^']|'\\'')*)'$/m.exec(text)?.[1]?.replace(/'\\''/g, "'");
+  if (!node || !cli) return undefined;
+  return { node, cli, stale: !existsSync(node) || !existsSync(cli) };
+}
+
+/** Writes the launcher and the plist and loads it (`bootstrap`, else `load -w`); an older copy is booted out first. */
 export async function installService(
   o: ServiceArgs & { paths: HomePaths; node: string; cli: string },
 ): Promise<{ plist: string }> {
@@ -70,7 +102,9 @@ export async function installService(
   const uid = o.uid ?? currentUid();
   const file = plistPath(o.env);
   mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, renderPlist({ node: o.node, cli: o.cli, paths: o.paths }));
+  writeFileSync(o.paths.launcher, renderLauncher({ node: o.node, cli: o.cli }));
+  chmodSync(o.paths.launcher, 0o755);
+  writeFileSync(file, renderPlist({ launcher: o.paths.launcher, paths: o.paths }));
   const pollMs = o.pollMs ?? 500;
   const sleep = () => new Promise((r) => setTimeout(r, pollMs));
   // bootout returns before launchd finished tearing the old instance down: wait for the label

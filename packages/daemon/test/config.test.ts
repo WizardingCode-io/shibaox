@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadDaemonConfig } from '../src/config.js';
 import { homePaths } from '../src/home.js';
@@ -55,7 +55,19 @@ describe('daemon config and home', () => {
       db: join(home, 'events.db'),
       secrets: join(home, 'secrets.json'),
       org: join(home, 'org'),
+      launcher: join(home, 'daemon.sh'),
     });
     expect(homePaths({ HOME: dir }).root).toBe(join(dir, '.shibaox'));
+  });
+});
+
+describe('paths in daemon.yaml', () => {
+  it('relative org and project resolve against the file, not the daemon cwd', () => {
+    dir = mkdtempSync(join(tmpdir(), 'shx-home-'));
+    const p = join(dir, 'daemon.yaml');
+    writeFileSync(p, 'channels:\n  telegram: { chat_id: 5, org: ./org, project: ../proj }\n');
+    const c = loadDaemonConfig(p);
+    expect(c.channels.telegram?.org).toBe(join(dir, 'org'));
+    expect(c.channels.telegram?.project).toBe(resolve(dir, '..', 'proj'));
   });
 });

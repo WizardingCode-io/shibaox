@@ -45,6 +45,8 @@ export interface DaemonOptions {
   claudeInstalled?: boolean;
   /** Model discovery at start and before runs (default on; tests turn it off: it probes local servers). */
   discovery?: boolean;
+  /** The Bot API base for the Telegram channel the daemon builds itself (tests point it at a fake). */
+  telegramApiBase?: string;
   /** Conversation summariser (tests inject one); by default the org's cheap tier or the run's model. */
   summarize?: (transcript: string, org: Org) => Promise<string>;
   /** Tokens a conversation may carry before it is compacted (tests lower it). */
@@ -106,7 +108,11 @@ export class Daemon {
           return items.find((i) => inboxToken(i.id) === token)?.id;
         },
         () => this.statusText(),
+        opts.telegramApiBase,
       );
+    this.telegramToken = this.config.channels.telegram
+      ? this.env[this.config.channels.telegram.bot_token_env]
+      : undefined;
     // with a SQLite store the outbox persists retries; an injected store delivers directly
     this.outbox =
       this.store instanceof SqliteEventStore && this.channels.length > 0
@@ -173,14 +179,7 @@ export class Daemon {
             );
       },
     });
-    for (const c of this.channels) {
-      c.onAnswer?.((id, a) =>
-        this.inbox
-          .answer(id, { ...a, via: c.id === 'telegram' ? 'telegram' : 'api' })
-          .then(() => undefined),
-      );
-      c.onMessage?.((chatId, text) => this.onChatText(c, chatId, text));
-    }
+    for (const c of this.channels) this.attach(c);
     this.server = new DaemonServer(this.paths.socket, {
       store: this.store,
       runs: this.runs,
@@ -213,6 +212,52 @@ export class Daemon {
     });
   }
 
+  /** The Telegram token the running channel was built with (to notice a change). */
+  private telegramToken: string | undefined;
+  private started = false;
+
+  /** Wires a channel's answers and messages into the inbox and the orchestrator. */
+  private attach(c: Channel): void {
+    c.onAnswer?.((id, a) =>
+      this.inbox
+        .answer(id, { ...a, via: c.id === 'telegram' ? 'telegram' : 'api' })
+        .then(() => undefined),
+    );
+    c.onMessage?.((chatId, text) => this.onChatText(c, chatId, text));
+  }
+
+  /**
+   * The Telegram channel follows the token in the live env: set through the vault, it starts
+   * without a restart; removed, it stops; changed, it restarts with the new one.
+   */
+  private async syncTelegram(): Promise<void> {
+    const tg = this.config.channels.telegram;
+    if (!tg || this.opts.channels) return; // injected channels are the tests' business
+    const token = this.env[tg.bot_token_env];
+    if (token === this.telegramToken) return;
+    const log = this.opts.log ?? ((l: string) => console.log(l));
+    const current = this.channels.find((c) => c.id === 'telegram');
+    if (current) {
+      await current.stop?.().catch(() => undefined);
+      this.channels.splice(this.channels.indexOf(current), 1);
+      log('telegram: channel stopped (token changed or removed)');
+    }
+    this.telegramToken = token;
+    if (!token) return;
+    const c = telegramChannel({
+      token,
+      chatId: tg.chat_id,
+      log,
+      lookup: async (t) => (await this.inbox.list()).find((i) => inboxToken(i.id) === t)?.id,
+      status: () => this.statusText(),
+      apiBase: this.opts.telegramApiBase,
+    });
+    this.attach(c);
+    this.channels.push(c);
+    if (this.started) await c.start?.();
+    log('telegram: channel started with the token from the vault');
+  }
+
   /** Rebuilds the live environment in place after the vault changed (nothing holds a copy). */
   private refreshEnv(base: NodeJS.ProcessEnv): void {
     const next = this.secrets.env(base);
@@ -220,6 +265,9 @@ export class Daemon {
     Object.assign(this.env, next);
     this.modelsCache = undefined;
     this.warmModels(); // a new key may open a provider whose prices and windows runs need
+    void this.syncTelegram().catch((e) =>
+      this.opts.log?.(`telegram: ${e instanceof Error ? e.message : String(e)}`),
+    );
   }
 
   private modelsInFlight: Promise<ModelChoice[]> | undefined;
@@ -364,6 +412,7 @@ export class Daemon {
     this.warmModels();
     writeFileSync(this.paths.pid, String(process.pid));
     for (const c of this.channels) await c.start?.();
+    this.started = true;
     this.outbox?.start();
     await this.runs.start();
     this.schedules?.start();
@@ -390,14 +439,19 @@ export function defaultChannels(
   log: (line: string) => void,
   lookup?: (token: string) => Promise<InboxId | undefined>,
   status?: () => Promise<string>,
+  apiBase?: string,
 ): Channel[] {
   const out: Channel[] = [];
   if (process.platform === 'darwin' && config.channels.macos.enabled) out.push(macosChannel());
   const tg = config.channels.telegram;
   if (tg) {
     const token = env[tg.bot_token_env];
-    if (token) out.push(telegramChannel({ token, chatId: tg.chat_id, log, lookup, status }));
-    else log(`warn: telegram is configured but ${tg.bot_token_env} is not set: channel disabled`);
+    if (token)
+      out.push(telegramChannel({ token, chatId: tg.chat_id, log, lookup, status, apiBase }));
+    else
+      log(
+        `warn: telegram is configured but ${tg.bot_token_env} is not set: set it with \`shibaox keys set ${tg.bot_token_env} …\` (no restart needed)`,
+      );
   }
   return out;
 }

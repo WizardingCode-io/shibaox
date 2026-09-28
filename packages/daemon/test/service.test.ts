@@ -8,6 +8,7 @@ import {
   LAUNCHD_LABEL,
   plistPath,
   renderPlist,
+  servicePaths,
   serviceStatus,
   uninstallService,
 } from '../src/service.js';
@@ -37,13 +38,13 @@ const fakeExec = (fail: (argv: string[]) => boolean = () => false) => {
 describe('launchd service', () => {
   it('renders a plist that execs the CLI through a login shell, keeps it alive and logs to daemon.log', () => {
     const { paths } = setup();
-    const xml = renderPlist({ node: '/usr/local/bin/node', cli: '/opt/shibaox/cli.js', paths });
+    const xml = renderPlist({ launcher: join(paths.root, 'daemon.sh'), paths });
     expect(xml).toContain(`<string>${LAUNCHD_LABEL}</string>`);
     expect(xml).toContain('<string>/bin/zsh</string>');
     expect(xml).toContain('<string>-lc</string>');
-    expect(xml).toContain(
-      "<string>exec '/usr/local/bin/node' '/opt/shibaox/cli.js' daemon start</string>",
-    );
+    // the plist runs a launcher that resolves node and the CLI at launch: a Node upgrade
+    // that moves both (nvm, brew) never strands the service
+    expect(xml).toContain(`<string>exec '${join(paths.root, 'daemon.sh')}'</string>`);
     expect(xml).toContain('<key>KeepAlive</key>');
     expect(xml).toContain('<key>RunAtLoad</key>');
     expect(xml).toContain(`<string>${paths.log}</string>`);
@@ -67,7 +68,15 @@ describe('launchd service', () => {
     expect(file).toBe(join(env.HOME, 'Library', 'LaunchAgents', `${LAUNCHD_LABEL}.plist`));
     expect(r.plist).toBe(file);
     expect(existsSync(file)).toBe(true);
-    expect(readFileSync(file, 'utf8')).toContain("exec '/n' '/c' daemon start");
+    expect(readFileSync(file, 'utf8')).toContain(`exec '${paths.launcher}'`);
+    const launcher = readFileSync(paths.launcher, 'utf8');
+    expect(launcher).toContain("node='/n'");
+    expect(launcher).toContain("cli='/c'");
+    expect(launcher).toContain('command -v node'); // the login shell's node when the recorded one is gone
+    expect(launcher).toContain('command -v shibaox'); // an installed CLI when the recorded one is gone
+    expect(launcher).toContain('daemon start');
+    // recorded paths that no longer exist: the service is stale until reinstalled
+    expect(servicePaths(paths)).toEqual({ node: '/n', cli: '/c', stale: true });
     expect(calls.filter((c) => c[1] !== 'print')).toEqual([
       ['launchctl', 'bootout', `gui/501/${LAUNCHD_LABEL}`],
       ['launchctl', 'bootstrap', 'gui/501', file],

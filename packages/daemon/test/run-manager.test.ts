@@ -168,6 +168,40 @@ describe('RunManager', () => {
     expect(created?.type === 'RunCreated' && created.input.messages).toEqual(used);
   });
 
+  it('a model that a live listing does not offer is refused at submit; unlisted providers are not judged', async () => {
+    const s = setup();
+    const store = new MemoryEventStore();
+    const ready = async () => [
+      {
+        ref: 'lmstudio/qwen3',
+        provider: 'lmstudio',
+        model: 'qwen3',
+        configured: true,
+        local: true,
+        available: true,
+        listed: true,
+      },
+    ];
+    const { manager: m } = manager(store, {
+      vault: s.vault,
+      ready,
+      env: { ANTHROPIC_API_KEY: 'k' },
+    });
+    const base = {
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'x',
+      adapter: 'direct' as const,
+      workspace: 'inplace' as const,
+    };
+    await expect(m.submit({ ...base, model: 'lmstudio/qwen3-typo' })).rejects.toThrow(
+      /not offered by lmstudio|\/model/,
+    );
+    // anthropic has no live listing: any model name is accepted (the provider decides)
+    const ok = await m.submit({ ...base, model: 'anthropic/claude-something-new' });
+    expect(ok.runId).toBeTruthy();
+  });
   it('waits for `ready` (model discovery) before a run starts, so cost and context are known', async () => {
     const s = setup();
     let release: (() => void) | undefined;

@@ -263,6 +263,53 @@ describe('telegram text', () => {
     expect(poll?.body.allowed_updates).toEqual(['callback_query', 'message']);
   });
 
+  it('messages that piled up while the daemon was down: only the last one is answered, and the chat is told', async () => {
+    const fake = await fakeTelegram();
+    const seen: string[] = [];
+    const channel = telegramChannel({
+      token: 't',
+      chatId: 7,
+      apiBase: fake.apiBase,
+      log: () => {},
+      pollTimeoutSeconds: 0,
+    });
+    channel.onMessage?.(async (_chat, text) => {
+      seen.push(text);
+    });
+    const earlier = Math.floor(Date.now() / 1000) - 60; // sent a minute ago, to a daemon that was down
+    for (let i = 1; i <= 3; i++)
+      fake.push({
+        update_id: i,
+        message: {
+          message_id: 10 + i,
+          date: earlier,
+          text: `msg ${i}`,
+          chat: { id: 7, type: 'private' },
+        },
+      });
+    await channel.start?.();
+    try {
+      await vi.waitFor(() => expect(seen).toEqual(['msg 3']));
+      await vi.waitFor(() =>
+        expect(
+          fake.calls.some(
+            (c) =>
+              c.method === 'sendMessage' &&
+              /2 earlier message\(s\) arrived while I was away/.test(String(c.body.text)),
+          ),
+        ).toBe(true),
+      );
+      // a message arriving later is handled as usual
+      fake.push({
+        update_id: 4,
+        message: { message_id: 20, text: 'msg 4', chat: { id: 7, type: 'private' } },
+      });
+      await vi.waitFor(() => expect(seen).toEqual(['msg 3', 'msg 4']));
+    } finally {
+      await channel.stop?.();
+      await fake.close();
+    }
+  });
   it('/status and /help answer from the channel itself', async () => {
     fake = await fakeTelegram();
     channel = telegramChannel({

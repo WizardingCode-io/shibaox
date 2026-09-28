@@ -5,6 +5,7 @@ import {
   homePaths,
   loadDaemonConfig,
   SecretsStore,
+  servicePaths,
   serviceStatus,
 } from '@shibaox/daemon';
 import { CLI_VERSION } from '../version.js';
@@ -50,15 +51,18 @@ export async function doctorCommand(): Promise<number> {
   lines.push(await daemonLine());
   if (process.platform === 'darwin') {
     const s = await serviceStatus();
+    const sp = servicePaths(homePaths());
     lines.push({
       name: 'service',
-      ok: s === 'installed',
+      ok: s === 'installed' && !sp?.stale,
       detail:
-        s === 'installed'
-          ? 'launchd (starts at login)'
-          : s === 'not-loaded'
-            ? 'plist present but not loaded: shibaox daemon install'
-            : 'not installed (shibaox daemon install keeps the daemon running 24h)',
+        s === 'installed' && sp?.stale
+          ? 'launchd, but its recorded node or CLI path is gone (Node upgraded?): shibaox daemon install'
+          : s === 'installed'
+            ? 'launchd (starts at login)'
+            : s === 'not-loaded'
+              ? 'plist present but not loaded: shibaox daemon install'
+              : 'not installed (shibaox daemon install keeps the daemon running 24h)',
       required: false,
     });
   }

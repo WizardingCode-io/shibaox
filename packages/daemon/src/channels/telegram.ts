@@ -78,6 +78,8 @@ interface CallbackQuery {
 interface Message {
   message_id: number;
   text?: string;
+  /** Unix seconds when it was sent. */
+  date?: number;
   chat: { id: number; type?: string };
 }
 
@@ -231,10 +233,34 @@ export function telegramChannel(o: TelegramOptions): Channel {
     }
   }
 
+  // the first batch after a start may hold what piled up while the daemon was down: only the
+  // last text is a turn (the rest were meant for a daemon that was not there), and the chat
+  // is told
+  let firstBatch = true;
+  let startedAt = 0; // unix seconds when polling began: older texts were sent to a daemon that was down
+  async function backlog(updates: Update[]): Promise<Update[]> {
+    if (!firstBatch) return updates;
+    firstBatch = false;
+    const isText = (u: Update) =>
+      u.message?.text !== undefined &&
+      u.message.chat.id === o.chatId &&
+      (u.message.chat.type === undefined || u.message.chat.type === 'private') &&
+      !u.message.text.startsWith('/') &&
+      typeof u.message.date === 'number' &&
+      u.message.date < startedAt - 2;
+    const texts = updates.filter(isText);
+    if (texts.length <= 1) return updates;
+    const keep = texts[texts.length - 1];
+    await sendText(
+      `${texts.length - 1} earlier message(s) arrived while I was away; answering the last one.`,
+    ).catch(() => undefined);
+    return updates.filter((u) => !isText(u) || u === keep);
+  }
+
   async function poll(signal: AbortSignal): Promise<void> {
     while (!signal.aborted) {
       try {
-        const updates = await api<Update[]>(
+        const fetched = await api<Update[]>(
           'getUpdates',
           {
             offset,
@@ -243,8 +269,9 @@ export function telegramChannel(o: TelegramOptions): Channel {
           },
           signal,
         );
+        for (const u of fetched) offset = Math.max(offset, u.update_id + 1);
+        const updates = await backlog(fetched);
         for (const u of updates) {
-          offset = Math.max(offset, u.update_id + 1);
           await handle(u).catch((e: unknown) =>
             o.log(`[telegram] ${e instanceof Error ? e.message : String(e)}`),
           );
@@ -305,6 +332,7 @@ export function telegramChannel(o: TelegramOptions): Channel {
       onText = cb;
     },
     async start() {
+      startedAt = Math.floor(Date.now() / 1000);
       polling = new AbortController();
       void poll(polling.signal);
     },

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { parse } from 'yaml';
 import { z } from 'zod';
 
@@ -34,5 +35,12 @@ export function loadDaemonConfig(path: string): DaemonConfig {
     throw new Error(
       `invalid daemon config ${path}: ${r.error.issues.map((i) => `${i.path.join('.')} ${i.message}`).join('; ')}`,
     );
+  // relative org/project mean "next to this file", never the daemon's working directory
+  const tg = r.data.channels.telegram;
+  if (tg) {
+    const here = dirname(resolve(path));
+    if (tg.org) tg.org = resolve(here, tg.org);
+    if (tg.project) tg.project = resolve(here, tg.project);
+  }
   return r.data;
 }

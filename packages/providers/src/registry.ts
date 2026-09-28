@@ -171,6 +171,8 @@ export interface ModelChoice {
   pricing?: Pricing;
   /** Costs nothing: a local server, or a free model of a provider. */
   free?: boolean;
+  /** Named by the provider's own live listing: a ref the provider does not list is a typo. */
+  listed?: boolean;
 }
 
 const OPENROUTER_API = 'https://openrouter.ai/api/v1';
@@ -313,6 +315,7 @@ export async function discoverModels(
             provider: e.id,
             model: m.id,
             configured: true,
+            listed: true,
             ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
             ...(m.pricing ? { pricing: m.pricing } : {}),
             ...(m.pricing && m.pricing.input_per_m === 0 && m.pricing.output_per_m === 0
@@ -345,6 +348,7 @@ export async function discoverModels(
         local: true,
         available,
         free: true,
+        ...(found?.includes(model) ? { listed: true } : {}),
         ...(contextWindow ? { contextWindow } : {}),
       });
     }
