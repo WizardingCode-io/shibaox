@@ -134,24 +134,26 @@ export function Home(): JSX.Element {
   });
   // the models a run can be pointed at (`/model`), from the daemon
   const [models] = createResource(() => client.models().catch(() => []));
-  const [defaultOrg, { refetch: refetchDefaultOrg }] = createResource(() =>
-    client.defaultOrg().catch(() => undefined),
+  // the daemon's default org, asked with a few retries: the daemon may still be settling
+  // (a fresh install starts it on demand) and a transient failure must not leave the home
+  // without an org
+  const [defaultOrg] = createResource<{ root: string; created: boolean; error?: string }>(
+    async () => {
+      for (const wait of [0, 250, 1000, 2000]) {
+        if (wait) await new Promise((r) => setTimeout(r, wait));
+        try {
+          return await client.defaultOrg();
+        } catch {
+          // try again
+        }
+      }
+      return { root: '', created: false, error: 'the daemon did not answer for the default org' };
+    },
   );
   createEffect(() => {
     const d = defaultOrg();
-    if (d && !ctx().org) setCtx((c) => ({ ...c, org: d.root }));
+    if (d?.root && !ctx().org) setCtx((c) => ({ ...c, org: d.root }));
   });
-  // the first ask may have hit a daemon still booting (a fresh install starts it on demand):
-  // ask again as soon as it answers, until an org is known
-  createEffect(
-    on(
-      () => data.state.reachable,
-      (reachable) => {
-        if (reachable && !ctx().org && !defaultOrg()) void refetchDefaultOrg();
-      },
-      { defer: true },
-    ),
-  );
   const orgRoot = createMemo(() => ctx().org);
   // bumped when the org's files change under us (a /tiers save) so the memo reads them again
   const [orgVersion, setOrgVersion] = createSignal(0);
@@ -241,7 +243,15 @@ export function Home(): JSX.Element {
     route.navigate({ type: 'session', runId });
   };
 
-  const notice = () => error() ?? org().error;
+  // no org known yet: while the daemon is still being asked, say so instead of an error
+  const orgPending = () => !orgRoot() && (defaultOrg.loading || defaultOrg() === undefined);
+  const notice = () =>
+    error() ??
+    (orgPending()
+      ? 'finding the org…'
+      : !orgRoot() && defaultOrg()?.error
+        ? defaultOrg()?.error
+        : org().error);
   const mockNotice = () => (ctx().adapter === 'mock' ? MOCK_NOTICE : undefined);
   const contextFooter = () => {
     const c = ctx();

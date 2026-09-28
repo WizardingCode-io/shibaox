@@ -23,6 +23,8 @@ async function mount(
     noLocalOrg?: boolean;
     /** The daemon is not up yet when the dashboard opens (a fresh install starts it on demand). */
     daemonDown?: boolean;
+    /** `defaultOrg()` fails this many times first (a daemon still settling). */
+    defaultOrgFailures?: number;
   } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'tui-home-'));
@@ -30,6 +32,10 @@ async function mount(
   const home = join(dir, 'home');
   const client = new FakeDaemonClient();
   if (o.daemonDown) client.failing = true;
+  if (o.defaultOrgFailures) {
+    client.defaultOrgRoot = join(dir, 'org');
+    client.defaultOrgFailures = o.defaultOrgFailures;
+  }
   const cwd = o.noLocalOrg ? join(dir, 'proj') : dir;
   if (o.noLocalOrg) mkdirSync(cwd, { recursive: true });
   if (o.profile) client.profiles.set(dir, o.profile);
@@ -634,18 +640,17 @@ test('/tiers shows the org tiers and changes one through the daemon', async () =
   }
 });
 
-test('a fresh install: the default org is asked again once the daemon that was still booting answers', async () => {
-  const m = await mount({ noLocalOrg: true, daemonDown: true });
+test('a fresh install: the default org is asked again after a transient failure, and no error flashes meanwhile', async () => {
+  const m = await mount({ noLocalOrg: true, defaultOrgFailures: 2 });
   try {
     let f = await m.frame();
-    expect(f).not.toContain('workflow chat'); // nothing known yet
-    m.client.defaultOrgRoot = join(m.dir, 'org');
-    m.client.failing = false; // the daemon is up now
-    // the poller retries a daemon that was down every 5 s: give it two chances
-    const until = Date.now() + 12_000;
-    while (Date.now() < until && !f.includes('workflow chat')) f = await m.frame();
+    const until = Date.now() + 8_000;
+    while (Date.now() < until && !f.includes('workflow chat')) {
+      expect(f).not.toContain('Org not found');
+      f = await m.frame();
+    }
     expect(f).toContain('workflow chat');
-    expect(f).not.toContain('Org not found');
+    expect(m.client.calls.filter((c) => c.method === 'defaultOrg').length).toBe(3);
   } finally {
     m.done();
   }

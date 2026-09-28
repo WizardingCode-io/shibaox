@@ -1,5 +1,4 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { runCommand } from '@shibaox/core';
 import {
   DaemonClient,
@@ -34,24 +33,28 @@ async function which(bin: string, versionFlag = '--version'): Promise<CheckLine>
   };
 }
 
-/** Where this shibaox lives and whether the installer's `bin` is reachable from the shell. */
-export function installLine(o: { root: string; env: NodeJS.ProcessEnv }): CheckLine {
-  const app = o.env.SHIBAOX_APP || join(o.root, 'app');
+/** Where this shibaox runs from: the installer's checkout (is its `bin` on the PATH?) or a development one. */
+export function installLine(o: { root: string; env: NodeJS.ProcessEnv; cli?: string }): CheckLine {
+  const app = resolve(o.env.SHIBAOX_APP || join(o.root, 'app'));
   const bin = join(o.root, 'bin');
-  if (!existsSync(join(app, 'apps', 'cli')) && !existsSync(join(bin, 'shibaox')))
+  const cli = resolve(o.cli ?? process.argv[1] ?? '');
+  if (!cli.startsWith(`${app}/`)) {
+    // apps/cli/dist/index.js → the checkout root, three levels up
+    const checkout = resolve(cli, '..', '..', '..', '..');
     return {
       name: 'install',
       ok: true,
-      detail: 'a development checkout (scripts/install.sh sets up ~/.shibaox/app + bin)',
+      detail: `a development checkout at ${checkout} (scripts/install.sh sets up ${app} + ${bin})`,
       required: false,
     };
+  }
   const onPath = (o.env.PATH ?? '').split(':').includes(bin);
   return {
     name: 'install',
     ok: onPath,
     detail: onPath
       ? `${app} (shibaox upgrade updates it)`
-      : `${bin} is not on the PATH: export PATH="${bin}:$PATH" (install.sh adds it to ~/.zprofile)`,
+      : `${bin} is not on the PATH: export PATH="${bin}:$PATH" (install.sh adds it to the shell profile)`,
     required: false,
   };
 }

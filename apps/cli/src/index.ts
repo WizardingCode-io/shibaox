@@ -69,7 +69,7 @@ program
   .command('upgrade')
   .description('update the installer checkout (~/.shibaox/app), rebuild and restart the daemon')
   .action(async function (this: Command) {
-    exitWith(await upgradeCommand({}, { out: out(this) }));
+    exitWith(await upgradeCommand({ out: out(this) }));
   });
 
 program

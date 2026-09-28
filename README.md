@@ -32,11 +32,17 @@ curl -fsSL https://raw.githubusercontent.com/wizardingcode/shibaox/main/scripts/
 # or from a local clone: SHIBAOX_SOURCE=/path/to/shibaox sh scripts/install.sh
 ```
 
-It needs git, Node 22+ and pnpm (enabled through corepack when missing); Bun runs the
+The public URL is not live yet: until it is, `SHIBAOX_SOURCE=<clone>` is the supported path.
+It needs git, Node 22+ and pnpm (enabled through corepack when missing); Bun 1.3+ runs the
 dashboard (the CLI and the daemon work without it). It adds `~/.shibaox/bin` to your PATH in
-`~/.zprofile` (`SHIBAOX_NO_PROFILE=1` to skip). Then `shibaox doctor`, `shibaox daemon install`
-(keeps the daemon running), `shibaox` (the dashboard). `shibaox upgrade` pulls, rebuilds and
-restarts the daemon. `SHIBAOX_REF` picks a branch or tag.
+your shell's login file (`~/.zprofile` on macOS zsh, `~/.bash_profile`, `~/.zshrc`/`~/.bashrc`
+on Linux; `SHIBAOX_NO_PROFILE=1` to skip), logs to `~/.shibaox/install.log`, and the launcher
+records the Node it was built with (a different ABI is reported, with the fix). Then
+`shibaox doctor`, `shibaox daemon install` (keeps the daemon running), `shibaox` (the
+dashboard). `shibaox upgrade` pulls, rebuilds and restarts the daemon (nothing happens when
+already up to date; a failed build says how to go back). `SHIBAOX_REF` picks a branch or tag.
+Publishing to npm (`npm i -g shibaox`) is not set up yet: the packages are workspace-only and
+the dashboard runs from source under Bun.
 
 If `pnpm install` fails while building `better-sqlite3`:
 

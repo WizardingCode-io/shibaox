@@ -51,6 +51,8 @@ export class FakeDaemonClient implements DaemonClientLike {
   keyRows: KeyRow[] = [];
   /** What `GET /orgs/default` answers. */
   defaultOrgRoot = '/o';
+  /** How many times `defaultOrg()` still fails before answering (a daemon that is settling). */
+  defaultOrgFailures = 0;
   private readonly streams = new Map<string, Stream>();
 
   private record(method: string, args: unknown[]): void {
@@ -123,6 +125,10 @@ export class FakeDaemonClient implements DaemonClientLike {
 
   async defaultOrg(): Promise<{ root: string; created: boolean }> {
     this.record('defaultOrg', []);
+    if (this.defaultOrgFailures > 0) {
+      this.defaultOrgFailures--;
+      throw new Error('daemon still starting');
+    }
     return { root: this.defaultOrgRoot, created: false };
   }
 
