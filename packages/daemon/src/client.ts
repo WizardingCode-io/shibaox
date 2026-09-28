@@ -75,7 +75,7 @@ export class DaemonClient {
             }
             resolve({ status: res.statusCode ?? 0, body: parsed });
           });
-          res.on('error', reject);
+          res.on('error', (e) => reject(new DaemonUnavailableError(this.socketPath, e)));
         },
       );
       req.on('error', (e) => reject(new DaemonUnavailableError(this.socketPath, e)));

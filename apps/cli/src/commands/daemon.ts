@@ -11,6 +11,7 @@ import {
   SecretsStore,
   type ServiceArgs,
   servicePaths,
+  servicePredatesLauncher,
   serviceStatus,
   uninstallService,
 } from '@shibaox/daemon';
@@ -72,30 +73,38 @@ export async function daemonStop(o: { force?: boolean }, out: Out): Promise<numb
       ? 'Stopping the daemon and cancelling active runs.'
       : 'Stopping the daemon after active runs finish.',
   );
-  // stay until it is gone: say how many runs it is waiting for, then that it stopped
+  // stay until it is gone: say how many runs it is waiting for, then that it stopped. A
+  // daemon launchd restarted meanwhile answers with another pid: that one is the new one.
+  const oldPid = existsSync(paths.pid) ? readFileSync(paths.pid, 'utf8').trim() : undefined;
   let lastRunning = -1;
-  const until = Date.now() + 15 * 60_000;
+  const until = Date.now() + 3 * 60_000;
+  let stopped = false;
   while (Date.now() < until) {
-    let h: { runs: { running: number } } | undefined;
+    let h: { runs: { running: number }; pid?: number } | undefined;
     try {
       h = await client.health();
     } catch (e) {
-      if (e instanceof DaemonUnavailableError) break;
+      if (e instanceof DaemonUnavailableError) {
+        stopped = true;
+        break;
+      }
       throw e;
+    }
+    if (h.pid !== undefined && oldPid !== undefined && String(h.pid) !== oldPid) {
+      stopped = true; // launchd already started the next one
+      break;
     }
     if (h.runs.running !== lastRunning) {
       lastRunning = h.runs.running;
       if (h.runs.running > 0)
         out.line(
-          `waiting for ${h.runs.running} active run(s) to finish… (\`--force\` cancels them)`,
+          `waiting for ${h.runs.running} active run(s) to finish (up to 60 s, then they are interrupted and resumed at the next start; \`--force\` cancels them)…`,
         );
     }
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 200));
   }
   out.line(
-    Date.now() < until
-      ? 'Stopped.'
-      : 'Still running after 15 minutes: `daemon stop --force` cancels the runs.',
+    stopped ? 'Stopped.' : 'Still running after 3 minutes: `daemon stop --force` cancels the runs.',
   );
   if ((await serviceStatus()) === 'installed')
     out.line(
@@ -136,6 +145,17 @@ export interface ServiceDeps extends ServiceArgs {
   paths?: HomePaths;
   /** Stops a detached daemon first (launchd owns it from now on); returns whether one ran. */
   stopRunning?: () => Promise<boolean>;
+}
+
+/** What `status` and `doctor` say about an installed service whose launcher or paths went stale. */
+export async function staleServiceHint(paths: HomePaths): Promise<string | undefined> {
+  if ((await serviceStatus()) === 'not-installed') return undefined;
+  if (servicePredatesLauncher(paths))
+    return 'service: installed before the launcher (an absolute node path): run `shibaox daemon install` once so a Node upgrade cannot strand it';
+  const sp = servicePaths(paths);
+  if (sp?.stale)
+    return `service: the launcher records ${existsSync(sp.node) ? sp.cli : sp.node}, which is gone (Node upgraded?): run \`shibaox daemon install\` again`;
+  return undefined;
 }
 
 /** `shibaox daemon install`: a launchd agent that keeps the daemon running across logins. */
@@ -213,10 +233,12 @@ export async function daemonUninstall(out: Out, d: ServiceDeps = {}): Promise<nu
 export async function daemonStatus(out: Out): Promise<number> {
   const paths = homePaths();
   let client: DaemonClient;
+  const serviceHint = await staleServiceHint(paths);
   try {
     client = await connect({ env: { ...process.env, SHIBAOX_NO_AUTOSTART: '1' }, log: () => {} });
   } catch {
     out.line(`No shibaox daemon is running (socket: ${paths.socket}).`);
+    if (serviceHint) out.line(serviceHint);
     out.obj({ running: false, socket: paths.socket });
     return 1;
   }
@@ -227,11 +249,7 @@ export async function daemonStatus(out: Out): Promise<number> {
   );
   out.line(`runs: ${h.runs.running} running, ${h.runs.queued} queued`);
   out.line(`channels: ${h.channels.length ? h.channels.join(', ') : 'none'}`);
-  const sp = servicePaths(paths);
-  if (sp?.stale)
-    out.line(
-      `service: the installed launcher records ${existsSync(sp.node) ? sp.cli : sp.node}, which is gone (Node upgraded?): run \`shibaox daemon install\` again`,
-    );
+  if (serviceHint) out.line(serviceHint);
   const service = await serviceStatus();
   out.line(
     `service: ${service === 'installed' ? 'launchd (installed)' : service === 'not-loaded' ? 'launchd (plist present, not loaded)' : 'not installed'}`,

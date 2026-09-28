@@ -112,9 +112,10 @@ shibaox daemon uninstall
   (`daemon install` checks the keys your shell has and says which ones the service would
   miss); nothing is copied into the plist. The plist runs `~/.shibaox/daemon.sh`, a launcher
   that records the `node` and CLI paths of the install and, when either moved (a Node
-  upgrade under nvm or brew), falls back to the login shell's `node` and to `shibaox` on the
-  PATH, so the service survives upgrades; `daemon status` and `doctor` say when the recorded
-  paths are gone and a `daemon install` is due. `daemon stop` stays until the daemon is gone,
+  upgrade under nvm or brew), falls back to the login shell's `node` when it has the same
+  ABI (native modules were built for it) and to `shibaox` on the PATH; otherwise it says why
+  in `daemon.log` and waits, and `daemon status` and `doctor` tell you a `daemon install` is
+  due (also for a service installed before the launcher: reinstall once). `daemon stop` stays until the daemon is gone,
   saying how many runs it waits for (`--force` cancels them), then when launchd will start it
   again. Relative `org`/`project` in `daemon.yaml` resolve next to that file. Text messages
   that piled up on Telegram while the daemon was down: only the last one is answered, and the

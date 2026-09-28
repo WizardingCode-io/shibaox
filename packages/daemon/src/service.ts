@@ -66,20 +66,46 @@ async function launchctl(exec: Exec, args: string[]) {
  * The launcher the service runs: the recorded node and CLI, but resolved again at launch when
  * either moved (a Node upgrade under nvm or brew), so the service never strands itself.
  */
-export function renderLauncher(o: { node: string; cli: string }): string {
+export function renderLauncher(o: { node: string; cli: string; modules?: string }): string {
+  const modules = o.modules ?? process.versions.modules;
   return [
     '#!/bin/sh',
     '# Written by `shibaox daemon install`; launchd runs it through a login shell.',
     `node=${sh(o.node)}`,
     `cli=${sh(o.cli)}`,
-    'if [ ! -x "$node" ]; then node="$(command -v node 2>/dev/null)"; fi',
+    `modules=${sh(modules)}`,
+    'if [ ! -x "$node" ]; then',
+    "  # the recorded node moved (an upgrade): the login shell's node may stand in, but only",
+    '  # with the same ABI (native modules such as better-sqlite3 were built for it)',
+    '  found="$(command -v node 2>/dev/null)"',
+    '  if [ -n "$found" ] && [ "$("$found" -p process.versions.modules 2>/dev/null)" = "$modules" ]; then',
+    '    node="$found"',
+    '  else',
+    '    echo "shibaox: the recorded node $node is gone and $found is not the same ABI: run shibaox daemon install" >&2',
+    '    sleep 60',
+    '    exit 1',
+    '  fi',
+    'fi',
     'if [ ! -f "$cli" ]; then',
     '  bin="$(command -v shibaox 2>/dev/null)"',
-    '  if [ -n "$bin" ]; then exec "$bin" daemon start; fi',
+    '  if [ -n "$bin" ]; then echo "shibaox: the recorded CLI $cli is gone; using $bin" >&2; exec "$bin" daemon start; fi',
+    '  echo "shibaox: the recorded CLI $cli is gone: run shibaox daemon install" >&2',
+    '  sleep 60',
+    '  exit 1',
     'fi',
     'exec "$node" "$cli" daemon start',
     '',
   ].join('\n');
+}
+
+/** An installed plist from before the launcher (absolute node path): one reinstall gets the launcher. */
+export function servicePredatesLauncher(
+  paths: HomePaths,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  const file = plistPath(env);
+  if (!existsSync(file)) return false;
+  return !readFileSync(file, 'utf8').includes(paths.launcher);
 }
 
 /** The node and CLI the installed launcher records, and whether either is gone (reinstall). */
@@ -137,6 +163,7 @@ export async function uninstallService(o: ServiceArgs & { paths: HomePaths }): P
   await launchctl(exec, ['bootout', `${domain(uid)}/${LAUNCHD_LABEL}`]);
   const file = plistPath(o.env);
   if (existsSync(file)) unlinkSync(file);
+  if (existsSync(o.paths.launcher)) unlinkSync(o.paths.launcher);
 }
 
 export type ServiceStatus = 'installed' | 'not-loaded' | 'not-installed';

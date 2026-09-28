@@ -1,6 +1,6 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { homePaths } from '../src/home.js';
 import {
@@ -9,6 +9,7 @@ import {
   plistPath,
   renderPlist,
   servicePaths,
+  servicePredatesLauncher,
   serviceStatus,
   uninstallService,
 } from '../src/service.js';
@@ -73,6 +74,10 @@ describe('launchd service', () => {
     expect(launcher).toContain("node='/n'");
     expect(launcher).toContain("cli='/c'");
     expect(launcher).toContain('command -v node'); // the login shell's node when the recorded one is gone
+    expect(launcher).toContain(`modules='${process.versions.modules}'`); // only a node of the same ABI may stand in
+    expect(launcher).toContain('process.versions.modules');
+    expect(launcher).toContain('run shibaox daemon install'); // else: say why in daemon.log and throttle the respawns
+    expect(launcher).toContain('sleep 60');
     expect(launcher).toContain('command -v shibaox'); // an installed CLI when the recorded one is gone
     expect(launcher).toContain('daemon start');
     // recorded paths that no longer exist: the service is stale until reinstalled
@@ -85,6 +90,8 @@ describe('launchd service', () => {
     await uninstallService({ paths, env, exec, uid: 501 });
     expect(calls).toEqual([['launchctl', 'bootout', `gui/501/${LAUNCHD_LABEL}`]]);
     expect(existsSync(file)).toBe(false);
+    expect(existsSync(paths.launcher)).toBe(false);
+    expect(servicePaths(paths)).toBeUndefined();
   });
   it('falls back to launchctl load when bootstrap is refused, and fails when both are', async () => {
     const { env, paths } = setup();
@@ -136,5 +143,17 @@ describe('launchd service', () => {
     expect(await serviceStatus({ env, exec: fakeExec().exec, uid: 501 })).toBe('installed');
     const off = fakeExec((argv) => argv[1] === 'print');
     expect(await serviceStatus({ env, exec: off.exec, uid: 501 })).toBe('not-loaded');
+  });
+});
+
+describe('a plist from before the launcher', () => {
+  it('is reported so the user reinstalls once', () => {
+    const { env, paths } = setup();
+    const file = plistPath(env);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, "<plist><string>exec '/n' '/c' daemon start</string></plist>");
+    expect(servicePredatesLauncher(paths, env)).toBe(true);
+    writeFileSync(file, renderPlist({ launcher: paths.launcher, paths }));
+    expect(servicePredatesLauncher(paths, env)).toBe(false);
   });
 });

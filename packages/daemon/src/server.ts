@@ -18,6 +18,8 @@ import type { KeyRow } from './secrets.js';
 
 export interface Health {
   version: string;
+  /** The daemon process (a `daemon stop` tells a restarted daemon from the one it stopped). */
+  pid?: number;
   uptimeSeconds: number;
   runs: { running: number; queued: number; waiting: number };
   channels: string[];

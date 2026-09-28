@@ -114,8 +114,9 @@ export class Daemon {
       ? this.env[this.config.channels.telegram.bot_token_env]
       : undefined;
     // with a SQLite store the outbox persists retries; an injected store delivers directly
+    // (with a channel that may appear later, such as Telegram once its token is set)
     this.outbox =
-      this.store instanceof SqliteEventStore && this.channels.length > 0
+      this.store instanceof SqliteEventStore
         ? new OutboxWorker({ repo: new OutboxRepo(this.store.db), channels: this.channels, log })
         : undefined;
     this.inbox = new InboxService({
@@ -214,6 +215,7 @@ export class Daemon {
 
   /** The Telegram token the running channel was built with (to notice a change). */
   private telegramToken: string | undefined;
+  private telegramSync: Promise<void> = Promise.resolve();
   private started = false;
 
   /** Wires a channel's answers and messages into the inbox and the orchestrator. */
@@ -232,14 +234,15 @@ export class Daemon {
    */
   private async syncTelegram(): Promise<void> {
     const tg = this.config.channels.telegram;
-    if (!tg || this.opts.channels) return; // injected channels are the tests' business
+    if (!tg || this.opts.channels || this.stopping) return; // injected channels are the tests' business
     const token = this.env[tg.bot_token_env];
     if (token === this.telegramToken) return;
     const log = this.opts.log ?? ((l: string) => console.log(l));
     const current = this.channels.find((c) => c.id === 'telegram');
     if (current) {
       await current.stop?.().catch(() => undefined);
-      this.channels.splice(this.channels.indexOf(current), 1);
+      const i = this.channels.indexOf(current);
+      if (i >= 0) this.channels.splice(i, 1);
       log('telegram: channel stopped (token changed or removed)');
     }
     this.telegramToken = token;
@@ -265,8 +268,11 @@ export class Daemon {
     Object.assign(this.env, next);
     this.modelsCache = undefined;
     this.warmModels(); // a new key may open a provider whose prices and windows runs need
-    void this.syncTelegram().catch((e) =>
-      this.opts.log?.(`telegram: ${e instanceof Error ? e.message : String(e)}`),
+    // one sync at a time: two quick key changes never race over the channel list
+    this.telegramSync = this.telegramSync.then(() =>
+      this.syncTelegram().catch((e) =>
+        this.opts.log?.(`telegram: ${e instanceof Error ? e.message : String(e)}`),
+      ),
     );
   }
 
@@ -380,6 +386,7 @@ export class Daemon {
   health(): Health {
     return {
       version: this.version,
+      pid: process.pid,
       uptimeSeconds: Math.round((Date.now() - this.startedAt) / 1000),
       runs: this.runs.active(),
       channels: this.channels.map((c) => c.id),

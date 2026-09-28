@@ -5,10 +5,10 @@ import {
   homePaths,
   loadDaemonConfig,
   SecretsStore,
-  servicePaths,
   serviceStatus,
 } from '@shibaox/daemon';
 import { CLI_VERSION } from '../version.js';
+import { staleServiceHint } from './daemon.js';
 
 interface CheckLine {
   name: string;
@@ -51,13 +51,13 @@ export async function doctorCommand(): Promise<number> {
   lines.push(await daemonLine());
   if (process.platform === 'darwin') {
     const s = await serviceStatus();
-    const sp = servicePaths(homePaths());
+    const hint = await staleServiceHint(homePaths());
     lines.push({
       name: 'service',
-      ok: s === 'installed' && !sp?.stale,
+      ok: s === 'installed' && !hint,
       detail:
-        s === 'installed' && sp?.stale
-          ? 'launchd, but its recorded node or CLI path is gone (Node upgraded?): shibaox daemon install'
+        s === 'installed' && hint
+          ? hint.replace(/^service: /, '')
           : s === 'installed'
             ? 'launchd (starts at login)'
             : s === 'not-loaded'

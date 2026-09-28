@@ -202,6 +202,53 @@ describe('RunManager', () => {
     const ok = await m.submit({ ...base, model: 'anthropic/claude-something-new' });
     expect(ok.runId).toBeTruthy();
   });
+  it('a provider\'s catalog picks and Ollama\'s ":latest" names are never refused', async () => {
+    const s = setup();
+    const store = new MemoryEventStore();
+    const ready = async () => [
+      // the catalog pick is listed first without the flag; the live listing follows
+      {
+        ref: 'openrouter/openai/gpt-5',
+        provider: 'openrouter',
+        model: 'openai/gpt-5',
+        configured: true,
+      },
+      {
+        ref: 'openrouter/google/gemini-2.5-flash',
+        provider: 'openrouter',
+        model: 'google/gemini-2.5-flash',
+        configured: true,
+        listed: true,
+      },
+      {
+        ref: 'ollama/llama3.2:latest',
+        provider: 'ollama',
+        model: 'llama3.2:latest',
+        configured: true,
+        local: true,
+        available: true,
+        listed: true,
+      },
+    ];
+    const { manager: m } = manager(store, {
+      vault: s.vault,
+      ready,
+      env: { OPENROUTER_API_KEY: 'k' },
+    });
+    const base = {
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'x',
+      adapter: 'direct' as const,
+      workspace: 'inplace' as const,
+    };
+    expect((await m.submit({ ...base, model: 'openrouter/openai/gpt-5' })).runId).toBeTruthy();
+    expect((await m.submit({ ...base, model: 'ollama/llama3.2' })).runId).toBeTruthy();
+    await expect(m.submit({ ...base, model: 'openrouter/openai/gpt-5-typo' })).rejects.toThrow(
+      /not offered by openrouter/,
+    );
+  });
   it('waits for `ready` (model discovery) before a run starts, so cost and context are known', async () => {
     const s = setup();
     let release: (() => void) | undefined;

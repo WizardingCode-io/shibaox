@@ -432,12 +432,15 @@ export class RunManager {
     const listing = await this.opts.ready?.().catch(() => undefined);
     if (!Array.isArray(listing)) return;
     const provider = model.slice(0, model.indexOf('/'));
-    const offered = (listing as { ref?: string; provider?: string; listed?: boolean }[]).filter(
-      (m) => m.provider === provider && m.listed,
+    // every entry of the provider counts (the catalog's picks too) once its listing is live
+    const entries = (listing as { ref?: string; provider?: string; listed?: boolean }[]).filter(
+      (m) => m.provider === provider,
     );
-    if (offered.length > 0 && !offered.some((m) => m.ref === model))
+    if (!entries.some((m) => m.listed)) return;
+    const wanted = new Set([model, `${model}:latest`]); // Ollama lists "llama3.2" as "llama3.2:latest"
+    if (!entries.some((m) => m.ref !== undefined && wanted.has(m.ref)))
       throw new Error(
-        `model "${model}" is not offered by ${provider} (see /model or \`shibaox models\` for what it lists)`,
+        `model "${model}" is not offered by ${provider} (see /model in the dashboard for what it lists)`,
       );
   }
 
