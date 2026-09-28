@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { runCommand } from '@shibaox/core';
 import {
   DaemonClient,
@@ -32,9 +34,32 @@ async function which(bin: string, versionFlag = '--version'): Promise<CheckLine>
   };
 }
 
+/** Where this shibaox lives and whether the installer's `bin` is reachable from the shell. */
+export function installLine(o: { root: string; env: NodeJS.ProcessEnv }): CheckLine {
+  const app = o.env.SHIBAOX_APP || join(o.root, 'app');
+  const bin = join(o.root, 'bin');
+  if (!existsSync(join(app, 'apps', 'cli')) && !existsSync(join(bin, 'shibaox')))
+    return {
+      name: 'install',
+      ok: true,
+      detail: 'a development checkout (scripts/install.sh sets up ~/.shibaox/app + bin)',
+      required: false,
+    };
+  const onPath = (o.env.PATH ?? '').split(':').includes(bin);
+  return {
+    name: 'install',
+    ok: onPath,
+    detail: onPath
+      ? `${app} (shibaox upgrade updates it)`
+      : `${bin} is not on the PATH: export PATH="${bin}:$PATH" (install.sh adds it to ~/.zprofile)`,
+    required: false,
+  };
+}
+
 export async function doctorCommand(): Promise<number> {
   const lines: CheckLine[] = [];
   lines.push({ ...(await which('node')), required: true });
+  lines.push(installLine({ root: homePaths().root, env: process.env }));
   lines.push({ ...(await which('git')), required: true });
   lines.push(await which('uv'));
   lines.push(await which('graphify'));

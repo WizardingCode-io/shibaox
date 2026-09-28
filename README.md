@@ -25,6 +25,19 @@ graphify).
 - A C/C++ toolchain, only if `better-sqlite3` has no prebuilt binary for your platform.
   On macOS: `xcode-select --install`.
 
+**Install (one command).** One checkout under `~/.shibaox/app`, one `shibaox` on your PATH:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/wizardingcode/shibaox/main/scripts/install.sh | sh
+# or from a local clone: SHIBAOX_SOURCE=/path/to/shibaox sh scripts/install.sh
+```
+
+It needs git, Node 22+ and pnpm (enabled through corepack when missing); Bun runs the
+dashboard (the CLI and the daemon work without it). It adds `~/.shibaox/bin` to your PATH in
+`~/.zprofile` (`SHIBAOX_NO_PROFILE=1` to skip). Then `shibaox doctor`, `shibaox daemon install`
+(keeps the daemon running), `shibaox` (the dashboard). `shibaox upgrade` pulls, rebuilds and
+restarts the daemon. `SHIBAOX_REF` picks a branch or tag.
+
 If `pnpm install` fails while building `better-sqlite3`:
 
 ```sh

@@ -27,6 +27,7 @@ import {
 import { scheduleAdd, scheduleList, scheduleRemove, scheduleRun } from './commands/schedule.js';
 import { tiersList, tiersSet } from './commands/tiers.js';
 import { uiCommand } from './commands/ui.js';
+import { upgradeCommand } from './commands/upgrade.js';
 import { worktreeList, worktreeRemove } from './commands/worktree.js';
 import { makeOut } from './output.js';
 import { CLI_VERSION } from './version.js';
@@ -64,6 +65,13 @@ program
   .argument('[dir]', 'target directory', '.')
   .description('scaffold org/ and vault/')
   .action((dir: string) => initCommand(dir));
+program
+  .command('upgrade')
+  .description('update the installer checkout (~/.shibaox/app), rebuild and restart the daemon')
+  .action(async function (this: Command) {
+    exitWith(await upgradeCommand({}, { out: out(this) }));
+  });
+
 program
   .command('doctor')
   .description('check local prerequisites, the daemon and channels')
