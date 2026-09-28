@@ -87,9 +87,6 @@ importers:
       fuzzysort:
         specifier: ^4.0.2
         version: 4.0.2
-      opentui-spinner:
-        specifier: 0.0.7
-        version: 0.0.7(@opentui/core@0.5.12(typescript@5.9.3)(web-tree-sitter@0.25.10))(@opentui/solid@0.5.12(solid-js@1.9.15)(typescript@5.9.3)(web-tree-sitter@0.25.10))(typescript@5.9.3)
       solid-js:
         specifier: 1.9.15
         version: 1.9.15
@@ -1314,10 +1311,6 @@ packages:
     resolution: {integrity: sha512-NUPRluOfOiTKBKvWPtSD4PhFvWCqOi0BGStNWs57X9js7XGTprSmFoz5F0tWhR4WPjNeR9jXqdC7/UpSJTnlRg==}
     engines: {node: '>=18'}
 
-  cli-spinners@3.4.0:
-    resolution: {integrity: sha512-bXfOC4QcT1tKXGorxL3wbJm6XJPDqEnij2gQ2m7ESQuE+/z9YFIWnl/5RpTiKWbMq3EVKR4fRLJGn6DVfu0mpw==}
-    engines: {node: '>=18.20'}
-
   commander@15.0.0:
     resolution: {integrity: sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg==}
     engines: {node: '>=22.12.0'}
@@ -1825,19 +1818,6 @@ packages:
 
   once@1.4.0:
     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
-
-  opentui-spinner@0.0.7:
-    resolution: {integrity: sha512-nPzwAvJG+y9rVEwwHLHqbsMzLnIk2zw+F9LqwA7aYJvpM5gsrKC2rrGi36A+tZpA+1RnWxXeWEgVZMchnaH18Q==}
-    peerDependencies:
-      '@opentui/core': ^0.3.4
-      '@opentui/react': ^0.3.4
-      '@opentui/solid': ^0.3.4
-      typescript: ^5
-    peerDependenciesMeta:
-      '@opentui/react':
-        optional: true
-      '@opentui/solid':
-        optional: true
 
   p-limit@2.3.0:
     resolution: {integrity: sha512-//88mFWSJx8lxCzwdAABTJL2MyWB12+eIY7MDL2SqLmAkeKU9qxRvWuSyTjm3FUmpBEMuFfckAIqEaVGUDxb6w==}
@@ -3090,8 +3070,6 @@ snapshots:
 
   chai@6.2.2: {}
 
-  cli-spinners@3.4.0: {}
-
   commander@15.0.0: {}
 
   content-disposition@1.1.0: {}
@@ -3562,14 +3540,6 @@ snapshots:
   once@1.4.0:
     dependencies:
       wrappy: 1.0.2
-
-  opentui-spinner@0.0.7(@opentui/core@0.5.12(typescript@5.9.3)(web-tree-sitter@0.25.10))(@opentui/solid@0.5.12(solid-js@1.9.15)(typescript@5.9.3)(web-tree-sitter@0.25.10))(typescript@5.9.3):
-    dependencies:
-      '@opentui/core': 0.5.12(typescript@5.9.3)(web-tree-sitter@0.25.10)
-      cli-spinners: 3.4.0
-      typescript: 5.9.3
-    optionalDependencies:
-      '@opentui/solid': 0.5.12(solid-js@1.9.15)(typescript@5.9.3)(web-tree-sitter@0.25.10)
 
   p-limit@2.3.0:
     dependencies:

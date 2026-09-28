@@ -1,13 +1,12 @@
 // Adapted from opencode (MIT) — https://github.com/anomalyco/opencode
 import { type ColorInput, parseColor, RGBA } from '@opentui/core';
 import type { JSX } from '@opentui/solid';
-import { getComponentCatalogue } from '@opentui/solid/components';
-import { registerSpinner } from 'opentui-spinner/solid';
 import { createEffect, createMemo, createSignal, onCleanup, Show } from 'solid-js';
 import { useMotion } from './config.js';
 import { type OneCellMotion, oneCellFrame } from './one-cell-motion.js';
+import { registerSpinner } from './spinner-renderable.js';
 
-if (!getComponentCatalogue().spinner) registerSpinner();
+registerSpinner();
 
 export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 

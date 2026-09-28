@@ -1,11 +1,12 @@
 {
   "name": "@wizardingcode/shibaox-tui",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "license": "UNLICENSED",
   "type": "module",
   "files": [
     "src",
-    "bunfig.toml"
+    "bunfig.toml",
+    "tsconfig.json"
   ],
   "exports": {
     ".": {
@@ -26,7 +27,6 @@
     "@wizardingcode/shibaox-daemon": "workspace:*",
     "@wizardingcode/shibaox-schemas": "workspace:*",
     "fuzzysort": "^4.0.2",
-    "opentui-spinner": "0.0.7",
     "solid-js": "1.9.15"
   },
   "devDependencies": {

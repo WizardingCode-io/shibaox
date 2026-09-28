@@ -1,6 +1,6 @@
 {
   "name": "shibaox",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "shibaox: an agentic OS for software teams (CLI, daemon and dashboard)",
   "license": "UNLICENSED",
   "type": "module",

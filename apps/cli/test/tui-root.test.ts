@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -47,7 +47,11 @@ describe('an npm install of shibaox', () => {
     dirs.push(root);
     const cli = join(root, 'lib/node_modules/shibaox/dist/index.js');
     file(cli);
-    const line = installLine({ root: join(root, 'home'), env: { PATH: '/usr/bin' }, cli });
+    // npm's bin is a symlink to the package: the real path decides
+    const bin = join(root, 'bin/shibaox');
+    mkdirSync(join(root, 'bin'), { recursive: true });
+    symlinkSync(cli, bin);
+    const line = installLine({ root: join(root, 'home'), env: { PATH: '/usr/bin' }, cli: bin });
     expect(line.ok).toBe(true);
     expect(line.detail).toMatch(/npm i -g shibaox/);
     const lines: string[] = [];

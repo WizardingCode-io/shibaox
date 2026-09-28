@@ -4,6 +4,7 @@ import { runArgv } from '@wizardingcode/shibaox-core';
 import { homePaths } from '@wizardingcode/shibaox-daemon';
 import type { Out } from '../output.js';
 import { daemonStop } from './daemon.js';
+import { realCli } from './doctor.js';
 
 export interface UpgradeDeps {
   /** The checkout the installer keeps (`~/.shibaox/app` by default). */
@@ -42,7 +43,7 @@ export async function upgradeCommand(d: UpgradeDeps): Promise<number> {
     return r.exitCode === 0 ? r.stdout.trim() : undefined;
   };
   const cliPath = d.cli ?? process.argv[1];
-  if (cliPath && /\/node_modules\/shibaox\//.test(resolve(cliPath))) {
+  if (cliPath && /\/node_modules\/shibaox\//.test(realCli(cliPath))) {
     out.line(
       'This shibaox was installed from npm: update it with `npm i -g shibaox@latest`, then `shibaox daemon stop` so the daemon restarts on the new build.',
     );
@@ -57,7 +58,9 @@ export async function upgradeCommand(d: UpgradeDeps): Promise<number> {
     return 1;
   }
   const cli = d.cli ?? process.argv[1];
-  if (cli && !resolve(cli).startsWith(`${resolve(app)}/`)) {
+  // (compared as given and with symlinks followed: npm's bin and /var → /private/var)
+  const inside = (c: string, a: string) => c.startsWith(`${a}/`);
+  if (cli && !inside(realCli(cli), realCli(app)) && !inside(resolve(cli), resolve(app))) {
     out.line(
       `This shibaox runs from ${resolve(cli)}, not from the installer checkout ${app}: upgrade that checkout the way it was installed, or run ${join(app, 'apps/cli/dist/index.js')} upgrade.`,
     );
