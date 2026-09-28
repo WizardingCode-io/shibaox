@@ -167,6 +167,7 @@ describe('doctor: the install', () => {
     mkdirSync(bin);
     writeFileSync(join(bin, 'shibaox'), '#!/bin/sh\n');
     const cli = join(app, 'apps', 'cli', 'dist', 'index.js');
+    writeFileSync(cli, ''); // exists: its real path (/private/var…) must still count as inside the app
     const onPath = installLine({ root: home, env: { PATH: `${bin}:/usr/bin` }, cli });
     expect(onPath).toMatchObject({ name: 'install', ok: true });
     expect(onPath.detail).toContain(app);

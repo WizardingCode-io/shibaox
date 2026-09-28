@@ -45,7 +45,7 @@ export const realCli = (p: string): string => {
 
 /** Where this shibaox runs from: the installer's checkout (is its `bin` on the PATH?) or a development one. */
 export function installLine(o: { root: string; env: NodeJS.ProcessEnv; cli?: string }): CheckLine {
-  const app = resolve(o.env.SHIBAOX_APP || join(o.root, 'app'));
+  const app = realCli(o.env.SHIBAOX_APP || join(o.root, 'app'));
   const bin = join(o.root, 'bin');
   const cli = realCli(o.cli ?? process.argv[1] ?? '');
   if (/\/node_modules\/shibaox\//.test(cli))
