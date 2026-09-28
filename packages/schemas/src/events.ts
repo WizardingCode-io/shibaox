@@ -46,6 +46,8 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     project: z.string().optional(),
     /** The run's worktree branch (`worktree` runs only). */
     branch: z.string().optional(),
+    /** The branch the project was on when the run started: where `git merge` nodes land. */
+    baseBranch: z.string().optional(),
     /** The org directory the run was submitted with (recorded since phase 2A). */
     orgRoot: z.string().optional(),
     /** The run that dispatched this one (a workflow started by the orchestrator). */

@@ -115,6 +115,12 @@ describe('git node: commit', () => {
       ctx(r2, { describe }),
     );
     expect(git(r2.worktree, 'log', '-1', '--format=%s')).toBe('chore: exact message');
+    const r3 = repo();
+    await runGitNode(
+      { type: 'git', action: 'commit', timeout_ms: 60_000 },
+      ctx(r3, { describe: async () => `${'long title '.repeat(12)}\n\nbody` }),
+    );
+    expect(git(r3.worktree, 'log', '-1', '--format=%s').length).toBeLessThanOrEqual(72);
   });
   it('nothing to commit and not a repository are outcomes, not failures', async () => {
     const r = repo({ change: false });
@@ -209,6 +215,10 @@ describe('git node: merge', () => {
       JSON.stringify({ name: 'p', scripts: { test: 'node -e "process.exit(1)"' } }),
     );
     await runGitNode({ type: 'git', action: 'commit', timeout_ms: 60_000 }, ctx(r));
+    // the base moved: the rebased tree is tested again, and fails
+    writeFileSync(join(r.project, 'other.txt'), 'x\n');
+    git(r.project, 'add', '-A');
+    git(r.project, 'commit', '-q', '--no-gpg-sign', '-m', 'other');
     const before = git(r.project, 'rev-parse', 'main');
     await expect(
       runGitNode({ type: 'git', action: 'merge', timeout_ms: 60_000 }, ctx(r)),
@@ -224,6 +234,92 @@ describe('git node: merge', () => {
       runGitNode({ type: 'git', action: 'merge', timeout_ms: 60_000 }, ctx(c)),
     ).rejects.toThrow(/rebase/);
     expect(git(c.worktree, 'status', '--porcelain')).toBe(''); // the rebase was aborted
+  });
+  it('a cancelled run never lands: the merge checks the signal before landing and pushing', async () => {
+    const r = repo({ origin: true });
+    await runGitNode({ type: 'git', action: 'commit', timeout_ms: 60_000 }, ctx(r));
+    const before = git(r.project, 'rev-parse', 'main');
+    const aborted = new AbortController();
+    aborted.abort(new Error('cancelled by the user'));
+    await expect(
+      runGitNode(
+        { type: 'git', action: 'merge', timeout_ms: 60_000 },
+        ctx(r, { signal: aborted.signal }),
+      ),
+    ).rejects.toThrow(/cancelled/);
+    expect(git(r.project, 'rev-parse', 'main')).toBe(before);
+    expect(git(r.project, 'rev-parse', 'origin/main')).toBe(before);
+  });
+  it('lands on origin first when there is one: a stale local base never blocks, unpushed local work is never pushed', async () => {
+    const r = repo({ origin: true });
+    await runGitNode({ type: 'git', action: 'commit', timeout_ms: 60_000 }, ctx(r));
+    // origin moved (a teammate pushed) while the local main stayed behind
+    const clone = join(r.dir, 'clone');
+    git(r.dir, 'clone', '-q', join(r.dir, 'origin.git'), clone);
+    writeFileSync(join(clone, 'teammate.txt'), 't\n');
+    git(clone, 'add', '-A');
+    git(clone, 'commit', '-q', '--no-gpg-sign', '-m', 'teammate');
+    git(clone, 'push', '-q', 'origin', 'main');
+    const out = await runGitNode({ type: 'git', action: 'merge', timeout_ms: 60_000 }, ctx(r));
+    expect(out.output).toMatchObject({ merged: true, pushed: true, localUpdated: true });
+    expect(git(r.project, 'log', '--format=%s', 'origin/main')).toBe(
+      'Add the feature file\nteammate\ninit',
+    );
+    expect(git(r.project, 'rev-parse', 'main')).toBe(git(r.project, 'rev-parse', 'origin/main'));
+    // now the local main has an unpushed commit of the user's own
+    writeFileSync(join(r.project, 'mine.txt'), 'm\n');
+    git(r.project, 'add', '-A');
+    git(r.project, 'commit', '-q', '--no-gpg-sign', '-m', 'mine (unpushed)');
+    const w2 = join(r.project, '.shibaox', 'worktrees', 'r2');
+    git(r.project, 'worktree', 'add', '-q', w2, '-b', 'shibaox/r2', 'origin/main');
+    writeFileSync(join(w2, 'second.txt'), 'y\n');
+    await runGitNode(
+      { type: 'git', action: 'commit', timeout_ms: 60_000 },
+      ctx(r, { runId: 'r2', workspace: w2, branch: 'shibaox/r2', spec: 'Second change' }),
+    );
+    const out2 = await runGitNode(
+      { type: 'git', action: 'merge', timeout_ms: 60_000 },
+      ctx(r, { runId: 'r2', workspace: w2, branch: 'shibaox/r2', spec: 'Second change' }),
+    );
+    expect(out2.output).toMatchObject({ merged: true, pushed: true, localUpdated: false });
+    expect(git(r.project, 'log', '--format=%s', 'origin/main')).not.toContain('mine (unpushed)');
+    expect(git(r.project, 'log', '--format=%s', 'origin/main')).toContain('Second change');
+    expect(git(r.project, 'log', '-1', '--format=%s', 'main')).toBe('mine (unpushed)'); // untouched
+    expect(out2.summary).toMatch(/local main.*pull/);
+  });
+  it('the base is the branch the run forked from, else the remote default, before main', async () => {
+    const r = repo();
+    git(r.project, 'branch', 'develop', 'main');
+    await runGitNode({ type: 'git', action: 'commit', timeout_ms: 60_000 }, ctx(r));
+    const out = await runGitNode(
+      { type: 'git', action: 'merge', timeout_ms: 60_000 },
+      ctx(r, { base: 'develop' }),
+    );
+    expect(out.output).toMatchObject({ merged: true, base: 'develop' });
+    expect(git(r.project, 'log', '-1', '--format=%s', 'develop')).toBe('Add the feature file');
+    expect(git(r.project, 'log', '-1', '--format=%s', 'main')).toBe('init');
+  });
+  it('merge and pr need a worktree run; an in-place commit stays within the workspace', async () => {
+    const r = repo();
+    await expect(
+      runGitNode(
+        { type: 'git', action: 'merge', timeout_ms: 60_000 },
+        ctx(r, { branch: undefined }),
+      ),
+    ).rejects.toThrow(/worktree/);
+    await expect(
+      runGitNode({ type: 'git', action: 'pr', timeout_ms: 60_000 }, ctx(r, { branch: undefined })),
+    ).rejects.toThrow(/worktree/);
+  });
+  it('nothing to land and a dirty workspace are reported for what they are', async () => {
+    const r = repo({ change: false });
+    expect(
+      (await runGitNode({ type: 'git', action: 'merge', timeout_ms: 60_000 }, ctx(r))).output,
+    ).toMatchObject({ merged: false, reason: 'nothing to land' });
+    const d = repo();
+    await expect(
+      runGitNode({ type: 'git', action: 'merge', timeout_ms: 60_000 }, ctx(d)),
+    ).rejects.toThrow(/uncommitted changes/);
   });
   it('merges go through the queue one project at a time, in order', async () => {
     const r = repo();
@@ -246,8 +342,8 @@ describe('git node: merge', () => {
         ctx(r, { runId: 'r2', workspace: w2, branch: 'shibaox/r2', queue, log }),
       ),
     ]);
-    expect(a.output).toMatchObject({ merged: true });
-    expect(b.output).toMatchObject({ merged: true });
+    expect(a.output).toMatchObject({ merged: true, tests: null }); // the base did not move: the gate already tested this tree
+    expect(b.output).toMatchObject({ merged: true, tests: 'npm test' }); // rebased on the first: tested again
     expect(git(r.project, 'log', '--format=%s', 'main')).toBe(
       'Second change\nAdd the feature file\ninit',
     );

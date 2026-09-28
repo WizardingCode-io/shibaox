@@ -66,6 +66,7 @@ export interface StartOptions {
   workspaceMode?: 'inplace' | 'worktree';
   project?: string;
   branch?: string;
+  baseBranch?: string;
   orgRoot?: string;
   parentRunId?: string;
   origin?: string;
@@ -105,6 +106,7 @@ export class RunEngine {
       workspaceMode: opts.workspaceMode,
       project: opts.project,
       branch: opts.branch,
+      baseBranch: opts.baseBranch,
       orgRoot: opts.orgRoot,
       parentRunId: opts.parentRunId,
       origin: opts.origin,
@@ -498,6 +500,8 @@ export class RunEngine {
             workspace: state.workspace,
             project: state.project ?? state.workspace,
             branch: state.branch,
+            base: state.baseBranch,
+            signal: this.controllerFor(runId).signal,
             spec:
               typeof state.input.spec === 'string' ? state.input.spec : JSON.stringify(state.input),
             summaries,

@@ -75,6 +75,8 @@ export interface RunState {
   project?: string;
   /** Worktree branch of a `worktree` run (recorded since phase 1B-2). */
   branch?: string;
+  /** The branch the project was on when the run started (recorded since the git cycle). */
+  baseBranch?: string;
   /** The org directory the run was submitted with (recorded since phase 2A). */
   orgRoot?: string;
   /** The run that dispatched this one (recorded since phase 3A). */

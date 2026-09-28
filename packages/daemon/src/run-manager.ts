@@ -217,6 +217,7 @@ export class RunManager {
       workspaceMode: ws.mode,
       project,
       branch: ws.branch,
+      baseBranch: ws.baseBranch,
       orgRoot,
       parentRunId: req.parentRunId,
       origin: req.origin,

@@ -15,6 +15,8 @@ export interface RunWorkspace {
   path: string;
   mode: WorkspaceMode;
   branch?: string;
+  /** The branch the project was on when the worktree was cut (the fork point). */
+  baseBranch?: string;
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {
@@ -83,8 +85,9 @@ export async function createRunWorkspace(args: {
   const path = join(args.project, '.shibaox', 'worktrees', args.runId);
   const branch = `shibaox/${args.runId}`;
   mkdirSync(join(args.project, '.shibaox', 'worktrees'), { recursive: true });
+  const head = (await git(args.project, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
   await git(args.project, ['worktree', 'add', '-q', path, '-b', branch]);
-  return { path, mode: 'worktree', branch };
+  return { path, mode: 'worktree', branch, ...(head !== 'HEAD' ? { baseBranch: head } : {}) };
 }
 
 export async function listRunWorkspaces(

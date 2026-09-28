@@ -299,17 +299,26 @@ without you. Memory notes reach only roles with the `memory` capability, quoted 
 `~/.shibaox/workspace`.
 
 **Git cycle.** A `git` node is a step the daemon runs itself (trusted org config, like
-`code`): `{ type: git, action: commit }` commits the workspace with a message written by the
-`cheap` tier from the request and the diff (deterministic text without a callable model;
-`message:` fixes it; trailer `Shibaox-Run: <id>`); `{ type: git, action: pr, base?: main }`
-pushes the run branch and opens a pull request with `gh` (body generated the same way; an
-open PR for the branch is reused); `{ type: git, action: merge, tests?: "pnpm test" }` lands
-the run branch on the base through the project's **merge queue** (one merge at a time per
-project, in order): rebase on the base, run the tests (detected when not given), fast-forward
-the base, push it when there is an `origin`. A conflict or a failing test fails the node and
-leaves the base untouched. Outside a git repository these nodes complete with `committed:
-false` / `merged: false` and a reason. The template's `land-feature` workflow is
-`hello-feature` plus a human approval, `commit` and `merge`.
+`code`), for **worktree runs** (`merge` and `pr` refuse an in-place run; an in-place `commit`
+stages what is under the workspace only). `{ type: git, action: commit }` commits the
+workspace with a message written by the `cheap` tier (else `strong`, else the run's model)
+from the request and the diff, or deterministic text when no model can be called from the
+daemon (Claude subscription tiers); `message:` fixes it; trailer `Shibaox-Run: <id>`.
+`{ type: git, action: pr }` pushes the run branch and opens a pull request with `gh` (body
+generated the same way; an open PR for the branch is reused). `{ type: git, action: merge }`
+lands the run branch on the **base** (`base:` on the node, else the branch the project was on
+when the run started, else the remote's default branch, else main) through the project's
+**merge queue** (one merge at a time per project, in order): rebase on `origin/<base>` (the
+local base when there is no remote); when the base moved under the branch, run `tests:` (else
+the detected test command; `tests: ""` skips) on the rebased tree; push `branch:base` first
+(the remote refuses anything but a fast-forward, so nothing local moves on failure), then
+fast-forward the local checkout when it is on the base and clean (else the ref, else a note
+`local <base> not updated: pull it`). A conflict or a failing test fails the node and leaves
+the base untouched; a cancelled run never lands. Outside a git repository these nodes complete
+with `committed: false` / `merged: false` and a reason. The template's `land-feature`
+workflow is `hello-feature` plus a human approval, `commit` and `merge`; orgs created before
+it get it by copying `land-feature.yaml` into `workflows/` and listing it in the team's
+`workflows`.
 
 **Long conversations.** Each turn carries the conversation so far as `messages`. When that
 outgrows about 32k tokens (estimated), the daemon folds the oldest turns into one summary

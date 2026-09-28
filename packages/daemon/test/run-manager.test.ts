@@ -97,6 +97,7 @@ describe('RunManager', () => {
         return { output: { did: 'wrote landed.txt' }, summary: 'wrote landed.txt' };
       },
     });
+    execFileSync('git', ['checkout', '-q', '-b', 'develop'], { cwd: s.project }); // the project sits on develop
     const { runId } = await m.submit({
       orgRoot: s.orgRoot,
       project: s.project,
@@ -109,9 +110,10 @@ describe('RunManager', () => {
       timeout: 20_000,
     });
     const st = await m.state(runId);
+    expect(st.baseBranch).toBe('develop');
     expect(st.nodes.commit?.output).toMatchObject({ committed: true });
-    expect(st.nodes.merge?.output).toMatchObject({ merged: true, base: 'main' });
-    const log = execFileSync('git', ['log', '--format=%s', 'main'], {
+    expect(st.nodes.merge?.output).toMatchObject({ merged: true, base: 'develop' });
+    const log = execFileSync('git', ['log', '--format=%s', 'develop'], {
       cwd: s.project,
       encoding: 'utf8',
     });

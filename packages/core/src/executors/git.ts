@@ -21,8 +21,12 @@ export interface GitContext {
   workspace: string;
   /** The project's main checkout (where the base branch lives). */
   project: string;
-  /** The run branch of a worktree run; absent in place (the checkout's own branch is used). */
+  /** The run branch of a worktree run; absent in place (`merge` and `pr` then refuse). */
   branch?: string;
+  /** The branch the project was on when the run started: the default base to land on. */
+  base?: string;
+  /** The run's cancellation: checked before anything lands or is pushed. */
+  signal?: AbortSignal;
   /** The request (`input.spec`), the first line of which titles commits and PRs. */
   spec: string;
   /** What the run's nodes did so far. */
@@ -82,7 +86,7 @@ export function titleOf(spec: string): string {
   return line.length > TITLE_MAX ? `${line.slice(0, TITLE_MAX - 1)}…` : line;
 }
 
-/** The deterministic message: title, the request, what each node did, and the run trailer. */
+/** The deterministic message: title, the request, what each node did. */
 export function defaultMessage(ctx: GitContext): string {
   const title = titleOf(ctx.spec);
   const rest = ctx.spec.split('\n').slice(1).join('\n').trim();
@@ -98,6 +102,16 @@ export function defaultMessage(ctx: GitContext): string {
 const withTrailer = (message: string, runId: string) =>
   `${message.trim()}\n\nShibaox-Run: ${runId}\n`;
 
+/** Aborts a step once the run was cancelled. */
+function checkCancelled(ctx: GitContext): void {
+  if (ctx.signal?.aborted) {
+    const reason = ctx.signal.reason;
+    throw new Error(
+      `cancelled: ${reason instanceof Error ? reason.message : String(reason ?? 'run cancelled')}`,
+    );
+  }
+}
+
 async function describeOr(
   ctx: GitContext,
   kind: 'commit' | 'pr',
@@ -106,9 +120,14 @@ async function describeOr(
 ): Promise<string> {
   if (!ctx.describe) return fallback;
   try {
-    const text = (
+    let text = (
       await ctx.describe({ kind, spec: ctx.spec, summaries: ctx.summaries, diff })
     ).trim();
+    if (kind === 'commit' && text) {
+      // the model's first line is the commit title: git log and forges show 72 characters
+      const [first = '', ...rest] = text.split('\n');
+      text = [titleOf(first), ...rest].join('\n');
+    }
     return text || fallback;
   } catch (e) {
     ctx.log(
@@ -118,13 +137,53 @@ async function describeOr(
   }
 }
 
+function runBranch(ctx: GitContext, action: string): string {
+  if (!ctx.branch)
+    throw new Error(
+      `git ${action} needs a worktree run (its own branch): this run works in place on the checkout itself`,
+    );
+  return ctx.branch;
+}
+
+async function hasOrigin(ctx: GitContext): Promise<boolean> {
+  return (await tryGit(ctx.workspace, ['remote', 'get-url', 'origin'], ctx.env)) !== undefined;
+}
+
+/** The node's base, else where the run forked from, else the remote's default, else main/master. */
+async function baseBranch(node: GitNode, ctx: GitContext, origin: boolean): Promise<string> {
+  if (node.base) return node.base;
+  if (ctx.base) return ctx.base;
+  if (origin) {
+    const head = await tryGit(
+      ctx.project,
+      ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'],
+      ctx.env,
+    );
+    if (head) return head.replace(/^origin\//, '');
+    const remote = await tryGit(ctx.project, ['ls-remote', '--symref', 'origin', 'HEAD'], ctx.env);
+    const m = /^ref: refs\/heads\/(\S+)\s+HEAD/m.exec(remote ?? '');
+    if (m?.[1]) return m[1];
+  }
+  for (const b of ['main', 'master'])
+    if (
+      (await tryGit(
+        ctx.project,
+        ['rev-parse', '--verify', '--quiet', `refs/heads/${b}`],
+        ctx.env,
+      )) !== undefined
+    )
+      return b;
+  throw new Error('no base branch: set `base` on the git node');
+}
+
 async function commit(node: GitNode, ctx: GitContext): Promise<GitOutcome> {
   if (!(await isRepo(ctx.workspace)))
     return {
       output: { committed: false, reason: 'not a git repository' },
       summary: 'nothing to commit: not a git repository',
     };
-  await git(ctx.workspace, ['add', '-A'], { env: ctx.env });
+  // in place the workspace may be a subfolder: only what is under it is staged
+  await git(ctx.workspace, ['add', '-A', '--', '.'], { env: ctx.env });
   const staged = await runArgv({
     argv: ['git', 'diff', '--cached', '--quiet'],
     cwd: ctx.workspace,
@@ -141,55 +200,17 @@ async function commit(node: GitNode, ctx: GitContext): Promise<GitOutcome> {
     MAX_DIFF,
   );
   const message = node.message ?? (await describeOr(ctx, 'commit', diff, defaultMessage(ctx)));
-  await git(ctx.workspace, ['commit', '-q', '--no-verify', '-m', withTrailer(message, ctx.runId)], {
-    env: ctx.env,
-    timeoutMs: node.timeout_ms,
-  });
+  // no TTY under the daemon: signing would hang on pinentry; hooks run as usual
+  await git(
+    ctx.workspace,
+    ['-c', 'commit.gpgsign=false', 'commit', '-q', '-m', withTrailer(message, ctx.runId)],
+    { env: ctx.env, timeoutMs: node.timeout_ms },
+  );
   const sha = await git(ctx.workspace, ['rev-parse', 'HEAD'], { env: ctx.env });
   return {
     output: { committed: true, sha, message },
     summary: `committed ${sha.slice(0, 7)}: ${message.split('\n')[0]}`,
   };
-}
-
-async function currentBranch(ctx: GitContext): Promise<string> {
-  if (ctx.branch) return ctx.branch;
-  const b = await git(ctx.workspace, ['rev-parse', '--abbrev-ref', 'HEAD'], { env: ctx.env });
-  if (b === 'HEAD') throw new Error('the workspace is on a detached HEAD: nothing to push');
-  return b;
-}
-
-async function hasOrigin(ctx: GitContext): Promise<boolean> {
-  return (await tryGit(ctx.workspace, ['remote', 'get-url', 'origin'], ctx.env)) !== undefined;
-}
-
-async function baseBranch(node: GitNode, ctx: GitContext, gh: boolean): Promise<string> {
-  if (node.base) return node.base;
-  if (gh) {
-    const r = await runArgv({
-      argv: ['gh', 'repo', 'view', '--json', 'defaultBranchRef', '-q', '.defaultBranchRef.name'],
-      cwd: ctx.workspace,
-      timeoutMs: 30_000,
-      env: ctx.env,
-    });
-    if (r.exitCode === 0 && r.stdout.trim()) return r.stdout.trim();
-  }
-  const head = await tryGit(
-    ctx.project,
-    ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'],
-    ctx.env,
-  );
-  if (head) return head.replace(/^origin\//, '');
-  for (const b of ['main', 'master'])
-    if (
-      (await tryGit(
-        ctx.project,
-        ['rev-parse', '--verify', '--quiet', `refs/heads/${b}`],
-        ctx.env,
-      )) !== undefined
-    )
-      return b;
-  throw new Error('no base branch: set `base` on the git node');
 }
 
 async function pr(node: GitNode, ctx: GitContext): Promise<GitOutcome> {
@@ -198,15 +219,16 @@ async function pr(node: GitNode, ctx: GitContext): Promise<GitOutcome> {
       output: { opened: false, reason: 'not a git repository' },
       summary: 'no pull request: not a git repository',
     };
+  const branch = runBranch(ctx, 'pr');
   if (!(await hasOrigin(ctx)))
     throw new Error('no remote "origin": a pull request needs one (or use action: merge)');
-  const branch = await currentBranch(ctx);
   const base = await baseBranch(node, ctx, true);
+  checkCancelled(ctx);
   await git(ctx.workspace, ['push', '-q', '-u', 'origin', branch], {
     env: ctx.env,
     timeoutMs: node.timeout_ms,
   });
-  // an open PR for the branch is reused
+  // an open PR for the branch is reused (a merged or closed one is not)
   const existing = await runArgv({
     argv: [
       'gh',
@@ -214,23 +236,25 @@ async function pr(node: GitNode, ctx: GitContext): Promise<GitOutcome> {
       'view',
       branch,
       '--json',
-      'url,number',
+      'url,number,state',
       '-q',
-      '.url + " " + (.number|tostring)',
+      '.state + " " + .url + " " + (.number|tostring)',
     ],
     cwd: ctx.workspace,
     timeoutMs: 30_000,
     env: ctx.env,
   });
-  if (existing.exitCode === 0 && existing.stdout.trim()) {
-    const [url, number] = existing.stdout.trim().split(' ');
+  if (existing.exitCode === 0 && existing.stdout.trim().startsWith('OPEN ')) {
+    const [, url, number] = existing.stdout.trim().split(' ');
     return {
       output: { url, number: Number(number), base, branch, reused: true },
       summary: `pull request already open: ${url}`,
     };
   }
+  await tryGit(ctx.workspace, ['fetch', '-q', 'origin', base], ctx.env);
   const diff =
-    (await tryGit(ctx.workspace, ['diff', `${base}...HEAD`], ctx.env))?.slice(0, MAX_DIFF) ?? '';
+    (await tryGit(ctx.workspace, ['diff', `origin/${base}...HEAD`], ctx.env))?.slice(0, MAX_DIFF) ??
+    '';
   const title = titleOf(ctx.spec);
   const body =
     node.message ??
@@ -278,31 +302,41 @@ async function merge(node: GitNode, ctx: GitContext): Promise<GitOutcome> {
   const ahead = queue.ahead(ctx.project);
   if (ahead > 0) ctx.log(`merge queue: ${ahead} ahead for ${ctx.project}`);
   return queue.enqueue(ctx.project, async () => {
+    checkCancelled(ctx);
     if (!(await isRepo(ctx.workspace)))
       return {
         output: { merged: false, reason: 'not a git repository' },
         summary: 'nothing to merge: not a git repository',
       };
-    const branch = await currentBranch(ctx);
+    const branch = runBranch(ctx, 'merge');
     ctx.log(`merge queue: landing ${branch}`);
     const origin = await hasOrigin(ctx);
-    const base = await baseBranch(node, ctx, false);
+    const base = await baseBranch(node, ctx, origin);
     if (branch === base) throw new Error(`the workspace is on "${base}" itself: nothing to merge`);
-    if (origin) {
+    // untracked files count: what the agent wrote and nobody committed must not be lost
+    const dirty = await git(ctx.workspace, ['status', '--porcelain'], { env: ctx.env });
+    if (dirty)
+      throw new Error('the workspace has uncommitted changes: put a `commit` node before `merge`');
+    // the base to land on: origin's when there is one (the local checkout may be behind or ahead)
+    if (origin)
       await git(ctx.project, ['fetch', '-q', 'origin', base], {
         env: ctx.env,
         timeoutMs: node.timeout_ms,
       });
-      // a base checkout that is behind origin moves up first (fast-forward only)
-      await tryGit(
-        ctx.project,
-        ['fetch', '-q', '.', `refs/remotes/origin/${base}:refs/heads/${base}`],
-        ctx.env,
-      );
-    }
+    const target = origin ? `refs/remotes/origin/${base}` : `refs/heads/${base}`;
+    const targetSha = await git(ctx.project, ['rev-parse', target], { env: ctx.env });
+    const ahead = await git(ctx.workspace, ['rev-list', '--count', `${targetSha}..HEAD`], {
+      env: ctx.env,
+    });
+    if (ahead === '0')
+      return {
+        output: { merged: false, reason: 'nothing to land', base },
+        summary: `nothing to land on ${base}`,
+      };
     // rebase the run branch on the base; a conflict aborts and fails the node
+    const before = await git(ctx.workspace, ['rev-parse', 'HEAD'], { env: ctx.env });
     const rebase = await runArgv({
-      argv: ['git', 'rebase', '-q', base],
+      argv: ['git', 'rebase', '-q', targetSha],
       cwd: ctx.workspace,
       timeoutMs: node.timeout_ms,
       env: ctx.env,
@@ -313,7 +347,9 @@ async function merge(node: GitNode, ctx: GitContext): Promise<GitOutcome> {
         `rebase on ${base} failed (conflicts): ${(rebase.stderr.trim() || rebase.stdout.trim()).slice(-800)}`,
       );
     }
-    const tests = node.tests ?? detectTestCommand(ctx.workspace);
+    const moved = (await git(ctx.workspace, ['rev-parse', 'HEAD'], { env: ctx.env })) !== before;
+    // tests run when the base moved under the branch; the workflow's own gate covers the branch
+    const tests = moved ? (node.tests ?? detectTestCommand(ctx.workspace)) : undefined;
     if (tests) {
       ctx.log(`merge queue: running ${tests}`);
       const t = await runCommand({
@@ -327,36 +363,52 @@ async function merge(node: GitNode, ctx: GitContext): Promise<GitOutcome> {
           `tests failed before merge (${tests}, exit ${t.exitCode}${t.timedOut ? ', timed out' : ''}): ${(t.stderr || t.stdout).slice(-800)}`,
         );
     }
-    // land: the checkout of the base merges fast-forward; another checkout gets its ref moved
-    const onBase =
-      (await tryGit(ctx.project, ['rev-parse', '--abbrev-ref', 'HEAD'], ctx.env)) === base;
-    if (onBase) {
-      const dirty = await git(ctx.project, ['status', '--porcelain', '--untracked-files=no'], {
-        env: ctx.env,
-      });
-      if (dirty)
-        throw new Error(
-          `the checkout of "${base}" has uncommitted changes: commit or stash them before merging`,
-        );
-      await git(ctx.project, ['merge', '-q', '--ff-only', branch], {
-        env: ctx.env,
-        timeoutMs: node.timeout_ms,
-      });
-    } else {
-      await git(ctx.project, ['fetch', '-q', '.', `${branch}:${base}`], {
-        env: ctx.env,
-        timeoutMs: node.timeout_ms,
-      });
-    }
-    const sha = await git(ctx.project, ['rev-parse', base], { env: ctx.env });
+    checkCancelled(ctx);
+    const sha = await git(ctx.workspace, ['rev-parse', 'HEAD'], { env: ctx.env });
+    // land on origin first: the remote refuses anything but a fast-forward, so nothing local
+    // has moved when it fails; then the local base follows when it can
     if (origin)
-      await git(ctx.project, ['push', '-q', 'origin', base], {
+      await git(ctx.project, ['push', '-q', 'origin', `${branch}:${base}`], {
         env: ctx.env,
         timeoutMs: node.timeout_ms,
       });
+    let localUpdated = true;
+    let note = '';
+    try {
+      const onBase =
+        (await tryGit(ctx.project, ['rev-parse', '--abbrev-ref', 'HEAD'], ctx.env)) === base;
+      if (onBase) {
+        const pending = await git(ctx.project, ['status', '--porcelain', '--untracked-files=no'], {
+          env: ctx.env,
+        });
+        if (pending) throw new Error('the checkout has uncommitted changes');
+        await git(ctx.project, ['merge', '-q', '--ff-only', branch], {
+          env: ctx.env,
+          timeoutMs: node.timeout_ms,
+        });
+      } else {
+        await git(ctx.project, ['fetch', '-q', '.', `${branch}:${base}`], {
+          env: ctx.env,
+          timeoutMs: node.timeout_ms,
+        });
+      }
+    } catch (e) {
+      if (!origin) throw e; // without a remote, the local base is the only landing place
+      localUpdated = false;
+      note = `; local ${base} not updated (${e instanceof Error ? e.message.split('\n')[0] : String(e)}): pull it`;
+      ctx.log(`merge queue: ${note.slice(2)}`);
+    }
     return {
-      output: { merged: true, base, sha, branch, tests: tests ?? null, pushed: origin },
-      summary: `merged ${branch} into ${base} (${sha.slice(0, 7)})${tests ? `, tests: ${tests}` : ''}${origin ? ', pushed' : ''}`,
+      output: {
+        merged: true,
+        base,
+        sha,
+        branch,
+        tests: tests ?? null,
+        pushed: origin,
+        localUpdated,
+      },
+      summary: `merged ${branch} into ${base} (${sha.slice(0, 7)})${tests ? `, tests: ${tests}` : ''}${origin ? ', pushed' : ''}${note}`,
     };
   });
 }

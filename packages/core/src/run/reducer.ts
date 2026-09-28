@@ -225,6 +225,7 @@ export function reduce(state: RunState | undefined, event: RunEvent, idx: number
       workspaceMode: event.workspaceMode,
       project: event.project,
       branch: event.branch,
+      baseBranch: event.baseBranch,
       orgRoot: event.orgRoot,
       parentRunId: event.parentRunId,
       origin: event.origin,
