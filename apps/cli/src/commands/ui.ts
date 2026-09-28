@@ -30,7 +30,10 @@ export function resolveTuiRoot(fromUrl: string = import.meta.url): string {
   try {
     let dir = dirname(require.resolve('@wizardingcode/shibaox-tui'));
     for (let i = 0; i < 6; i++) {
-      if (existsSync(join(dir, 'package.json')) && existsSync(join(dir, 'src', 'main.tsx')))
+      if (
+        existsSync(join(dir, 'package.json')) &&
+        (existsSync(join(dir, 'src', 'main.tsx')) || existsSync(join(dir, 'dist', 'main.js')))
+      )
         return dir;
       dir = dirname(dir);
     }
@@ -40,7 +43,12 @@ export function resolveTuiRoot(fromUrl: string = import.meta.url): string {
   return sibling;
 }
 export const TUI_ROOT = resolveTuiRoot();
-export const TUI_ENTRY = join(TUI_ROOT, 'src/main.tsx');
+/** The source in the monorepo (Bun transforms it), the built file in an installed package. */
+export const resolveTuiEntry = (root: string): string =>
+  existsSync(join(root, 'src', 'main.tsx'))
+    ? join(root, 'src/main.tsx')
+    : join(root, 'dist/main.js');
+export const TUI_ENTRY = resolveTuiEntry(TUI_ROOT);
 /** Bun flags before the entry: the Solid JSX transform for the OpenTUI app. */
 export const TUI_ARGS = ['--preload', '@opentui/solid/preload'] as const;
 export const MIN_BUN = [1, 3] as const;

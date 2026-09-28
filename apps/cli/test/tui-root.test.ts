@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { installLine } from '../src/commands/doctor.js';
-import { resolveTuiRoot } from '../src/commands/ui.js';
+import { resolveTuiEntry, resolveTuiRoot } from '../src/commands/ui.js';
 import { upgradeCommand } from '../src/commands/upgrade.js';
 
 const dirs: string[] = [];
@@ -35,9 +35,18 @@ describe('where the dashboard lives', () => {
       join(tui, 'package.json'),
       JSON.stringify({ name: '@wizardingcode/shibaox-tui', exports: { '.': './src/app.tsx' } }),
     );
-    file(join(tui, 'src/main.tsx'));
+    file(join(tui, 'dist/main.js'));
     file(join(tui, 'src/app.tsx'));
-    expect(realpathSync(resolveTuiRoot(pathToFileURL(cli).href))).toBe(realpathSync(tui));
+    const found = resolveTuiRoot(pathToFileURL(cli).href);
+    expect(realpathSync(found)).toBe(realpathSync(tui));
+    expect(resolveTuiEntry(found)).toBe(join(found, 'dist/main.js')); // the built dashboard
+  });
+  it('the monorepo runs the source, an installed package the build', () => {
+    const root = mkdtempSync(join(tmpdir(), 'tui-entry-'));
+    dirs.push(root);
+    file(join(root, 'src/main.tsx'));
+    expect(resolveTuiEntry(root)).toBe(join(root, 'src/main.tsx'));
+    expect(resolveTuiEntry(join(root, 'elsewhere'))).toBe(join(root, 'elsewhere/dist/main.js'));
   });
 });
 

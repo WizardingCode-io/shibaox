@@ -1,22 +1,18 @@
 {
   "name": "@wizardingcode/shibaox-tui",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "license": "UNLICENSED",
   "type": "module",
   "files": [
-    "src",
-    "bunfig.toml",
-    "tsconfig.json"
+    "dist",
+    "bunfig.toml"
   ],
   "exports": {
-    ".": {
-      "types": "./src/app.tsx",
-      "import": "./src/app.tsx"
-    },
+    ".": "./dist/main.js",
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json --noEmit && bun run build.ts",
     "test": "vitest run && bun test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
