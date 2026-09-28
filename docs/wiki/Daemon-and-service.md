@@ -1,0 +1,54 @@
+# Daemon and service
+
+Runs execute inside a per-user daemon (`~/.shibaox/`, or `$SHIBAOX_HOME`): closing the terminal never kills a run, and approvals wait in a persistent inbox. Any command that needs the daemon starts it in the background and says so (`SHIBAOX_NO_AUTOSTART=1` disables that).
+
+```sh
+shibaox daemon start --detach   # or in the foreground: shibaox daemon start
+shibaox daemon status
+shibaox daemon stop             # waits for active runs (60 s, then they resume at the next start); --force cancels them
+shibaox daemon install          # macOS: a launchd agent starts it at login and restarts it
+shibaox daemon uninstall
+```
+
+## The service (macOS)
+
+`daemon install` writes `~/Library/LaunchAgents/io.shibaox.daemon.plist` and loads it: the daemon starts now and at every login, and launchd restarts it if it exits. The agent runs through `/bin/zsh -lc`, so it gets a **login** shell's environment: exports in `~/.zprofile` or `~/.zshenv` reach it, exports only in `~/.zshrc` do not (`daemon install` checks the keys your shell has and says which ones the service would miss). Keys in the vault reach it whatever the shell exports.
+
+The plist runs `~/.shibaox/daemon.sh`, a launcher that records the `node` and CLI paths of the install. When either moved (a Node upgrade under nvm or brew), it falls back to the login shell's `node` only when it has the same ABI (native modules were built for it) and to `shibaox` on the PATH; otherwise it says why in `daemon.log` and waits, and `daemon status` and `doctor` tell you a `daemon install` is due.
+
+## Files
+
+`daemon.sock` (0600, HTTP JSON + SSE, no authentication: only your user reaches it), `daemon.pid`, `daemon.log`, `daemon.yaml`, `events.db` (one SQLite database for every org and project you run), `secrets.json` (the key vault), `org/` (the default org), `ui.json` (dashboard preferences).
+
+## Inbox
+
+`shibaox inbox` lists human nodes (`human:<runId>:<node>`) and tool approvals (`approval:<id>`, a push or deploy asked by a task). `approve` and `deny` answer them, with an optional `--note`. The first answer wins. An approval applies to that exact command on that node: the task never asks twice for the same command.
+
+## Sessions
+
+While a Claude Code task waits for an approval its session stays open. After `approval_timeout_minutes` (default 120), or when the daemon restarts, the task is suspended and resumed by session id once you answer, with a note saying what was decided.
+
+## Concurrency
+
+`max_concurrent_runs` in `daemon.yaml` (default 4) and in `org.yaml` (default 2); runs above the limits wait as `queued`. Merges go one at a time per project.
+
+## Schedules
+
+```sh
+shibaox schedule add "0 9 * * 1-5" hello-feature --org ./org --project ./project --input "daily check"
+shibaox schedule list | rm <id> | run <id>
+```
+
+A schedule whose previous run is still active is skipped (logged).
+
+## Reports
+
+A run asked for by a schedule or from Telegram carries an `origin` (runs it dispatches inherit it). When it ends, a report goes through the outbox to every channel that shows reports: Telegram gets `✓ hello-feature done · 5 nodes · $0.12 · 8m 42s · branch …` plus one line per node, what still needs you, the error and the vault note path; macOS gets a notification. A conversation run reports its reply only.
+
+## Model discovery
+
+At start and after a key changes, the daemon asks the providers what they offer (prices, context windows, what a local server has loaded) and every run waits for that answer before it starts, so cost and context are right from the first turn. See [Providers and models](Providers-and-models).
+
+## The API
+
+Everything the CLI and the dashboard do goes through the socket: `POST /runs`, `GET /runs/:id`, `GET /runs/:id/events` (SSE), `/inbox`, `/keys`, `/models`, `/orgs/default`, `/orgs/config`, `/schedules`, `/projects/profile`, `/health`, `/shutdown`. It is local and unauthenticated by design: the socket is 0600.
