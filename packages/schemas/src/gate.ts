@@ -15,6 +15,19 @@ export const CheckSchema = z.discriminatedUnion('type', [
     type: z.literal('tests'),
     timeout_ms: z.number().int().positive().default(300_000),
   }),
+  /** Runs the project's linter, detected in the workspace (lint script, biome, eslint, ruff, phpstan, golangci-lint/go vet, clippy, make lint), or `command`. */
+  z.object({
+    ...base,
+    type: z.literal('lint'),
+    command: z.string().min(1).optional(),
+    timeout_ms: z.number().int().positive().default(300_000),
+  }),
+  /** A code review by the judge model, criterion by criterion (the built-in rubric when none is given). */
+  z.object({
+    ...base,
+    type: z.literal('review'),
+    criteria: z.array(z.string().min(1)).min(1).optional(),
+  }),
   z.object({
     ...base,
     type: z.literal('jev'),

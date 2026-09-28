@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { detectTestCommand } from '../src/gates/detect.js';
+import { detectLintCommand, detectTestCommand } from '../src/gates/detect.js';
 import { defaultCheckRunners, runGate } from '../src/gates/engine.js';
 
 const dirs: string[] = [];
@@ -103,5 +103,89 @@ describe('the tests check', () => {
     expect(report.passed).toBe(true);
     expect(report.checks[0]).toMatchObject({ passed: true, skipped: true });
     expect(report.checks[0]?.evidence).toContain('no test runner found');
+  });
+});
+
+describe('detectLintCommand', () => {
+  it("prefers the project's own lint script, then the linter it is configured for", () => {
+    const pkg = JSON.stringify({ scripts: { lint: 'biome check .' } });
+    expect(detectLintCommand(dir({ 'package.json': pkg, 'pnpm-lock.yaml': '' }))).toBe(
+      'pnpm run lint',
+    );
+    expect(detectLintCommand(dir({ 'package.json': pkg }))).toBe('npm run lint');
+    expect(detectLintCommand(dir({ 'package.json': '{}', 'biome.json': '{}' }))).toBe(
+      'npx biome check .',
+    );
+    expect(detectLintCommand(dir({ 'package.json': '{}', 'eslint.config.js': '' }))).toBe(
+      'npx eslint .',
+    );
+    expect(detectLintCommand(dir({ 'package.json': '{}', '.eslintrc.json': '{}' }))).toBe(
+      'npx eslint .',
+    );
+    expect(detectLintCommand(dir({ 'pyproject.toml': '[tool.ruff]\nline-length = 100\n' }))).toBe(
+      'ruff check .',
+    );
+    expect(detectLintCommand(dir({ 'ruff.toml': '' }))).toBe('ruff check .');
+    expect(detectLintCommand(dir({ 'pyproject.toml': '[tool.poetry]\n' }))).toBeUndefined();
+    expect(detectLintCommand(dir({ 'composer.json': '{}', 'phpstan.neon': '' }))).toBe(
+      'vendor/bin/phpstan analyse --no-progress',
+    );
+    expect(detectLintCommand(dir({ 'go.mod': 'module x', '.golangci.yml': '' }))).toBe(
+      'golangci-lint run',
+    );
+    expect(detectLintCommand(dir({ 'go.mod': 'module x' }))).toBe('go vet ./...');
+    expect(detectLintCommand(dir({ 'Cargo.toml': '' }))).toBe(
+      'cargo clippy --quiet -- -D warnings',
+    );
+    expect(detectLintCommand(dir({ Makefile: 'lint:\n\techo ok\n' }))).toBe('make lint');
+    expect(detectLintCommand(dir({ 'README.md': '' }))).toBeUndefined();
+  });
+});
+
+describe('the lint check', () => {
+  const ctx = (workspace: string) =>
+    ({ runId: 'r', nodeId: 'qa', workspace, state: {} as never, log: () => {} }) as never;
+  const gate = (check: Record<string, unknown>) => ({
+    quality: {
+      gate: 'quality',
+      checks: [{ name: 'lint', type: 'lint', timeout_ms: 60_000, ...check }],
+    },
+  });
+  it('runs the detected linter, or the command given, and reports it', async () => {
+    const d = dir({
+      'package.json': JSON.stringify({ scripts: { lint: 'node -e "process.exit(0)"' } }),
+    });
+    const report = await runGate({
+      gates: gate({}) as never,
+      gateIds: ['quality'],
+      runners: defaultCheckRunners(),
+      ctx: ctx(d),
+    });
+    expect(report.passed).toBe(true);
+    expect(report.checks[0]).toMatchObject({ type: 'lint', passed: true, skipped: false });
+    expect(report.checks[0]?.evidence).toContain('npm run lint');
+    const failing = await runGate({
+      gates: gate({
+        command: 'node -e "console.error(\'x.ts:3 unused var\'); process.exit(1)"',
+      }) as never,
+      gateIds: ['quality'],
+      runners: defaultCheckRunners(),
+      ctx: ctx(d),
+    });
+    expect(failing.passed).toBe(false);
+    expect(failing.checks[0]).toMatchObject({ type: 'lint', passed: false });
+    expect(failing.checks[0]?.evidence).toContain('unused var');
+    expect(failing.checks[0]?.suggestion).toContain('exits 0');
+  });
+  it('a project without a linter passes with a note', async () => {
+    const d = dir({ 'README.md': '' });
+    const report = await runGate({
+      gates: gate({}) as never,
+      gateIds: ['quality'],
+      runners: defaultCheckRunners(),
+      ctx: ctx(d),
+    });
+    expect(report.checks[0]).toMatchObject({ type: 'lint', passed: true, skipped: true });
+    expect(report.checks[0]?.evidence).toContain('no linter');
   });
 });

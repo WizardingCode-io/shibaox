@@ -1,7 +1,7 @@
 import type { Check, CheckResult, Cost, Gate, GateReport } from '@shibaox/schemas';
 import { runCommand } from '../executors/code.js';
 import type { RunState } from '../run/state.js';
-import { detectTestCommand } from './detect.js';
+import { detectLintCommand, detectTestCommand } from './detect.js';
 
 export interface CheckContext {
   runId: string;
@@ -67,6 +67,33 @@ export const testsCheckRunner: CheckRunner = async (check, ctx) => {
   };
 };
 
+/** Runs the workspace's linter (detected, or `command`); a project without one passes with a note. */
+export const lintCheckRunner: CheckRunner = async (check, ctx) => {
+  if (check.type !== 'lint') throw new Error('lintCheckRunner got a non-lint check');
+  const command = check.command ?? detectLintCommand(ctx.workspace);
+  if (!command)
+    return {
+      name: check.name,
+      type: 'lint',
+      passed: true,
+      skipped: true,
+      evidence: `no linter found in ${ctx.workspace} (package.json scripts.lint, biome, eslint, ruff, phpstan, golangci-lint, go vet, clippy, make lint)`,
+    };
+  const r = await runCommand({ command, cwd: ctx.workspace, timeoutMs: check.timeout_ms });
+  const passed = r.exitCode === 0 && !r.timedOut;
+  const evidence = r.timedOut
+    ? `${command}: timed out after ${check.timeout_ms}ms\n${tail(r.stdout)}${tail(r.stderr)}`
+    : `${command}: exit ${r.exitCode}\n${tail(r.stdout)}${tail(r.stderr)}`;
+  return {
+    name: check.name,
+    type: 'lint',
+    passed,
+    skipped: false,
+    evidence,
+    suggestion: passed ? undefined : `Fix the reported problems so that \`${command}\` exits 0`,
+  };
+};
+
 export const mockCheckRunner: CheckRunner = async (check) => {
   if (check.type !== 'mock') throw new Error('mockCheckRunner got a non-mock check');
   return {
@@ -79,7 +106,12 @@ export const mockCheckRunner: CheckRunner = async (check) => {
 };
 
 export function defaultCheckRunners(): CheckRunners {
-  return { code: codeCheckRunner, tests: testsCheckRunner, mock: mockCheckRunner };
+  return {
+    code: codeCheckRunner,
+    tests: testsCheckRunner,
+    lint: lintCheckRunner,
+    mock: mockCheckRunner,
+  };
 }
 
 export async function runGate(args: {

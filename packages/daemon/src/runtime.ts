@@ -25,6 +25,7 @@ import {
   loadCatalog,
   type ProviderEntry,
   ProviderRegistry,
+  reviewCheckRunner,
 } from '@shibaox/providers';
 import type { Org, Role, Workflow } from '@shibaox/schemas';
 import { diffRunWorkspace } from '@shibaox/workspace';
@@ -262,18 +263,29 @@ export function buildRuntime(o: RuntimeOptions) {
   const checkRunners: CheckRunners = {
     ...defaultCheckRunners(),
     ...(judge ? { judge } : {}),
+    ...(judge && judgeRef ? { review: reviewCheckRunner(llm, judgeRef) } : {}),
     ...(jev ? { jev: jevCheckRunner(jev, { escalate: judge }) } : {}),
   };
-  const usesJev = Object.values(o.org.gates).some((g) => g.checks.some((c) => c.type === 'jev'));
-  if (!jev && usesJev) warnings.push('TYPESAFE_API_KEY not set: jev checks will fail');
-  const usesJudge = Object.values(o.org.gates).some((g) =>
-    g.checks.some((c) => c.type === 'judge'),
+  // only the gates this run can reach matter: the workflow's gate nodes and the team's gates
+  // (a resume without a workflow snapshot sees every gate of the org, as before)
+  const wf = o.workflow;
+  const usedGates = new Set(
+    wf
+      ? [
+          ...Object.values(wf.nodes).flatMap((n) => (n.type === 'gate' ? n.gates : [])),
+          ...((wf.team && o.org.teams[wf.team]?.gates) ?? []),
+        ]
+      : Object.keys(o.org.gates),
   );
+  const usedChecks = [...usedGates].flatMap((id) => o.org.gates[id]?.checks ?? []);
+  const usesJev = usedChecks.some((c) => c.type === 'jev');
+  if (!jev && usesJev) warnings.push('TYPESAFE_API_KEY not set: jev checks will fail');
+  const usesJudge = usedChecks.some((c) => c.type === 'judge' || c.type === 'review');
   if (!judge && usesJudge)
     warnings.push(
       real
-        ? `no usable judge model (${judgeRef ?? 'unset'}): judge checks will fail`
-        : 'judge checks need a real adapter: they will fail with the mock adapter',
+        ? `no usable judge model (${judgeRef ?? 'unset'}): judge and review checks will fail`
+        : 'judge and review checks need a real adapter: they will fail with the mock adapter',
     );
   const leadRef = decisionOk ? decisionRef : strongOk ? strongRef : undefined;
   const lead: Decider | undefined = leadRef ? new LeadDecider(llm, leadRef) : undefined;

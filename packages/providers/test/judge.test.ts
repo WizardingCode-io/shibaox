@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { judgeCheckRunner, LeadDecider, LlmClient, ProviderRegistry } from '../src/index.js';
+import {
+  DEFAULT_REVIEW_CRITERIA,
+  judgeCheckRunner,
+  LeadDecider,
+  LlmClient,
+  ProviderRegistry,
+  reviewCheckRunner,
+} from '../src/index.js';
 import { startFakeOpenAI } from '../src/testing/fake-openai.js';
 
 let fake: Awaited<ReturnType<typeof startFakeOpenAI>> | undefined;
@@ -153,5 +160,69 @@ describe('LeadDecider', () => {
     ac.abort(new Error('run cancelled'));
     await expect(d.decide({ ...req, signal: ac.signal })).rejects.toThrow(/lead decider/);
     expect(fake.requests).toHaveLength(before);
+  });
+});
+
+describe('reviewCheckRunner', () => {
+  it('judges each criterion; one failing criterion fails the check with its reasons and suggestions', async () => {
+    fake = await startFakeOpenAI(() => ({
+      content: JSON.stringify({
+        findings: [
+          { criterion: 'Scope', passed: true, evidence: 'only /health touched' },
+          {
+            criterion: 'Tests',
+            passed: false,
+            evidence: 'no test for /health',
+            suggestion: 'add math.test.js case',
+          },
+        ],
+      }),
+    }));
+    const run = reviewCheckRunner(new LlmClient(reg(fake.baseURL)), 'fake/m');
+    const r = await run({ name: 'review', type: 'review', criteria: ['Scope', 'Tests'] }, {
+      ...ctx,
+      diff: async () => '+app.get("/health")',
+    } as never);
+    expect(r).toMatchObject({ type: 'review', passed: false, skipped: false });
+    expect(r.evidence).toContain('✓ Scope');
+    expect(r.evidence).toContain('✗ Tests: no test for /health');
+    expect(r.suggestion).toContain('add math.test.js case');
+    expect(r.cost).toBeDefined();
+    const sent = fake.requests[0] as { messages: { role: string; content: string }[] };
+    const text = sent.messages.map((m) => m.content).join('\n');
+    expect(text).toContain('1. Scope');
+    expect(text).toContain('2. Tests');
+    expect(text).toContain('+app.get("/health")');
+  });
+  it('without criteria the built-in code review rubric applies; all passing passes', async () => {
+    fake = await startFakeOpenAI(() => ({
+      content: JSON.stringify({
+        findings: DEFAULT_REVIEW_CRITERIA.map((c) => ({
+          criterion: c,
+          passed: true,
+          evidence: 'ok',
+        })),
+      }),
+    }));
+    const run = reviewCheckRunner(new LlmClient(reg(fake.baseURL)), 'fake/m');
+    const r = await run({ name: 'review', type: 'review' }, ctx as never);
+    expect(r.passed).toBe(true);
+    expect(DEFAULT_REVIEW_CRITERIA.length).toBeGreaterThanOrEqual(4);
+    const sent = fake.requests[0] as { messages: { role: string; content: string }[] };
+    expect(sent.messages.map((m) => m.content).join('\n')).toContain(
+      DEFAULT_REVIEW_CRITERIA[0] ?? '',
+    );
+  });
+  it('a criterion the model left out counts as not reviewed: the check fails and says so', async () => {
+    fake = await startFakeOpenAI(() => ({
+      content: JSON.stringify({ findings: [{ criterion: 'Scope', passed: true, evidence: 'ok' }] }),
+    }));
+    const run = reviewCheckRunner(new LlmClient(reg(fake.baseURL)), 'fake/m');
+    const r = await run(
+      { name: 'review', type: 'review', criteria: ['Scope', 'Tests'] },
+      ctx as never,
+    );
+    expect(r.passed).toBe(false);
+    expect(r.evidence).toContain('✗ Tests: not reviewed');
   });
 });

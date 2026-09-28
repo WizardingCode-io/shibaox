@@ -99,6 +99,18 @@ checks:
   - { name: unit-tests, type: tests, timeout_ms: 120000 }   # runs the project's own test runner (npm/pnpm/yarn/bun, pytest, go, cargo, make…); passes with a note when there is none
   # - { name: spec, type: jev, question: "The outputs implement the request", threshold: 0.8 }   # uncomment when TYPESAFE_API_KEY is set
 `,
+  'org/gates/lint.yaml': `gate: lint
+checks:
+  - { name: lint, type: lint, timeout_ms: 120000 }   # the project's linter (scripts.lint, biome, eslint, ruff, phpstan, golangci-lint/go vet, clippy, make lint); passes with a note when there is none
+  # - { name: style, type: lint, command: "pnpm biome check ." }   # a fixed command instead
+`,
+  'org/gates/review.yaml': `gate: review
+checks:
+  # a code review by the judge model (models.gates.judge, else decision, else strong), criterion by criterion;
+  # without \`criteria\` the built-in rubric applies: scope, correctness, tests, hygiene, clarity
+  - { name: review, type: review }
+  # - { name: review, type: review, criteria: ["No TODOs left in the diff", "Public functions have doc comments"] }
+`,
   'org/workflows/hello-feature.yaml': `workflow: hello-feature
 team: engineering
 description: Analyse, implement, test, judge, ship.
@@ -117,7 +129,7 @@ start: analyse
 nodes:
   analyse:   { type: task, role: analyst, instruction: "Analyse the request and list the files to touch.", next: implement }
   implement: { type: task, role: backend, instruction: "Implement the request. Keep tests green.", next: qa }
-  qa:        { type: gate, gates: [tests], on_pass: judge, on_fail: implement, max_retries: 2 }
+  qa:        { type: gate, gates: [tests, lint], on_pass: judge, on_fail: implement, max_retries: 2 }   # add review for a model code review
   judge:     { type: decide, by: team-leader, question: "Is the work ready to ship?", options: [ship, rework], next: { ship: ship, rework: implement } }
   ship:      { type: human, action: approve-push, prompt: "Land this on the base branch (and push it)?", next: commit }
   commit:    { type: git, action: commit, next: merge }

@@ -298,6 +298,18 @@ ends (`event: true` on `POST /runs`) never gets `start_workflow`, so nothing re-
 without you. Memory notes reach only roles with the `memory` capability, quoted as data. Opened in your home directory itself, the dashboard works in
 `~/.shibaox/workspace`.
 
+**Gates `lint` and `review`.** Two checks any gate can use, shipped as template gates
+`lint.yaml` and `review.yaml`: `{ type: lint }` runs the project's linter detected in the
+workspace (`scripts.lint` through the project's package manager, else biome, eslint, ruff,
+phpstan, golangci-lint or `go vet`, clippy, `make lint`; `command:` fixes it), failing the
+gate with the linter's output as evidence and passing with a note when there is none;
+`{ type: review }` asks the judge model (`models.gates.judge`, else `decision`, else `strong`)
+to review the change criterion by criterion (`criteria:` list, else the built-in rubric:
+scope, correctness, tests, hygiene, clarity), with evidence per criterion and suggestions for
+the ones that fail (they feed the rework loop through `on_fail`); a criterion the model does
+not answer counts as failed. `land-feature` gates on `[tests, lint]`; add `review` for a model
+review before the human approval.
+
 **Git cycle.** A `git` node is a step the daemon runs itself (trusted org config, like
 `code`), for **worktree runs** (`merge` and `pr` refuse an in-place run; an in-place `commit`
 stages what is under the workspace only). `{ type: git, action: commit }` commits the
