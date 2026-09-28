@@ -134,11 +134,24 @@ export function Home(): JSX.Element {
   });
   // the models a run can be pointed at (`/model`), from the daemon
   const [models] = createResource(() => client.models().catch(() => []));
-  const [defaultOrg] = createResource(() => client.defaultOrg().catch(() => undefined));
+  const [defaultOrg, { refetch: refetchDefaultOrg }] = createResource(() =>
+    client.defaultOrg().catch(() => undefined),
+  );
   createEffect(() => {
     const d = defaultOrg();
     if (d && !ctx().org) setCtx((c) => ({ ...c, org: d.root }));
   });
+  // the first ask may have hit a daemon still booting (a fresh install starts it on demand):
+  // ask again as soon as it answers, until an org is known
+  createEffect(
+    on(
+      () => data.state.reachable,
+      (reachable) => {
+        if (reachable && !ctx().org && !defaultOrg()) void refetchDefaultOrg();
+      },
+      { defer: true },
+    ),
+  );
   const orgRoot = createMemo(() => ctx().org);
   // bumped when the org's files change under us (a /tiers save) so the memo reads them again
   const [orgVersion, setOrgVersion] = createSignal(0);
