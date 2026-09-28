@@ -1,6 +1,6 @@
 {
   "name": "@wizardingcode/shibaox-tui",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "license": "UNLICENSED",
   "type": "module",
   "files": [
@@ -27,7 +27,7 @@
     "@wizardingcode/shibaox-daemon": "workspace:*",
     "@wizardingcode/shibaox-schemas": "workspace:*",
     "fuzzysort": "^4.0.2",
-    "solid-js": "1.9.15"
+    "solid-js": "1.9.12"
   },
   "devDependencies": {
     "@types/bun": "^1.3.0",
