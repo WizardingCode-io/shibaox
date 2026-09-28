@@ -1,5 +1,11 @@
-import { type EventStore, notify, type RunSummary, replay, type StoredEvent } from '@shibaox/core';
-import { type RunEvent, RunEventSchema } from '@shibaox/schemas';
+import {
+  type EventStore,
+  notify,
+  type RunSummary,
+  replay,
+  type StoredEvent,
+} from '@wizardingcode/shibaox-core';
+import { type RunEvent, RunEventSchema } from '@wizardingcode/shibaox-schemas';
 import Database from 'better-sqlite3';
 
 export class SqliteEventStore implements EventStore {

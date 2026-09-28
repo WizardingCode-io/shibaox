@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runCommand } from '@shibaox/core';
-import { homePaths } from '@shibaox/daemon';
+import { runCommand } from '@wizardingcode/shibaox-core';
+import { homePaths } from '@wizardingcode/shibaox-daemon';
 import { connect } from '../client.js';
 import { CLI_VERSION } from '../version.js';
 
@@ -13,8 +14,21 @@ export const NO_BUN_MESSAGE =
 export const NO_TUI_MESSAGE =
   'The dashboard files are missing (apps/tui). Reinstall shibaox, or use: shibaox runs';
 
-/** The terminal UI package root (a sibling package in the monorepo layout) and its Bun entry. */
-export const TUI_ROOT = fileURLToPath(new URL('../../../tui/', import.meta.url));
+/**
+ * The terminal UI package root: the sibling package in the monorepo layout, else the
+ * `@wizardingcode/shibaox-tui` package an npm install placed next to us (Bun runs its source).
+ */
+export function resolveTuiRoot(): string {
+  const sibling = fileURLToPath(new URL('../../../tui/', import.meta.url));
+  if (existsSync(join(sibling, 'src', 'main.tsx'))) return sibling;
+  try {
+    const pkg = createRequire(import.meta.url).resolve('@wizardingcode/shibaox-tui/package.json');
+    return dirname(pkg);
+  } catch {
+    return sibling;
+  }
+}
+export const TUI_ROOT = resolveTuiRoot();
 export const TUI_ENTRY = join(TUI_ROOT, 'src/main.tsx');
 /** Bun flags before the entry: the Solid JSX transform for the OpenTUI app. */
 export const TUI_ARGS = ['--preload', '@opentui/solid/preload'] as const;

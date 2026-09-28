@@ -1,10 +1,15 @@
 {
-  "name": "@shibaox/cli",
-  "version": "0.0.1",
+  "name": "shibaox",
+  "version": "0.1.0",
+  "description": "shibaox: an agentic OS for software teams (CLI, daemon and dashboard)",
+  "license": "UNLICENSED",
   "type": "module",
   "bin": {
     "shibaox": "./dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json && chmod +x dist/index.js",
     "test": "vitest run",
@@ -12,20 +17,28 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
-    "@shibaox/adapter-claude-code": "workspace:*",
-    "@shibaox/adapter-direct": "workspace:*",
-    "@shibaox/core": "workspace:*",
-    "@shibaox/daemon": "workspace:*",
-    "@shibaox/jev": "workspace:*",
-    "@shibaox/memory": "workspace:*",
-    "@shibaox/persistence-sqlite": "workspace:*",
-    "@shibaox/providers": "workspace:*",
-    "@shibaox/schemas": "workspace:*",
-    "@shibaox/workspace": "workspace:*",
-    "commander": "^15.0.0"
+    "@wizardingcode/shibaox-adapter-claude-code": "workspace:*",
+    "@wizardingcode/shibaox-adapter-direct": "workspace:*",
+    "@wizardingcode/shibaox-core": "workspace:*",
+    "@wizardingcode/shibaox-daemon": "workspace:*",
+    "@wizardingcode/shibaox-jev": "workspace:*",
+    "@wizardingcode/shibaox-memory": "workspace:*",
+    "@wizardingcode/shibaox-persistence-sqlite": "workspace:*",
+    "@wizardingcode/shibaox-providers": "workspace:*",
+    "@wizardingcode/shibaox-schemas": "workspace:*",
+    "@wizardingcode/shibaox-workspace": "workspace:*",
+    "commander": "^15.0.0",
+    "@wizardingcode/shibaox-tui": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
     "tsx": "^4.20.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WizardingCode-io/shibaox.git"
   }
 }

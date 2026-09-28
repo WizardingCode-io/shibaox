@@ -65,9 +65,9 @@ it('conversationOf keeps well-formed messages only', () => {
 });
 ```
 
-- [ ] **Step 2: run, watch fail** — `pnpm --filter @shibaox/schemas test`, `pnpm --filter @shibaox/core test -- reducer-3a`. Expected: FAIL (unknown export / undefined).
+- [ ] **Step 2: run, watch fail** — `pnpm --filter @wizardingcode/shibaox-schemas test`, `pnpm --filter @wizardingcode/shibaox-core test -- reducer-3a`. Expected: FAIL (unknown export / undefined).
 - [ ] **Step 3: implement** (schema fields optional; reducer copies `event.parentRunId`; engine `create` emits `parentRunId: opts.parentRunId`; `conversationOf` filters with `ChatMessageSchema.safeParse`).
-- [ ] **Step 4: run, watch pass**; then `pnpm --filter @shibaox/schemas --filter @shibaox/core build`.
+- [ ] **Step 4: run, watch pass**; then `pnpm --filter @wizardingcode/shibaox-schemas --filter @wizardingcode/shibaox-core build`.
 - [ ] **Step 5: commit** `feat(core): parentRunId, per-role limits, chat messages and the AgentTool shape`
 
 ---
@@ -93,7 +93,7 @@ it('conversationOf keeps well-formed messages only', () => {
   - `adapter.ts`: `systemPrompt` appends `\n\n${preamble}` when given; `messages = [...conversationOf(job.input).map(m => ({ role: m.role, content: m.content })), { role:'user', content: userMessage(job) }]`; `userMessage` stringifies `input` without `messages`; `effectiveMaxSteps = supportsTools ? (job.role.max_steps ?? this.opts.maxSteps ?? 12) : 1`; pass `extraTools: this.opts.extraTools?.(job) ?? []` to `buildTools`.
   - `tools.ts`: `write_file` only when `!readOnly && role.tools.includes('write')`; `run_command` when `!readOnly` (unchanged); `web_fetch` when `role.permissions.network.length > 0` (uses `fetchText`, 15 000 ms, 200 000 bytes, `hostAllowed`); extra tools mapped with `tool({ description, inputSchema: t.input, execute: guarded(t.name, (i) => t.execute(i)) })`.
   - `web.ts`: `fetchText` = `fetch(url, { redirect:'manual', signal: AbortSignal.timeout(timeoutMs), headers: { 'user-agent': 'shibaox' } })`; 3xx with a `location` → resolve, check `hostAllowed`, follow up to 3 times; read body as text, cap at `maxBytes`; if content-type html: drop `<script>…</script>`, `<style>…</style>`, tags, collapse whitespace.
-- [ ] **Step 4: run, watch pass**, `pnpm --filter @shibaox/adapter-direct build test`.
+- [ ] **Step 4: run, watch pass**, `pnpm --filter @wizardingcode/shibaox-adapter-direct build test`.
 - [ ] **Step 5: commit** `feat(adapter-direct): conversation turns, write gating, per-role max_steps, web_fetch, extra tools and preamble`
 
 ---
@@ -102,7 +102,7 @@ it('conversationOf keeps well-formed messages only', () => {
 
 **Files:**
 - Create: `packages/adapter-claude-code/src/mcp.ts` (`sdkMcpServer(name: string, tools: AgentTool[]): McpSdkServerConfigWithInstance` using `createSdkMcpServer` + `tool` from the SDK; the handler returns `{ content: [{ type:'text', text: JSON.stringify(result) }] }`, errors as `{ content:[{type:'text', text: JSON.stringify({ error }) }], isError: true }`)
-- Modify: `adapter.ts` (`preamble`, `extraTools` → `mcpServers.shibaox`, `maxTurns = job.role.max_turns ?? opts.maxTurns ?? 60`, `maxBudgetUsd = min(role.budget_usd, budgetRemainingUsd)`, transcript in the prompt), `tools-map.ts` (`mapRoleTools` keeps `WebFetch`/`WebSearch` out of `disallowedTools` and adds them to `allowedTools` when `role.permissions.network.length > 0`), `permissions.ts` (`buildCanUseTool`: `WebFetch` allowed when `hostAllowed(new URL(input.url).hostname, role.permissions.network)`, `WebSearch` allowed when network non-empty), `index.ts` (export `sdkMcpServer`, `hostAllowed` moved to `@shibaox/core`? — no: copy the 8-line matcher into `packages/core/src/executors/network.ts` as `hostAllowed` and use it from both adapters; Task 2 imports it from core too)
+- Modify: `adapter.ts` (`preamble`, `extraTools` → `mcpServers.shibaox`, `maxTurns = job.role.max_turns ?? opts.maxTurns ?? 60`, `maxBudgetUsd = min(role.budget_usd, budgetRemainingUsd)`, transcript in the prompt), `tools-map.ts` (`mapRoleTools` keeps `WebFetch`/`WebSearch` out of `disallowedTools` and adds them to `allowedTools` when `role.permissions.network.length > 0`), `permissions.ts` (`buildCanUseTool`: `WebFetch` allowed when `hostAllowed(new URL(input.url).hostname, role.permissions.network)`, `WebSearch` allowed when network non-empty), `index.ts` (export `sdkMcpServer`, `hostAllowed` moved to `@wizardingcode/shibaox-core`? — no: copy the 8-line matcher into `packages/core/src/executors/network.ts` as `hostAllowed` and use it from both adapters; Task 2 imports it from core too)
 - Test: `adapter.test.ts`, `tools-map.test.ts`, `permissions.test.ts`, `mcp.test.ts` (new: the server instance lists the tool and calling its handler returns the JSON text)
 
 - [ ] **Step 1: failing tests** — transcript: job with `messages` → `q.calls[0].prompt` starts with `Conversation so far:\nUser: hello\nAssistant: hi` and the `Input:` line has no `messages`; limits: role `max_turns: 7`, `budget_usd: 0.5` with `budgetRemainingUsd: 2` → `options.maxTurns === 7`, `options.maxBudgetUsd === 0.5`; preamble: `options.systemPrompt.append` contains it; extraTools: `options.mcpServers.shibaox` defined and `allowedTools` contains `mcp__shibaox__*`; tools-map: network `['*']` → `allowedTools` has `WebFetch`, `WebSearch`, `disallowedTools` lacks them; permissions: `WebFetch { url:'https://api.github.com/x' }` allowed with `['github.com']`, denied with `['example.com']`, denied with `[]`.
@@ -113,7 +113,7 @@ it('conversationOf keeps well-formed messages only', () => {
 
 ---
 
-### Task 4: Project profile (`@shibaox/core`)
+### Task 4: Project profile (`@wizardingcode/shibaox-core`)
 
 **Files:**
 - Create: `packages/core/src/project/profile.ts`; export from `index.ts`
@@ -130,7 +130,7 @@ it('conversationOf keeps well-formed messages only', () => {
 
 ---
 
-### Task 5: Memory notes (`@shibaox/memory`)
+### Task 5: Memory notes (`@wizardingcode/shibaox-memory`)
 
 **Files:**
 - Create: `packages/memory/src/notes.ts`; export from `index.ts`
@@ -200,7 +200,7 @@ finished or needs something. Summarise the outcome for the user in one or two li
 Pushing, deploying and publishing are only done through approved tool calls.
 ```
 
-- [ ] **Step 4: run, watch pass**, `pnpm --filter @shibaox/daemon build test`.
+- [ ] **Step 4: run, watch pass**, `pnpm --filter @wizardingcode/shibaox-daemon build test`.
 - [ ] **Step 5: commit** `feat(daemon): conversation messages, child runs, orchestration and memory tools, project profile endpoint, orchestrator template`
 
 ---
@@ -214,7 +214,7 @@ Pushing, deploying and publishing are only done through approved tool calls.
 - [ ] **Step 1: failing tests.**
 - [ ] **Step 2: run (`cd apps/tui && bun test`), watch fail.**
 - [ ] **Step 3: implement.**
-- [ ] **Step 4: run, watch pass**; `pnpm --filter @shibaox/tui test-vitest lint`.
+- [ ] **Step 4: run, watch pass**; `pnpm --filter @wizardingcode/shibaox-tui test-vitest lint`.
 - [ ] **Step 5: commit** `feat(tui): the conversation is structured, chat runs read as messages, dispatched runs join the thread, the home shows the project profile`
 
 ---

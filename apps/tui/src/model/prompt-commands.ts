@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
-import type { ModelChoice, SubmitRequest } from '@shibaox/daemon';
+import type { ModelChoice, SubmitRequest } from '@wizardingcode/shibaox-daemon';
 import fuzzysort from 'fuzzysort';
 
 export type Adapter = 'mock' | 'claude-code' | 'direct';

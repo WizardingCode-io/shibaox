@@ -3,8 +3,8 @@ import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MemoryEventStore, type TaskJob } from '@shibaox/core';
-import { forgetModels } from '@shibaox/providers';
+import { MemoryEventStore, type TaskJob } from '@wizardingcode/shibaox-core';
+import { forgetModels } from '@wizardingcode/shibaox-providers';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DaemonClient, DaemonHttpError, type Envelope } from '../src/client.js';
 import { Daemon } from '../src/daemon.js';
@@ -398,10 +398,10 @@ describe('model discovery at start', () => {
 
 describe('orgSummarizer', () => {
   it('uses the cheap tier when callable, else strong, else the run model; caps the output, strips thinking, times out', async () => {
-    const { startFakeOpenAI } = await import('@shibaox/providers/testing');
+    const { startFakeOpenAI } = await import('@wizardingcode/shibaox-providers/testing');
     const { orgSummarizer } = await import('../src/runs/summarize.js');
-    const { ProviderRegistry } = await import('@shibaox/providers');
-    const { loadOrg } = await import('@shibaox/schemas');
+    const { ProviderRegistry } = await import('@wizardingcode/shibaox-providers');
+    const { loadOrg } = await import('@wizardingcode/shibaox-schemas');
     const fake = await startFakeOpenAI(() => ({
       content: '<think>hmm</think>\nThey agreed on /health.',
     }));
@@ -448,10 +448,10 @@ describe('orgSummarizer', () => {
 
 describe('changeDescriber', () => {
   it('writes a commit message from the diff with the cheap tier and strips thinking', async () => {
-    const { startFakeOpenAI } = await import('@shibaox/providers/testing');
+    const { startFakeOpenAI } = await import('@wizardingcode/shibaox-providers/testing');
     const { changeDescriber } = await import('../src/runs/summarize.js');
-    const { ProviderRegistry } = await import('@shibaox/providers');
-    const { loadOrg } = await import('@shibaox/schemas');
+    const { ProviderRegistry } = await import('@wizardingcode/shibaox-providers');
+    const { loadOrg } = await import('@wizardingcode/shibaox-schemas');
     const fake = await startFakeOpenAI(() => ({
       content: '<think>x</think>feat: add hello\n\nAdds hello.txt.',
     }));

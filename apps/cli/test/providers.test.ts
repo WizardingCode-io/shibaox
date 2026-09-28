@@ -1,5 +1,5 @@
-import { loadCatalog, ProviderRegistry } from '@shibaox/providers';
-import { startFakeOpenAI } from '@shibaox/providers/testing';
+import { loadCatalog, ProviderRegistry } from '@wizardingcode/shibaox-providers';
+import { startFakeOpenAI } from '@wizardingcode/shibaox-providers/testing';
 import { describe, expect, it } from 'vitest';
 import { formatProviderList, testProvider } from '../src/commands/providers.js';
 

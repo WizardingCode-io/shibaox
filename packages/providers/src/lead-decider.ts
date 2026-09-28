@@ -1,4 +1,4 @@
-import type { Decider, Decision, DecisionRequest } from '@shibaox/core';
+import type { Decider, Decision, DecisionRequest } from '@wizardingcode/shibaox-core';
 import { z } from 'zod';
 import { describeError } from './errors.js';
 import type { GenerateResult, LlmClient } from './llm-client.js';

@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadOrg } from '@shibaox/schemas';
+import { loadOrg } from '@wizardingcode/shibaox-schemas';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MemoryEventStore } from '../src/events/memory-store.js';
 import type { RuntimeAdapter, RuntimeEvent, TaskJob } from '../src/executors/types.js';

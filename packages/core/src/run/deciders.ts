@@ -1,4 +1,4 @@
-import type { Cost, GateReport } from '@shibaox/schemas';
+import type { Cost, GateReport } from '@wizardingcode/shibaox-schemas';
 
 export interface DecisionRequest {
   runId: string;

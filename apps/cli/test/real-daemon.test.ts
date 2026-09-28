@@ -3,13 +3,13 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Daemon, homePaths, scaffoldOrg } from '@shibaox/daemon';
+import { Daemon, homePaths, scaffoldOrg } from '@wizardingcode/shibaox-daemon';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Opt-in: a real Claude Code session (your `claude` login) pushes to a local bare remote
  * through the daemon's approval flow. Costs real subscription usage.
- *   SHIBAOX_REAL_TESTS=1 pnpm --filter @shibaox/cli exec vitest run test/real-daemon.test.ts
+ *   SHIBAOX_REAL_TESTS=1 pnpm --filter shibaox exec vitest run test/real-daemon.test.ts
  */
 const real = process.env.SHIBAOX_REAL_TESTS === '1';
 const sample = fileURLToPath(new URL('../../../examples/sample-repo', import.meta.url));
@@ -63,7 +63,7 @@ describe.skipIf(!real)('real Claude Code approval flow through the daemon', () =
     git(dir, 'init', '-q', '--bare', '-b', 'main', bare);
     git(project, 'remote', 'add', 'origin', bare);
     const home = homePaths({ SHIBAOX_HOME: join(dir, 'home') });
-    const daemon = new Daemon({ home, channels: [], log: (l) => console.log(l), version: '0.0.1' });
+    const daemon = new Daemon({ home, channels: [], log: (l) => console.log(l), version: '0.1.0' });
     daemons.push(daemon);
     await daemon.start();
     const { runId } = await daemon.runs.submit({

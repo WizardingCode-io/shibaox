@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { loadOrg, ModelsSchema, OrgFileSchema } from '@shibaox/schemas';
+import { loadOrg, ModelsSchema, OrgFileSchema } from '@wizardingcode/shibaox-schemas';
 import { parseDocument } from 'yaml';
 
 export type TierName = 'strong' | 'cheap' | 'decision';

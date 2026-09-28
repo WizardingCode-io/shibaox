@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadOrg } from '@shibaox/schemas';
+import { loadOrg } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import {
   AutoApproveHuman,

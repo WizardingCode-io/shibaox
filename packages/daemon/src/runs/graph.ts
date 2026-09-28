@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
-import { selectCapabilities } from '@shibaox/core';
-import { JevClient, noulFanOut } from '@shibaox/jev';
-import { Graphify, graphJsonPath } from '@shibaox/memory';
-import type { Org, Workflow } from '@shibaox/schemas';
+import { selectCapabilities } from '@wizardingcode/shibaox-core';
+import { JevClient, noulFanOut } from '@wizardingcode/shibaox-jev';
+import { Graphify, graphJsonPath } from '@wizardingcode/shibaox-memory';
+import type { Org, Workflow } from '@wizardingcode/shibaox-schemas';
 import type { AdapterId, GraphWiring } from '../runtime.js';
 
 export type GraphMode = 'auto' | 'off';

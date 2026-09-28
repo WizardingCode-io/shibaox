@@ -1,4 +1,4 @@
-import { hostAllowed } from '@shibaox/core';
+import { hostAllowed } from '@wizardingcode/shibaox-core';
 
 export interface FetchTextOptions {
   timeoutMs: number;

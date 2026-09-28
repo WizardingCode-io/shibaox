@@ -1,4 +1,4 @@
-import type { OrgConfigPatch } from '@shibaox/daemon';
+import type { OrgConfigPatch } from '@wizardingcode/shibaox-daemon';
 import { connect } from '../client.js';
 import type { Out } from '../output.js';
 import { resolveOrg } from './run.js';

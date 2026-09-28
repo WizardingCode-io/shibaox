@@ -1,4 +1,4 @@
-import type { RunEvent } from '@shibaox/schemas';
+import type { RunEvent } from '@wizardingcode/shibaox-schemas';
 import type { NodeState, PendingApproval, RunState, RunStatus } from './state.js';
 
 function nodeOf(state: RunState, id: string): NodeState {

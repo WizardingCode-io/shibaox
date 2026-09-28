@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { runArgv } from '@shibaox/core';
-import { homePaths } from '@shibaox/daemon';
+import { runArgv } from '@wizardingcode/shibaox-core';
+import { homePaths } from '@wizardingcode/shibaox-daemon';
 import type { Out } from '../output.js';
 import { daemonStop } from './daemon.js';
 

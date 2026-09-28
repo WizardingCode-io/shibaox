@@ -21,7 +21,7 @@ opencode onde são genéricas e desenhando os ecrãs do shibaox de raiz.
 | Primitivas | Copiadas do opencode com atribuição MIT em `apps/tui/THIRD_PARTY.md`: animation, one-cell-motion, subcell, masked-text, shimmer-text, fade-in-text, tab-pulse (funções), toast, dialog, delayed-presence, marquee, layout helpers. Adaptadas ao mínimo (tema e config do shibaox). |
 | Tema | Formato semântico do opencode (escalas de tonalidade + tokens `text`/`background`/`border`/`feedback`/`action`), um único tema `shibaox` gerado dos tokens do design system. Resolver próprio, reduzido (sem v1, sem syntax de markdown além do necessário). |
 | Teclas | Scopes próprios (`context/keys.tsx`: pilha `dialog > prompt > pane > global`) sobre `useKeyboard` do `@opentui/solid`. O pacote `@opentui/keymap` fica para uma fase posterior (o opencode envolve-o em 470 linhas próprias). |
-| Fronteira | O Bun importa apenas `@shibaox/daemon/client` e `@shibaox/core` (tipos). O teste de fronteira mantém-se. |
+| Fronteira | O Bun importa apenas `@wizardingcode/shibaox-daemon/client` e `@wizardingcode/shibaox-core` (tipos). O teste de fronteira mantém-se. |
 | Daemon | Ganha `GET /runs/:id/diff` (diff do worktree do run). Nada mais muda no daemon. |
 | Rato | Suportado: clicar em runs, tabs, toasts e diálogos; hover; scroll na conversa; redimensionar a sidebar. |
 

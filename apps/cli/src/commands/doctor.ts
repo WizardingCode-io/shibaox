@@ -1,5 +1,5 @@
 import { join, resolve } from 'node:path';
-import { runCommand } from '@shibaox/core';
+import { runCommand } from '@wizardingcode/shibaox-core';
 import {
   DaemonClient,
   DaemonUnavailableError,
@@ -7,7 +7,7 @@ import {
   loadDaemonConfig,
   SecretsStore,
   serviceStatus,
-} from '@shibaox/daemon';
+} from '@wizardingcode/shibaox-daemon';
 import { CLI_VERSION } from '../version.js';
 import { staleServiceHint } from './daemon.js';
 

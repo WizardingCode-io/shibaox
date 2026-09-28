@@ -1,4 +1,4 @@
-import { scaffoldOrg } from '@shibaox/daemon';
+import { scaffoldOrg } from '@wizardingcode/shibaox-daemon';
 
 export { scaffoldOrg };
 

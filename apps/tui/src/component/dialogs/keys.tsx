@@ -1,5 +1,5 @@
 import { TextAttributes } from '@opentui/core';
-import type { KeyRow } from '@shibaox/daemon';
+import type { KeyRow } from '@wizardingcode/shibaox-daemon';
 import { createMemo, createResource, createSignal, For, type JSX, Show } from 'solid-js';
 import { useClient } from '../../context/client.js';
 import { useKeys } from '../../context/keys.js';

@@ -1,5 +1,5 @@
 import { TextAttributes } from '@opentui/core';
-import type { ModelChoice, OrgConfig, OrgConfigPatch } from '@shibaox/daemon';
+import type { ModelChoice, OrgConfig, OrgConfigPatch } from '@wizardingcode/shibaox-daemon';
 import fuzzysort from 'fuzzysort';
 import { createMemo, createResource, createSignal, For, type JSX, Show } from 'solid-js';
 import { useClient } from '../../context/client.js';

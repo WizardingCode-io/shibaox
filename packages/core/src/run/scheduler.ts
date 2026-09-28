@@ -1,4 +1,4 @@
-import { transitionsOf, type Workflow } from '@shibaox/schemas';
+import { transitionsOf, type Workflow } from '@wizardingcode/shibaox-schemas';
 import type { NodeState, NodeStatus, RunState } from './state.js';
 
 const finished = (s: NodeStatus | undefined) => s === 'completed' || s === 'passed';

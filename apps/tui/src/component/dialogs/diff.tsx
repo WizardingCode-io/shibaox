@@ -1,7 +1,7 @@
 import { extname } from 'node:path';
 import { TextAttributes } from '@opentui/core';
-import type { DiffResult } from '@shibaox/daemon';
-import { DaemonHttpError } from '@shibaox/daemon/client';
+import type { DiffResult } from '@wizardingcode/shibaox-daemon';
+import { DaemonHttpError } from '@wizardingcode/shibaox-daemon/client';
 import { createMemo, createResource, createSignal, For, type JSX, Show } from 'solid-js';
 import { useClient } from '../../context/client.js';
 import { useKeys } from '../../context/keys.js';

@@ -4,7 +4,7 @@ import {
   type SdkMcpToolDefinition,
   tool,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentTool } from '@shibaox/core';
+import type { AgentTool } from '@wizardingcode/shibaox-core';
 
 /** The MCP tool definitions of a set of daemon tools: results and errors travel as JSON text. */
 export function mcpToolDefinitions(tools: AgentTool[]): SdkMcpToolDefinition[] {

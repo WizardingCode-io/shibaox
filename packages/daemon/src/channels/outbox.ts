@@ -1,4 +1,4 @@
-import type { OutboxRepo } from '@shibaox/persistence-sqlite';
+import type { OutboxRepo } from '@wizardingcode/shibaox-persistence-sqlite';
 import type { InboxItem } from '../inbox.js';
 import type { RunReport } from '../runs/report.js';
 import type { Channel } from './types.js';

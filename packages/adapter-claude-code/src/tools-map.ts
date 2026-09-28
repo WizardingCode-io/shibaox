@@ -1,4 +1,4 @@
-import type { Role } from '@shibaox/schemas';
+import type { Role } from '@wizardingcode/shibaox-schemas';
 import { GATED_PROGRAMS } from './bash-command.js';
 
 /**

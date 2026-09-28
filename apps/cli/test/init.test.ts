@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadOrg } from '@shibaox/schemas';
+import { loadOrg } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { scaffoldOrg } from '../src/commands/init.js';
 

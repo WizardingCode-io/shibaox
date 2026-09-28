@@ -1,7 +1,11 @@
 {
-  "name": "@shibaox/adapter-claude-code",
-  "version": "0.0.1",
+  "name": "@wizardingcode/shibaox-adapter-claude-code",
+  "version": "0.1.0",
+  "license": "UNLICENSED",
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -12,9 +16,6 @@
       "import": "./dist/testing/fake-query.js"
     }
   },
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
@@ -22,12 +23,19 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.283",
-    "@shibaox/core": "workspace:*",
-    "@shibaox/providers": "workspace:*",
-    "@shibaox/schemas": "workspace:*",
+    "@wizardingcode/shibaox-core": "workspace:*",
+    "@wizardingcode/shibaox-providers": "workspace:*",
+    "@wizardingcode/shibaox-schemas": "workspace:*",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^26.6.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WizardingCode-io/shibaox.git"
   }
 }

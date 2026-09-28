@@ -1,5 +1,5 @@
 import { createInterface } from 'node:readline/promises';
-import { type DaemonClient, DaemonHttpError, type Envelope } from '@shibaox/daemon';
+import { type DaemonClient, DaemonHttpError, type Envelope } from '@wizardingcode/shibaox-daemon';
 import { exitCodeFor, formatState, type Out } from '../output.js';
 
 const short = (id: string) => id.slice(0, 8);

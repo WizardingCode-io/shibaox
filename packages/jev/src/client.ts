@@ -1,5 +1,5 @@
-import type { Cost } from '@shibaox/schemas';
 import { noul, type Questions, type SystemOneResult, TypeSafeClient } from '@typesafe-ai/sdk';
+import type { Cost } from '@wizardingcode/shibaox-schemas';
 
 export const JEV_INPUT_USD_PER_M = 0.042;
 export type { Questions };

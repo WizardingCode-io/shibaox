@@ -1,4 +1,4 @@
-import { ModelsSchema, RoleSchema } from '@shibaox/schemas';
+import { ModelsSchema, RoleSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { resolveModel } from '../src/index.js';
 

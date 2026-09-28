@@ -11,10 +11,10 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fakeQuery, msg } from '@shibaox/adapter-claude-code/testing';
-import { AutoApproveHuman, DeferHuman, type RunState } from '@shibaox/core';
-import { Graphify } from '@shibaox/memory';
-import { SqliteEventStore } from '@shibaox/persistence-sqlite';
+import { fakeQuery, msg } from '@wizardingcode/shibaox-adapter-claude-code/testing';
+import { AutoApproveHuman, DeferHuman, type RunState } from '@wizardingcode/shibaox-core';
+import { Graphify } from '@wizardingcode/shibaox-memory';
+import { SqliteEventStore } from '@wizardingcode/shibaox-persistence-sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resumeRun, runWorkflow } from '../src/inline.js';
 import { scaffoldOrg } from '../src/templates.js';

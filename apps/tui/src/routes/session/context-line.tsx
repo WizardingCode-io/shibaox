@@ -1,4 +1,4 @@
-import { loadOrg, type Org } from '@shibaox/schemas';
+import { loadOrg, type Org } from '@wizardingcode/shibaox-schemas';
 import { createMemo, createResource, For, type JSX } from 'solid-js';
 import { useClient } from '../../context/client.js';
 import { useConfig } from '../../context/config.js';

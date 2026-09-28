@@ -14,7 +14,7 @@
 
 - Node `>=22` no CLI; Bun `>=1.3` no TUI. `pnpm build && pnpm test && pnpm lint` verdes (0 erros de lint; 9 warnings `noNonNullAssertion` pré-existentes aceites). `apps/tui`: `bun test` verde e `tsc --noEmit` verde.
 - Dependências novas do `apps/tui`: `@opentui/core@0.5.12`, `@opentui/solid@0.5.12`, `solid-js@1.9.15`, `opentui-spinner@0.0.7`, `fuzzysort@^4`. Saem `@opentui/react`, `react`, `@types/react`. Nada mais.
-- O Bun importa apenas `@shibaox/daemon/client` (runtime) e tipos de `@shibaox/daemon`, `@shibaox/core`, `@shibaox/schemas` (`import type`), mais `loadOrg` de `@shibaox/schemas` para a lista de workflows. O teste de fronteira (`test/boundary.test.ts`) tem de continuar a passar: nunca `better-sqlite3`, `persistence-sqlite`, `run-manager`, `adapter-claude-code`.
+- O Bun importa apenas `@wizardingcode/shibaox-daemon/client` (runtime) e tipos de `@wizardingcode/shibaox-daemon`, `@wizardingcode/shibaox-core`, `@wizardingcode/shibaox-schemas` (`import type`), mais `loadOrg` de `@wizardingcode/shibaox-schemas` para a lista de workflows. O teste de fronteira (`test/boundary.test.ts`) tem de continuar a passar: nunca `better-sqlite3`, `persistence-sqlite`, `run-manager`, `adapter-claude-code`.
 - Ficheiros copiados do opencode levam no topo `// Adapted from opencode (MIT) — https://github.com/anomalyco/opencode` e constam de `apps/tui/THIRD_PARTY.md` com a licença MIT completa.
 - Copy: sentence case, verbo-primeiro, sem emoji; palavras de estado `Working`, `Needs you`, `Queued`, `Done`, `Failed`, `Paused`, `Cancelled`; estado nunca só por cor.
 - Motion desligado com `prefs.animations === false` ou `SHIBAOX_NO_MOTION=1`: spinners viram `▪`, fades/shimmers desenham o texto final, springs saltam ao alvo.
@@ -114,10 +114,10 @@ README.md                                 secção Dashboard
 
 ```ts
 // package.json
-{ "name": "@shibaox/tui", "type": "module", "exports": { ".": "./src/app.tsx" },
+{ "name": "@wizardingcode/shibaox-tui", "type": "module", "exports": { ".": "./src/app.tsx" },
   "scripts": { "build": "tsc -p tsconfig.json --noEmit", "test": "vitest run && bun test" },
   "dependencies": { "@opentui/core": "0.5.12", "@opentui/solid": "0.5.12", "solid-js": "1.9.15", "opentui-spinner": "0.0.7", "fuzzysort": "^4.0.2",
-                    "@shibaox/core": "workspace:*", "@shibaox/daemon": "workspace:*", "@shibaox/schemas": "workspace:*" },
+                    "@wizardingcode/shibaox-core": "workspace:*", "@wizardingcode/shibaox-daemon": "workspace:*", "@wizardingcode/shibaox-schemas": "workspace:*" },
   "devDependencies": { "@types/bun": "^1.3", "@types/node": "^22", "typescript": "^5.9", "vitest": "^3" } }
 // tsconfig.json: extends ../../tsconfig.base.json; jsx "preserve"; jsxImportSource "@opentui/solid"; types ["bun","node"];
 //   moduleResolution "bundler"; module "ESNext"; noEmit; include ["src", "test", "test-vitest"]
@@ -126,7 +126,7 @@ preload = ["@opentui/solid/preload"]
 [test]
 root = "test"
 preload = ["@opentui/solid/preload"]
-// vitest.config.ts: aliases como na 2A-2 ('@shibaox/daemon/client' antes de '@shibaox/daemon'); test.include ['test-vitest/**/*.test.ts']
+// vitest.config.ts: aliases como na 2A-2 ('@wizardingcode/shibaox-daemon/client' antes de '@wizardingcode/shibaox-daemon'); test.include ['test-vitest/**/*.test.ts']
 
 // src/context/client.tsx
 export type DaemonClientLike = Pick<DaemonClient, 'health'|'listRuns'|'getRun'|'events'|'inbox'|'answer'|'cancel'|'resume'|'submitRun'|'diff'>; // diff chega na Task 13: até lá, `diff?: …` opcional
@@ -154,7 +154,7 @@ spawn('bun', [...TUI_ARGS, TUI_ENTRY, ...args], { stdio: 'inherit', cwd: TUI_ROO
   - `apps/cli/test/follow-any.test.ts`: `tuiSpawnOptions().cwd` termina em `apps/tui` e os args começam por `['--preload','@opentui/solid/preload']`.
 - [ ] **Step 2: Ver falhar** (`bun test` em `apps/tui` falha por `App` inexistente; vitest do CLI falha na asserção do cwd).
 - [ ] **Step 3: Implementar**: apagar o React, escrever os ficheiros acima, `pnpm install`, `THIRD_PARTY.md` com o texto MIT do opencode e a lista (vazia por agora, cresce nas Tasks 3 e 6).
-- [ ] **Step 4: Ver passar**: `cd apps/tui && bun test && npx tsc -p tsconfig.json --noEmit`; `pnpm --filter @shibaox/cli test`; e um arranque real: `bun --preload @opentui/solid/preload src/main.tsx dashboard --socket /nonexistent --home /tmp/h --version 0.0.1` num pty de 80×24 mostra o título e sai com `ctrl+q`.
+- [ ] **Step 4: Ver passar**: `cd apps/tui && bun test && npx tsc -p tsconfig.json --noEmit`; `pnpm --filter shibaox test`; e um arranque real: `bun --preload @opentui/solid/preload src/main.tsx dashboard --socket /nonexistent --home /tmp/h --version 0.0.1` num pty de 80×24 mostra o título e sai com `ctrl+q`.
 - [ ] **Step 5: Commit** `feat(tui): restart apps/tui on @opentui/solid with the CLI spawn and boundary test`.
 
 ---
@@ -544,7 +544,7 @@ export function HelpDialog(): JSX.Element;    // Dialog medium centered: secçõ
 // daemon
 export interface DiffFile { path: string; status: 'added'|'modified'|'deleted'|'renamed'; additions: number; deletions: number }
 export interface DiffResult { base: string; files: DiffFile[]; patch: string; truncated: boolean }
-// RunManager.diff(runId): base = 'HEAD' (o worktree/branch do run parte do HEAD do projeto e o diff é contra o índice+working tree: `git diff HEAD --numstat` + `git diff HEAD`, tal como diffRunWorkspace de @shibaox/workspace; inplace: o mesmo no `workspace`); pasta inexistente → HttpError(404, 'no_workspace', 'The run workspace is gone'); patch > 2_000_000 chars → aparado + truncated true.
+// RunManager.diff(runId): base = 'HEAD' (o worktree/branch do run parte do HEAD do projeto e o diff é contra o índice+working tree: `git diff HEAD --numstat` + `git diff HEAD`, tal como diffRunWorkspace de @wizardingcode/shibaox-workspace; inplace: o mesmo no `workspace`); pasta inexistente → HttpError(404, 'no_workspace', 'The run workspace is gone'); patch > 2_000_000 chars → aparado + truncated true.
 // GET /runs/:id/diff → 200 DiffResult; 404 not_found (run) / no_workspace.
 // DaemonClient.diff(id: string): Promise<DiffResult>
 // tui
@@ -553,7 +553,7 @@ export function DiffDialog(props: { runId: string }): JSX.Element; // Dialog xla
 ```
 
 - [ ] **Step 1: Testes a falhar**: daemon (repo git em tmp: ficheiro alterado + ficheiro novo) → `files` com 2 entradas (`modified` 1/0, `added` n/0), `patch` contém `diff --git a/a.ts`; pasta apagada → 404 `no_workspace`; run desconhecido → 404; patch enorme (ficheiro de 3 MB) → `truncated true`; `DaemonClient.diff` contra o servidor de teste devolve o mesmo. TUI: `d` na sessão sem pendente → dialog com `2 files`, `a.ts`; `]` muda de ficheiro; `esc` fecha; `diffs` sem entrada e `failing`-like 404 → `Workspace is gone`.
-- [ ] **Step 2–4:** ver falhar, implementar, ver passar (`pnpm --filter @shibaox/daemon test`, `bun test`).
+- [ ] **Step 2–4:** ver falhar, implementar, ver passar (`pnpm --filter @wizardingcode/shibaox-daemon test`, `bun test`).
 - [ ] **Step 5: Commit** `feat(daemon,tui): run diff endpoint and diff viewer`.
 
 ---

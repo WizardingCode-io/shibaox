@@ -3,9 +3,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { testRender } from '@opentui/solid';
-import type { ProjectProfile } from '@shibaox/core';
-import type { ModelChoice } from '@shibaox/daemon';
-import { scaffoldOrg } from '@shibaox/daemon';
+import type { ProjectProfile } from '@wizardingcode/shibaox-core';
+import type { ModelChoice } from '@wizardingcode/shibaox-daemon';
+import { scaffoldOrg } from '@wizardingcode/shibaox-daemon';
 import { App } from '../src/app.js';
 import { loadPrefs } from '../src/context/prefs.js';
 import { FakeDaemonClient } from '../src/testing/fake-client.js';

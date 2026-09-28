@@ -1,10 +1,18 @@
 import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
-import type { QueryFn } from '@shibaox/adapter-claude-code';
-import { type EventStore, type MockScript, runArgv } from '@shibaox/core';
-import type { Graphify } from '@shibaox/memory';
-import { OutboxRepo, SchedulesRepo, SqliteEventStore } from '@shibaox/persistence-sqlite';
-import { discoverModels, type ModelChoice, type ProviderEntry } from '@shibaox/providers';
-import { type ChatMessage, loadOrg, type Org } from '@shibaox/schemas';
+import type { QueryFn } from '@wizardingcode/shibaox-adapter-claude-code';
+import { type EventStore, type MockScript, runArgv } from '@wizardingcode/shibaox-core';
+import type { Graphify } from '@wizardingcode/shibaox-memory';
+import {
+  OutboxRepo,
+  SchedulesRepo,
+  SqliteEventStore,
+} from '@wizardingcode/shibaox-persistence-sqlite';
+import {
+  discoverModels,
+  type ModelChoice,
+  type ProviderEntry,
+} from '@wizardingcode/shibaox-providers';
+import { type ChatMessage, loadOrg, type Org } from '@wizardingcode/shibaox-schemas';
 import { macosChannel } from './channels/macos.js';
 import { OutboxWorker } from './channels/outbox.js';
 import { inboxToken, telegramChannel } from './channels/telegram.js';

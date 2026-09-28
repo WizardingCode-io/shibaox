@@ -1,4 +1,4 @@
-import { type RunEvent, RunEventSchema } from '@shibaox/schemas';
+import { type RunEvent, RunEventSchema } from '@wizardingcode/shibaox-schemas';
 import { replay } from '../run/reducer.js';
 import type { EventStore, RunSummary, StoredEvent } from './store.js';
 

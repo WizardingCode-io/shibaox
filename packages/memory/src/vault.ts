@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import type { NodeState, RunState, StoredEvent } from '@shibaox/core';
-import type { GateReport, Workflow } from '@shibaox/schemas';
+import type { NodeState, RunState, StoredEvent } from '@wizardingcode/shibaox-core';
+import type { GateReport, Workflow } from '@wizardingcode/shibaox-schemas';
 
 export interface VaultLayout {
   root: string;
@@ -46,7 +46,7 @@ function lexists(p: string): boolean {
  * Resolves `rel` against `vault` and guarantees the result stays inside it:
  * rejects `../` escapes, absolute paths outside, and symlinks (on the deepest
  * existing ancestor, including dangling ones) that resolve outside.
- * Same boundary logic as `safePath` in `@shibaox/adapter-direct`, adapted to
+ * Same boundary logic as `safePath` in `@wizardingcode/shibaox-adapter-direct`, adapted to
  * the vault's own error message. Returns the lexical path under `vault` (not
  * its realpath).
  */

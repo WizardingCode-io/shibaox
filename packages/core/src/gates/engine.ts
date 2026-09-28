@@ -1,4 +1,4 @@
-import type { Check, CheckResult, Cost, Gate, GateReport } from '@shibaox/schemas';
+import type { Check, CheckResult, Cost, Gate, GateReport } from '@wizardingcode/shibaox-schemas';
 import { runCommand } from '../executors/code.js';
 import type { RunState } from '../run/state.js';
 import { detectLintCommand, detectTestCommand } from './detect.js';

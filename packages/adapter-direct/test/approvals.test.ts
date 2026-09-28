@@ -10,10 +10,10 @@ import {
   collectRun,
   type RuntimeEvent,
   type TaskJob,
-} from '@shibaox/core';
-import { ProviderRegistry } from '@shibaox/providers';
-import { startFakeOpenAI } from '@shibaox/providers/testing';
-import { RoleSchema } from '@shibaox/schemas';
+} from '@wizardingcode/shibaox-core';
+import { ProviderRegistry } from '@wizardingcode/shibaox-providers';
+import { startFakeOpenAI } from '@wizardingcode/shibaox-providers/testing';
+import { RoleSchema } from '@wizardingcode/shibaox-schemas';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DirectAdapter } from '../src/index.js';
 

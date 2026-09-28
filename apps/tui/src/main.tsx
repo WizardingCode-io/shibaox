@@ -5,7 +5,7 @@
  */
 import { appendFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DaemonClient } from '@shibaox/daemon/client';
+import { DaemonClient } from '@wizardingcode/shibaox-daemon/client';
 import { runDashboard, runStream } from './app.js';
 
 function arg(name: string): string | undefined {

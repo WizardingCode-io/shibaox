@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { QueryFn } from '@shibaox/adapter-claude-code';
+import type { QueryFn } from '@wizardingcode/shibaox-adapter-claude-code';
 import {
   compactConversation,
   type EventStore,
@@ -14,11 +14,11 @@ import {
   replay,
   ScriptedDecider,
   type StoredEvent,
-} from '@shibaox/core';
-import { type Graphify, MemoryNotes } from '@shibaox/memory';
-import type { ProviderEntry } from '@shibaox/providers';
-import { type ChatMessage, loadOrg, type Org, type Workflow } from '@shibaox/schemas';
-import { createRunWorkspace, type WorkspaceMode } from '@shibaox/workspace';
+} from '@wizardingcode/shibaox-core';
+import { type Graphify, MemoryNotes } from '@wizardingcode/shibaox-memory';
+import type { ProviderEntry } from '@wizardingcode/shibaox-providers';
+import { type ChatMessage, loadOrg, type Org, type Workflow } from '@wizardingcode/shibaox-schemas';
+import { createRunWorkspace, type WorkspaceMode } from '@wizardingcode/shibaox-workspace';
 import type { DaemonConfig } from './config.js';
 import type { InboxAnswer, InboxItem, InboxService } from './inbox.js';
 import { type DiffResult, diffWorkspace, worktreeBase } from './runs/diff.js';

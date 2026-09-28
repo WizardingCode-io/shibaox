@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import type { GitNodeSchema } from '@shibaox/schemas';
+import type { GitNodeSchema } from '@wizardingcode/shibaox-schemas';
 import type { z } from 'zod';
 import { detectTestCommand } from '../gates/detect.js';
 import { defaultMergeQueue, type MergeQueue } from '../run/merge-queue.js';

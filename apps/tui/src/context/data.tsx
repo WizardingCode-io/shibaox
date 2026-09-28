@@ -1,6 +1,6 @@
-import { conversationOf, type RunState, type RunStatus } from '@shibaox/core';
-import type { Envelope, InboxId, SubmitRequest } from '@shibaox/daemon';
-import type { ChatMessage } from '@shibaox/schemas';
+import { conversationOf, type RunState, type RunStatus } from '@wizardingcode/shibaox-core';
+import type { Envelope, InboxId, SubmitRequest } from '@wizardingcode/shibaox-daemon';
+import type { ChatMessage } from '@wizardingcode/shibaox-schemas';
 import {
   type Accessor,
   createContext,

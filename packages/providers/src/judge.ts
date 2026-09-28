@@ -1,4 +1,4 @@
-import type { CheckContext, CheckRunner } from '@shibaox/core';
+import type { CheckContext, CheckRunner } from '@wizardingcode/shibaox-core';
 import { z } from 'zod';
 import { describeError } from './errors.js';
 import type { GenerateResult, LlmClient } from './llm-client.js';

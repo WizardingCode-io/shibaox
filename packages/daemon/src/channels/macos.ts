@@ -1,4 +1,4 @@
-import { runArgv } from '@shibaox/core';
+import { runArgv } from '@wizardingcode/shibaox-core';
 import type { InboxItem } from '../inbox.js';
 import { type RunReport, STATUS_SYMBOL } from '../runs/report.js';
 import type { Channel } from './types.js';

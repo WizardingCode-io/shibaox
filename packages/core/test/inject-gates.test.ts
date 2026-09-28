@@ -1,4 +1,4 @@
-import { TeamSchema, WorkflowSchema } from '@shibaox/schemas';
+import { TeamSchema, WorkflowSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { injectTeamGates } from '../src/index.js';
 

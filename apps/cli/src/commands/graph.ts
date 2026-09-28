@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { Graphify, graphJsonPath } from '@shibaox/memory';
+import { Graphify, graphJsonPath } from '@wizardingcode/shibaox-memory';
 
 export interface GraphCommandDeps {
   graphify?: Graphify;

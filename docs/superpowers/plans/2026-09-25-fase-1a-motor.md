@@ -4,7 +4,7 @@
 
 **Goal:** Ter o motor do shibaox a correr um workflow YAML fim a fim em modo solo, com event store SQLite, gates, decisões e aprovação humana, usando um adaptador mock no lugar dos runtimes.
 
-**Architecture:** Monorepo pnpm/turborepo em TypeScript. `@shibaox/schemas` valida os YAML da organização com zod. `@shibaox/core` tem o event store (interface + memória), o reducer puro `replay(events) → RunState`, o scheduler `readyNodes(state, workflow)`, executores (mock, code), motor de gates e o `RunEngine` que liga tudo. `@shibaox/persistence-sqlite` implementa o event store em better-sqlite3. `@shibaox/cli` expõe `shibaox init|doctor|run|runs|replay`. O adaptador Claude Code, o Jev, o router e a memória ficam para o plano 1B.
+**Architecture:** Monorepo pnpm/turborepo em TypeScript. `@wizardingcode/shibaox-schemas` valida os YAML da organização com zod. `@wizardingcode/shibaox-core` tem o event store (interface + memória), o reducer puro `replay(events) → RunState`, o scheduler `readyNodes(state, workflow)`, executores (mock, code), motor de gates e o `RunEngine` que liga tudo. `@wizardingcode/shibaox-persistence-sqlite` implementa o event store em better-sqlite3. `shibaox` expõe `shibaox init|doctor|run|runs|replay`. O adaptador Claude Code, o Jev, o router e a memória ficam para o plano 1B.
 
 **Tech Stack:** Node 22, pnpm 10, turborepo 2, TypeScript 5 (ESM, NodeNext), vitest 5, biome 2, zod 4, yaml 2, better-sqlite3 13, commander 15.
 
@@ -16,7 +16,7 @@
 - TypeScript `strict: true`. Sem `any` fora de testes.
 - Eventos são imutáveis e append-only; o estado de um run deriva sempre de `replay(events)`. Nunca guardar estado derivado como fonte de verdade.
 - O runtime nunca conhece o workflow: um `TaskJob` entra, um `TaskResult` sai.
-- Nomes de pacotes: `@shibaox/schemas`, `@shibaox/core`, `@shibaox/persistence-sqlite`, `@shibaox/cli`. Binário: `shibaox`.
+- Nomes de pacotes: `@wizardingcode/shibaox-schemas`, `@wizardingcode/shibaox-core`, `@wizardingcode/shibaox-persistence-sqlite`, `shibaox`. Binário: `shibaox`.
 - Commits pequenos, mensagens em inglês no formato `type(scope): message`, terminadas com `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
 - Desvio da spec, decidido aqui: no nó `gate` de um workflow o campo chama-se `gates` (lista de ids de definições de gate em `gates/*.yaml`), e cada definição de gate tem `checks`. A spec usava `checks` para ambos.
 
@@ -136,7 +136,7 @@ auto-install-peers=true
 `packages/schemas/package.json`:
 ```json
 {
-  "name": "@shibaox/schemas",
+  "name": "@wizardingcode/shibaox-schemas",
   "version": "0.0.1",
   "type": "module",
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
@@ -187,7 +187,7 @@ describe('schemas package', () => {
 - [ ] **Step 3: Instalar e correr**
 
 Run: `pnpm install && pnpm build && pnpm test`
-Expected: build de `@shibaox/schemas` OK e 1 teste a passar.
+Expected: build de `@wizardingcode/shibaox-schemas` OK e 1 teste a passar.
 
 - [ ] **Step 4: Commit**
 
@@ -264,7 +264,7 @@ describe('WorkflowSchema', () => {
 
 - [ ] **Step 2: Correr para ver falhar**
 
-Run: `pnpm --filter @shibaox/schemas test`
+Run: `pnpm --filter @wizardingcode/shibaox-schemas test`
 Expected: FAIL, `WorkflowSchema` não exportado.
 
 - [ ] **Step 3: Implementar common + workflow**
@@ -564,7 +564,7 @@ describe('org file schemas', () => {
 
 - [ ] **Step 7: Correr testes**
 
-Run: `pnpm --filter @shibaox/schemas test`
+Run: `pnpm --filter @wizardingcode/shibaox-schemas test`
 Expected: PASS (todos os ficheiros).
 
 - [ ] **Step 8: Commit**
@@ -653,7 +653,7 @@ describe('loadOrg', () => {
 
 - [ ] **Step 2: Correr para ver falhar**
 
-Run: `pnpm --filter @shibaox/schemas test`
+Run: `pnpm --filter @wizardingcode/shibaox-schemas test`
 Expected: FAIL, `loadOrg` não exportado.
 
 - [ ] **Step 3: Implementar**
@@ -756,7 +756,7 @@ Adicionar em `packages/schemas/src/index.ts`: `export * from './load.js';`
 
 - [ ] **Step 4: Correr testes**
 
-Run: `pnpm --filter @shibaox/schemas test && pnpm --filter @shibaox/schemas typecheck`
+Run: `pnpm --filter @wizardingcode/shibaox-schemas test && pnpm --filter @wizardingcode/shibaox-schemas typecheck`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -834,14 +834,14 @@ export const RunEventSchema = z.discriminatedUnion('type', [
 ]);
 export type RunEvent = z.infer<typeof RunEventSchema>;
 ```
-Adicionar `export * from './events.js';` ao index de schemas e correr `pnpm --filter @shibaox/schemas build`.
+Adicionar `export * from './events.js';` ao index de schemas e correr `pnpm --filter @wizardingcode/shibaox-schemas build`.
 
 - [ ] **Step 2: Pacote core**
 
 `packages/core/package.json`:
 ```json
 {
-  "name": "@shibaox/core",
+  "name": "@wizardingcode/shibaox-core",
   "version": "0.0.1",
   "type": "module",
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
@@ -850,7 +850,7 @@ Adicionar `export * from './events.js';` ao index de schemas e correr `pnpm --fi
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "dependencies": { "@shibaox/schemas": "workspace:*" }
+  "dependencies": { "@wizardingcode/shibaox-schemas": "workspace:*" }
 }
 ```
 `packages/core/tsconfig.json`: igual ao de schemas.
@@ -861,7 +861,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   resolve: {
-    alias: { '@shibaox/schemas': fileURLToPath(new URL('../schemas/src/index.ts', import.meta.url)) },
+    alias: { '@wizardingcode/shibaox-schemas': fileURLToPath(new URL('../schemas/src/index.ts', import.meta.url)) },
   },
   test: { include: ['test/**/*.test.ts'], testTimeout: 15_000 },
 });
@@ -871,7 +871,7 @@ export default defineConfig({
 
 `packages/core/test/reducer.test.ts`:
 ```ts
-import type { RunEvent } from '@shibaox/schemas';
+import type { RunEvent } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { replay } from '../src/index.js';
 
@@ -944,7 +944,7 @@ describe('replay', () => {
 
 `packages/core/src/run/state.ts`:
 ```ts
-import type { GateReport } from '@shibaox/schemas';
+import type { GateReport } from '@wizardingcode/shibaox-schemas';
 
 export type RunStatus = 'running' | 'waiting_human' | 'paused_budget' | 'completed' | 'failed' | 'cancelled';
 export type NodeStatus = 'pending' | 'running' | 'completed' | 'passed' | 'failed' | 'waiting';
@@ -977,7 +977,7 @@ export interface RunState {
 
 `packages/core/src/run/reducer.ts`:
 ```ts
-import type { RunEvent } from '@shibaox/schemas';
+import type { RunEvent } from '@wizardingcode/shibaox-schemas';
 import type { NodeState, RunState } from './state.js';
 
 function nodeOf(state: RunState, id: string): NodeState {
@@ -1052,7 +1052,7 @@ export function replay(events: readonly RunEvent[]): RunState {
 
 `packages/core/src/events/store.ts`:
 ```ts
-import type { RunEvent } from '@shibaox/schemas';
+import type { RunEvent } from '@wizardingcode/shibaox-schemas';
 import type { RunStatus } from '../run/state.js';
 
 export type StoredEvent = RunEvent & { seq: number };
@@ -1074,7 +1074,7 @@ export interface EventStore {
 
 `packages/core/src/events/memory-store.ts`:
 ```ts
-import type { RunEvent } from '@shibaox/schemas';
+import type { RunEvent } from '@wizardingcode/shibaox-schemas';
 import { replay } from '../run/reducer.js';
 import type { EventStore, RunSummary, StoredEvent } from './store.js';
 
@@ -1137,7 +1137,7 @@ describe('MemoryEventStore', () => {
 
 - [ ] **Step 6: Correr**
 
-Run: `pnpm build && pnpm --filter @shibaox/core test`
+Run: `pnpm build && pnpm --filter @wizardingcode/shibaox-core test`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
@@ -1167,7 +1167,7 @@ Regras: só devolve nós com estado `pending` (ou ausentes). `start` é pronto q
 
 `packages/core/test/scheduler.test.ts`:
 ```ts
-import { type RunEvent, WorkflowSchema } from '@shibaox/schemas';
+import { type RunEvent, WorkflowSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { readyNodes, replay } from '../src/index.js';
 
@@ -1220,14 +1220,14 @@ describe('readyNodes', () => {
 
 - [ ] **Step 2: Correr para ver falhar**
 
-Run: `pnpm --filter @shibaox/core test`
+Run: `pnpm --filter @wizardingcode/shibaox-core test`
 Expected: FAIL, `readyNodes` não exportado.
 
 - [ ] **Step 3: Implementar**
 
 `packages/core/src/run/scheduler.ts`:
 ```ts
-import type { Workflow } from '@shibaox/schemas';
+import type { Workflow } from '@wizardingcode/shibaox-schemas';
 import type { NodeStatus, RunState } from './state.js';
 
 const finished = (s: NodeStatus) => s === 'completed' || s === 'passed';
@@ -1271,7 +1271,7 @@ Adicionar `export * from './run/scheduler.js';` ao index.
 
 - [ ] **Step 4: Correr**
 
-Run: `pnpm --filter @shibaox/core test`
+Run: `pnpm --filter @wizardingcode/shibaox-core test`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1334,7 +1334,7 @@ describe('runCommand', () => {
 
 `packages/core/test/mock-adapter.test.ts`:
 ```ts
-import { RoleSchema } from '@shibaox/schemas';
+import { RoleSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { MockAdapter, type TaskJob, collectRun } from '../src/index.js';
 
@@ -1363,7 +1363,7 @@ describe('MockAdapter', () => {
 
 `packages/core/src/executors/types.ts`:
 ```ts
-import type { Cost, GateReport, Role } from '@shibaox/schemas';
+import type { Cost, GateReport, Role } from '@wizardingcode/shibaox-schemas';
 
 export type Capability = 'write-code' | 'run-tests' | 'read-only' | 'shell';
 
@@ -1484,7 +1484,7 @@ Exports no index: `export * from './executors/types.js'; export * from './execut
 
 - [ ] **Step 3: Correr**
 
-Run: `pnpm --filter @shibaox/core test`
+Run: `pnpm --filter @wizardingcode/shibaox-core test`
 Expected: PASS, incluindo o timeout em menos de 1 s.
 
 - [ ] **Step 4: Commit**
@@ -1521,7 +1521,7 @@ Semântica: os checks correm pela ordem dos gates e, dentro de cada gate, pela o
 
 `packages/core/test/gate-engine.test.ts`:
 ```ts
-import { GateSchema } from '@shibaox/schemas';
+import { GateSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { type RunState, defaultCheckRunners, runGate } from '../src/index.js';
 
@@ -1561,7 +1561,7 @@ describe('runGate', () => {
 
 `packages/core/src/gates/engine.ts`:
 ```ts
-import type { Check, CheckResult, Gate, GateReport } from '@shibaox/schemas';
+import type { Check, CheckResult, Gate, GateReport } from '@wizardingcode/shibaox-schemas';
 import { runCommand } from '../executors/code.js';
 import type { RunState } from '../run/state.js';
 
@@ -1621,7 +1621,7 @@ Export: `export * from './gates/engine.js';`
 
 - [ ] **Step 3: Correr**
 
-Run: `pnpm --filter @shibaox/core test`
+Run: `pnpm --filter @wizardingcode/shibaox-core test`
 Expected: PASS.
 
 - [ ] **Step 4: Commit**
@@ -1651,7 +1651,7 @@ Regra: se `team.gates` está vazio, ou se algum nó `gate` do workflow já inclu
 
 `packages/core/test/inject-gates.test.ts`:
 ```ts
-import { TeamSchema, WorkflowSchema } from '@shibaox/schemas';
+import { TeamSchema, WorkflowSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { injectTeamGates } from '../src/index.js';
 
@@ -1686,7 +1686,7 @@ describe('injectTeamGates', () => {
 
 `packages/core/src/org/inject-gates.ts`:
 ```ts
-import { type Team, type Workflow, type WorkflowNode, transitionsOf } from '@shibaox/schemas';
+import { type Team, type Workflow, type WorkflowNode, transitionsOf } from '@wizardingcode/shibaox-schemas';
 
 function redirect(node: WorkflowNode, from: string, to: string): WorkflowNode {
   switch (node.type) {
@@ -1729,7 +1729,7 @@ Export: `export * from './org/inject-gates.js';`
 
 - [ ] **Step 3: Correr**
 
-Run: `pnpm --filter @shibaox/core test`
+Run: `pnpm --filter @wizardingcode/shibaox-core test`
 Expected: PASS.
 
 - [ ] **Step 4: Commit**
@@ -1790,7 +1790,7 @@ Comportamento:
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadOrg } from '@shibaox/schemas';
+import { loadOrg } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { AutoApproveHuman, DeferHuman, MemoryEventStore, MockAdapter, RunEngine, ScriptedDecider } from '../src/index.js';
 
@@ -1938,14 +1938,14 @@ Nota sobre o último teste: com `a` e `b` a alternar, `a` fica `completed` após
 
 - [ ] **Step 2: Correr para ver falhar**
 
-Run: `pnpm --filter @shibaox/core test`
+Run: `pnpm --filter @wizardingcode/shibaox-core test`
 Expected: FAIL, `RunEngine` não exportado.
 
 - [ ] **Step 3: Implementar deciders e human handlers**
 
 `packages/core/src/run/deciders.ts`:
 ```ts
-import type { Cost, GateReport } from '@shibaox/schemas';
+import type { Cost, GateReport } from '@wizardingcode/shibaox-schemas';
 
 export interface DecisionRequest {
   runId: string;
@@ -2000,7 +2000,7 @@ export class DeferHuman implements HumanHandler {
 `packages/core/src/run/engine.ts`:
 ```ts
 import { randomUUID } from 'node:crypto';
-import type { Org, RunEvent, Workflow, WorkflowNode } from '@shibaox/schemas';
+import type { Org, RunEvent, Workflow, WorkflowNode } from '@wizardingcode/shibaox-schemas';
 import type { EventStore } from '../events/store.js';
 import { runCommand } from '../executors/code.js';
 import { type RuntimeAdapter, type TaskJob, collectRun } from '../executors/types.js';
@@ -2203,7 +2203,7 @@ Atenção ao caso `paused_budget` em `resume`: após `RunResumed` o `drive` é c
 
 - [ ] **Step 5: Correr**
 
-Run: `pnpm --filter @shibaox/core test && pnpm --filter @shibaox/core typecheck`
+Run: `pnpm --filter @wizardingcode/shibaox-core test && pnpm --filter @wizardingcode/shibaox-core typecheck`
 Expected: PASS em todos os testes do engine.
 
 - [ ] **Step 6: Commit**
@@ -2232,12 +2232,12 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 `packages/persistence-sqlite/package.json`:
 ```json
 {
-  "name": "@shibaox/persistence-sqlite",
+  "name": "@wizardingcode/shibaox-persistence-sqlite",
   "version": "0.0.1",
   "type": "module",
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
   "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run", "typecheck": "tsc -p tsconfig.json --noEmit" },
-  "dependencies": { "@shibaox/core": "workspace:*", "@shibaox/schemas": "workspace:*", "better-sqlite3": "^13.0.3" },
+  "dependencies": { "@wizardingcode/shibaox-core": "workspace:*", "@wizardingcode/shibaox-schemas": "workspace:*", "better-sqlite3": "^13.0.3" },
   "devDependencies": { "@types/better-sqlite3": "^7.6.13" }
 }
 ```
@@ -2287,8 +2287,8 @@ describe('SqliteEventStore', () => {
 `packages/persistence-sqlite/src/index.ts`:
 ```ts
 import Database from 'better-sqlite3';
-import { type EventStore, type RunSummary, type StoredEvent, replay } from '@shibaox/core';
-import { type RunEvent, RunEventSchema } from '@shibaox/schemas';
+import { type EventStore, type RunSummary, type StoredEvent, replay } from '@wizardingcode/shibaox-core';
+import { type RunEvent, RunEventSchema } from '@wizardingcode/shibaox-schemas';
 
 export class SqliteEventStore implements EventStore {
   private readonly db: Database.Database;
@@ -2336,7 +2336,7 @@ export class SqliteEventStore implements EventStore {
 ```
 - [ ] **Step 4: Correr**
 
-Run: `pnpm install && pnpm build && pnpm --filter @shibaox/persistence-sqlite test`
+Run: `pnpm install && pnpm build && pnpm --filter @wizardingcode/shibaox-persistence-sqlite test`
 Expected: PASS. Se `better-sqlite3` falhar a compilar, confirmar `pnpm.onlyBuiltDependencies` na raiz e correr `pnpm rebuild better-sqlite3`.
 
 - [ ] **Step 5: Commit**
@@ -2366,15 +2366,15 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 `apps/cli/package.json`:
 ```json
 {
-  "name": "@shibaox/cli",
+  "name": "shibaox",
   "version": "0.0.1",
   "type": "module",
   "bin": { "shibaox": "./dist/index.js" },
   "scripts": { "build": "tsc -p tsconfig.json && chmod +x dist/index.js", "test": "vitest run", "typecheck": "tsc -p tsconfig.json --noEmit", "dev": "tsx src/index.ts" },
   "dependencies": {
-    "@shibaox/core": "workspace:*",
-    "@shibaox/persistence-sqlite": "workspace:*",
-    "@shibaox/schemas": "workspace:*",
+    "@wizardingcode/shibaox-core": "workspace:*",
+    "@wizardingcode/shibaox-persistence-sqlite": "workspace:*",
+    "@wizardingcode/shibaox-schemas": "workspace:*",
     "commander": "^15.0.0"
   },
   "devDependencies": { "tsx": "^4.20.0" }
@@ -2406,7 +2406,7 @@ test('add', () => { assert.equal(add(2, 2), 4); });
 import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadOrg } from '@shibaox/schemas';
+import { loadOrg } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { scaffoldOrg } from '../src/commands/init.js';
 
@@ -2526,13 +2526,13 @@ export function initCommand(dir: string): void {
 }
 ```
 
-Run: `pnpm --filter @shibaox/cli test` → Expected: PASS nos dois testes de init.
+Run: `pnpm --filter shibaox test` → Expected: PASS nos dois testes de init.
 
 - [ ] **Step 3: `doctor`**
 
 `apps/cli/src/commands/doctor.ts`:
 ```ts
-import { runCommand } from '@shibaox/core';
+import { runCommand } from '@wizardingcode/shibaox-core';
 
 interface CheckLine { name: string; ok: boolean; detail: string; required: boolean }
 
@@ -2566,7 +2566,7 @@ export async function doctorCommand(): Promise<number> {
 `apps/cli/src/terminal-human.ts`:
 ```ts
 import { createInterface } from 'node:readline/promises';
-import type { HumanAnswer, HumanHandler, HumanRequest } from '@shibaox/core';
+import type { HumanAnswer, HumanHandler, HumanRequest } from '@wizardingcode/shibaox-core';
 
 export class TerminalHuman implements HumanHandler {
   async ask(req: HumanRequest): Promise<HumanAnswer> {
@@ -2586,9 +2586,9 @@ export class TerminalHuman implements HumanHandler {
 ```ts
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { type HumanHandler, MockAdapter, RunEngine, type RunState, ScriptedDecider } from '@shibaox/core';
-import { SqliteEventStore } from '@shibaox/persistence-sqlite';
-import { loadOrg } from '@shibaox/schemas';
+import { type HumanHandler, MockAdapter, RunEngine, type RunState, ScriptedDecider } from '@wizardingcode/shibaox-core';
+import { SqliteEventStore } from '@wizardingcode/shibaox-persistence-sqlite';
+import { loadOrg } from '@wizardingcode/shibaox-schemas';
 import { TerminalHuman } from '../terminal-human.js';
 
 export interface RunOptions {
@@ -2639,7 +2639,7 @@ export function printState(state: RunState): void {
 `apps/cli/src/commands/runs.ts`:
 ```ts
 import { resolve } from 'node:path';
-import { SqliteEventStore } from '@shibaox/persistence-sqlite';
+import { SqliteEventStore } from '@wizardingcode/shibaox-persistence-sqlite';
 import { dbPath } from './run.js';
 
 export async function runsCommand(orgDir: string, db?: string): Promise<void> {
@@ -2657,8 +2657,8 @@ export async function runsCommand(orgDir: string, db?: string): Promise<void> {
 `apps/cli/src/commands/replay.ts`:
 ```ts
 import { resolve } from 'node:path';
-import { replay } from '@shibaox/core';
-import { SqliteEventStore } from '@shibaox/persistence-sqlite';
+import { replay } from '@wizardingcode/shibaox-core';
+import { SqliteEventStore } from '@wizardingcode/shibaox-persistence-sqlite';
 import { dbPath, printState } from './run.js';
 
 export async function replayCommand(runId: string, orgDir: string, db?: string): Promise<void> {
@@ -2721,7 +2721,7 @@ program.parseAsync(process.argv).catch((e: Error) => {
 import { cpSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AutoApproveHuman } from '@shibaox/core';
+import { AutoApproveHuman } from '@wizardingcode/shibaox-core';
 import { describe, expect, it } from 'vitest';
 import { scaffoldOrg } from '../src/commands/init.js';
 import { runWorkflow } from '../src/commands/run.js';

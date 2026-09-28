@@ -1,9 +1,9 @@
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { RunState, StoredEvent } from '@shibaox/core';
-import type { Workflow } from '@shibaox/schemas';
-import { WorkflowSchema } from '@shibaox/schemas';
+import type { RunState, StoredEvent } from '@wizardingcode/shibaox-core';
+import type { Workflow } from '@wizardingcode/shibaox-schemas';
+import { WorkflowSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { parse as parseYaml } from 'yaml';
 import { ensureVault, safeVaultPath, writeDecisionNote, writeRunNote } from '../src/index.js';

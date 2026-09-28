@@ -1,4 +1,4 @@
-export type { ModelChoice } from '@shibaox/providers';
+export type { ModelChoice } from '@wizardingcode/shibaox-providers';
 export * from './channels/macos.js';
 export * from './channels/outbox.js';
 export * from './channels/telegram.js';

@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SchedulesRepo, SqliteEventStore } from '@shibaox/persistence-sqlite';
+import { SchedulesRepo, SqliteEventStore } from '@wizardingcode/shibaox-persistence-sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { RunManager, SubmitRequest } from '../src/run-manager.js';
 import { Scheduler } from '../src/scheduler.js';

@@ -8,8 +8,8 @@ import {
   type ExecutionContext,
   type RuntimeEvent,
   runArgv,
-} from '@shibaox/core';
-import type { Role } from '@shibaox/schemas';
+} from '@wizardingcode/shibaox-core';
+import type { Role } from '@wizardingcode/shibaox-schemas';
 import { type ToolSet, tool } from 'ai';
 import { z } from 'zod';
 import { safePath } from './safe-path.js';

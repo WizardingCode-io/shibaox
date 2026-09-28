@@ -1,9 +1,9 @@
 import { resolve } from 'node:path';
-import { resolveModel } from '@shibaox/core';
+import { resolveModel } from '@wizardingcode/shibaox-core';
 /** Runtimes shibaox can run tasks on. */
-import { AVAILABLE_RUNTIMES } from '@shibaox/daemon';
-import { loadCatalog, ProviderRegistry } from '@shibaox/providers';
-import { loadOrg, type Org } from '@shibaox/schemas';
+import { AVAILABLE_RUNTIMES } from '@wizardingcode/shibaox-daemon';
+import { loadCatalog, ProviderRegistry } from '@wizardingcode/shibaox-providers';
+import { loadOrg, type Org } from '@wizardingcode/shibaox-schemas';
 
 /** How each org role resolves to a model; a role that cannot resolve prints `!! <reason>`. */
 export function formatModels(org: Org, reg: ProviderRegistry): string[] {

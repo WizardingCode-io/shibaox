@@ -1,4 +1,4 @@
-import { CatalogEntrySchema, RoleSchema, TeamSchema } from '@shibaox/schemas';
+import { CatalogEntrySchema, RoleSchema, TeamSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { AUTOROUTE_REQUEST_MAX_CHARS, selectCapabilities } from '../src/index.js';
 

@@ -1,6 +1,6 @@
-import { type DescribeRequest, SUMMARY_PROMPT } from '@shibaox/core';
-import { LlmClient, type ProviderRegistry } from '@shibaox/providers';
-import type { Org } from '@shibaox/schemas';
+import { type DescribeRequest, SUMMARY_PROMPT } from '@wizardingcode/shibaox-core';
+import { LlmClient, type ProviderRegistry } from '@wizardingcode/shibaox-providers';
+import type { Org } from '@wizardingcode/shibaox-schemas';
 
 /** A ref this registry can call directly (a key present, not a runtime-only provider). */
 function directRef(registry: ProviderRegistry, ref: string | undefined): string | undefined {

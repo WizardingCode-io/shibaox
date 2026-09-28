@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MemoryEventStore } from '@shibaox/core';
+import { MemoryEventStore } from '@wizardingcode/shibaox-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { telegramChannel } from '../src/channels/telegram.js';
 import { Daemon } from '../src/daemon.js';

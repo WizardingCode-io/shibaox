@@ -1,4 +1,4 @@
-import type { Envelope } from '@shibaox/daemon';
+import type { Envelope } from '@wizardingcode/shibaox-daemon';
 import { createStore } from 'solid-js/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type DataState, initialData } from '../src/context/data-state.js';

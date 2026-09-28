@@ -2,8 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AutoApproveApprovals, collectRun, type TaskJob } from '@shibaox/core';
-import { RoleSchema } from '@shibaox/schemas';
+import { AutoApproveApprovals, collectRun, type TaskJob } from '@wizardingcode/shibaox-core';
+import { RoleSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { ClaudeCodeAdapter } from '../src/index.js';
 

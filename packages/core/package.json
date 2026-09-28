@@ -1,7 +1,11 @@
 {
-  "name": "@shibaox/core",
-  "version": "0.0.1",
+  "name": "@wizardingcode/shibaox-core",
+  "version": "0.1.0",
+  "license": "UNLICENSED",
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -14,10 +18,17 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@shibaox/schemas": "workspace:*",
+    "@wizardingcode/shibaox-schemas": "workspace:*",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^26.6.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WizardingCode-io/shibaox.git"
   }
 }

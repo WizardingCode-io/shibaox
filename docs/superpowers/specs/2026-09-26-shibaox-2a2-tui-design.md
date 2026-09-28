@@ -12,7 +12,7 @@ Referências a igualar: a interface do próprio Claude Code (Ink) e os painéis 
 
 | Tema | Decisão |
 |---|---|
-| Tecnologia | Ink 7 + React 19 em `apps/tui` (`@shibaox/tui`); `ink-testing-library` nos testes |
+| Tecnologia | Ink 7 + React 19 em `apps/tui` (`@wizardingcode/shibaox-tui`); `ink-testing-library` nos testes |
 | Dados | Cliente puro do daemon: sondagem de `listRuns`/`inbox` a 1 s + SSE do run selecionado; sem alterações ao daemon |
 | Âmbito | Painel completo (lista, detalhe com stream, inbox com aprovar/negar) **e** formulário de novo run |
 | Layout | Dois painéis (runs à esquerda, detalhe à direita) com faixa do inbox no topo; colapsa abaixo de 100 colunas |
@@ -23,7 +23,7 @@ Referências a igualar: a interface do próprio Claude Code (Ink) e os painéis 
 ## 1. Pacote e arranque
 
 - `apps/tui/src/`: `index.ts` (exporta `renderDashboard`, `renderStream`), `store.ts` (`AppStore`), `poll.ts` (sondagens e subscrição SSE), `theme.ts`, `keys.ts`, `components/` (`TitleBar`, `InboxBanner`, `RunList`, `RunDetail`, `StreamView`, `ToolCallLine`, `AgentStatus`, `NewRunForm`, `Help`, `Toast`), `screens/Dashboard.tsx`, `prefs.ts` (`~/.shibaox/ui.json`).
-- `apps/cli` depende de `@shibaox/tui`. `shibaox` sem subcomando e `shibaox ui` → `connect()` (auto-arranque como hoje) → `renderDashboard(client, { version })`. Sem TTY: "The dashboard needs an interactive terminal. Try: shibaox runs" e exit 1.
+- `apps/cli` depende de `@wizardingcode/shibaox-tui`. `shibaox` sem subcomando e `shibaox ui` → `connect()` (auto-arranque como hoje) → `renderDashboard(client, { version })`. Sem TTY: "The dashboard needs an interactive terminal. Try: shibaox runs" e exit 1.
 - `shibaox run` (sem `--detach`, sem `--json`, com TTY) e `shibaox follow` (idem) renderizam o stream com `renderStream(client, runId, { onAnswer })`; o prompt de aprovação é o mesmo widget do painel. Sem TTY ou com `--json` mantêm o texto atual.
 - Interfaces:
 

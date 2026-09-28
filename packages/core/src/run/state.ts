@@ -1,4 +1,4 @@
-import type { GateReport, Workflow } from '@shibaox/schemas';
+import type { GateReport, Workflow } from '@wizardingcode/shibaox-schemas';
 
 export type RunStatus =
   | 'queued'

@@ -6,7 +6,7 @@ import {
   ensureDaemon,
   type HomePaths,
   homePaths,
-} from '@shibaox/daemon';
+} from '@wizardingcode/shibaox-daemon';
 import { CLI_VERSION } from './version.js';
 
 export interface ConnectOptions {

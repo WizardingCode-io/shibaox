@@ -14,10 +14,10 @@ import {
   collectRun,
   type RuntimeEvent,
   type TaskJob,
-} from '@shibaox/core';
-import { forgetModels, ProviderRegistry, rememberModel } from '@shibaox/providers';
-import { startFakeOpenAI } from '@shibaox/providers/testing';
-import { RoleSchema } from '@shibaox/schemas';
+} from '@wizardingcode/shibaox-core';
+import { forgetModels, ProviderRegistry, rememberModel } from '@wizardingcode/shibaox-providers';
+import { startFakeOpenAI } from '@wizardingcode/shibaox-providers/testing';
+import { RoleSchema } from '@wizardingcode/shibaox-schemas';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { replyText } from '../src/adapter.js';

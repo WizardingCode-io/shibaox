@@ -2,7 +2,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { useTerminalDimensions } from '@opentui/solid';
-import { loadOrg, OrgLoadError } from '@shibaox/schemas';
+import { loadOrg, OrgLoadError } from '@wizardingcode/shibaox-schemas';
 import {
   createEffect,
   createMemo,

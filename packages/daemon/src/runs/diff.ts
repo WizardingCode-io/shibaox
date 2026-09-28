@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { runArgv } from '@shibaox/core';
+import { runArgv } from '@wizardingcode/shibaox-core';
 
 export interface DiffFile {
   path: string;

@@ -1,4 +1,4 @@
-import type { runArgv } from '@shibaox/core';
+import type { runArgv } from '@wizardingcode/shibaox-core';
 import { describe, expect, it } from 'vitest';
 import { macosChannel } from '../src/channels/macos.js';
 import type { InboxItem } from '../src/inbox.js';

@@ -1,8 +1,8 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AutoApproveApprovals } from '@shibaox/core';
-import { RoleSchema } from '@shibaox/schemas';
+import { AutoApproveApprovals } from '@wizardingcode/shibaox-core';
+import { RoleSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { buildTools } from '../src/tools.js';

@@ -1,5 +1,9 @@
-import { ClaudeCodeAdapter, type McpServers, type QueryFn } from '@shibaox/adapter-claude-code';
-import { DirectAdapter } from '@shibaox/adapter-direct';
+import {
+  ClaudeCodeAdapter,
+  type McpServers,
+  type QueryFn,
+} from '@wizardingcode/shibaox-adapter-claude-code';
+import { DirectAdapter } from '@wizardingcode/shibaox-adapter-direct';
 import {
   type AgentTool,
   type ApprovalHandler,
@@ -16,8 +20,8 @@ import {
   resolveModel,
   ScriptedDecider,
   type TaskJob,
-} from '@shibaox/core';
-import { JevClient, JevDecider, jevCheckRunner } from '@shibaox/jev';
+} from '@wizardingcode/shibaox-core';
+import { JevClient, JevDecider, jevCheckRunner } from '@wizardingcode/shibaox-jev';
 import {
   judgeCheckRunner,
   LeadDecider,
@@ -26,9 +30,9 @@ import {
   type ProviderEntry,
   ProviderRegistry,
   reviewCheckRunner,
-} from '@shibaox/providers';
-import type { Org, Role, Workflow } from '@shibaox/schemas';
-import { diffRunWorkspace } from '@shibaox/workspace';
+} from '@wizardingcode/shibaox-providers';
+import type { Org, Role, Workflow } from '@wizardingcode/shibaox-schemas';
+import { diffRunWorkspace } from '@wizardingcode/shibaox-workspace';
 import { changeDescriber } from './runs/summarize.js';
 
 export const AVAILABLE_RUNTIMES = ['mock', 'direct', 'claude-code'];

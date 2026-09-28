@@ -1,5 +1,5 @@
 import { createServer, type Server } from 'node:http';
-import { hostAllowed } from '@shibaox/core';
+import { hostAllowed } from '@wizardingcode/shibaox-core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { fetchText } from '../src/web.js';
 

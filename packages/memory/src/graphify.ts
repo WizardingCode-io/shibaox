@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { runArgv } from '@shibaox/core';
+import { runArgv } from '@wizardingcode/shibaox-core';
 
 /** `<project>/graphify-out/graph.json`, where `graphify extract`/`update` write the graph. */
 export const graphJsonPath = (project: string): string =>

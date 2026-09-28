@@ -7,7 +7,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname } from 'node:path';
-import { loadCatalog } from '@shibaox/providers';
+import { loadCatalog } from '@wizardingcode/shibaox-providers';
 
 export interface KnownKey {
   name: string;

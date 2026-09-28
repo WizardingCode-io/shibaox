@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { QueryFn } from '@shibaox/adapter-claude-code';
+import type { QueryFn } from '@wizardingcode/shibaox-adapter-claude-code';
 import {
   DeferHuman,
   type EventStore,
@@ -10,12 +10,12 @@ import {
   type RunEngine,
   type RunState,
   replay,
-} from '@shibaox/core';
-import type { Graphify } from '@shibaox/memory';
-import { SqliteEventStore } from '@shibaox/persistence-sqlite';
-import type { ProviderEntry } from '@shibaox/providers';
-import { loadOrg, type Org, type Workflow } from '@shibaox/schemas';
-import { createRunWorkspace, type WorkspaceMode } from '@shibaox/workspace';
+} from '@wizardingcode/shibaox-core';
+import type { Graphify } from '@wizardingcode/shibaox-memory';
+import { SqliteEventStore } from '@wizardingcode/shibaox-persistence-sqlite';
+import type { ProviderEntry } from '@wizardingcode/shibaox-providers';
+import { loadOrg, type Org, type Workflow } from '@wizardingcode/shibaox-schemas';
+import { createRunWorkspace, type WorkspaceMode } from '@wizardingcode/shibaox-workspace';
 import { type GraphMode, prepareGraph } from './runs/graph.js';
 import { finishRun, logWorktree } from './runs/notes.js';
 import {

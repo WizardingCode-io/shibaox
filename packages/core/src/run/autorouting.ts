@@ -1,4 +1,4 @@
-import type { CatalogEntry, Cost, Role, Team } from '@shibaox/schemas';
+import type { CatalogEntry, Cost, Role, Team } from '@wizardingcode/shibaox-schemas';
 
 /** A catalog entry narrowed to the kinds `selectCapabilities` can attach. */
 export interface CapabilityCandidate {
@@ -15,7 +15,7 @@ export interface AutorouteArgs {
   catalog: CatalogEntry[];
   /**
    * Fans a `noul` question out per candidate, injected so core never depends
-   * on `@shibaox/jev`. Answers missing a candidate (or a `noul`) count as 0.
+   * on `@wizardingcode/shibaox-jev`. Answers missing a candidate (or a `noul`) count as 0.
    */
   fanOut?: (
     state: string,

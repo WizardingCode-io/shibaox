@@ -1,6 +1,6 @@
-import type { CheckContext, CheckRunner } from '@shibaox/core';
-import type { CheckResult } from '@shibaox/schemas';
 import { noul, score } from '@typesafe-ai/sdk';
+import type { CheckContext, CheckRunner } from '@wizardingcode/shibaox-core';
+import type { CheckResult } from '@wizardingcode/shibaox-schemas';
 import { addCost, gateByConfidence, type JevClient, truncateState } from './client.js';
 
 const DIFF_MAX_CHARS = 60_000;

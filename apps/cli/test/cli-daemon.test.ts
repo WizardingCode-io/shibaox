@@ -3,8 +3,8 @@ import { cpSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MemoryEventStore, type TaskJob } from '@shibaox/core';
-import { Daemon, homePaths } from '@shibaox/daemon';
+import { MemoryEventStore, type TaskJob } from '@wizardingcode/shibaox-core';
+import { Daemon, homePaths } from '@wizardingcode/shibaox-daemon';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const sample = fileURLToPath(new URL('../../../examples/sample-repo', import.meta.url));
@@ -36,7 +36,7 @@ async function setup(extra: ConstructorParameters<typeof Daemon>[0] = {}) {
     channels: [],
     env: {},
     log: () => {},
-    version: '0.0.1',
+    version: '0.1.0',
     ...extra,
   });
   daemons.push(daemon);
@@ -174,10 +174,10 @@ describe('shibaox CLI against a daemon', () => {
   it('daemon status reports the version and an empty inbox prints a sentence', async () => {
     const { cli } = await setup();
     const status = await cli('daemon', 'status');
-    expect(status.stdout).toContain('version 0.0.1');
+    expect(status.stdout).toContain('version 0.1.0');
     expect((await cli('inbox')).stdout).toContain('Nothing waiting for you.');
     const st = json<{ version: string }>(await cli('daemon', 'status', '--json'));
-    expect(st[0]?.version).toBe('0.0.1');
+    expect(st[0]?.version).toBe('0.1.0');
   });
 
   it('daemon stop waits for the active runs and says so', async () => {

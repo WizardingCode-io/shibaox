@@ -4,7 +4,7 @@
 
 **Goal:** Correr `hello-feature` com o Claude Code real (subscrição ou API key) num git worktree por run, com o grafo graphify disponível ao agente por MCP, uma nota do run escrita no vault Obsidian, e o autorouting v0 a escolher que capacidades entram na invocação. Fechar as dívidas de 1A/1B-1 que tocam estas interfaces.
 
-**Architecture:** Novo pacote `@shibaox/adapter-claude-code` sobre `@anthropic-ai/claude-agent-sdk` (`query()` com `systemPrompt` preset+append, `cwd` no worktree, `allowedTools` derivados de `role.tools`, `canUseTool` que consulta o `HumanHandler` para `approval_required`, `maxBudgetUsd`, `mcpServers`, `settingSources: []`, `abortController` ligado ao signal). Novo pacote `@shibaox/workspace` (worktree por run). Novo pacote `@shibaox/memory` (vault writer + runner do graphify + config MCP). `selectCapabilities` (autorouting v0) em core. CLI: `--adapter claude-code`, `--workspace`, `graph`, `worktree`, nota no vault no fim do run. Testes do adaptador usam uma `query` fake injetada; um teste real opcional corre com `SHIBAOX_REAL_TESTS=1` e o CLI `claude` autenticado.
+**Architecture:** Novo pacote `@wizardingcode/shibaox-adapter-claude-code` sobre `@anthropic-ai/claude-agent-sdk` (`query()` com `systemPrompt` preset+append, `cwd` no worktree, `allowedTools` derivados de `role.tools`, `canUseTool` que consulta o `HumanHandler` para `approval_required`, `maxBudgetUsd`, `mcpServers`, `settingSources: []`, `abortController` ligado ao signal). Novo pacote `@wizardingcode/shibaox-workspace` (worktree por run). Novo pacote `@wizardingcode/shibaox-memory` (vault writer + runner do graphify + config MCP). `selectCapabilities` (autorouting v0) em core. CLI: `--adapter claude-code`, `--workspace`, `graph`, `worktree`, nota no vault no fim do run. Testes do adaptador usam uma `query` fake injetada; um teste real opcional corre com `SHIBAOX_REAL_TESTS=1` e o CLI `claude` autenticado.
 
 **Tech Stack:** @anthropic-ai/claude-agent-sdk@^0.3.283 (peers: zod ^4, @anthropic-ai/sdk >=0.93, @modelcontextprotocol/sdk ^1.29), graphify (`uv tool install graphifyy`, CLI 0.9.x), git worktrees, yaml, vitest 5.
 
@@ -30,14 +30,14 @@
 
 ---
 
-### Task 1: `@shibaox/workspace` — worktree por run
+### Task 1: `@wizardingcode/shibaox-workspace` — worktree por run
 
 **Files:**
 - Create: `packages/workspace/package.json`, `tsconfig.json`, `vitest.config.ts`, `src/index.ts`, `src/worktree.ts`
 - Test: `packages/workspace/test/worktree.test.ts`
 
 **Interfaces:**
-- Consumes: `runArgv` de `@shibaox/core`.
+- Consumes: `runArgv` de `@wizardingcode/shibaox-core`.
 - Produces:
 ```ts
 type WorkspaceMode = 'inplace' | 'worktree';
@@ -113,7 +113,7 @@ describe('run workspaces', () => {
 ```ts
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { runArgv } from '@shibaox/core';
+import { runArgv } from '@wizardingcode/shibaox-core';
 
 export type WorkspaceMode = 'inplace' | 'worktree';
 export interface RunWorkspace { path: string; mode: WorkspaceMode; branch?: string }
@@ -175,7 +175,7 @@ export async function diffRunWorkspace(path: string, maxChars = 200_000): Promis
   return text.length > maxChars ? `${text.slice(0, maxChars)}\n…(truncated)` : text;
 }
 ```
-`src/index.ts`: `export * from './worktree.js';`. Package deps: `@shibaox/core`; devDeps `@types/node`.
+`src/index.ts`: `export * from './worktree.js';`. Package deps: `@wizardingcode/shibaox-core`; devDeps `@types/node`.
 
 - [ ] **Step 3: Correr, commit**
 
@@ -186,7 +186,7 @@ git commit -m "feat(workspace): git worktree per run with list/remove/diff"
 
 ---
 
-### Task 2: `@shibaox/adapter-claude-code`
+### Task 2: `@wizardingcode/shibaox-adapter-claude-code`
 
 **Files:**
 - Create: `packages/adapter-claude-code/package.json`, `tsconfig.json`, `vitest.config.ts`, `src/index.ts`, `src/adapter.ts`, `src/tools-map.ts`, `src/permissions.ts`, `src/testing/fake-query.ts`
@@ -215,7 +215,7 @@ Comportamento de `run(job, ctx)`:
 
 - [ ] **Step 1: Pacote e fake**
 
-`package.json` deps: `@anthropic-ai/claude-agent-sdk ^0.3.283`, `@shibaox/core`, `@shibaox/providers` (para `describeError`), `@shibaox/schemas`, `zod`; peers do SDK instalam via `auto-install-peers`. `vitest.config.ts` com aliases core/providers/schemas.
+`package.json` deps: `@anthropic-ai/claude-agent-sdk ^0.3.283`, `@wizardingcode/shibaox-core`, `@wizardingcode/shibaox-providers` (para `describeError`), `@wizardingcode/shibaox-schemas`, `zod`; peers do SDK instalam via `auto-install-peers`. `vitest.config.ts` com aliases core/providers/schemas.
 
 `src/testing/fake-query.ts`:
 ```ts
@@ -251,7 +251,7 @@ O `queryFn` do adaptador é tipado como `(args: { prompt: string; options?: Opti
 
 `test/tools-map.test.ts`:
 ```ts
-import { RoleSchema } from '@shibaox/schemas';
+import { RoleSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { mapRoleTools } from '../src/index.js';
 
@@ -274,8 +274,8 @@ describe('mapRoleTools', () => {
 
 `test/permissions.test.ts`:
 ```ts
-import { AutoApproveHuman, DeferHuman, type HumanRequest } from '@shibaox/core';
-import { RoleSchema } from '@shibaox/schemas';
+import { AutoApproveHuman, DeferHuman, type HumanRequest } from '@wizardingcode/shibaox-core';
+import { RoleSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { buildCanUseTool, classifyToolRequest } from '../src/index.js';
 
@@ -323,8 +323,8 @@ describe('buildCanUseTool', () => {
 
 `test/adapter.test.ts`:
 ```ts
-import { AutoApproveHuman, type RuntimeEvent, type TaskJob, collectRun } from '@shibaox/core';
-import { RoleSchema } from '@shibaox/schemas';
+import { AutoApproveHuman, type RuntimeEvent, type TaskJob, collectRun } from '@wizardingcode/shibaox-core';
+import { RoleSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { ClaudeCodeAdapter } from '../src/index.js';
 import { fakeQuery, msg } from '../src/testing/fake-query.js';
@@ -384,8 +384,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AutoApproveHuman, type TaskJob, collectRun } from '@shibaox/core';
-import { RoleSchema } from '@shibaox/schemas';
+import { AutoApproveHuman, type TaskJob, collectRun } from '@wizardingcode/shibaox-core';
+import { RoleSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { ClaudeCodeAdapter } from '../src/index.js';
 
@@ -404,7 +404,7 @@ describe.skipIf(process.env.SHIBAOX_REAL_TESTS !== '1' || !hasClaude)('real clau
 
 `src/tools-map.ts`:
 ```ts
-import type { Role } from '@shibaox/schemas';
+import type { Role } from '@wizardingcode/shibaox-schemas';
 
 const MAP: Record<string, string[]> = { read: ['Read', 'Glob', 'Grep'], write: ['Edit', 'Write'] };
 export const ALWAYS_DENY = ['Bash(rm -rf *)', 'Bash(git push *)', 'Bash(git push)', 'WebFetch', 'WebSearch'];
@@ -420,8 +420,8 @@ export function mapRoleTools(role: Role): { allowedTools: string[]; disallowedTo
 `src/permissions.ts`:
 ```ts
 import type { CanUseTool, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
-import type { HumanHandler } from '@shibaox/core';
-import type { Role } from '@shibaox/schemas';
+import type { HumanHandler } from '@wizardingcode/shibaox-core';
+import type { Role } from '@wizardingcode/shibaox-schemas';
 
 export type ToolCategory = 'push' | 'deploy' | 'other';
 const DEPLOY = [/^(vercel|fly|flyctl|netlify|heroku|railway|wrangler)\b.*\b(deploy|publish)\b/, /^deploy\b/, /^kubectl\s+(apply|rollout|delete)\b/, /^terraform\s+apply\b/, /^helm\s+(install|upgrade)\b/];
@@ -456,8 +456,8 @@ Nota: o `HumanRequested`/`HumanResponded` do run continuam a ser eventos do moto
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Options, type SDKMessage, query } from '@anthropic-ai/claude-agent-sdk';
-import type { Capability, ExecutionContext, HumanHandler, RuntimeAdapter, RuntimeEvent, TaskJob } from '@shibaox/core';
-import { describeError } from '@shibaox/providers';
+import type { Capability, ExecutionContext, HumanHandler, RuntimeAdapter, RuntimeEvent, TaskJob } from '@wizardingcode/shibaox-core';
+import { describeError } from '@wizardingcode/shibaox-providers';
 import { buildCanUseTool } from './permissions.js';
 import { mapRoleTools } from './tools-map.js';
 
@@ -549,7 +549,7 @@ git commit -m "feat(adapter-claude-code): Claude Agent SDK runtime adapter with 
 
 ---
 
-### Task 3: `@shibaox/memory` — vault Obsidian e graphify
+### Task 3: `@wizardingcode/shibaox-memory` — vault Obsidian e graphify
 
 **Files:**
 - Create: `packages/memory/package.json`, `tsconfig.json`, `vitest.config.ts`, `src/index.ts`, `src/vault.ts`, `src/graphify.ts`
@@ -590,8 +590,8 @@ Todas as operações do graphify devolvem `{ ok, message }` e nunca lançam por 
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { RunState, StoredEvent } from '@shibaox/core';
-import { WorkflowSchema } from '@shibaox/schemas';
+import type { RunState, StoredEvent } from '@wizardingcode/shibaox-core';
+import { WorkflowSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { ensureVault, safeVaultPath, writeDecisionNote, writeRunNote } from '../src/index.js';
 
@@ -642,7 +642,7 @@ import { cpSync, existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { runArgv } from '@shibaox/core';
+import type { runArgv } from '@wizardingcode/shibaox-core';
 import { describe, expect, it } from 'vitest';
 import { Graphify, graphJsonPath } from '../src/index.js';
 
@@ -695,7 +695,7 @@ describe.skipIf(!hasGraphify)('Graphify (real, local AST only)', () => {
 ```ts
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { runArgv } from '@shibaox/core';
+import { runArgv } from '@wizardingcode/shibaox-core';
 
 export const graphJsonPath = (project: string) => join(project, 'graphify-out', 'graph.json');
 
@@ -821,13 +821,13 @@ selectCapabilities(args): Promise<AutorouteResult>
 ```
 - `RunEngine.start` aceita `adapter?: string` e `workspaceMode?` e grava-os em `RunCreated`; `RunState.adapter`; `resume` na CLI usa `state.adapter` quando `--adapter` não é passado (fecha a dívida de 1B-1).
 - `JevDecider`: abaixo do limiar **sem** fallback → `throw new Error('jev decision below confidence threshold (<c> < <t>) and no fallback decider configured')`; estado enviado via `truncateState({ spec: question+input, output: previousOutputs, diff: lastGateReport })`.
-- `CheckContext.diff?: () => Promise<string>`: o engine preenche com `diffRunWorkspace(state.workspace)` quando `@shibaox/workspace` está disponível? Core não depende de workspace: o `EngineDeps` ganha `diffProvider?: (workspace: string) => Promise<string>` que a CLI liga a `diffRunWorkspace`. `jevCheckRunner` e `judgeCheckRunner` incluem `diff` (truncado) e `lastGateReport` no estado.
+- `CheckContext.diff?: () => Promise<string>`: o engine preenche com `diffRunWorkspace(state.workspace)` quando `@wizardingcode/shibaox-workspace` está disponível? Core não depende de workspace: o `EngineDeps` ganha `diffProvider?: (workspace: string) => Promise<string>` que a CLI liga a `diffRunWorkspace`. `jevCheckRunner` e `judgeCheckRunner` incluem `diff` (truncado) e `lastGateReport` no estado.
 
 - [ ] **Step 1: Testes (falham)**
 
 `packages/core/test/autorouting.test.ts`:
 ```ts
-import { CatalogEntrySchema, RoleSchema, TeamSchema } from '@shibaox/schemas';
+import { CatalogEntrySchema, RoleSchema, TeamSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { selectCapabilities } from '../src/index.js';
 

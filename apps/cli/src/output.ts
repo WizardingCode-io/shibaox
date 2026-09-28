@@ -1,4 +1,4 @@
-import type { RunState } from '@shibaox/core';
+import type { RunState } from '@wizardingcode/shibaox-core';
 
 /** Text lines for people, or one JSON object per line for scripts (`--json`). */
 export interface Out {

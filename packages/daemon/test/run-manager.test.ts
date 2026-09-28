@@ -3,10 +3,10 @@ import { cpSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fakeQuery, msg } from '@shibaox/adapter-claude-code/testing';
-import { MemoryEventStore, type TaskJob } from '@shibaox/core';
-import { MemoryNotes } from '@shibaox/memory';
-import { removeRunWorkspace } from '@shibaox/workspace';
+import { fakeQuery, msg } from '@wizardingcode/shibaox-adapter-claude-code/testing';
+import { MemoryEventStore, type TaskJob } from '@wizardingcode/shibaox-core';
+import { MemoryNotes } from '@wizardingcode/shibaox-memory';
+import { removeRunWorkspace } from '@wizardingcode/shibaox-workspace';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InboxService } from '../src/inbox.js';
 import { RunManager } from '../src/run-manager.js';

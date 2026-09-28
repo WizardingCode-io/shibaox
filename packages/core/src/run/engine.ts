@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Org, RunEvent, Workflow, WorkflowNode } from '@shibaox/schemas';
+import type { Org, RunEvent, Workflow, WorkflowNode } from '@wizardingcode/shibaox-schemas';
 import type { EventStore, RunSummary } from '../events/store.js';
 import { runCommand } from '../executors/code.js';
 import { type DescribeRequest, runGitNode } from '../executors/git.js';

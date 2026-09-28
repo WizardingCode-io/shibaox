@@ -1,5 +1,5 @@
-import { isTerminal, type RunStatus } from '@shibaox/core';
-import type { ScheduleRow, SchedulesRepo } from '@shibaox/persistence-sqlite';
+import { isTerminal, type RunStatus } from '@wizardingcode/shibaox-core';
+import type { ScheduleRow, SchedulesRepo } from '@wizardingcode/shibaox-persistence-sqlite';
 import { Cron } from 'croner';
 import type { RunManager } from './run-manager.js';
 import type { AdapterId } from './runtime.js';

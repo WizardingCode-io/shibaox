@@ -1,5 +1,5 @@
 import type { InputRenderable } from '@opentui/core';
-import type { InboxItem } from '@shibaox/daemon';
+import type { InboxItem } from '@wizardingcode/shibaox-daemon';
 import { createMemo, createSignal, type JSX, Show } from 'solid-js';
 import { useData } from '../../context/data.js';
 import { useKeys } from '../../context/keys.js';

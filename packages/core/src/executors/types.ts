@@ -4,7 +4,7 @@ import {
   type Cost,
   type GateReport,
   type Role,
-} from '@shibaox/schemas';
+} from '@wizardingcode/shibaox-schemas';
 import type { z } from 'zod';
 
 export type Capability = 'write-code' | 'run-tests' | 'read-only' | 'shell';

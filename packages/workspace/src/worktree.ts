@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { runArgv } from '@shibaox/core';
+import { runArgv } from '@wizardingcode/shibaox-core';
 
 const RUN_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
 

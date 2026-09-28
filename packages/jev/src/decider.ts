@@ -1,5 +1,5 @@
-import type { Decider, Decision, DecisionRequest } from '@shibaox/core';
 import { choice } from '@typesafe-ai/sdk';
+import type { Decider, Decision, DecisionRequest } from '@wizardingcode/shibaox-core';
 import { addCost, gateByConfidence, type JevClient, truncateState } from './client.js';
 
 export class JevDecider implements Decider {

@@ -2,7 +2,7 @@ import { cpSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AutoApproveHuman, DeferHuman } from '@shibaox/core';
+import { AutoApproveHuman, DeferHuman } from '@wizardingcode/shibaox-core';
 import { describe, expect, it } from 'vitest';
 import { resumeRun, runWorkflow } from '../src/inline.js';
 import { scaffoldOrg } from '../src/templates.js';

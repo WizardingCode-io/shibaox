@@ -1,29 +1,37 @@
 {
-  "name": "@shibaox/adapter-direct",
-  "version": "0.0.1",
+  "name": "@wizardingcode/shibaox-adapter-direct",
+  "version": "0.1.0",
+  "license": "UNLICENSED",
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@shibaox/core": "workspace:*",
-    "@shibaox/providers": "workspace:*",
-    "@shibaox/schemas": "workspace:*",
+    "@wizardingcode/shibaox-core": "workspace:*",
+    "@wizardingcode/shibaox-providers": "workspace:*",
+    "@wizardingcode/shibaox-schemas": "workspace:*",
     "ai": "^7.0.116",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^26.6.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WizardingCode-io/shibaox.git"
   }
 }

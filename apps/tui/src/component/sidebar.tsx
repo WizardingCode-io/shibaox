@@ -1,5 +1,5 @@
 import { TextAttributes } from '@opentui/core';
-import type { InboxItem } from '@shibaox/daemon';
+import type { InboxItem } from '@wizardingcode/shibaox-daemon';
 import { createMemo, createSignal, For, type JSX, Show } from 'solid-js';
 import { useConfig } from '../context/config.js';
 import { useData } from '../context/data.js';

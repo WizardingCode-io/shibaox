@@ -7,8 +7,8 @@ import {
   collectRun,
   type RuntimeEvent,
   type TaskJob,
-} from '@shibaox/core';
-import { RoleSchema } from '@shibaox/schemas';
+} from '@wizardingcode/shibaox-core';
+import { RoleSchema } from '@wizardingcode/shibaox-schemas';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { ClaudeCodeAdapter } from '../src/index.js';

@@ -1,5 +1,5 @@
 import { homedir, tmpdir } from 'node:os';
-import type { ModelChoice } from '@shibaox/daemon';
+import type { ModelChoice } from '@wizardingcode/shibaox-daemon';
 import { describe, expect, it } from 'vitest';
 import {
   applyPromptCommand,

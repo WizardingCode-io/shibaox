@@ -4,7 +4,7 @@
 
 **Goal:** Correr `hello-feature` fim a fim com um modelo real através de um fornecedor direto (Ollama, LM Studio, OpenRouter ou qualquer entrada do catálogo), com decisões e checks Jev, router de `models.yaml` e judge por LLM, sobre um motor endurecido (cancelamento, custos de checks, snapshot do workflow, deteção de stall).
 
-**Architecture:** Novo pacote `@shibaox/providers` (catálogo YAML + registry sobre o Vercel AI SDK 7 + `LlmClient` + `judgeCheckRunner` + `LeadDecider`), novo pacote `@shibaox/jev` (cliente TypeSafe, `fanOut`, `gateByConfidence`, `JevDecider`, `jevCheckRunner`), novo pacote `@shibaox/adapter-direct` (`RuntimeAdapter` que corre o loop de agente do AI SDK com ferramentas restritas ao workspace), router `resolveModel` em `@shibaox/core`, e a CLI a ligar tudo (`providers`, `models`, `run --adapter direct`). Testes usam um servidor fake OpenAI-compatible e um servidor fake Jev em processo; testes reais só quando a chave existe.
+**Architecture:** Novo pacote `@wizardingcode/shibaox-providers` (catálogo YAML + registry sobre o Vercel AI SDK 7 + `LlmClient` + `judgeCheckRunner` + `LeadDecider`), novo pacote `@wizardingcode/shibaox-jev` (cliente TypeSafe, `fanOut`, `gateByConfidence`, `JevDecider`, `jevCheckRunner`), novo pacote `@wizardingcode/shibaox-adapter-direct` (`RuntimeAdapter` que corre o loop de agente do AI SDK com ferramentas restritas ao workspace), router `resolveModel` em `@wizardingcode/shibaox-core`, e a CLI a ligar tudo (`providers`, `models`, `run --adapter direct`). Testes usam um servidor fake OpenAI-compatible e um servidor fake Jev em processo; testes reais só quando a chave existe.
 
 **Tech Stack:** ai@^7.0.116, @ai-sdk/openai-compatible@^3.0.57, @ai-sdk/anthropic, @ai-sdk/google, @ai-sdk/openai, @ai-sdk/xai, @ai-sdk/azure, @ai-sdk/amazon-bedrock, @ai-sdk/google-vertex, @ai-sdk/groq, @ai-sdk/mistral, @ai-sdk/cohere, @ai-sdk/deepseek, @ai-sdk/cerebras, @ai-sdk/deepinfra, @ai-sdk/fireworks, @ai-sdk/togetherai, @ai-sdk/moonshotai, @ai-sdk/alibaba, @ai-sdk/minimax, @ai-sdk/huggingface, @ai-sdk/perplexity, @ai-sdk/zai, @openrouter/ai-sdk-provider@^3.1.0, @typesafe-ai/sdk@^0.6.0, zod 4, yaml 2, vitest 5.
 
@@ -97,7 +97,7 @@ Em `executeNode`, o `ExecutionContext` passa a `{ signal: this.controllerFor(run
 
 - [ ] **Step 3: Correr, commit**
 
-Run: `pnpm --filter @shibaox/core test && pnpm build && pnpm typecheck && pnpm lint`
+Run: `pnpm --filter @wizardingcode/shibaox-core test && pnpm build && pnpm typecheck && pnpm lint`
 ```bash
 git commit -am "feat(core): per-run AbortSignal and RunEngine.cancel; drop RuntimeAdapter.cancel"
 ```
@@ -184,7 +184,7 @@ git commit -am "feat(core): check costs in gate reports, workflow snapshot in Ru
 
 ---
 
-### Task 3: `@shibaox/providers` — catálogo e registry
+### Task 3: `@wizardingcode/shibaox-providers` — catálogo e registry
 
 **Files:**
 - Create: `packages/providers/package.json`, `tsconfig.json`, `vitest.config.ts`, `src/index.ts`, `src/catalog-schema.ts`, `src/catalog.ts`, `src/registry.ts`, `src/factories.ts`, `catalog.yaml`
@@ -206,7 +206,7 @@ class ProviderRegistry { constructor(entries: ProviderEntry[], env?: NodeJS.Proc
 `packages/providers/package.json`:
 ```json
 {
-  "name": "@shibaox/providers",
+  "name": "@wizardingcode/shibaox-providers",
   "version": "0.0.1",
   "type": "module",
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
@@ -219,13 +219,13 @@ class ProviderRegistry { constructor(entries: ProviderEntry[], env?: NodeJS.Proc
     "@ai-sdk/huggingface": "latest", "@ai-sdk/minimax": "latest", "@ai-sdk/mistral": "latest", "@ai-sdk/moonshotai": "latest",
     "@ai-sdk/openai": "latest", "@ai-sdk/openai-compatible": "^3.0.57", "@ai-sdk/perplexity": "latest", "@ai-sdk/togetherai": "latest",
     "@ai-sdk/xai": "latest", "@ai-sdk/zai": "latest", "@openrouter/ai-sdk-provider": "^3.1.0",
-    "@shibaox/core": "workspace:*", "@shibaox/schemas": "workspace:*",
+    "@wizardingcode/shibaox-core": "workspace:*", "@wizardingcode/shibaox-schemas": "workspace:*",
     "ai": "^7.0.116", "yaml": "^2.9.1", "zod": "^4.6.5"
   },
   "devDependencies": { "@types/node": "^26.6.2" }
 }
 ```
-Após `pnpm install`, substituir cada `"latest"` pela versão resolvida (`pnpm list --depth 0 --filter @shibaox/providers`) com `^`, para o lockfile ficar determinístico. `vitest.config.ts` com aliases para `../core/src/index.ts` e `../schemas/src/index.ts`.
+Após `pnpm install`, substituir cada `"latest"` pela versão resolvida (`pnpm list --depth 0 --filter @wizardingcode/shibaox-providers`) com `^`, para o lockfile ficar determinístico. `vitest.config.ts` com aliases para `../core/src/index.ts` e `../schemas/src/index.ts`.
 
 - [ ] **Step 2: Testes (falham)**
 
@@ -562,7 +562,7 @@ Nota sobre `auth: none` e `apiKey: 'local'`: alguns servidores locais rejeitam u
 
 - [ ] **Step 4: Correr, commit**
 
-Run: `pnpm install && pnpm build && pnpm --filter @shibaox/providers test && pnpm typecheck && pnpm lint`
+Run: `pnpm install && pnpm build && pnpm --filter @wizardingcode/shibaox-providers test && pnpm typecheck && pnpm lint`
 ```bash
 git add packages/providers pnpm-lock.yaml
 git commit -m "feat(providers): provider catalog and AI SDK registry"
@@ -723,14 +723,14 @@ git commit -m "feat(providers): LlmClient over AI SDK and OpenAI-compatible fake
 
 ---
 
-### Task 5: `@shibaox/jev` — cliente, fan-out, decider e check runner
+### Task 5: `@wizardingcode/shibaox-jev` — cliente, fan-out, decider e check runner
 
 **Files:**
 - Create: `packages/jev/package.json`, `tsconfig.json`, `vitest.config.ts`, `src/index.ts`, `src/client.ts`, `src/decider.ts`, `src/check-runner.ts`, `src/testing/fake-jev.ts`
 - Test: `packages/jev/test/client.test.ts`, `packages/jev/test/decider.test.ts`, `packages/jev/test/check-runner.test.ts`
 
 **Interfaces:**
-- Consumes: `@typesafe-ai/sdk` (`TypeSafeClient`, `choice`, `score`, `noul`), `Decider`, `DecisionRequest`, `CheckRunner`, `CheckContext` de `@shibaox/core`, `Check`, `CheckResult` de `@shibaox/schemas`.
+- Consumes: `@typesafe-ai/sdk` (`TypeSafeClient`, `choice`, `score`, `noul`), `Decider`, `DecisionRequest`, `CheckRunner`, `CheckContext` de `@wizardingcode/shibaox-core`, `Check`, `CheckResult` de `@wizardingcode/shibaox-schemas`.
 - Produces:
 ```ts
 class JevClient { constructor(opts?: { apiKey?: string; baseURL?: string; model?: string }); fanOut<Q extends Questions>(state: unknown, questions: Q): Promise<{ answers: SystemOneResult<Q>['answers']; usage: { inputTokens: number; outputTokens: number }; cost: number }> ; isConfigured(): boolean }
@@ -951,7 +951,7 @@ Se o tipo `Questions` não for exportado desta forma pelo SDK, definir localment
 
 `packages/jev/src/decider.ts`:
 ```ts
-import type { Decider, Decision, DecisionRequest } from '@shibaox/core';
+import type { Decider, Decision, DecisionRequest } from '@wizardingcode/shibaox-core';
 import { choice } from '@typesafe-ai/sdk';
 import { type JevClient, gateByConfidence } from './client.js';
 
@@ -975,8 +975,8 @@ export class JevDecider implements Decider {
 
 `packages/jev/src/check-runner.ts`:
 ```ts
-import type { CheckContext, CheckRunner } from '@shibaox/core';
-import type { CheckResult } from '@shibaox/schemas';
+import type { CheckContext, CheckRunner } from '@wizardingcode/shibaox-core';
+import type { CheckResult } from '@wizardingcode/shibaox-schemas';
 import { noul, score } from '@typesafe-ai/sdk';
 import { type JevClient, gateByConfidence, truncateState } from './client.js';
 
@@ -1006,7 +1006,7 @@ export function jevCheckRunner(client: JevClient, opts: { escalate?: CheckRunner
   };
 }
 ```
-`src/index.ts` exporta client, decider, check-runner. `package.json` com deps `@typesafe-ai/sdk ^0.6.0`, `@shibaox/core`, `@shibaox/schemas`; `exports["./testing"]` para o fake.
+`src/index.ts` exporta client, decider, check-runner. `package.json` com deps `@typesafe-ai/sdk ^0.6.0`, `@wizardingcode/shibaox-core`, `@wizardingcode/shibaox-schemas`; `exports["./testing"]` para o fake.
 
 - [ ] **Step 3: Correr, commit**
 
@@ -1037,7 +1037,7 @@ Regras: (1) `defaultAdapter` (flag da CLI) vence tudo: `mock` → `{ kind: 'runt
 
 `packages/core/test/router.test.ts`:
 ```ts
-import { ModelsSchema, RoleSchema } from '@shibaox/schemas';
+import { ModelsSchema, RoleSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { resolveModel } from '../src/index.js';
 
@@ -1111,7 +1111,7 @@ describe('LeadDecider', () => {
 
 `packages/core/src/run/router.ts`:
 ```ts
-import type { Models, Role } from '@shibaox/schemas';
+import type { Models, Role } from '@wizardingcode/shibaox-schemas';
 
 export type ModelResolution = { kind: 'direct'; ref: string; provider: string; model: string } | { kind: 'runtime'; runtime: string; model?: string };
 export interface RouterProvider { id: string; via_runtime?: string; configured: boolean }
@@ -1147,7 +1147,7 @@ export function resolveModel(args: { role: Role; models: Models; providers: Rout
 
 `packages/providers/src/judge.ts`:
 ```ts
-import type { CheckContext, CheckRunner } from '@shibaox/core';
+import type { CheckContext, CheckRunner } from '@wizardingcode/shibaox-core';
 import { z } from 'zod';
 import type { LlmClient } from './llm-client.js';
 
@@ -1171,7 +1171,7 @@ export function judgeCheckRunner(client: LlmClient, ref: string): CheckRunner {
 
 `packages/providers/src/lead-decider.ts`:
 ```ts
-import type { Decider, Decision, DecisionRequest } from '@shibaox/core';
+import type { Decider, Decision, DecisionRequest } from '@wizardingcode/shibaox-core';
 import { z } from 'zod';
 import type { LlmClient } from './llm-client.js';
 
@@ -1199,7 +1199,7 @@ git commit -m "feat(core,providers): model router, LLM judge check runner and le
 
 ---
 
-### Task 7: `@shibaox/adapter-direct` — runtime direto com ferramentas restritas ao workspace
+### Task 7: `@wizardingcode/shibaox-adapter-direct` — runtime direto com ferramentas restritas ao workspace
 
 **Files:**
 - Create: `packages/adapter-direct/package.json`, `tsconfig.json`, `vitest.config.ts`, `src/index.ts`, `src/adapter.ts`, `src/tools.ts`, `src/safe-path.ts`
@@ -1250,10 +1250,10 @@ describe('safePath', () => {
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { collectRun, type RuntimeEvent, type TaskJob } from '@shibaox/core';
-import { ProviderRegistry } from '@shibaox/providers';
-import { startFakeOpenAI } from '@shibaox/providers/testing';
-import { RoleSchema } from '@shibaox/schemas';
+import { collectRun, type RuntimeEvent, type TaskJob } from '@wizardingcode/shibaox-core';
+import { ProviderRegistry } from '@wizardingcode/shibaox-providers';
+import { startFakeOpenAI } from '@wizardingcode/shibaox-providers/testing';
+import { RoleSchema } from '@wizardingcode/shibaox-schemas';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DirectAdapter } from '../src/index.js';
 
@@ -1349,8 +1349,8 @@ export function safePath(workspace: string, rel: string): string {
 ```ts
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
-import { type ExecutionContext, type RuntimeEvent, runCommand } from '@shibaox/core';
-import type { Role } from '@shibaox/schemas';
+import { type ExecutionContext, type RuntimeEvent, runCommand } from '@wizardingcode/shibaox-core';
+import type { Role } from '@wizardingcode/shibaox-schemas';
 import { type ToolSet, tool } from 'ai';
 import { z } from 'zod';
 import { safePath } from './safe-path.js';
@@ -1394,8 +1394,8 @@ export function buildTools(a: ToolArgs): ToolSet {
 ```ts
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Capability, ExecutionContext, RuntimeAdapter, RuntimeEvent, TaskJob } from '@shibaox/core';
-import { type ProviderRegistry, generate } from '@shibaox/providers';
+import type { Capability, ExecutionContext, RuntimeAdapter, RuntimeEvent, TaskJob } from '@wizardingcode/shibaox-core';
+import { type ProviderRegistry, generate } from '@wizardingcode/shibaox-providers';
 import { buildTools } from './tools.js';
 
 export interface DirectAdapterOptions { registry: ProviderRegistry; resolveRef: (job: TaskJob) => string; orgRoot?: string; maxSteps?: number; commandTimeoutMs?: number; maxFileBytes?: number }
@@ -1446,7 +1446,7 @@ export class DirectAdapter implements RuntimeAdapter {
 ```
 Se `Promise.race` com o timer for considerado feio pelo revisor, alternativa equivalente: `generate` aceitar um callback `onToolEvent`; manter a versão acima como primeira implementação.
 
-`package.json` deps: `@shibaox/core`, `@shibaox/providers`, `@shibaox/schemas`, `ai`, `zod`. `vitest.config.ts` com aliases para core, schemas, providers (`../providers/src/index.ts`) e `@shibaox/providers/testing` (`../providers/src/testing/fake-openai.ts`).
+`package.json` deps: `@wizardingcode/shibaox-core`, `@wizardingcode/shibaox-providers`, `@wizardingcode/shibaox-schemas`, `ai`, `zod`. `vitest.config.ts` com aliases para core, schemas, providers (`../providers/src/index.ts`) e `@wizardingcode/shibaox-providers/testing` (`../providers/src/testing/fake-openai.ts`).
 
 - [ ] **Step 3: Correr, commit**
 
@@ -1473,8 +1473,8 @@ git commit -m "feat(adapter-direct): AI SDK agent loop with workspace-scoped too
 ```ts
 import { describe, expect, it } from 'vitest';
 import { formatProviderList, testProvider } from '../src/commands/providers.js';
-import { ProviderRegistry, loadCatalog } from '@shibaox/providers';
-import { startFakeOpenAI } from '@shibaox/providers/testing';
+import { ProviderRegistry, loadCatalog } from '@wizardingcode/shibaox-providers';
+import { startFakeOpenAI } from '@wizardingcode/shibaox-providers/testing';
 
 describe('providers command', () => {
   it('lists providers with configuration status and verify flag', () => {
@@ -1506,9 +1506,9 @@ import { cpSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AutoApproveHuman } from '@shibaox/core';
-import { startFakeOpenAI } from '@shibaox/providers/testing';
-import { startFakeJev } from '@shibaox/jev/testing';
+import { AutoApproveHuman } from '@wizardingcode/shibaox-core';
+import { startFakeOpenAI } from '@wizardingcode/shibaox-providers/testing';
+import { startFakeJev } from '@wizardingcode/shibaox-jev/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 import { scaffoldOrg } from '../src/commands/init.js';
 import { runWorkflow } from '../src/commands/run.js';
@@ -1549,7 +1549,7 @@ Para isso `RunOptions` ganha `env?: NodeJS.ProcessEnv` (default `process.env`), 
 `apps/cli/test/real.test.ts` (só corre com chaves):
 ```ts
 import { describe, expect, it } from 'vitest';
-import { ProviderRegistry, loadCatalog } from '@shibaox/providers';
+import { ProviderRegistry, loadCatalog } from '@wizardingcode/shibaox-providers';
 import { testProvider } from '../src/commands/providers.js';
 
 const reg = new ProviderRegistry(loadCatalog());
@@ -1567,7 +1567,7 @@ for (const id of ['openrouter', 'groq', 'anthropic', 'ollama']) {
 
 `apps/cli/src/commands/providers.ts`:
 ```ts
-import { type ProviderRegistry, generate } from '@shibaox/providers';
+import { type ProviderRegistry, generate } from '@wizardingcode/shibaox-providers';
 
 export function formatProviderList(reg: ProviderRegistry, onlyConfigured = false): string[] {
   const rows: string[] = [];
@@ -1601,11 +1601,11 @@ export async function testProvider(reg: ProviderRegistry, id: string, model?: st
 
 `apps/cli/src/wiring.ts`:
 ```ts
-import { DirectAdapter } from '@shibaox/adapter-direct';
-import { type CheckRunners, type Decider, type EventStore, type HumanHandler, MockAdapter, RunEngine, ScriptedDecider, type TaskJob, defaultCheckRunners, resolveModel } from '@shibaox/core';
-import { JevClient, JevDecider, jevCheckRunner } from '@shibaox/jev';
-import { LeadDecider, LlmClient, type ProviderEntry, ProviderRegistry, judgeCheckRunner, loadCatalog } from '@shibaox/providers';
-import type { Org } from '@shibaox/schemas';
+import { DirectAdapter } from '@wizardingcode/shibaox-adapter-direct';
+import { type CheckRunners, type Decider, type EventStore, type HumanHandler, MockAdapter, RunEngine, ScriptedDecider, type TaskJob, defaultCheckRunners, resolveModel } from '@wizardingcode/shibaox-core';
+import { JevClient, JevDecider, jevCheckRunner } from '@wizardingcode/shibaox-jev';
+import { LeadDecider, LlmClient, type ProviderEntry, ProviderRegistry, judgeCheckRunner, loadCatalog } from '@wizardingcode/shibaox-providers';
+import type { Org } from '@wizardingcode/shibaox-schemas';
 
 const mockAdapter = () => new MockAdapter((j) => ({ output: { instruction: j.instruction }, summary: `mock ${j.role.role}: ${j.instruction}`, cost: { usd: 0.001, inputTokens: 10, outputTokens: 10 } }));
 

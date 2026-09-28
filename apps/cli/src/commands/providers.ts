@@ -1,4 +1,9 @@
-import { describeError, generate, loadCatalog, ProviderRegistry } from '@shibaox/providers';
+import {
+  describeError,
+  generate,
+  loadCatalog,
+  ProviderRegistry,
+} from '@wizardingcode/shibaox-providers';
 
 export interface ProviderTestResult {
   ok: boolean;

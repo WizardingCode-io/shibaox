@@ -1,8 +1,8 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadCatalog, ProviderRegistry } from '@shibaox/providers';
-import { loadOrg } from '@shibaox/schemas';
+import { loadCatalog, ProviderRegistry } from '@wizardingcode/shibaox-providers';
+import { loadOrg } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { scaffoldOrg } from '../src/commands/init.js';
 import { formatModels } from '../src/commands/models.js';

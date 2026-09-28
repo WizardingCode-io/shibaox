@@ -11,8 +11,8 @@ import {
   type RuntimeEvent,
   splitConversation,
   type TaskJob,
-} from '@shibaox/core';
-import { describeError } from '@shibaox/providers';
+} from '@wizardingcode/shibaox-core';
+import { describeError } from '@wizardingcode/shibaox-providers';
 import type { ApprovalCategory } from './bash-command.js';
 import { sdkMcpServer } from './mcp.js';
 import { buildCanUseTool } from './permissions.js';

@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { listRunWorkspaces, removeRunWorkspace } from '@shibaox/workspace';
+import { listRunWorkspaces, removeRunWorkspace } from '@wizardingcode/shibaox-workspace';
 
 /** `shibaox worktree list`: the run worktrees (`shibaox/<runId>` branches) of a project. */
 export async function worktreeList(

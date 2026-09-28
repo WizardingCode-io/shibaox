@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { isTerminal, type RunStatus } from '@shibaox/core';
-import type { AdapterId, GraphMode } from '@shibaox/daemon';
-import { homePaths } from '@shibaox/daemon';
-import type { WorkspaceMode } from '@shibaox/workspace';
+import { isTerminal, type RunStatus } from '@wizardingcode/shibaox-core';
+import type { AdapterId, GraphMode } from '@wizardingcode/shibaox-daemon';
+import { homePaths } from '@wizardingcode/shibaox-daemon';
+import type { WorkspaceMode } from '@wizardingcode/shibaox-workspace';
 import { connect } from '../client.js';
 import { exitCodeFor, formatState, type Out } from '../output.js';
 import { followRun } from './follow.js';
@@ -144,8 +144,8 @@ export async function runsCommand(o: { status?: string; org?: string }, out: Out
 
 export async function replayCommand(runId: string, o: { db?: string }, out: Out): Promise<number> {
   if (o.db) {
-    const { SqliteEventStore } = await import('@shibaox/persistence-sqlite');
-    const { replay } = await import('@shibaox/core');
+    const { SqliteEventStore } = await import('@wizardingcode/shibaox-persistence-sqlite');
+    const { replay } = await import('@wizardingcode/shibaox-core');
     const store = new SqliteEventStore(resolve(o.db));
     try {
       const events = await store.read(runId);

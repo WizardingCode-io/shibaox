@@ -23,7 +23,7 @@ Requisito adicionado pelo Andre: cobrir a lista completa de fornecedores (APIs d
 - `@typesafe-ai/sdk@0.6.0`: `new TypeSafeClient({ apiKey?, baseUrl?, retries?, timeout? })`, `systemOne({ state, questions, model? })`, helpers `choice`, `score`, `noul`; respostas com `choice | score | value`, `probabilities`, `confidence`, `usage`. Modelo `jev-latest`, estado até 32k tokens.
 - `@anthropic-ai/claude-agent-sdk@0.3.283`: `query({ prompt, options })` com `systemPrompt`, `model`, `cwd`, `allowedTools`, `disallowedTools`, `permissionMode`, `canUseTool`, `mcpServers` (stdio/http/sdk), `maxTurns`, `maxBudgetUsd`, `outputFormat: { type: 'json_schema', schema }`, `abortController`, `resume`/`forkSession`. Tools MCP chamam-se `mcp__<server>__<tool>`; `allowedTools: ['mcp__x__*']`.
 
-## 1. Camada de fornecedores — `@shibaox/providers`
+## 1. Camada de fornecedores — `@wizardingcode/shibaox-providers`
 
 ### Catálogo `providers/catalog.yaml`
 
@@ -83,7 +83,7 @@ interface ProviderRegistry {
 
 Servidor fake OpenAI-compatible em processo (chat completions com e sem stream, tool calls) para testes de contrato; cada entrada do catálogo valida contra o schema; teste real por fornecedor só quando a env var existe (`describe.skipIf`).
 
-## 2. Runtime direto — `DirectAdapter` (`@shibaox/adapter-direct`)
+## 2. Runtime direto — `DirectAdapter` (`@wizardingcode/shibaox-adapter-direct`)
 
 Implementa `RuntimeAdapter`. Por tarefa: system prompt do papel + instrução + contexto (input, outputs anteriores, último relatório de gate), `streamText` com `stopWhen: isStepCount(maxSteps)` e ferramentas:
 
@@ -98,20 +98,20 @@ Implementa `RuntimeAdapter`. Por tarefa: system prompt do papel + instrução + 
 
 Eventos: `started`, `text`, `tool_use`, `tool_result`, `file_changed`, `result` (com `usage` e custo estimado), `error`. Respeita `ExecutionContext.signal` (aborta o stream). Um modelo sem suporte a tools recebe um modo "só texto" que devolve `result` com o texto.
 
-## 3. Jev — `@shibaox/jev`
+## 3. Jev — `@wizardingcode/shibaox-jev`
 
 - `JevClient` sobre `@typesafe-ai/sdk`; `fanOut(state, questions)` numa chamada; `gateByConfidence(answer, threshold)` → `pass | escalate | fail`.
 - `JevDecider implements Decider`: `choice` com as opções do nó e as instruções da pergunta; confiança abaixo do limiar → escala para o `LeadDecider` (LLM judge via providers) quando configurado.
 - `jevCheckRunner`: checks `jev` (`noul` ou `score`) sobre o estado `{ spec, diff, output }`; devolve `CheckResult` com `confidence` e `cost`.
 - Estado enviado ao Jev truncado a 32k tokens com prioridade spec > output > diff.
 
-## 4. Router e judge — em `@shibaox/core`
+## 4. Router e judge — em `@wizardingcode/shibaox-core`
 
 - `resolveModel(role, models: Models, registry, runtimes)` → `{ kind: 'direct', ref } | { kind: 'runtime', runtime, model }`. Ordem: override por papel → tier do papel → tiers de `models.yaml`. Se a entrada é `via_runtime`, usa esse runtime. Se o runtime preferido não suporta o modelo (por exemplo Claude Code com um modelo não Anthropic), escolhe `direct` e regista um aviso no run.
 - `judgeCheckRunner`: rubrica + contexto → `Output.object({ passed, evidence, suggestion })` com o modelo do tier `strong`.
 - `CheckResult.cost` e `GateReport.cost` somados ao `spentUsd`.
 
-## 5. Adaptador Claude Code — `@shibaox/adapter-claude-code` (1B-2)
+## 5. Adaptador Claude Code — `@wizardingcode/shibaox-adapter-claude-code` (1B-2)
 
 `query()` com: `systemPrompt: { preset: 'default', append: <prompt do papel> }`, `model`, `cwd: <worktree>`, `allowedTools` derivados de `role.tools`, `disallowedTools` (`Bash(rm -rf *)`, push/deploy salvo `approval_required`), `permissionMode: 'default'`, `canUseTool` que consulta `approval_required` e pergunta ao `HumanHandler`, `maxBudgetUsd` = orçamento restante do run, `mcpServers` selecionados pelo autorouting (graphify em stdio; tools do shibaox em processo via `createSdkMcpServer`), `outputFormat` json_schema quando o nó define `output_schema`, `abortController` ligado ao `signal`, `settingSources: []` para não carregar CLAUDE.md nem plugins do utilizador. Mapeamento: `assistant.text` → `text`, `tool_use` → `tool_use`, `tool_result` → `tool_result`, `result` → `result` com `total_cost_usd` e `usage`. Worktree: `git worktree add .shibaox/worktrees/<runId> -b shibaox/<runId>`; removido no fim do run salvo `--keep-worktree`.
 

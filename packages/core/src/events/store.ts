@@ -1,4 +1,4 @@
-import type { RunEvent } from '@shibaox/schemas';
+import type { RunEvent } from '@wizardingcode/shibaox-schemas';
 import type { RunStatus } from '../run/state.js';
 
 export type StoredEvent = RunEvent & { seq: number };

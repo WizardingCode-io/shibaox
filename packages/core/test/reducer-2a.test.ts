@@ -1,4 +1,4 @@
-import type { RunEvent } from '@shibaox/schemas';
+import type { RunEvent } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { replay } from '../src/run/reducer.js';
 

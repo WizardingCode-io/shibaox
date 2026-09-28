@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { basename, join, sep } from 'node:path';
-import { type RunState, runArgv } from '@shibaox/core';
-import { isGitRepo, type WorkspaceMode, worktreePreflight } from '@shibaox/workspace';
+import { type RunState, runArgv } from '@wizardingcode/shibaox-core';
+import { isGitRepo, type WorkspaceMode, worktreePreflight } from '@wizardingcode/shibaox-workspace';
 
 export function assertProjectDir(path: string): void {
   if (!existsSync(path) || !statSync(path).isDirectory())

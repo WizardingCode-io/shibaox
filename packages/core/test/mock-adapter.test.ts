@@ -1,4 +1,4 @@
-import { RoleSchema } from '@shibaox/schemas';
+import { RoleSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { collectRun, MockAdapter, type TaskJob } from '../src/index.js';
 

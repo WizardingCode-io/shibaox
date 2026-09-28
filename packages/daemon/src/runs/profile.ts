@@ -1,7 +1,11 @@
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { type ProjectProfile, profileProject, renderProfileNote } from '@shibaox/core';
-import { safeVaultPath } from '@shibaox/memory';
+import {
+  type ProjectProfile,
+  profileProject,
+  renderProfileNote,
+} from '@wizardingcode/shibaox-core';
+import { safeVaultPath } from '@wizardingcode/shibaox-memory';
 import { projectName } from './workspace.js';
 
 const cache = new Map<string, { at: number; profile: ProjectProfile }>();

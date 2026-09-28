@@ -1,4 +1,4 @@
-import type { ProjectProfile, RunState } from '@shibaox/core';
+import type { ProjectProfile, RunState } from '@wizardingcode/shibaox-core';
 import type {
   DiffResult,
   Envelope,
@@ -10,7 +10,7 @@ import type {
   OrgConfigPatch,
   RunSummaryPlus,
   SubmitRequest,
-} from '@shibaox/daemon';
+} from '@wizardingcode/shibaox-daemon';
 import { createContext, type JSX, type ParentProps, useContext } from 'solid-js';
 
 /** The subset of the daemon client the dashboard uses; the fake implements it in tests. */

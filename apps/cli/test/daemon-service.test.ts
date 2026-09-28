@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { homePaths, LAUNCHD_LABEL, plistPath } from '@shibaox/daemon';
+import { homePaths, LAUNCHD_LABEL, plistPath } from '@wizardingcode/shibaox-daemon';
 import { afterEach, describe, expect, it } from 'vitest';
 import { daemonInstall, daemonUninstall, serviceLine } from '../src/commands/daemon.js';
 import type { Out } from '../src/output.js';

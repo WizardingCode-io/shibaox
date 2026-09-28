@@ -1,4 +1,9 @@
-import { type Team, transitionsOf, type Workflow, type WorkflowNode } from '@shibaox/schemas';
+import {
+  type Team,
+  transitionsOf,
+  type Workflow,
+  type WorkflowNode,
+} from '@wizardingcode/shibaox-schemas';
 
 function redirect(node: WorkflowNode, from: string, to: string): WorkflowNode {
   switch (node.type) {

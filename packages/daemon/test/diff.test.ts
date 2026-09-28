@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MemoryEventStore } from '@shibaox/core';
+import { MemoryEventStore } from '@wizardingcode/shibaox-core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DaemonClient, DaemonHttpError } from '../src/client.js';
 import { Daemon } from '../src/daemon.js';

@@ -1,5 +1,5 @@
-import type { RunState, RunStatus } from '@shibaox/core';
-import type { Health, InboxItem, RunSummaryPlus } from '@shibaox/daemon';
+import type { RunState, RunStatus } from '@wizardingcode/shibaox-core';
+import type { Health, InboxItem, RunSummaryPlus } from '@wizardingcode/shibaox-daemon';
 
 /** Everything the screens read; fed by the Poller and by user actions. */
 export interface DataState {

@@ -1,4 +1,4 @@
-import type { RuntimeEvent } from '@shibaox/core';
+import type { RuntimeEvent } from '@wizardingcode/shibaox-core';
 
 /** Texts and tool outputs are stored trimmed: the log keeps the full versions, the buffer is for display. */
 export const STORED_TEXT_LIMIT = 4096;

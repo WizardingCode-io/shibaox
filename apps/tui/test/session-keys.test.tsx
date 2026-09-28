@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { testRender } from '@opentui/solid';
-import type { RunState } from '@shibaox/core';
-import type { InboxItem } from '@shibaox/daemon';
+import type { RunState } from '@wizardingcode/shibaox-core';
+import type { InboxItem } from '@wizardingcode/shibaox-daemon';
 import { App } from '../src/app.js';
 import { FakeDaemonClient } from '../src/testing/fake-client.js';
 

@@ -1,4 +1,4 @@
-import { type RunEvent, WorkflowSchema } from '@shibaox/schemas';
+import { type RunEvent, WorkflowSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { isStalled, readyNodes, replay } from '../src/index.js';
 

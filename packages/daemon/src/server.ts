@@ -7,9 +7,9 @@ import {
   type ProjectProfile,
   type RunStatus,
   type StoredEvent,
-} from '@shibaox/core';
-import type { ScheduleRow } from '@shibaox/persistence-sqlite';
-import type { ModelChoice } from '@shibaox/providers';
+} from '@wizardingcode/shibaox-core';
+import type { ScheduleRow } from '@wizardingcode/shibaox-persistence-sqlite';
+import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import { AlreadyResolvedError, type InboxService, NotFoundError } from './inbox.js';
 import { type OrgConfigPatch, readOrgConfig, writeOrgConfig } from './org-config.js';
 import type { RunManager, SubmitRequest } from './run-manager.js';

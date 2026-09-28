@@ -1,5 +1,5 @@
-import type { RunState, StoredEvent } from '@shibaox/core';
-import type { Workflow } from '@shibaox/schemas';
+import type { RunState, StoredEvent } from '@wizardingcode/shibaox-core';
+import type { Workflow } from '@wizardingcode/shibaox-schemas';
 
 export interface RunReport {
   runId: string;

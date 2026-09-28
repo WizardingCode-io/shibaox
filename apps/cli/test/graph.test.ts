@@ -1,8 +1,8 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { runArgv } from '@shibaox/core';
-import { Graphify } from '@shibaox/memory';
+import type { runArgv } from '@wizardingcode/shibaox-core';
+import { Graphify } from '@wizardingcode/shibaox-memory';
 import { describe, expect, it } from 'vitest';
 import { graphBuild, graphQuery, graphUpdate } from '../src/commands/graph.js';
 

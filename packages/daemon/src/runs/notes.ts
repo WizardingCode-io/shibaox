@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
-import { type EventStore, isTerminal, type RunState } from '@shibaox/core';
-import { writeDecisionNote, writeRunNote } from '@shibaox/memory';
-import type { Org } from '@shibaox/schemas';
+import { type EventStore, isTerminal, type RunState } from '@wizardingcode/shibaox-core';
+import { writeDecisionNote, writeRunNote } from '@wizardingcode/shibaox-memory';
+import type { Org } from '@wizardingcode/shibaox-schemas';
 import type { AdapterId } from '../runtime.js';
 import { projectName, projectOf, worktreeOf } from './workspace.js';
 

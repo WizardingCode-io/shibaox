@@ -2,8 +2,8 @@ import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import type { CanUseTool, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
-import { type ApprovalHandler, argvHash, hostAllowed } from '@shibaox/core';
-import type { Role } from '@shibaox/schemas';
+import { type ApprovalHandler, argvHash, hostAllowed } from '@wizardingcode/shibaox-core';
+import type { Role } from '@wizardingcode/shibaox-schemas';
 import { type ApprovalCategory, analyseBashCommand, type ToolCategory } from './bash-command.js';
 import { FILE_TOOLS } from './tools-map.js';
 

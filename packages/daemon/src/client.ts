@@ -1,7 +1,7 @@
 import { request as httpRequest } from 'node:http';
-import type { ProjectProfile, RunState } from '@shibaox/core';
-import type { ScheduleRow } from '@shibaox/persistence-sqlite';
-import type { ModelChoice } from '@shibaox/providers';
+import type { ProjectProfile, RunState } from '@wizardingcode/shibaox-core';
+import type { ScheduleRow } from '@wizardingcode/shibaox-persistence-sqlite';
+import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import type { InboxItem } from './inbox.js';
 import type { OrgConfig, OrgConfigPatch } from './org-config.js';
 import type { RunSummaryPlus, SubmitRequest } from './run-manager.js';

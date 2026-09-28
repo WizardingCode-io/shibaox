@@ -5,8 +5,8 @@ import {
   argvHash,
   type RuntimeEvent,
   type TaskJob,
-} from '@shibaox/core';
-import { RoleSchema } from '@shibaox/schemas';
+} from '@wizardingcode/shibaox-core';
+import { RoleSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { ClaudeCodeAdapter } from '../src/index.js';
 import { fakeQuery, msg } from '../src/testing/fake-query.js';

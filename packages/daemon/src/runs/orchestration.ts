@@ -1,6 +1,6 @@
-import { type AgentTool, isEventTurn } from '@shibaox/core';
-import type { MemoryNotes } from '@shibaox/memory';
-import type { Role } from '@shibaox/schemas';
+import { type AgentTool, isEventTurn } from '@wizardingcode/shibaox-core';
+import type { MemoryNotes } from '@wizardingcode/shibaox-memory';
+import type { Role } from '@wizardingcode/shibaox-schemas';
 import { z } from 'zod';
 
 export interface OrchestrationArgs {

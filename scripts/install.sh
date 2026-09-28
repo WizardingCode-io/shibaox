@@ -1,8 +1,7 @@
 #!/bin/sh
 # shibaox installer: one checkout under ~/.shibaox/app, one `shibaox` on your PATH.
 #   SHIBAOX_SOURCE=/path/to/shibaox sh scripts/install.sh        # from a clone (today)
-#   curl -fsSL https://raw.githubusercontent.com/wizardingcode/shibaox/main/scripts/install.sh | sh
-#   (the public URL is not live yet: until it is, SHIBAOX_SOURCE is the supported path)
+#   curl -fsSL https://raw.githubusercontent.com/WizardingCode-io/shibaox/main/scripts/install.sh | sh
 # Variables: SHIBAOX_HOME (default ~/.shibaox), SHIBAOX_SOURCE (git URL or local path of the
 # repository), SHIBAOX_REF (branch or tag, default main), SHIBAOX_NO_PROFILE=1 (do not touch
 # the shell profile).
@@ -13,7 +12,7 @@ main() {
   APP="$HOME_DIR/app"
   BIN="$HOME_DIR/bin"
   LOG="$HOME_DIR/install.log"
-  SOURCE="${SHIBAOX_SOURCE:-https://github.com/wizardingcode/shibaox.git}"
+  SOURCE="${SHIBAOX_SOURCE:-https://github.com/WizardingCode-io/shibaox.git}"
   REF="${SHIBAOX_REF:-main}"
   export GIT_TERMINAL_PROMPT=0 COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 

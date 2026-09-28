@@ -26,7 +26,7 @@ Critério de design transversal, fixado pelo Andre: cada peça tem de servir uma
 
 ## 1. Processos e ficheiros
 
-- Pacote novo `packages/daemon` (`@shibaox/daemon`) com `server/` (API, fila, retoma), `client/` (cliente `fetch` sobre socket, exportado como `@shibaox/daemon/client`), `channels/`, `schedules/`.
+- Pacote novo `packages/daemon` (`@wizardingcode/shibaox-daemon`) com `server/` (API, fila, retoma), `client/` (cliente `fetch` sobre socket, exportado como `@wizardingcode/shibaox-daemon/client`), `channels/`, `schedules/`.
 - Diretório `SHIBAOX_HOME` (por defeito `~/.shibaox/`): `daemon.sock`, `daemon.pid`, `daemon.log`, `daemon.yaml`, `events.db`.
 - `shibaox daemon start` corre em foreground; `--detach` faz `spawn` destacado, escreve o pid e devolve. `stop` envia `POST /shutdown` (termina runs com `cancel` só se `--force`; por defeito espera que os ativos terminem, até 60 s, depois aborta). `status` mostra versão, uptime, runs ativos e por estado, canais ligados.
 - Auto-arranque: qualquer comando do CLI que precise do daemon e não o encontre arranca-o em `--detach`, espera pelo `GET /health` (até 5 s) e avisa numa linha ("Started the shibaox daemon (log: ~/.shibaox/daemon.log)"). Socket órfão (ficheiro existe, ligação recusada, pid morto) é removido antes de arrancar.
@@ -69,7 +69,7 @@ Todos os pedidos e respostas em JSON; erros como `{ error: { code, message } }` 
 
 `id` de inbox: `human:<runId>:<nodeId>` ou `approval:<approvalId>`.
 
-Cliente (`@shibaox/daemon/client`): `DaemonClient { health(), submitRun(req), listRuns(q), getRun(id), events(id, { since? }): AsyncIterable<Envelope>, cancel(id), resume(id, o), inbox(), answer(id, a), schedules(), addSchedule(s), removeSchedule(id), shutdown(o) }`, construído com o caminho do socket; `ensureDaemon()` faz o auto-arranque.
+Cliente (`@wizardingcode/shibaox-daemon/client`): `DaemonClient { health(), submitRun(req), listRuns(q), getRun(id), events(id, { since? }): AsyncIterable<Envelope>, cancel(id), resume(id, o), inbox(), answer(id, a), schedules(), addSchedule(s), removeSchedule(id), shutdown(o) }`, construído com o caminho do socket; `ensureDaemon()` faz o auto-arranque.
 
 ## 4. Aprovações e sessões Claude Code
 
@@ -148,11 +148,11 @@ Comandos que existiam com `--org`: mantêm-no; o `orgRoot` vai no pedido ao daem
 
 ## 10. Alterações em pacotes existentes
 
-- `@shibaox/schemas`: eventos `RunStarted`, `SessionStarted`, `ToolApprovalRequested`, `ToolApprovalResolved`, `NodeSuspended`; `RunCreated.orgRoot?`; `org.yaml` `max_concurrent_runs?`.
-- `@shibaox/core`: `RunStatus` + `queued`, `waiting_approval`; reducer para os eventos novos (`sessionId` por nó, aprovações por nó, `queued` até `RunStarted`/`NodeStarted`); `AdapterErrorReason` + `approval_pending`; `EngineDeps.approvals?: ApprovalHandler`; `TaskJob.resumeSessionId?`, `resumeNote?`, `approvedArgv?: string[]` (hashes já resolvidos); `EventStore.subscribe`; `RuntimeEvent` aditivo (secção 7); o motor ganha `engine.create(req)` (emite `RunCreated`, devolve `runId`, run fica `queued`) e `engine.run(runId)` (emite `RunStarted` e executa); `engine.start` passa a ser `create` seguido de `run`, para os testes e o modo sem daemon continuarem válidos.
-- `@shibaox/adapter-claude-code`: opção `approvals`, timeout, `SessionStarted` a partir do `init`, `resume` por `sessionId`, `parent_tool_use_id` mapeado, ids e durações de ferramentas.
-- `@shibaox/adapter-direct`: `approvals` no `run_command`, ids e durações.
-- `@shibaox/persistence-sqlite`: `subscribe`, tabelas `schedules` e `channel_outbox`, migração idempotente.
+- `@wizardingcode/shibaox-schemas`: eventos `RunStarted`, `SessionStarted`, `ToolApprovalRequested`, `ToolApprovalResolved`, `NodeSuspended`; `RunCreated.orgRoot?`; `org.yaml` `max_concurrent_runs?`.
+- `@wizardingcode/shibaox-core`: `RunStatus` + `queued`, `waiting_approval`; reducer para os eventos novos (`sessionId` por nó, aprovações por nó, `queued` até `RunStarted`/`NodeStarted`); `AdapterErrorReason` + `approval_pending`; `EngineDeps.approvals?: ApprovalHandler`; `TaskJob.resumeSessionId?`, `resumeNote?`, `approvedArgv?: string[]` (hashes já resolvidos); `EventStore.subscribe`; `RuntimeEvent` aditivo (secção 7); o motor ganha `engine.create(req)` (emite `RunCreated`, devolve `runId`, run fica `queued`) e `engine.run(runId)` (emite `RunStarted` e executa); `engine.start` passa a ser `create` seguido de `run`, para os testes e o modo sem daemon continuarem válidos.
+- `@wizardingcode/shibaox-adapter-claude-code`: opção `approvals`, timeout, `SessionStarted` a partir do `init`, `resume` por `sessionId`, `parent_tool_use_id` mapeado, ids e durações de ferramentas.
+- `@wizardingcode/shibaox-adapter-direct`: `approvals` no `run_command`, ids e durações.
+- `@wizardingcode/shibaox-persistence-sqlite`: `subscribe`, tabelas `schedules` e `channel_outbox`, migração idempotente.
 - `apps/cli`: `wiring.ts` migra para `packages/daemon/server` (o daemon é o único que constrói runtimes); o CLI fica só com cliente + apresentação.
 
 ## 11. Erros

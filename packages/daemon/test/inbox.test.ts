@@ -1,4 +1,4 @@
-import { MemoryEventStore } from '@shibaox/core';
+import { MemoryEventStore } from '@wizardingcode/shibaox-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AlreadyResolvedError, InboxService, NotFoundError } from '../src/inbox.js';
 

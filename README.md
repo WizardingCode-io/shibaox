@@ -28,11 +28,10 @@ graphify).
 **Install (one command).** One checkout under `~/.shibaox/app`, one `shibaox` on your PATH:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/wizardingcode/shibaox/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/WizardingCode-io/shibaox/main/scripts/install.sh | sh
 # or from a local clone: SHIBAOX_SOURCE=/path/to/shibaox sh scripts/install.sh
 ```
 
-The public URL is not live yet: until it is, `SHIBAOX_SOURCE=<clone>` is the supported path.
 It needs git, Node 22+ and pnpm (enabled through corepack when missing); Bun 1.3+ runs the
 dashboard (the CLI and the daemon work without it). It adds `~/.shibaox/bin` to your PATH in
 your shell's login file (`~/.zprofile` on macOS zsh, `~/.bash_profile`, `~/.zshrc`/`~/.bashrc`
@@ -41,8 +40,7 @@ records the Node it was built with (a different ABI is reported, with the fix). 
 `shibaox doctor`, `shibaox daemon install` (keeps the daemon running), `shibaox` (the
 dashboard). `shibaox upgrade` pulls, rebuilds and restarts the daemon (nothing happens when
 already up to date; a failed build says how to go back). `SHIBAOX_REF` picks a branch or tag.
-Publishing to npm (`npm i -g shibaox`) is not set up yet: the packages are workspace-only and
-the dashboard runs from source under Bun.
+Or from npm: `npm i -g shibaox` (the dashboard package ships its source, which Bun runs).
 
 If `pnpm install` fails while building `better-sqlite3`:
 
@@ -65,7 +63,7 @@ After `pnpm build`, run the CLI either directly or through pnpm:
 
 ```sh
 node apps/cli/dist/index.js --help
-pnpm --filter @shibaox/cli exec shibaox --help
+pnpm --filter shibaox exec shibaox --help
 ```
 
 The examples below use `shibaox` as shorthand for either form. With pnpm, relative

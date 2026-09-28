@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { OutboxRepo, SqliteEventStore } from '@shibaox/persistence-sqlite';
+import { OutboxRepo, SqliteEventStore } from '@wizardingcode/shibaox-persistence-sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { BACKOFF_MS, OutboxWorker } from '../src/channels/outbox.js';
 import type { Channel } from '../src/channels/types.js';

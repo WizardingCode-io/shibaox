@@ -1,5 +1,5 @@
-import type { RunState } from '@shibaox/core';
-import type { Envelope } from '@shibaox/daemon';
+import type { RunState } from '@wizardingcode/shibaox-core';
+import type { Envelope } from '@wizardingcode/shibaox-daemon';
 import { describe, expect, it } from 'vitest';
 import { CARD_LIMIT, reduceTimeline, summarizeInput } from '../src/model/stream.js';
 

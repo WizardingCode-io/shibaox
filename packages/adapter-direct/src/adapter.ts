@@ -11,13 +11,13 @@ import {
   type RuntimeEvent,
   splitConversation,
   type TaskJob,
-} from '@shibaox/core';
+} from '@wizardingcode/shibaox-core';
 import {
   describeError,
   type GenerateResult,
   generateStream,
   type ProviderRegistry,
-} from '@shibaox/providers';
+} from '@wizardingcode/shibaox-providers';
 import type { ModelMessage, ToolSet } from 'ai';
 import { parseTextToolCalls } from './text-tools.js';
 import { APPROVAL_PENDING, buildTools } from './tools.js';

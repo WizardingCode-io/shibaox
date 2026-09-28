@@ -1,4 +1,4 @@
-import type { ProjectProfile, RunState } from '@shibaox/core';
+import type { ProjectProfile, RunState } from '@wizardingcode/shibaox-core';
 import type {
   DiffResult,
   Envelope,
@@ -10,8 +10,8 @@ import type {
   OrgConfigPatch,
   RunSummaryPlus,
   SubmitRequest,
-} from '@shibaox/daemon';
-import { DaemonHttpError } from '@shibaox/daemon/client';
+} from '@wizardingcode/shibaox-daemon';
+import { DaemonHttpError } from '@wizardingcode/shibaox-daemon/client';
 import type { DaemonClientLike } from '../context/client.js';
 
 interface Stream {

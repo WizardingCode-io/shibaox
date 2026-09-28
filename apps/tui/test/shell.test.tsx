@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
 import { createTestRenderer } from '@opentui/core/testing';
 import { testRender } from '@opentui/solid';
-import type { RunState } from '@shibaox/core';
-import type { Envelope } from '@shibaox/daemon';
+import type { RunState } from '@wizardingcode/shibaox-core';
+import type { Envelope } from '@wizardingcode/shibaox-daemon';
 import { App, type AppHooks, runStream } from '../src/app.js';
 import { FakeDaemonClient } from '../src/testing/fake-client.js';
 

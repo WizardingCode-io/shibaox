@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { runArgv } from '@shibaox/core';
+import type { runArgv } from '@wizardingcode/shibaox-core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Graphify, graphJsonPath } from '../src/index.js';
 

@@ -1,5 +1,5 @@
-import type { RunState } from '@shibaox/core';
-import { DaemonHttpError } from '@shibaox/daemon';
+import type { RunState } from '@wizardingcode/shibaox-core';
+import { DaemonHttpError } from '@wizardingcode/shibaox-daemon';
 import { describe, expect, it } from 'vitest';
 import { followAny } from '../src/commands/run.js';
 import { makeOut } from '../src/output.js';

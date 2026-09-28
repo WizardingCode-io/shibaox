@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { ADAPTER_IDS, type AdapterId, type GraphMode } from '@shibaox/daemon';
+import { ADAPTER_IDS, type AdapterId, type GraphMode } from '@wizardingcode/shibaox-daemon';
 import { Command, InvalidArgumentError, Option } from 'commander';
 import { connect } from './client.js';
 import {

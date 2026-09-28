@@ -4,7 +4,7 @@
 
 **Goal:** um daemon por utilizador que executa os runs, guarda o estado em `~/.shibaox/events.db`, mantém um inbox persistente de aprovações (nós `human` e pushes/deploys dentro de tasks Claude Code, com sessão bloqueada e retoma por `session_id`), notifica por macOS e Telegram, corre agendamentos, e expõe uma API local em socket Unix que o CLI passa a consumir como cliente.
 
-**Architecture:** `@shibaox/daemon` assenta no motor existente sem o alterar estruturalmente: o motor ganha `create`/`run` (fila), eventos novos (`RunStarted`, `SessionStarted`, `ToolApprovalRequested/Resolved`, `NodeSuspended`), uma `ApprovalHandler` que os adaptadores chamam e um `onRuntimeEvent` para o stream. O daemon é composto por `InboxService` (aprovações e humanos, promessas bloqueantes com timeout), `RunManager` (fila, concorrência, retoma no arranque, worktrees, notas do vault, autorouting, absorvendo o `wiring.ts` do CLI), `Server` (HTTP JSON + SSE sobre `node:http` num socket Unix), `DaemonClient`, canais (`macos`, `telegram`) com outbox, e `Scheduler` (croner). O CLI fica só com cliente e apresentação; `replay --db`, `init`, `doctor`, `models`, `providers`, `graph` e `worktree` continuam locais.
+**Architecture:** `@wizardingcode/shibaox-daemon` assenta no motor existente sem o alterar estruturalmente: o motor ganha `create`/`run` (fila), eventos novos (`RunStarted`, `SessionStarted`, `ToolApprovalRequested/Resolved`, `NodeSuspended`), uma `ApprovalHandler` que os adaptadores chamam e um `onRuntimeEvent` para o stream. O daemon é composto por `InboxService` (aprovações e humanos, promessas bloqueantes com timeout), `RunManager` (fila, concorrência, retoma no arranque, worktrees, notas do vault, autorouting, absorvendo o `wiring.ts` do CLI), `Server` (HTTP JSON + SSE sobre `node:http` num socket Unix), `DaemonClient`, canais (`macos`, `telegram`) com outbox, e `Scheduler` (croner). O CLI fica só com cliente e apresentação; `replay --db`, `init`, `doctor`, `models`, `providers`, `graph` e `worktree` continuam locais.
 
 **Tech Stack:** TypeScript strict ESM/NodeNext, pnpm 10 + turborepo, vitest, biome, zod 4, better-sqlite3 13, `node:http` (socket Unix), `croner` (única dependência nova), `@anthropic-ai/claude-agent-sdk` (`resume`), Telegram Bot API por `fetch`.
 
@@ -88,7 +88,7 @@ apps/cli/src/output.ts                    --json e impressão
 // packages/core/test/reducer-2a.test.ts
 import { replay } from '../src/run/reducer.js';
 import { describe, expect, it } from 'vitest';
-import type { RunEvent } from '@shibaox/schemas';
+import type { RunEvent } from '@wizardingcode/shibaox-schemas';
 
 const at = '2026-09-26T00:00:00.000Z';
 const created: RunEvent = {
@@ -150,7 +150,7 @@ describe('reducer phase 2A', () => {
 
 - [ ] **Step 2: Correr e ver falhar**
 
-Run: `pnpm --filter @shibaox/core exec vitest run test/reducer-2a.test.ts`
+Run: `pnpm --filter @wizardingcode/shibaox-core exec vitest run test/reducer-2a.test.ts`
 Expected: FAIL (schema rejects `RunStarted`; `orgRoot`/`pendingApprovals` undefined).
 
 - [ ] **Step 3: Schemas**
@@ -518,7 +518,7 @@ describe('engine phase 2A', () => {
 
 - [ ] **Step 2: Correr e ver falhar**
 
-Run: `pnpm --filter @shibaox/core exec vitest run test/engine-2a.test.ts`
+Run: `pnpm --filter @wizardingcode/shibaox-core exec vitest run test/engine-2a.test.ts`
 Expected: FAIL (`create` is not a function).
 
 - [ ] **Step 3: `approvals.ts`**
@@ -746,7 +746,7 @@ describe('sqlite repos', () => {
 });
 ```
 
-- [ ] **Step 2: Correr e ver falhar** — `pnpm --filter @shibaox/persistence-sqlite exec vitest run`.
+- [ ] **Step 2: Correr e ver falhar** — `pnpm --filter @wizardingcode/shibaox-persistence-sqlite exec vitest run`.
 
 - [ ] **Step 3: Implementar**
 
@@ -810,8 +810,8 @@ Comportamento:
 
 ```ts
 // packages/adapter-claude-code/test/approvals.test.ts
-import type { ApprovalHandler, ApprovalRequest } from '@shibaox/core';
-import { argvHash } from '@shibaox/core';
+import type { ApprovalHandler, ApprovalRequest } from '@wizardingcode/shibaox-core';
+import { argvHash } from '@wizardingcode/shibaox-core';
 import { describe, expect, it } from 'vitest';
 import { ClaudeCodeAdapter } from '../src/adapter.js';
 import { fakeQuery, msg } from '../src/testing/fake-query.js';
@@ -995,7 +995,7 @@ export class AlreadyResolvedError extends Error {}
 
 ```ts
 // packages/daemon/test/inbox.test.ts
-import { MemoryEventStore } from '@shibaox/core';
+import { MemoryEventStore } from '@wizardingcode/shibaox-core';
 import { describe, expect, it, vi } from 'vitest';
 import { AlreadyResolvedError, InboxService, NotFoundError } from '../src/inbox.js';
 
@@ -1057,7 +1057,7 @@ describe('InboxService', () => {
 
 `config.test.ts`: ficheiro ausente → defaults; YAML com `telegram: { chat_id: 5 }` → `bot_token_env` por defeito; `max_concurrent_runs: 0` → erro com o caminho do ficheiro na mensagem.
 
-- [ ] **Step 2: Correr e ver falhar**, **Step 3: implementar** (`package.json` com dependências `@shibaox/core`, `@shibaox/schemas`, `@shibaox/persistence-sqlite`, `yaml`, `zod`; `list()` faz `store.listRuns()` e, para cada run não terminal, `replay(read)` → `pendingHumans` e `pendingApprovals`), **Step 4: correr**, **Step 5: commit**
+- [ ] **Step 2: Correr e ver falhar**, **Step 3: implementar** (`package.json` com dependências `@wizardingcode/shibaox-core`, `@wizardingcode/shibaox-schemas`, `@wizardingcode/shibaox-persistence-sqlite`, `yaml`, `zod`; `list()` faz `store.listRuns()` e, para cada run não terminal, `replay(read)` → `pendingHumans` e `pendingApprovals`), **Step 4: correr**, **Step 5: commit**
 
 ```bash
 git add packages/daemon pnpm-lock.yaml
@@ -1074,7 +1074,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Create: `packages/daemon/src/runtime.ts` (mover `buildRuntime`, `effectiveAdapter`, `ADAPTER_IDS`, `isAdapterId`, `GraphWiring` de `apps/cli/src/wiring.ts`)
 - Create: `packages/daemon/src/run-manager.ts` (mover de `apps/cli/src/commands/run.ts`: `prepareGraph`, `autoroute`, `finishRun`, `worktreeOf`, `projectOf`, `projectName`, `workspaceMode`, `gitPrefix`)
 - Create: `packages/daemon/src/runtime-buffer.ts`
-- Modify: `apps/cli/src/wiring.ts` → re-export de `@shibaox/daemon` (para os testes do CLI existentes até à Task 11)
+- Modify: `apps/cli/src/wiring.ts` → re-export de `@wizardingcode/shibaox-daemon` (para os testes do CLI existentes até à Task 11)
 - Test: `packages/daemon/test/run-manager.test.ts` (portar `apps/cli/test/run-e2e.test.ts` e `run-claude-code-e2e.test.ts` para aqui; apagar os originais nesta task)
 
 **Interfaces:**
@@ -1114,7 +1114,7 @@ Regras internas:
 - `start()`: para cada run de `store.listRuns()`: `queued` → fila; `running` → fila com `resume` (interrupted); `waiting_approval` → `engine.suspend(runId)` (nós `running` órfãos ficam `pending` com `sessionId`).
 - `stop({force})`: sem force espera `graceMs` (60 s) pelas engines ativas, depois `cancel` nas restantes com razão "daemon stopped".
 
-- [ ] **Step 1: Portar os testes e-2-e** para `packages/daemon/test/run-manager.test.ts` usando `RunManager` + `InboxService` + `MemoryEventStore` (setup: `scaffoldOrg` do CLI move-se para `packages/daemon/src/templates.ts`? Não: o `init` fica no CLI; os testes do daemon importam `scaffoldOrg` de `@shibaox/cli`? Ciclo. Decisão: mover `apps/cli/src/templates.ts` e `scaffoldOrg` para `packages/daemon/src/templates.ts`, exportado; o CLI `init` importa de `@shibaox/daemon`). Acrescentar:
+- [ ] **Step 1: Portar os testes e-2-e** para `packages/daemon/test/run-manager.test.ts` usando `RunManager` + `InboxService` + `MemoryEventStore` (setup: `scaffoldOrg` do CLI move-se para `packages/daemon/src/templates.ts`? Não: o `init` fica no CLI; os testes do daemon importam `scaffoldOrg` de `shibaox`? Ciclo. Decisão: mover `apps/cli/src/templates.ts` e `scaffoldOrg` para `packages/daemon/src/templates.ts`, exportado; o CLI `init` importa de `@wizardingcode/shibaox-daemon`). Acrescentar:
 
 ```ts
   it('queues beyond max_concurrent_runs and drains in order', async () => {
@@ -1130,7 +1130,7 @@ Regras internas:
   it('resume refuses when the worktree was removed', ...);
 ```
 
-- [ ] **Step 2: Correr e ver falhar**, **Step 3: implementar** (mover código do CLI; `apps/cli/src/wiring.ts` passa a `export * from '@shibaox/daemon'` até à Task 11), **Step 4: `pnpm build && pnpm test && pnpm lint`**, **Step 5: commit**
+- [ ] **Step 2: Correr e ver falhar**, **Step 3: implementar** (mover código do CLI; `apps/cli/src/wiring.ts` passa a `export * from '@wizardingcode/shibaox-daemon'` até à Task 11), **Step 4: `pnpm build && pnpm test && pnpm lint`**, **Step 5: commit**
 
 ```bash
 git add packages/daemon apps/cli
@@ -1296,7 +1296,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 **Files:**
 - Create: `apps/cli/src/commands/daemon.ts`, `follow.ts`, `inbox.ts`, `schedule.ts`, `cancel.ts`, `apps/cli/src/output.ts`, `apps/cli/src/client.ts`
-- Modify: `apps/cli/src/index.ts`, `commands/run.ts`, `resume.ts`, `runs.ts`, `replay.ts`, `doctor.ts`, `init.ts` (importa `scaffoldOrg` de `@shibaox/daemon`)
+- Modify: `apps/cli/src/index.ts`, `commands/run.ts`, `resume.ts`, `runs.ts`, `replay.ts`, `doctor.ts`, `init.ts` (importa `scaffoldOrg` de `@wizardingcode/shibaox-daemon`)
 - Delete: `apps/cli/src/wiring.ts`, `apps/cli/src/terminal-human.ts`, `apps/cli/test/wiring.test.ts` (os testes de wiring passam para `packages/daemon/test/runtime.test.ts` na Task 7 se ainda não passaram)
 - Modify: `README.md`
 - Test: `apps/cli/test/cli-daemon.test.ts`
@@ -1324,7 +1324,7 @@ Comandos e comportamento (todos com `--json`):
 - `inbox`, `approve <id> [--note]`, `deny <id> [--note]`.
 - `schedule add "<cron>" <workflow> --org --project [--input] [--adapter] [--budget]`, `schedule list`, `schedule rm <id>`, `schedule run <id>`.
 - `doctor`: linhas novas `daemon` (health + versão), `telegram` (`daemon.yaml` tem telegram e `getMe` ok; não é required), `claude auth` (`claude auth status` exit 0 se `claude` existe; warn caso contrário).
-- `init`: inalterado na superfície; `scaffoldOrg` vem de `@shibaox/daemon`.
+- `init`: inalterado na superfície; `scaffoldOrg` vem de `@wizardingcode/shibaox-daemon`.
 
 README: nova secção "Daemon" (o que é, `~/.shibaox`, comandos, aprovações pelo inbox e Telegram, `daemon.yaml` de exemplo, agendamentos, `--json`), atualizar "Claude Code" (aprovações já não falham o run), e o quick start (`shibaox daemon start --detach` é automático).
 

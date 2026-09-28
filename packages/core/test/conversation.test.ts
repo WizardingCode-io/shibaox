@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@shibaox/schemas';
+import type { ChatMessage } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it, vi } from 'vitest';
 import {
   compactConversation,

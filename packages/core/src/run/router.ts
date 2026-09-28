@@ -1,4 +1,4 @@
-import type { Models, Role } from '@shibaox/schemas';
+import type { Models, Role } from '@wizardingcode/shibaox-schemas';
 
 export type ModelResolution =
   | { kind: 'direct'; ref: string; provider: string; model: string }

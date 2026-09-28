@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@shibaox/schemas';
+import type { ChatMessage } from '@wizardingcode/shibaox-schemas';
 
 /** Tokens a text takes, roughly: four characters each (no tokenizer in the loop). */
 export const estimateTokens = (text: string): number => Math.ceil(text.length / 4);

@@ -1,6 +1,6 @@
-import type { NodeStatus, RunState, RunStatus } from '@shibaox/core';
-import type { Envelope } from '@shibaox/daemon';
-import type { WorkflowNode } from '@shibaox/schemas';
+import type { NodeStatus, RunState, RunStatus } from '@wizardingcode/shibaox-core';
+import type { Envelope } from '@wizardingcode/shibaox-daemon';
+import type { WorkflowNode } from '@wizardingcode/shibaox-schemas';
 
 /** `key` is stable across reductions so the screen can reconcile instead of remounting. */
 export type Block =

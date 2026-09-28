@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { runArgv } from '@shibaox/core';
+import { runArgv } from '@wizardingcode/shibaox-core';
 import {
   Daemon,
   DaemonClient,
@@ -14,7 +14,7 @@ import {
   servicePredatesLauncher,
   serviceStatus,
   uninstallService,
-} from '@shibaox/daemon';
+} from '@wizardingcode/shibaox-daemon';
 import { connect, spawnDaemon } from '../client.js';
 import type { Out } from '../output.js';
 import { CLI_VERSION } from '../version.js';

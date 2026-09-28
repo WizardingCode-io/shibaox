@@ -11,7 +11,7 @@ import {
   isTerminal,
   type RunState,
   replay,
-} from '@shibaox/core';
+} from '@wizardingcode/shibaox-core';
 
 export type InboxId = `human:${string}:${string}` | `approval:${string}`;
 

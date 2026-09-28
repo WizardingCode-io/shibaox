@@ -56,7 +56,7 @@ equipas por stack (3C), equipas de outros domínios (3D), desktop.
 
 ## 3. Perfil do projeto
 
-- `profileProject(dir)` em `@shibaox/core` (`src/project/profile.ts`): nome, git, stack
+- `profileProject(dir)` em `@wizardingcode/shibaox-core` (`src/project/profile.ts`): nome, git, stack
   (frameworks/linguagens por marcadores: package.json deps, composer.json, pyproject/
   requirements, go.mod, Cargo.toml, pubspec.yaml, project.godot, *.csproj/Unity, Gemfile,
   Makefile), gestor de pacotes, comando de testes (`detectTestCommand`), contagem de ficheiros
@@ -79,7 +79,7 @@ equipas por stack (3C), equipas de outros domínios (3D), desktop.
   orientador, e devolve `{ runId, workflow, status: 'queued' }` sem esperar. A descrição da
   ferramenta lista os workflows da org (nome e descrição), excluindo o do próprio run.
   Em `direct` é uma tool do AI SDK; em `claude-code` é um servidor MCP em processo
-  (`createSdkMcpServer` do Agent SDK, exposto por `@shibaox/adapter-claude-code` como
+  (`createSdkMcpServer` do Agent SDK, exposto por `@wizardingcode/shibaox-adapter-claude-code` como
   `sdkMcpServer(name, tools)`), permitido via `mcp__shibaox__*`.
 - O daemon liga isto em `buildRuntime` através de `RuntimeOptions.orchestration?: { workflows, startWorkflow }`
   (o `RunManager` passa `submit`). O run filho herda `orgRoot`, `project`, `adapter`,
@@ -94,7 +94,7 @@ equipas por stack (3C), equipas de outros domínios (3D), desktop.
 
 ## 5. Memória
 
-- `@shibaox/memory` ganha `MemoryNotes` sobre o vault: `remember(scope, text)` acrescenta
+- `@wizardingcode/shibaox-memory` ganha `MemoryNotes` sobre o vault: `remember(scope, text)` acrescenta
   `- <data> · <texto>` a `00-org/memory.md` (scope `user`) ou `10-projects/<p>/memory.md`
   (scope `project`); `recall(query)` devolve até 20 linhas que contêm todas as palavras da
   pergunta (sem distinguir maiúsculas), das duas notas; `preamble()` devolve as últimas 40

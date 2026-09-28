@@ -1,4 +1,4 @@
-import { loadCatalog, ProviderRegistry } from '@shibaox/providers';
+import { loadCatalog, ProviderRegistry } from '@wizardingcode/shibaox-providers';
 import { describe, expect, it } from 'vitest';
 import { testProvider } from '../src/commands/providers.js';
 

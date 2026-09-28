@@ -3,8 +3,8 @@ import {
   type ApprovalRequest,
   AutoApproveApprovals,
   DenyApprovals,
-} from '@shibaox/core';
-import { RoleSchema } from '@shibaox/schemas';
+} from '@wizardingcode/shibaox-core';
+import { RoleSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { buildCanUseTool, classifyToolRequest } from '../src/index.js';
 

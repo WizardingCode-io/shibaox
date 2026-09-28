@@ -1,5 +1,5 @@
-import type { RunState, StoredEvent } from '@shibaox/core';
-import { WorkflowSchema } from '@shibaox/schemas';
+import type { RunState, StoredEvent } from '@wizardingcode/shibaox-core';
+import { WorkflowSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { telegramReportText } from '../src/channels/telegram.js';
 import { buildRunReport, chunkText } from '../src/runs/report.js';

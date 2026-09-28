@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { testRender } from '@opentui/solid';
-import type { RunState } from '@shibaox/core';
-import { type Envelope, scaffoldOrg } from '@shibaox/daemon';
+import type { RunState } from '@wizardingcode/shibaox-core';
+import { type Envelope, scaffoldOrg } from '@wizardingcode/shibaox-daemon';
 import { App, type AppHooks } from '../src/app.js';
 import { FakeDaemonClient } from '../src/testing/fake-client.js';
 

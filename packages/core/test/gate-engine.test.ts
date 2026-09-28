@@ -1,4 +1,4 @@
-import { GateSchema } from '@shibaox/schemas';
+import { GateSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { type CheckRunners, defaultCheckRunners, type RunState, runGate } from '../src/index.js';
 

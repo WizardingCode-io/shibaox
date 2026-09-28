@@ -1,6 +1,6 @@
-import type { RunState } from '@shibaox/core';
-import type { Envelope, InboxId, SubmitRequest } from '@shibaox/daemon';
-import { DaemonHttpError } from '@shibaox/daemon/client';
+import type { RunState } from '@wizardingcode/shibaox-core';
+import type { Envelope, InboxId, SubmitRequest } from '@wizardingcode/shibaox-daemon';
+import { DaemonHttpError } from '@wizardingcode/shibaox-daemon/client';
 import type { SetStoreFunction } from 'solid-js/store';
 import { RUN_EVENT_REFRESH } from '../model/stream.js';
 import type { Feedback } from '../theme/resolve.js';
