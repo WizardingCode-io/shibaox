@@ -23,5 +23,6 @@
     "onlyBuiltDependencies": [
       "better-sqlite3"
     ]
-  }
+  },
+  "license": "Apache-2.0"
 }

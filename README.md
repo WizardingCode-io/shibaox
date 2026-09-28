@@ -95,4 +95,6 @@ The [wiki](https://github.com/WizardingCode-io/shibaox/wiki) has everything, org
 
 Shibaox is early and moving fast. The base is in place: engine, runtimes, orchestrator, daemon, dashboard, key vault, tiers, real costs, long conversations, git cycle, gates, installer. Teams by stack, other domains and a desktop app come next. Issues and ideas are welcome on the [tracker](https://github.com/WizardingCode-io/shibaox/issues).
 
+Apache-2.0. The Shibaox name, logo and mascot are trademarks of WizardingCode and are not covered by the licence.
+
 Built by [WizardingCode](https://github.com/WizardingCode-io).

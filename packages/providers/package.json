@@ -1,11 +1,12 @@
 {
   "name": "@wizardingcode/shibaox-providers",
-  "version": "0.1.4",
-  "license": "UNLICENSED",
+  "version": "0.1.5",
+  "license": "Apache-2.0",
   "type": "module",
   "files": [
-    "dist",
-    "catalog.yaml"
+    "LICENSE",
+    "catalog.yaml",
+    "dist"
   ],
   "exports": {
     ".": {
