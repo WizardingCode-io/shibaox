@@ -67,7 +67,11 @@ export const testsCheckRunner: CheckRunner = async (check, ctx) => {
   };
 };
 
-/** Runs the workspace's linter (detected, or `command`); a project without one passes with a note. */
+/** The tool itself is missing (not on PATH, not installed): the project is not at fault. */
+const NOT_INSTALLED =
+  /command not found|not found|No such file or directory|could not determine executable|canceled due to missing packages|not installed|ENOENT/i;
+
+/** Runs the workspace's linter (detected, or `command`); no linter, or one that is not installed, passes with a note. */
 export const lintCheckRunner: CheckRunner = async (check, ctx) => {
   if (check.type !== 'lint') throw new Error('lintCheckRunner got a non-lint check');
   const command = check.command ?? detectLintCommand(ctx.workspace);
@@ -77,9 +81,18 @@ export const lintCheckRunner: CheckRunner = async (check, ctx) => {
       type: 'lint',
       passed: true,
       skipped: true,
-      evidence: `no linter found in ${ctx.workspace} (package.json scripts.lint, biome, eslint, ruff, phpstan, golangci-lint, go vet, clippy, make lint)`,
+      evidence: `no linter found in ${ctx.workspace} (package.json scripts.lint, make lint, biome, eslint, ruff, phpstan, golangci-lint, go vet, clippy)`,
     };
   const r = await runCommand({ command, cwd: ctx.workspace, timeoutMs: check.timeout_ms });
+  const missing = r.exitCode === 127 || (r.exitCode !== 0 && NOT_INSTALLED.test(r.stderr));
+  if (missing)
+    return {
+      name: check.name,
+      type: 'lint',
+      passed: true,
+      skipped: true,
+      evidence: `linter not available here (\`${command}\`): ${r.stderr.trim().split('\n')[0] ?? ''}`,
+    };
   const passed = r.exitCode === 0 && !r.timedOut;
   const evidence = r.timedOut
     ? `${command}: timed out after ${check.timeout_ms}ms\n${tail(r.stdout)}${tail(r.stderr)}`

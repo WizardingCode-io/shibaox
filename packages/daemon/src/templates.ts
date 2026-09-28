@@ -129,7 +129,7 @@ start: analyse
 nodes:
   analyse:   { type: task, role: analyst, instruction: "Analyse the request and list the files to touch.", next: implement }
   implement: { type: task, role: backend, instruction: "Implement the request. Keep tests green.", next: qa }
-  qa:        { type: gate, gates: [tests, lint], on_pass: judge, on_fail: implement, max_retries: 2 }   # add review for a model code review
+  qa:        { type: gate, gates: [tests], on_pass: judge, on_fail: implement, max_retries: 2 }   # add lint (once the base branch is lint-clean) and review (a model code review)
   judge:     { type: decide, by: team-leader, question: "Is the work ready to ship?", options: [ship, rework], next: { ship: ship, rework: implement } }
   ship:      { type: human, action: approve-push, prompt: "Land this on the base branch (and push it)?", next: commit }
   commit:    { type: git, action: commit, next: merge }

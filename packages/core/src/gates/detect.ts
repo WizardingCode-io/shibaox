@@ -54,6 +54,8 @@ const ESLINT_CONFIGS = [
   'eslint.config.mjs',
   'eslint.config.cjs',
   'eslint.config.ts',
+  'eslint.config.mts',
+  'eslint.config.cts',
   '.eslintrc',
   '.eslintrc.js',
   '.eslintrc.cjs',
@@ -64,8 +66,9 @@ const ESLINT_CONFIGS = [
 
 /**
  * The command that lints the project, from what the workspace contains: its own `lint`
- * script first, then the linter it is configured for; undefined when there is none (the
- * `lint` check then passes with a note).
+ * script or make target first, then the linter it is configured for; undefined when there is
+ * none (the `lint` check then passes with a note). Node tools run through `npx --no`: what
+ * is installed, never a download (npm's "biome" is not Biome).
  */
 export function detectLintCommand(dir: string): string | undefined {
   if (has(dir, 'package.json')) {
@@ -77,9 +80,17 @@ export function detectLintCommand(dir: string): string | undefined {
     } catch {
       // unreadable package.json: fall through to the config files
     }
-    if (has(dir, 'biome.json') || has(dir, 'biome.jsonc')) return 'npx biome check .';
-    if (ESLINT_CONFIGS.some((f) => has(dir, f))) return 'npx eslint .';
   }
+  if (has(dir, 'Makefile')) {
+    try {
+      if (/^lint\s*:/m.test(readFileSync(join(dir, 'Makefile'), 'utf8'))) return 'make lint';
+    } catch {
+      // unreadable Makefile
+    }
+  }
+  if (has(dir, 'biome.json') || has(dir, 'biome.jsonc')) return 'npx --no @biomejs/biome check .';
+  if (has(dir, 'package.json') && ESLINT_CONFIGS.some((f) => has(dir, f)))
+    return 'npx --no eslint .';
   if (has(dir, 'ruff.toml') || has(dir, '.ruff.toml')) return 'ruff check .';
   if (has(dir, 'pyproject.toml')) {
     try {
@@ -96,12 +107,5 @@ export function detectLintCommand(dir: string): string | undefined {
       ? 'golangci-lint run'
       : 'go vet ./...';
   if (has(dir, 'Cargo.toml')) return 'cargo clippy --quiet -- -D warnings';
-  if (has(dir, 'Makefile')) {
-    try {
-      if (/^lint\s*:/m.test(readFileSync(join(dir, 'Makefile'), 'utf8'))) return 'make lint';
-    } catch {
-      // unreadable Makefile
-    }
-  }
   return undefined;
 }

@@ -75,11 +75,15 @@ export const DEFAULT_REVIEW_CRITERIA = [
   'Clarity: names and structure make the change easy to follow; no needless duplication',
 ];
 
+/** Weak models write "true"/"false": read them as booleans. */
+const Bool = z.preprocess((v) => (v === 'true' ? true : v === 'false' ? false : v), z.boolean());
 const Findings = z.object({
   findings: z.array(
     z.object({
+      /** The criterion's number in the list, the surest way to match it. */
+      n: z.number().int().optional(),
       criterion: z.string(),
-      passed: z.boolean(),
+      passed: Bool,
       evidence: z.string(),
       suggestion: z.string().optional(),
     }),
@@ -87,7 +91,45 @@ const Findings = z.object({
 });
 
 const REVIEW_SYSTEM =
-  'You are a strict but fair code reviewer. Judge the change against each numbered criterion using only the provided context (request, outputs, diff). For every criterion answer passed true/false with concrete evidence (file, line, what you saw) and, when it fails, a suggestion the author can act on. Answer with the JSON object requested: { "findings": [ { "criterion", "passed", "evidence", "suggestion"? } ] } with one entry per criterion, in order, using the criterion text verbatim.';
+  'You are a strict but fair code reviewer. Judge the change against each numbered criterion using only the provided context (request, outputs, diff). For every criterion answer passed true/false with concrete evidence (file, line, what you saw) and, when it fails, a suggestion the author can act on. Answer with the JSON object requested: { "findings": [ { "n": <the criterion number>, "criterion": <its text verbatim>, "passed": true|false, "evidence": "...", "suggestion"?: "..." } ] } with exactly one entry per criterion, in order.';
+
+type Finding = z.infer<typeof Findings>['findings'][number];
+
+const key = (s: string) =>
+  s
+    .trim()
+    .toLowerCase()
+    .replace(/^\d+[.)]\s*/, '');
+const prefix = (s: string) => key(s).split(':')[0]?.trim() ?? '';
+
+/**
+ * One finding per criterion, each finding used once: by number, else by the criterion's
+ * text, else by its prefix before ':', else by position when the model answered exactly one
+ * row per criterion. Anything left unmatched is "not reviewed".
+ */
+export function matchFindings(
+  criteria: readonly string[],
+  findings: readonly Finding[],
+): { criterion: string; passed: boolean; evidence: string; suggestion?: string }[] {
+  const used = new Set<number>();
+  const take = (pick: (f: Finding, i: number) => boolean): Finding | undefined => {
+    const i = findings.findIndex((f, idx) => !used.has(idx) && pick(f, idx));
+    if (i < 0) return undefined;
+    used.add(i);
+    return findings[i];
+  };
+  const byNumber = criteria.map((_, i) => take((f) => f.n === i + 1));
+  return criteria.map((c, i) => {
+    const f =
+      byNumber[i] ??
+      take((f) => f.n === undefined && key(f.criterion) === key(c)) ??
+      take((f) => f.n === undefined && prefix(c) !== '' && prefix(f.criterion) === prefix(c)) ??
+      (findings.length === criteria.length ? take((_, idx) => idx === i) : undefined);
+    return f
+      ? { criterion: c, passed: f.passed, evidence: f.evidence, suggestion: f.suggestion }
+      : { criterion: c, passed: false, evidence: 'not reviewed' };
+  });
+}
 
 /** A review check: the judge model answers criterion by criterion; all must pass. */
 export function reviewCheckRunner(client: LlmClient, ref: string): CheckRunner {
@@ -115,21 +157,7 @@ export function reviewCheckRunner(client: LlmClient, ref: string): CheckRunner {
         evidence: `review ${ref} failed: ${describeError(e)}`,
       };
     }
-    const findings = r.output?.findings ?? [];
-    const key = (s: string) =>
-      s
-        .trim()
-        .toLowerCase()
-        .replace(/^\d+\.\s*/, '');
-    const rows = criteria.map((c, i) => {
-      const f =
-        findings.find((x) => key(x.criterion) === key(c)) ??
-        findings.find((x) => key(x.criterion).startsWith(key(c).split(':')[0] ?? '')) ??
-        findings[i];
-      return f && (key(f.criterion) === key(c) || findings.length === criteria.length)
-        ? { criterion: c, passed: f.passed, evidence: f.evidence, suggestion: f.suggestion }
-        : { criterion: c, passed: false, evidence: 'not reviewed', suggestion: undefined };
-    });
+    const rows = matchFindings(criteria, r.output?.findings ?? []);
     const passed = rows.every((x) => x.passed);
     const suggestions = rows
       .filter((x) => !x.passed && x.suggestion)

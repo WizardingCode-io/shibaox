@@ -109,3 +109,29 @@ describe('worktreePreflight', () => {
     });
   });
 });
+
+describe('diffRunWorkspace and new files', () => {
+  it('shows new files whatever their name, scoped to a subfolder project, with a cap on how many', async () => {
+    const project = repo();
+    mkdirSync(join(project, 'sub'));
+    writeFileSync(join(project, 'sub', 'keep.txt'), 'k\n');
+    execFileSync('git', ['add', '-A'], { cwd: project });
+    execFileSync(
+      'git',
+      ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--no-gpg-sign', '-m', 'sub'],
+      { cwd: project },
+    );
+    const ws = await createRunWorkspace({ project, runId: 'r2', mode: 'worktree' });
+    writeFileSync(join(ws.path, 'sub', 'a b.txt'), 'space\n');
+    writeFileSync(join(ws.path, 'sub', 'é.txt'), 'accent\n');
+    writeFileSync(join(ws.path, 'outside.txt'), 'outside\n');
+    const diff = await diffRunWorkspace(join(ws.path, 'sub'));
+    expect(diff).toContain('+space');
+    expect(diff).toContain('+accent');
+    expect(diff).not.toContain('+outside'); // outside the project folder
+    for (let i = 0; i < 230; i++) writeFileSync(join(ws.path, 'sub', `f${i}.txt`), `${i}\n`);
+    const many = await diffRunWorkspace(join(ws.path, 'sub'));
+    expect(many).toMatch(/…\d+ more new file\(s\) not shown/);
+    expect((many.match(/^\+\+\+ b\//gm) ?? []).length).toBeLessThanOrEqual(200);
+  });
+});

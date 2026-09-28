@@ -307,8 +307,11 @@ gate with the linter's output as evidence and passing with a note when there is 
 to review the change criterion by criterion (`criteria:` list, else the built-in rubric:
 scope, correctness, tests, hygiene, clarity), with evidence per criterion and suggestions for
 the ones that fail (they feed the rework loop through `on_fail`); a criterion the model does
-not answer counts as failed. `land-feature` gates on `[tests, lint]`; add `review` for a model
-review before the human approval.
+not answer counts as failed. A linter that is not installed where the daemon runs (`ruff` in a
+venv, `vendor/bin/phpstan`, a pnpm project's worktree without `node_modules`) is a skipped pass
+with a note, never a failure to fix. `land-feature` gates on `[tests]`; add `lint` once the
+base branch is lint-clean (otherwise the agent is asked to fix the whole repository) and
+`review` for a model review before the human approval.
 
 **Git cycle.** A `git` node is a step the daemon runs itself (trusted org config, like
 `code`), for **worktree runs** (`merge` and `pr` refuse an in-place run; an in-place `commit`

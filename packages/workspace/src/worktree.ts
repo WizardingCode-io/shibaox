@@ -123,35 +123,31 @@ export async function removeRunWorkspace(args: {
   if (args.deleteBranch) await git(args.project, ['branch', '-D', `shibaox/${args.runId}`]);
 }
 
+/** New files beyond this many are counted, not shown: a stray build output must not flood a review. */
+const MAX_NEW_FILES = 200;
+
 /**
  * What changed in a run's checkout, for judges and reviews: tracked changes against HEAD plus
- * every new (untracked) file as an addition, so what the agent just wrote is reviewed too.
+ * every new (untracked, not ignored) file under `path` as an addition, so what the agent just
+ * wrote is reviewed too. Paths come from `ls-files -z`: relative to `path`, never quoted.
  */
 export async function diffRunWorkspace(path: string, maxChars = 200_000): Promise<string> {
-  let diff = (await runArgv({ argv: ['git', 'diff', 'HEAD'], cwd: path, timeoutMs: 60_000 }))
-    .stdout;
-  const status = (
-    await runArgv({
-      argv: ['git', 'status', '--porcelain', '--untracked-files=all'],
-      cwd: path,
-      timeoutMs: 60_000,
-    })
-  ).stdout;
-  const untracked = status
-    .split('\n')
-    .filter((l) => l.startsWith('?? '))
-    .map((l) => l.slice(3).trim())
-    .filter((f) => f && !f.endsWith('/'));
-  for (const file of untracked) {
+  const run = (argv: string[]) => runArgv({ argv, cwd: path, timeoutMs: 60_000 });
+  let diff = (await run(['git', 'diff', 'HEAD', '--', '.'])).stdout;
+  const untracked = (
+    await run(['git', 'ls-files', '--others', '--exclude-standard', '-z', '--', '.'])
+  ).stdout
+    .split('\0')
+    .filter((f) => f);
+  const shown = untracked.slice(0, MAX_NEW_FILES);
+  for (const file of shown) {
     if (diff.length >= maxChars) break;
     // `--no-index` exits 1 when the files differ: the stdout is still the patch
-    const r = await runArgv({
-      argv: ['git', 'diff', '--no-index', '--', '/dev/null', file],
-      cwd: path,
-      timeoutMs: 60_000,
-    });
-    diff += r.stdout.replace(/^diff --git a\/dev\/null b\/(.*)$/m, 'diff --git a/$1 b/$1');
+    diff += (await run(['git', 'diff', '--no-index', '--', '/dev/null', file])).stdout;
   }
+  if (untracked.length > shown.length)
+    diff += `\n…${untracked.length - shown.length} more new file(s) not shown\n`;
+  const status = (await run(['git', 'status', '--porcelain', '--', '.'])).stdout;
   const text = `${diff}\n## status\n${status}`;
   return text.length > maxChars ? `${text.slice(0, maxChars)}\n…(truncated)` : text;
 }

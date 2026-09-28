@@ -213,6 +213,54 @@ describe('reviewCheckRunner', () => {
       DEFAULT_REVIEW_CRITERIA[0] ?? '',
     );
   });
+  it('findings are matched by number, then text, each used once: a failing one is never lost', async () => {
+    // out of order, one abbreviated, one duplicated, one extra: the numbers decide
+    fake = await startFakeOpenAI(() => ({
+      content: JSON.stringify({
+        findings: [
+          {
+            n: 2,
+            criterion: 'Docs',
+            passed: false,
+            evidence: 'greet() has no doc comment',
+            suggestion: 'document greet()',
+          },
+          { n: 1, criterion: 'No TODOs', passed: true, evidence: 'none' },
+          { n: 1, criterion: 'No TODOs', passed: false, evidence: 'duplicate row' },
+          { criterion: 'Overall', passed: true, evidence: 'fine' },
+        ],
+      }),
+    }));
+    const run = reviewCheckRunner(new LlmClient(reg(fake.baseURL)), 'fake/m');
+    const r = await run(
+      { name: 'review', type: 'review', criteria: ['No TODOs', 'Docs on public fns'] },
+      ctx as never,
+    );
+    expect(r.passed).toBe(false);
+    expect(r.evidence).toContain('✓ No TODOs: none');
+    expect(r.evidence).toContain('✗ Docs on public fns: greet() has no doc comment');
+    expect(r.suggestion).toContain('document greet()');
+    const sent = fake.requests[0] as { messages: { role: string; content: string }[] };
+    expect(sent.messages.map((m) => m.content).join('\n')).toMatch(/"n"/); // the prompt asks for the number
+  });
+  it('without numbers, a shared prefix never steals another criterion\'s finding; "true" strings are read as booleans', async () => {
+    fake = await startFakeOpenAI(() => ({
+      content: JSON.stringify({
+        findings: [
+          { criterion: 'Tests coverage: 80%', passed: 'false', evidence: 'coverage 40%' },
+          { criterion: 'Tests: unit pass', passed: 'true', evidence: 'all green' },
+        ],
+      }),
+    }));
+    const run = reviewCheckRunner(new LlmClient(reg(fake.baseURL)), 'fake/m');
+    const r = await run(
+      { name: 'review', type: 'review', criteria: ['Tests: unit pass', 'Tests coverage: 80%'] },
+      ctx as never,
+    );
+    expect(r.evidence).toContain('✓ Tests: unit pass: all green');
+    expect(r.evidence).toContain('✗ Tests coverage: 80%: coverage 40%');
+    expect(r.passed).toBe(false);
+  });
   it('a criterion the model left out counts as not reviewed: the check fails and says so', async () => {
     fake = await startFakeOpenAI(() => ({
       content: JSON.stringify({ findings: [{ criterion: 'Scope', passed: true, evidence: 'ok' }] }),

@@ -113,14 +113,23 @@ describe('detectLintCommand', () => {
       'pnpm run lint',
     );
     expect(detectLintCommand(dir({ 'package.json': pkg }))).toBe('npm run lint');
+    // never download a tool: `--no` runs what is installed (the real Biome package, not npm's "biome")
     expect(detectLintCommand(dir({ 'package.json': '{}', 'biome.json': '{}' }))).toBe(
-      'npx biome check .',
+      'npx --no @biomejs/biome check .',
     );
+    expect(detectLintCommand(dir({ 'biome.jsonc': '{}' }))).toBe('npx --no @biomejs/biome check .');
     expect(detectLintCommand(dir({ 'package.json': '{}', 'eslint.config.js': '' }))).toBe(
-      'npx eslint .',
+      'npx --no eslint .',
+    );
+    expect(detectLintCommand(dir({ 'package.json': '{}', 'eslint.config.mts': '' }))).toBe(
+      'npx --no eslint .',
     );
     expect(detectLintCommand(dir({ 'package.json': '{}', '.eslintrc.json': '{}' }))).toBe(
-      'npx eslint .',
+      'npx --no eslint .',
+    );
+    // the project's own make target beats a guessed default
+    expect(detectLintCommand(dir({ 'go.mod': 'module x', Makefile: 'lint:\n\techo ok\n' }))).toBe(
+      'make lint',
     );
     expect(detectLintCommand(dir({ 'pyproject.toml': '[tool.ruff]\nline-length = 100\n' }))).toBe(
       'ruff check .',
@@ -176,6 +185,22 @@ describe('the lint check', () => {
     expect(failing.checks[0]).toMatchObject({ type: 'lint', passed: false });
     expect(failing.checks[0]?.evidence).toContain('unused var');
     expect(failing.checks[0]?.suggestion).toContain('exits 0');
+  });
+  it('a linter that is not installed is a skipped pass with a note, never a failure to fix', async () => {
+    const d = dir({ 'README.md': '' });
+    for (const command of [
+      'definitely-not-a-linter-xyz check .',
+      'npx --no @biomejs/biome check .',
+    ]) {
+      const report = await runGate({
+        gates: gate({ command }) as never,
+        gateIds: ['quality'],
+        runners: defaultCheckRunners(),
+        ctx: ctx(d),
+      });
+      expect(report.checks[0]).toMatchObject({ type: 'lint', passed: true, skipped: true });
+      expect(report.checks[0]?.evidence).toMatch(/not available/);
+    }
   });
   it('a project without a linter passes with a note', async () => {
     const d = dir({ 'README.md': '' });
