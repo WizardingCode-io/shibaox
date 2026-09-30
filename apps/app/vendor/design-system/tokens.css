@@ -1,0 +1,243 @@
+/* Shibaox — generated from tokens.json */
+:root,
+[data-theme="light"] {
+  --bg: #fbf6ef; /* Page background — warm paper in light, night in dark. */
+  --surface: #ffffff; /* Cards, panels, the composer, menus. */
+  --surface-sunken: #f4ece2; /* Sidebar, code blocks, input wells, tool-call bodies. */
+  --surface-hover: #f7efe5; /* Hover fill for rows, nav items and quiet buttons. */
+  --line: #e8dccd; /* Hairlines and dividers between content. Decorative only — never the sole boundary of a control. */
+  --line-strong: #9a846f; /* Borders of inputs, switches and quiet buttons (≥3:1 on bg, surface and surface-sunken in both themes). */
+  --ink: #1c140e; /* Primary text and icons on bg, surface, surface-sunken and shiba-soft. */
+  --ink-muted: #6b5a4c; /* Secondary text, metadata, timestamps, placeholders — on bg, surface and surface-sunken. */
+  --shiba: #f2842b; /* The brand orange. Fills only: primary buttons, the agent's avatar ring, active indicators. Never as text on light grounds (2.4:1). */
+  --on-shiba: #1c140e; /* Text and icons on a shiba fill — always dark ink, never white. */
+  --shiba-strong: #a94a0a; /* Orange as text: links, active tab label, inline highlights — on bg, surface, surface-sunken and shiba-soft. Also the focus ring colour. */
+  --shiba-soft: #fde6d2; /* Tinted fills: selected nav item, user message bubble, brand badges. Text on it is ink or shiba-strong. */
+  --matcha: #266e43; /* Success, agent online, tool call done — as text or icon on the surfaces and matcha-soft. Always paired with a word or check icon. */
+  --matcha-soft: #ddf1e3; /* Tinted fill behind matcha text. */
+  --info: #2a63c4; /* Neutral system notices and running states — on the surfaces and info-soft. */
+  --info-soft: #e1eafa; /* Tinted fill behind info text. */
+  --warning: #8a5e00; /* Needs attention: approval requests, rate limits — on the surfaces and warning-soft. Pair with the alert icon. */
+  --warning-soft: #fbefc9; /* Tinted fill behind warning text. */
+  --danger: #c42840; /* Errors, destructive actions, failed tool calls — on the surfaces and danger-soft. Pair with the x icon and a word. */
+  --danger-soft: #fbe1e4; /* Tinted fill behind danger text. */
+  --on-danger: #ffffff; /* Label on a danger fill (destructive button). */
+  --brand-orange: #f2842b; /* Identity only (marketing, mascot, cover): the shiba coat. Same in both themes. */
+  --brand-sesame: #db6716; /* Identity only: the darker forehead marking of the mascot. */
+  --brand-cream: #fff3e3; /* Identity only: the urajiro — muzzle and chest of the mascot; the cream wordmark on night. */
+  --brand-night: #1c140e; /* Identity only: the app-icon ground and the ink of the mascot's eyes and nose. */
+  --link: var(--shiba-strong); /* Inline links — alias of shiba-strong. */
+  --focus: var(
+    --shiba-strong
+  ); /* Keyboard focus ring colour (≥3:1 on every surface in both themes). */
+  --shadow-sm: 0 1px 2px #1c140e0f, 0 1px 3px #1c140e14; /* Cards and inputs at rest. */
+  --shadow-md: 0 2px 4px #1c140e0d, 0 8px 20px -4px #1c140e1f; /* The composer, hovering cards. */
+  --shadow-lg:
+    0 4px 8px #1c140e14, 0 16px 40px -8px #1c140e33; /* Menus, dialogs, toasts — anything floating. */
+  --focus-ring:
+    0 0 0 2px #fbf6ef, 0 0 0 4px #a94a0a; /* Keyboard focus on every interactive element: a 2px gap in the page colour, then 2px solid shiba-strong. */
+}
+[data-theme="dark"] {
+  --bg: #140e0a;
+  --surface: #1e1611;
+  --surface-sunken: #0d0906;
+  --surface-hover: #271d16;
+  --line: #33271e;
+  --line-strong: #7e6856;
+  --ink: #f7ede2;
+  --ink-muted: #b9a694;
+  --shiba: #ff9142;
+  --on-shiba: #1c140e;
+  --shiba-strong: #ffa15c;
+  --shiba-soft: #3b2213;
+  --matcha: #6acb8e;
+  --matcha-soft: #12301e;
+  --info: #86aef5;
+  --info-soft: #16264a;
+  --warning: #f2c150;
+  --warning-soft: #35290a;
+  --danger: #ff7a8a;
+  --danger-soft: #3d1219;
+  --on-danger: #1c140e;
+  --brand-orange: #f2842b;
+  --brand-sesame: #db6716;
+  --brand-cream: #fff3e3;
+  --brand-night: #1c140e;
+  --link: var(--shiba-strong);
+  --focus: var(--shiba-strong);
+  --shadow-sm: 0 1px 2px #00000080;
+  --shadow-md: 0 8px 20px -4px #000000b3;
+  --shadow-lg: 0 16px 40px -8px #000000d9;
+  --focus-ring: 0 0 0 2px #140e0a, 0 0 0 4px #ffa15c;
+}
+:root {
+  --space-0\.5: 2px; /* Hairline gaps: badge dot to text. */
+  --space-1: 4px; /* Icon-to-label gap inside compact controls. */
+  --space-2: 8px; /* Icon-to-label gap, gap between chips, inside small controls. */
+  --space-3: 12px; /* Control horizontal padding, gap between related rows. */
+  --space-4: 16px; /* Card and message padding, gap between form fields. */
+  --space-5: 20px; /* Composer padding. */
+  --space-6: 24px; /* Between groups inside a panel; page gutter on mobile. */
+  --space-8: 32px; /* Between sections; page gutter on desktop. */
+  --space-12: 48px; /* Between major page regions. */
+  --space-16: 64px; /* Empty-state and hero vertical rhythm. */
+  --radius-xs: 4px; /* Kbd, inline code, checkboxes. */
+  --radius-sm: 8px; /* Inputs, small buttons, menu items, nav items. */
+  --radius-md: 12px; /* Buttons, tool-call blocks, code blocks, toasts. */
+  --radius-lg: 16px; /* Cards, message bubbles. */
+  --radius-xl: 24px; /* The composer, dialogs, sheets. */
+  --radius-full: 9999px; /* Badges, avatars, switches, status dots. */
+  --control-sm: 28px; /* Compact buttons, icon buttons in toolbars. */
+  --control-md: 36px; /* Default buttons and inputs. */
+  --control-lg: 44px; /* Primary CTAs, mobile touch targets. */
+  --icon-sm: 16px; /* Icons in buttons, badges, tool calls. */
+  --icon-md: 20px; /* Nav and toolbar icons. */
+  --avatar-md: 32px; /* Avatars in chat. */
+  --z-sticky: 10; /* Sticky headers, the composer. */
+  --z-overlay: 40; /* Dialog scrim. */
+  --z-toast: 60; /* Toasts above everything. */
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --text-display-xl:
+    800 56px / 60px var(--font-display); /* Marketing hero, onboarding first screen. */
+  --text-display:
+    700 40px / 44px var(--font-display); /* Empty states, onboarding steps, page heroes. */
+  --text-title: 700 28px / 34px var(--font-display); /* Page titles inside the app. */
+  --text-heading: 600 20px / 28px var(--font-sans); /* Section headings, dialog titles. */
+  --text-subheading: 600 16px / 24px var(--font-sans); /* Card titles, group labels. */
+  --text-body: 400 15px / 24px var(--font-sans); /* Chat messages and all long text. */
+  --text-body-sm: 400 13px / 20px var(--font-sans); /* Secondary lines, table cells, helper text. */
+  --text-label: 500 13px / 16px var(--font-sans); /* Buttons, tabs, form labels, nav items. */
+  --text-caption: 500 12px / 16px var(--font-sans); /* Metadata, badges, timestamps. */
+  --text-overline:
+    600 11px / 16px var(--font-sans); /* Sidebar group headers — write the text in capitals. */
+  --text-code: 400 13px / 20px var(--font-mono); /* Code blocks and tool-call arguments. */
+  --text-code-sm: 500 12px / 18px var(--font-mono); /* Inline code, file paths, keyboard hints. */
+}
+.display-xl {
+  font-family: var(--font-display);
+  font-size: 56px;
+  line-height: 60px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+.display {
+  font-family: var(--font-display);
+  font-size: 40px;
+  line-height: 44px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+.title {
+  font-family: var(--font-display);
+  font-size: 28px;
+  line-height: 34px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.heading {
+  font-family: var(--font-sans);
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.subheading {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.body {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 24px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.body-sm {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.label {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.caption {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.overline {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+.code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.code-sm {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("fonts/bricolage-grotesque-latin-600-normal.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("fonts/bricolage-grotesque-latin-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("fonts/bricolage-grotesque-latin-800-normal.woff2") format("woff2");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist";
+  src: url("fonts/geist-sans-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist";
+  src: url("fonts/geist-sans-latin-500-normal.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("fonts/geist-mono-latin-500-normal.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}

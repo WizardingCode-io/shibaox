@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Shibaox</title>
+    <link rel="icon" href="%BASE_URL%design-system/logos/shibaox-mark.svg" />
+    <link rel="apple-touch-icon" href="%BASE_URL%design-system/app-icon/shibaox-app-icon-night-180.png" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="%BASE_URL%design-system/fonts/geist-sans-latin-400-normal.woff2" />
+    <link rel="stylesheet" href="%BASE_URL%design-system/tokens.css" />
+    <link rel="stylesheet" href="%BASE_URL%design-system/components/bundle.css" />
+    <script>
+      // the theme before the first paint: the saved choice, else the system's
+      try {
+        var t = localStorage.getItem('shibaox.theme');
+        document.documentElement.dataset.theme =
+          t === 'light' || t === 'dark' ? t : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
