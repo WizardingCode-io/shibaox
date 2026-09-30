@@ -1108,3 +1108,79 @@ describe('MCP servers through the API', () => {
     expect((r as { status?: number }).status).not.toBe(403);
   });
 });
+
+describe('the app served by the daemon', () => {
+  const rawGet = (socketPath: string, path: string) =>
+    new Promise<{ status: number; type: string; body: string }>((resolve, reject) => {
+      const req = httpRequest({ socketPath, path, method: 'GET' }, (res) => {
+        let body = '';
+        res.on('data', (d) => {
+          body += String(d);
+        });
+        res.on('end', () =>
+          resolve({
+            status: res.statusCode ?? 0,
+            type: String(res.headers['content-type'] ?? ''),
+            body,
+          }),
+        );
+      });
+      req.on('error', reject);
+      req.end();
+    });
+  it('GET /app serves the built app on both listeners without a token; client routes get index.html; nothing outside the dist', async () => {
+    const s = setup();
+    const dist = mkdtempSync(join(tmpdir(), 'appdist-'));
+    mkdirSync(join(dist, 'assets'));
+    writeFileSync(join(dist, 'index.html'), '<!doctype html><title>Shibaox</title>');
+    writeFileSync(join(dist, 'assets', 'app-abc.js'), 'console.log(1)');
+    writeFileSync(join(dist, 'assets', 'app.css'), 'body{}');
+    writeFileSync(join(s.dir, 'secret.txt'), 'nope');
+    const { daemon } = await started(s, {
+      appDist: dist,
+      env: { SHIBAOX_DAEMON_TOKEN: 'secret-1' },
+      config: {
+        max_concurrent_runs: 2,
+        approval_timeout_minutes: 1,
+        channels: { macos: { enabled: false } },
+        listen: { host: '127.0.0.1', port: 0, token_env: 'SHIBAOX_DAEMON_TOKEN' },
+      },
+    });
+    // the socket
+    expect(await rawGet(s.home.socket, '/app/')).toMatchObject({
+      status: 200,
+      type: expect.stringContaining('text/html'),
+    });
+    expect((await rawGet(s.home.socket, '/app')).body).toContain('<title>Shibaox');
+    expect(await rawGet(s.home.socket, '/app/assets/app-abc.js')).toMatchObject({
+      status: 200,
+      type: expect.stringContaining('javascript'),
+      body: 'console.log(1)',
+    });
+    expect((await rawGet(s.home.socket, '/app/assets/app.css')).type).toContain('text/css');
+    expect((await rawGet(s.home.socket, '/app/t/abc123')).body).toContain('<title>Shibaox'); // a client route
+    expect((await rawGet(s.home.socket, '/app/assets/missing.js')).status).toBe(404); // an asset that does not exist is not index.html
+    expect((await rawGet(s.home.socket, '/app/../secret.txt')).status).toBe(404);
+    expect((await rawGet(s.home.socket, '/app/assets/..%2F..%2Fsecret.txt')).status).toBe(404);
+    // the network listener: no token needed for the app, still needed for the API
+    const port = daemon.listenAddress()?.port;
+    const html = await fetch(`http://127.0.0.1:${port}/app/`);
+    expect(html.status).toBe(200);
+    expect(await html.text()).toContain('<title>Shibaox');
+    const root = await fetch(`http://127.0.0.1:${port}/`, { redirect: 'manual' });
+    expect(root.status).toBe(302);
+    expect(root.headers.get('location')).toBe('/app/');
+    expect((await fetch(`http://127.0.0.1:${port}/runs`)).status).toBe(401);
+    // the socket's health names the listener so the CLI can open the browser at it
+    const client = new DaemonClient(s.home.socket);
+    expect((await client.health()).listen).toEqual({ host: '127.0.0.1', port, tls: false });
+  });
+  it('without the app package, /app says how to get it', async () => {
+    const s = setup();
+    await started(s, { appDist: null });
+    const r = await rawGet(s.home.socket, '/app/');
+    expect(r.status).toBe(404);
+    expect(r.body).toContain('@wizardingcode/shibaox-app');
+    expect((await new DaemonClient(s.home.socket).health()).listen).toBeUndefined();
+  });
+});

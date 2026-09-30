@@ -15,6 +15,7 @@ import {
 import type { RoutineRow, ScheduleRow } from '@wizardingcode/shibaox-persistence-sqlite';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import { RoutineTriggerSchema } from '@wizardingcode/shibaox-schemas';
+import { serveAppFile } from './app-static.js';
 import { AlreadyResolvedError, type InboxService, NotFoundError } from './inbox.js';
 import type { McpServerRow, McpTestResult } from './mcp.js';
 import { type OrgConfigPatch, orgInfo, readOrgConfig, writeOrgConfig } from './org-config.js';
@@ -31,6 +32,8 @@ import type { KeyRow } from './secrets.js';
 
 export interface Health {
   version: string;
+  /** The network listener, when there is one (the CLI opens the browser app at it). */
+  listen?: { host: string; port: number; tls: boolean };
   /** The daemon process (a `daemon stop` tells a restarted daemon from the one it stopped). */
   pid?: number;
   uptimeSeconds: number;
@@ -100,6 +103,8 @@ export interface ServerDeps {
   inbox: InboxService;
   schedules: () => SchedulesApi | undefined;
   health: () => Health;
+  /** The built browser app's dist, when installed (served under /app on both listeners). */
+  appDist: () => string | undefined;
   /** The profile of a project directory (with the org's vault note when `orgRoot` is given). */
   profile: (path: string, orgRoot?: string) => ProjectProfile;
   /** The models of the catalog and the local servers, and whether this daemon can use them. */
@@ -290,6 +295,14 @@ export class DaemonServer {
    */
   private async listenRemote(on: ListenOptions): Promise<void> {
     const handler = (req: IncomingMessage, res: ServerResponse) => {
+      const path = (req.url ?? '/').split('?')[0] ?? '/';
+      // the app itself is public (HTML, scripts, styles); everything it calls needs the token
+      if (req.method === 'GET' && (path === '/app' || path.startsWith('/app/')))
+        return serveAppFile(this.deps.appDist(), path, res);
+      if (req.method === 'GET' && path === '/') {
+        res.writeHead(302, { location: '/app/' });
+        return res.end();
+      }
       if (!bearerOk(req.headers.authorization, on.token)) {
         // no token at all: a monitor may still read the version; a wrong one is told so at once
         const anonymous = req.headers.authorization === undefined;
@@ -362,6 +375,8 @@ export class DaemonServer {
     };
 
     if (method === 'GET' && path === '/health') return send(res, 200, this.deps.health());
+    if (method === 'GET' && (path === '/app' || path.startsWith('/app/')))
+      return serveAppFile(this.deps.appDist(), path, res);
     if (method === 'GET' && path === '/models') return send(res, 200, await this.deps.models());
     if (path === '/orgs/config' && (method === 'GET' || method === 'PUT')) {
       const org = url.searchParams.get('org') ?? '';

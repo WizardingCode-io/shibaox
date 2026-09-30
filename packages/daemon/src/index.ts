@@ -1,4 +1,5 @@
 export type { ModelChoice } from '@wizardingcode/shibaox-providers';
+export * from './app-static.js';
 export * from './channels/github.js';
 export * from './channels/macos.js';
 export * from './channels/outbox.js';

@@ -15,6 +15,7 @@ import {
   type ProviderEntry,
 } from '@wizardingcode/shibaox-providers';
 import { type ChatMessage, loadOrg, type Org } from '@wizardingcode/shibaox-schemas';
+import { resolveAppDist } from './app-static.js';
 import { githubChannel } from './channels/github.js';
 import { macosChannel } from './channels/macos.js';
 import { OutboxWorker } from './channels/outbox.js';
@@ -45,6 +46,8 @@ import {
 export interface DaemonOptions {
   home?: HomePaths;
   config?: DaemonConfig;
+  /** The browser app's dist to serve under /app: a path, `null` for none (tests), else resolved from the installed package. */
+  appDist?: string | null;
   env?: NodeJS.ProcessEnv;
   log?: (line: string) => void;
   /** Injected store (tests); by default the SQLite file under the home directory. */
@@ -235,6 +238,7 @@ export class Daemon {
       inbox: this.inbox,
       schedules: () => this.schedules,
       health: () => this.health(),
+      appDist: () => (opts.appDist === null ? undefined : (opts.appDist ?? resolveAppDist())),
       profile: (path, orgRoot) =>
         profileFor(path, {
           vault: opts.vault ?? (orgRoot ? vaultDir(loadOrg(orgRoot), {}) : undefined),
@@ -446,6 +450,7 @@ export class Daemon {
       uptimeSeconds: Math.round((Date.now() - this.startedAt) / 1000),
       runs: this.runs.active(),
       channels: this.channels.map((c) => c.id),
+      ...(this.listenAddress() ? { listen: this.listenAddress() } : {}),
     };
   }
 
