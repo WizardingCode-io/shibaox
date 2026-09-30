@@ -73,6 +73,13 @@ describe('paths in daemon.yaml', () => {
     expect(c.channels.telegram?.project).toBe(resolve(dir, '..', 'proj'));
   });
 
+  it('projects_dir resolves against the file', () => {
+    dir = mkdtempSync(join(tmpdir(), 'shx-home-'));
+    const p = join(dir, 'daemon.yaml');
+    writeFileSync(p, 'projects_dir: ./repos\n');
+    expect(loadDaemonConfig(p).projects_dir).toBe(join(dir, 'repos'));
+  });
+
   it('listen gets its defaults; projects and TLS files resolve against the file', () => {
     dir = mkdtempSync(join(tmpdir(), 'shx-home-'));
     const p = join(dir, 'daemon.yaml');

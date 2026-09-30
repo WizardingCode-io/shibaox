@@ -37,7 +37,7 @@
 | Command | |
 | --- | --- |
 | `shibaox daemon start [--detach]`, `status`, `stop [--force]` | the daemon |
-| `shibaox daemon install`, `uninstall` | the launchd service (macOS) |
+| `shibaox daemon install`, `uninstall` | the service: launchd (macOS) or `systemd --user` (Linux) |
 | `shibaox serve [--host <addr>] [--port <n>]` | the daemon in the foreground, reachable over the network with the token in `SHIBAOX_DAEMON_TOKEN` (vault or environment) |
 | `shibaox remote set <url> [token]`, `show`, `clear` | send every command to a daemon on another machine (`~/.shibaox/remote.json`, 0600; the token from stdin when omitted) |
 | `shibaox schedule add "<cron>" <workflow> [--org] [--project] [--input]`, `list`, `rm <id>`, `run <id>` | cron schedules |

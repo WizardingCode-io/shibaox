@@ -6,10 +6,14 @@ Runs execute inside a per-user daemon (`~/.shibaox/`, or `$SHIBAOX_HOME`): closi
 shibaox daemon start --detach   # or in the foreground: shibaox daemon start
 shibaox daemon status
 shibaox daemon stop             # waits for active runs (60 s, then they resume at the next start); --force cancels them
-shibaox daemon install          # macOS: a launchd agent starts it at login and restarts it
+shibaox daemon install          # a launchd agent (macOS) or a systemd user unit (Linux) starts it at login and restarts it
 shibaox daemon uninstall
 shibaox serve                   # the daemon in the foreground, reachable over the network with a token
 ```
+
+## The service (Linux)
+
+`daemon install` writes `~/.config/systemd/user/shibaox.service` (`ExecStart` is the launcher below, `Restart=always`, output to `daemon.log`) and runs `systemctl --user enable --now shibaox.service`. `loginctl enable-linger $USER` keeps a user service running with nobody logged in. The environment is the user's systemd session, not your shell: keys belong in the vault.
 
 ## The service (macOS)
 

@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { homePaths, LAUNCHD_LABEL, plistPath } from '@wizardingcode/shibaox-daemon';
+import { homePaths, LAUNCHD_LABEL, plistPath, unitPath } from '@wizardingcode/shibaox-daemon';
 import { afterEach, describe, expect, it } from 'vitest';
 import { daemonInstall, daemonUninstall, serviceLine } from '../src/commands/daemon.js';
 import type { Out } from '../src/output.js';
@@ -98,5 +98,44 @@ describe('shibaox daemon install / uninstall', () => {
     expect(text).toContain('ANTHROPIC_API_KEY');
     expect(text).toContain('~/.zprofile');
     expect(text).not.toContain('SHIBAOX_TELEGRAM_TOKEN');
+  });
+});
+
+describe('shibaox daemon install on Linux', () => {
+  it('writes a systemd user unit, enables it now and says how to keep it running unattended', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'cli-svc-'));
+    dirs.push(home);
+    const env = { HOME: home, SHIBAOX_HOME: join(home, '.shibaox') };
+    const paths = homePaths(env);
+    const { calls, exec } = fakeExec();
+    const o = fakeOut();
+    expect(
+      await daemonInstall(o.out, {
+        env,
+        paths,
+        exec,
+        platform: 'linux',
+        stopRunning: async () => false,
+      }),
+    ).toBe(0);
+    expect(existsSync(unitPath(env))).toBe(true);
+    expect(o.lines.join('\n')).toContain('systemd');
+    expect(o.lines.join('\n')).toContain('loginctl enable-linger');
+    expect(o.lines.join('\n')).not.toContain('login shell'); // the zsh note is a macOS thing
+    expect(calls.some((c) => c[0] === 'systemctl' && c[2] === 'enable')).toBe(true);
+    expect(calls.some((c) => c[0] === '/bin/zsh')).toBe(false);
+    expect(await serviceLine({ env, exec, platform: 'linux' })).toBe(
+      'service: systemd (installed)',
+    );
+    const u = fakeOut();
+    expect(await daemonUninstall(u.out, { env, paths, exec, platform: 'linux' })).toBe(0);
+    expect(existsSync(unitPath(env))).toBe(false);
+  });
+  it('says so on a platform without a service manager', async () => {
+    const o = fakeOut();
+    expect(await daemonInstall(o.out, { platform: 'win32', stopRunning: async () => false })).toBe(
+      1,
+    );
+    expect(o.lines.join('\n')).toContain('daemon start --detach');
   });
 });

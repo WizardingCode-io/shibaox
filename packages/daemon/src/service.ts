@@ -5,6 +5,7 @@ import { runArgv } from '@wizardingcode/shibaox-core';
 import type { HomePaths } from './home.js';
 
 export const LAUNCHD_LABEL = 'io.shibaox.daemon';
+export const SYSTEMD_UNIT = 'shibaox.service';
 
 type Exec = typeof runArgv;
 
@@ -14,11 +15,67 @@ export interface ServiceArgs {
   uid?: number;
   /** Delay between polls/retries of launchctl (default 500 ms). */
   pollMs?: number;
+  /** The platform to install for (default: this one). */
+  platform?: NodeJS.Platform;
 }
+
+export type ServiceKind = 'launchd' | 'systemd';
+
+/** The service manager a platform has: launchd on macOS, `systemd --user` on Linux, none elsewhere. */
+export function serviceKind(platform: NodeJS.Platform = process.platform): ServiceKind | undefined {
+  return platform === 'darwin' ? 'launchd' : platform === 'linux' ? 'systemd' : undefined;
+}
+
+const kindOf = (o: { platform?: NodeJS.Platform }): ServiceKind => {
+  const kind = serviceKind(o.platform);
+  if (!kind)
+    throw new Error(
+      `no service manager for ${o.platform ?? process.platform}: run \`shibaox daemon start --detach\` instead`,
+    );
+  return kind;
+};
 
 /** `~/Library/LaunchAgents/io.shibaox.daemon.plist`. */
 export function plistPath(env: NodeJS.ProcessEnv = process.env): string {
   return join(env.HOME || homedir(), 'Library', 'LaunchAgents', `${LAUNCHD_LABEL}.plist`);
+}
+
+/** `~/.config/systemd/user/shibaox.service`. */
+export function unitPath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(env.HOME || homedir(), '.config', 'systemd', 'user', SYSTEMD_UNIT);
+}
+
+/** The service file of the platform: the plist, or the unit. */
+export function serviceFile(
+  env: NodeJS.ProcessEnv = process.env,
+  platform?: NodeJS.Platform,
+): string {
+  return serviceKind(platform) === 'systemd' ? unitPath(env) : plistPath(env);
+}
+
+/**
+ * The systemd user unit: the launcher, restarted when it exits, output appended to
+ * `daemon.log`. The environment is the user's systemd session (keys belong in the vault).
+ * `loginctl enable-linger <user>` keeps it running when nobody is logged in.
+ */
+export function renderUnit(o: { launcher: string; paths: HomePaths }): string {
+  return [
+    '[Unit]',
+    'Description=shibaox daemon',
+    'After=network-online.target',
+    '',
+    '[Service]',
+    `ExecStart=${o.launcher}`,
+    'Restart=always',
+    'RestartSec=3',
+    `WorkingDirectory=${o.paths.root}`,
+    `StandardOutput=append:${o.paths.log}`,
+    `StandardError=append:${o.paths.log}`,
+    '',
+    '[Install]',
+    'WantedBy=default.target',
+    '',
+  ].join('\n');
 }
 
 const xml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -61,6 +118,9 @@ const currentUid = () => userInfo().uid;
 async function launchctl(exec: Exec, args: string[]) {
   return exec({ argv: ['launchctl', ...args], cwd: '/', timeoutMs: 20_000 });
 }
+async function systemctl(exec: Exec, args: string[]) {
+  return exec({ argv: ['systemctl', '--user', ...args], cwd: '/', timeoutMs: 20_000 });
+}
 
 /**
  * The launcher the service runs: the recorded node and CLI, but resolved again at launch when
@@ -102,8 +162,9 @@ export function renderLauncher(o: { node: string; cli: string; modules?: string 
 export function servicePredatesLauncher(
   paths: HomePaths,
   env: NodeJS.ProcessEnv = process.env,
+  platform?: NodeJS.Platform,
 ): boolean {
-  const file = plistPath(env);
+  const file = serviceFile(env, platform);
   if (!existsSync(file)) return false;
   return !readFileSync(file, 'utf8').includes(paths.launcher);
 }
@@ -124,12 +185,23 @@ export function servicePaths(
 export async function installService(
   o: ServiceArgs & { paths: HomePaths; node: string; cli: string },
 ): Promise<{ plist: string }> {
+  const kind = kindOf(o);
   const exec = o.exec ?? runArgv;
-  const uid = o.uid ?? currentUid();
-  const file = plistPath(o.env);
+  const file = serviceFile(o.env, o.platform);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(o.paths.launcher, renderLauncher({ node: o.node, cli: o.cli }));
   chmodSync(o.paths.launcher, 0o755);
+  if (kind === 'systemd') {
+    writeFileSync(file, renderUnit({ launcher: o.paths.launcher, paths: o.paths }));
+    await systemctl(exec, ['daemon-reload']);
+    const r = await systemctl(exec, ['enable', '--now', SYSTEMD_UNIT]);
+    if (r.exitCode !== 0)
+      throw new Error(
+        `systemctl --user could not enable the service: ${r.stderr.trim().slice(0, 300) || 'is a user session running? (loginctl enable-linger)'}`,
+      );
+    return { plist: file };
+  }
+  const uid = o.uid ?? currentUid();
   writeFileSync(file, renderPlist({ launcher: o.paths.launcher, paths: o.paths }));
   const pollMs = o.pollMs ?? 500;
   const sleep = () => new Promise((r) => setTimeout(r, pollMs));
@@ -158,10 +230,14 @@ export async function installService(
 
 /** Boots the service out and removes the plist. */
 export async function uninstallService(o: ServiceArgs & { paths: HomePaths }): Promise<void> {
+  const kind = kindOf(o);
   const exec = o.exec ?? runArgv;
-  const uid = o.uid ?? currentUid();
-  await launchctl(exec, ['bootout', `${domain(uid)}/${LAUNCHD_LABEL}`]);
-  const file = plistPath(o.env);
+  if (kind === 'systemd') await systemctl(exec, ['disable', '--now', SYSTEMD_UNIT]);
+  else {
+    const uid = o.uid ?? currentUid();
+    await launchctl(exec, ['bootout', `${domain(uid)}/${LAUNCHD_LABEL}`]);
+  }
+  const file = serviceFile(o.env, o.platform);
   if (existsSync(file)) unlinkSync(file);
   if (existsSync(o.paths.launcher)) unlinkSync(o.paths.launcher);
 }
@@ -170,8 +246,13 @@ export type ServiceStatus = 'installed' | 'not-loaded' | 'not-installed';
 
 /** `installed` when the plist exists and launchd knows the label; `not-loaded` when only the file exists. */
 export async function serviceStatus(o: ServiceArgs = {}): Promise<ServiceStatus> {
-  if (!existsSync(plistPath(o.env))) return 'not-installed';
+  const kind = serviceKind(o.platform);
+  if (!kind || !existsSync(serviceFile(o.env, o.platform))) return 'not-installed';
   const exec = o.exec ?? runArgv;
+  if (kind === 'systemd') {
+    const r = await systemctl(exec, ['is-active', SYSTEMD_UNIT]);
+    return r.exitCode === 0 ? 'installed' : 'not-loaded';
+  }
   const uid = o.uid ?? currentUid();
   const r = await launchctl(exec, ['print', `${domain(uid)}/${LAUNCHD_LABEL}`]);
   return r.exitCode === 0 ? 'installed' : 'not-loaded';

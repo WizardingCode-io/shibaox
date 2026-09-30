@@ -26,6 +26,10 @@ Without `listen` nothing changes: the daemon answers on its 0600 socket only. No
 
 A request with no token gets a reduced `GET /health` (`{ version }`) so a monitor can watch the daemon; a wrong token is `401` everywhere, including `/health`.
 
+### In Docker
+
+`docker run -d -p 7433:7433 -e SHIBAOX_DAEMON_TOKEN=… -v shibaox-data:/data -v /srv/projects:/projects ghcr.io/wizardingcode-io/shibaox` is `shibaox serve` in a container (see [Installation](Installation)); `docker-compose.yml` in the repository is the same with a `.env`. Provider keys go into the vault over the API once the remote is set (`shibaox keys set …`), or into the container's environment. For `anthropic-subscription` roles log Claude Code in once inside the container: `docker exec -it shibaox claude` (its config lives in `/data/claude`). To push over SSH, mount a key read-only into `/home/shibaox/.ssh`.
+
 ## On your machine
 
 ```sh

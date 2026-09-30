@@ -21,7 +21,7 @@ export interface UpgradeDeps {
 export const appDir = (env: NodeJS.ProcessEnv = process.env): string =>
   env.SHIBAOX_APP || join(homePaths(env).root, 'app');
 
-/** Stops the daemon (launchd starts it again) and says what that means for the new build. */
+/** Stops the daemon (the service starts it again) and says what that means for the new build. */
 async function restartDaemon(out: Out): Promise<string> {
   const r: { stopped?: boolean } = {};
   await daemonStop({}, { ...out, line: () => {}, obj: (o) => Object.assign(r, o) });

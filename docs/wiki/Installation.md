@@ -24,7 +24,7 @@ Then:
 
 ```sh
 shibaox doctor           # what is ready, what is missing
-shibaox daemon install   # macOS: keep the daemon running across logins
+shibaox daemon install   # keep the daemon running across logins (launchd on macOS, systemd --user on Linux)
 shibaox                  # the dashboard
 ```
 
@@ -35,6 +35,21 @@ npm i -g shibaox
 ```
 
 The `shibaox` package brings the CLI, the daemon and the dashboard (`@wizardingcode/shibaox-tui`, built JavaScript that Bun runs). Update with `npm i -g shibaox@latest`, then `shibaox daemon stop` so the daemon restarts on the new build.
+
+## In Docker (a server)
+
+```sh
+docker run -d --name shibaox --restart unless-stopped -p 7433:7433 \
+  -e SHIBAOX_DAEMON_TOKEN=$(openssl rand -hex 32) \
+  -v shibaox-data:/data -v /srv/projects:/projects \
+  ghcr.io/wizardingcode-io/shibaox
+```
+
+The image (`Dockerfile` in the repository; built from the npm packages by GitHub Actions on every version tag, `linux/amd64` and `linux/arm64`) runs `shibaox serve` as an unprivileged user with git, `gh` and Claude Code installed. `/data` is the shibaox home (runs, vault, `daemon.yaml`, the default org); every git repository mounted under `/projects` is offered to the dashboard (`projects_dir: /projects` is written to `daemon.yaml` on first start). `docker-compose.yml` in the repository does the same with a `.env` holding the token. Then, from your machine, `shibaox remote set http://<host>:7433 <token>`: see [Remote daemon](Remote-daemon) for the token, TLS and the Claude login inside the container.
+
+## Linux
+
+The installer and npm work on Linux as on macOS (Node 22, git; Bun for the dashboard). `shibaox daemon install` writes a `systemd --user` unit (`~/.config/systemd/user/shibaox.service`) and enables it now; `loginctl enable-linger $USER` keeps it running when nobody is logged in. The unit gets the user's systemd environment, not your shell's: keys belong in the vault (`shibaox keys set`).
 
 ## Upgrading
 

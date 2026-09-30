@@ -97,6 +97,7 @@ listen:                         # a network listener next to the socket (see Rem
   token_env: SHIBAOX_DAEMON_TOKEN
   # tls: { cert: ./cert.pem, key: ./key.pem }
 projects: [/srv/app]            # what a remote dashboard offers as projects
+projects_dir: /projects         # …plus every git repository directly inside this directory
 ```
 
 ## `~/.shibaox/remote.json`

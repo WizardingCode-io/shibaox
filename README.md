@@ -40,6 +40,8 @@ or, with npm:
 npm i -g shibaox
 ```
 
+On a server: `docker run -d -p 7433:7433 -e SHIBAOX_DAEMON_TOKEN=… -v shibaox-data:/data -v /srv/projects:/projects ghcr.io/wizardingcode-io/shibaox`, then `shibaox remote set http://<host>:7433 <token>` on your machine.
+
 You need Node 22 or later and git. [Bun](https://bun.sh) 1.3+ runs the dashboard; the CLI and the daemon work without it. Details, upgrades and what the installer changes: [Installation](https://github.com/WizardingCode-io/shibaox/wiki/Installation).
 
 ## Sixty seconds

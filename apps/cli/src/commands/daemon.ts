@@ -10,6 +10,7 @@ import {
   loadDaemonConfig,
   SecretsStore,
   type ServiceArgs,
+  serviceKind,
   servicePaths,
   servicePredatesLauncher,
   serviceStatus,
@@ -189,17 +190,22 @@ export async function daemonStop(o: { force?: boolean }, out: Out): Promise<numb
     stopped ? 'Stopped.' : 'Still running after 3 minutes: `daemon stop --force` cancels the runs.',
   );
   if ((await serviceStatus()) === 'installed')
-    out.line(
-      'The launchd service will start it again; run `shibaox daemon uninstall` to stop that.',
-    );
+    out.line('The service will start it again; run `shibaox daemon uninstall` to stop that.');
   out.obj({ stopped: true });
   return 0;
 }
 
-/** `service: launchd (installed)` / `not loaded` / `not installed`. */
+/** `service: launchd (installed)` / `systemd (unit present, not active)` / `not installed`. */
 export async function serviceLine(a: ServiceArgs = {}): Promise<string> {
   const s = await serviceStatus(a);
-  return `service: ${s === 'installed' ? 'launchd (installed)' : s === 'not-loaded' ? 'launchd (plist present, not loaded)' : 'not installed'}`;
+  const kind = serviceKind(a.platform) ?? 'service';
+  return `service: ${
+    s === 'installed'
+      ? `${kind} (installed)`
+      : s === 'not-loaded'
+        ? `${kind} (${kind === 'systemd' ? 'unit present, not active' : 'plist present, not loaded'})`
+        : 'not installed'
+  }`;
 }
 
 /** Stops a detached daemon when one answers; false when none is running. */
@@ -240,16 +246,23 @@ export async function staleServiceHint(paths: HomePaths): Promise<string | undef
   return undefined;
 }
 
-/** `shibaox daemon install`: a launchd agent that keeps the daemon running across logins. */
+/**
+ * `shibaox daemon install`: a launchd agent (macOS) or a systemd user unit (Linux) that keeps
+ * the daemon running across logins.
+ */
 export async function daemonInstall(out: Out, d: ServiceDeps = {}): Promise<number> {
-  if (process.platform !== 'darwin' && !d.exec) {
-    out.line('The service is available on macOS (launchd) for now.');
+  const platform = d.platform ?? process.platform;
+  const kind = serviceKind(platform);
+  if (!kind) {
+    out.line(
+      `No service manager for ${platform}: run \`shibaox daemon start --detach\`, or \`shibaox serve\` under Docker.`,
+    );
     out.obj({ installed: false, reason: 'unsupported platform' });
     return 1;
   }
   const paths = d.paths ?? homePaths();
   const stopped = await (d.stopRunning ?? (() => stopDetached(paths)))();
-  if (stopped) out.line('Stopped the running daemon: launchd takes over from here.');
+  if (stopped) out.line(`Stopped the running daemon: ${kind} takes over from here.`);
   const { plist } = await installService({
     paths,
     node: process.execPath,
@@ -257,10 +270,16 @@ export async function daemonInstall(out: Out, d: ServiceDeps = {}): Promise<numb
     env: d.env,
     exec: d.exec,
     uid: d.uid,
+    platform,
   });
-  out.line(`Installed the launchd service (${plist}); it starts now and at every login.`);
+  out.line(
+    kind === 'systemd'
+      ? `Installed the systemd user service (${plist}); it runs now and at every login. To keep it running with nobody logged in: loginctl enable-linger $USER`
+      : `Installed the launchd service (${plist}); it starts now and at every login.`,
+  );
   out.line(`Log: ${paths.log}`);
-  const missing = await hiddenFromLoginShell(d.env ?? process.env, d.exec ?? runArgv);
+  const missing =
+    kind === 'launchd' ? await hiddenFromLoginShell(d.env ?? process.env, d.exec ?? runArgv) : [];
   if (missing.length > 0)
     out.line(
       `Note: a login shell does not see ${missing.join(', ')} (exported in ~/.zshrc?). The service reads ~/.zprofile or ~/.zshenv: move the export there, then \`shibaox daemon install\` again.`,
@@ -304,7 +323,7 @@ export async function hiddenFromLoginShell(
 
 export async function daemonUninstall(out: Out, d: ServiceDeps = {}): Promise<number> {
   const paths = d.paths ?? homePaths();
-  await uninstallService({ paths, env: d.env, exec: d.exec, uid: d.uid });
+  await uninstallService({ paths, env: d.env, exec: d.exec, uid: d.uid, platform: d.platform });
   out.line(
     'Service removed; the daemon is stopped (start it again with `shibaox daemon start --detach`).',
   );
@@ -347,9 +366,7 @@ export async function daemonStatus(out: Out): Promise<number> {
   out.line(`channels: ${h.channels.length ? h.channels.join(', ') : 'none'}`);
   if (serviceHint) out.line(serviceHint);
   const service = await serviceStatus();
-  out.line(
-    `service: ${service === 'installed' ? 'launchd (installed)' : service === 'not-loaded' ? 'launchd (plist present, not loaded)' : 'not installed'}`,
-  );
+  out.line(await serviceLine());
   out.line(`socket: ${paths.socket}`);
   out.obj({ running: true, pid, socket: paths.socket, service, ...h });
   return 0;

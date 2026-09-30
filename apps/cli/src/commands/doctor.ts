@@ -8,6 +8,7 @@ import {
   homePaths,
   loadDaemonConfig,
   SecretsStore,
+  serviceKind,
   serviceStatus,
 } from '@wizardingcode/shibaox-daemon';
 import { remoteTarget } from '../remote.js';
@@ -96,7 +97,8 @@ export async function doctorCommand(): Promise<number> {
   lines.push(await which('codex'));
   lines.push(await which('cursor'));
   lines.push(await daemonLine());
-  if (process.platform === 'darwin') {
+  const kind = serviceKind();
+  if (kind) {
     const s = await serviceStatus();
     const hint = await staleServiceHint(homePaths());
     lines.push({
@@ -106,9 +108,9 @@ export async function doctorCommand(): Promise<number> {
         s === 'installed' && hint
           ? hint.replace(/^service: /, '')
           : s === 'installed'
-            ? 'launchd (starts at login)'
+            ? `${kind} (starts at login)`
             : s === 'not-loaded'
-              ? 'plist present but not loaded: shibaox daemon install'
+              ? `${kind === 'systemd' ? 'unit present but not active' : 'plist present but not loaded'}: shibaox daemon install`
               : 'not installed (shibaox daemon install keeps the daemon running 24h)',
       required: false,
     });

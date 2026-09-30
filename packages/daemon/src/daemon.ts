@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { QueryFn } from '@wizardingcode/shibaox-adapter-claude-code';
 import { type EventStore, type MockScript, runArgv } from '@wizardingcode/shibaox-core';
@@ -458,6 +458,7 @@ export class Daemon {
       out.push({ path, source });
     };
     for (const p of this.config.projects) add(p, 'config');
+    for (const p of reposIn(this.config.projects_dir)) add(p, 'config');
     const runs = await this.runs.list();
     runs.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
     for (const r of runs) if (r.project && r.project !== this.workspace) add(r.project, 'recent');
@@ -511,6 +512,19 @@ export class Daemon {
       if (this.ownsStore && this.store instanceof SqliteEventStore) this.store.close();
     })();
     return this.stopping;
+  }
+}
+
+/** The git repositories directly inside a directory, sorted; none when the directory is missing. */
+function reposIn(dir: string | undefined): string[] {
+  if (!dir || !existsSync(dir)) return [];
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && existsSync(join(dir, d.name, '.git')))
+      .map((d) => join(dir, d.name))
+      .sort();
+  } catch {
+    return [];
   }
 }
 

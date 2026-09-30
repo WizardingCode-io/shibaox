@@ -20,6 +20,8 @@ export const DaemonConfigSchema = z.object({
   listen: ListenSchema.optional(),
   /** Projects a remote dashboard can pick from (paths on the daemon's machine). */
   projects: z.array(z.string()).default([]),
+  /** A directory whose git repositories are all offered as projects (a mounted /projects). */
+  projects_dir: z.string().optional(),
   /** A blocked approval past this is suspended (resumed by session id after the answer). */
   approval_timeout_minutes: z.number().positive().default(120),
   channels: z
@@ -57,6 +59,7 @@ export function loadDaemonConfig(path: string): DaemonConfig {
     if (tg.project) tg.project = resolve(here, tg.project);
   }
   r.data.projects = r.data.projects.map((p) => resolve(here, p));
+  if (r.data.projects_dir) r.data.projects_dir = resolve(here, r.data.projects_dir);
   if (r.data.listen?.tls) {
     r.data.listen.tls.cert = resolve(here, r.data.listen.tls.cert);
     r.data.listen.tls.key = resolve(here, r.data.listen.tls.key);

@@ -8,10 +8,14 @@ import {
   LAUNCHD_LABEL,
   plistPath,
   renderPlist,
+  renderUnit,
+  SYSTEMD_UNIT,
+  serviceKind,
   servicePaths,
   servicePredatesLauncher,
   serviceStatus,
   uninstallService,
+  unitPath,
 } from '../src/service.js';
 
 const dirs: string[] = [];
@@ -155,5 +159,77 @@ describe('a plist from before the launcher', () => {
     expect(servicePredatesLauncher(paths, env)).toBe(true);
     writeFileSync(file, renderPlist({ launcher: paths.launcher, paths }));
     expect(servicePredatesLauncher(paths, env)).toBe(false);
+  });
+});
+
+describe('systemd user service (Linux)', () => {
+  it('renders a unit that runs the launcher, restarts it and logs to daemon.log', () => {
+    const { paths } = setup();
+    const unit = renderUnit({ launcher: paths.launcher, paths });
+    expect(unit).toContain('[Unit]');
+    expect(unit).toContain(`ExecStart=${paths.launcher}`);
+    expect(unit).toContain('Restart=always');
+    expect(unit).toContain(`WorkingDirectory=${paths.root}`);
+    expect(unit).toContain(`StandardOutput=append:${paths.log}`);
+    expect(unit).toContain('WantedBy=default.target');
+    expect(unit).not.toMatch(/API_KEY|TOKEN/);
+  });
+  it('install writes ~/.config/systemd/user/shibaox.service and enables it now; uninstall disables and removes it', async () => {
+    const { env, paths } = setup();
+    const { calls, exec } = fakeExec();
+    const r = await installService({ paths, env, node: '/n', cli: '/c', exec, platform: 'linux' });
+    expect(r.plist).toBe(unitPath(env));
+    expect(r.plist).toBe(join(env.HOME, '.config', 'systemd', 'user', SYSTEMD_UNIT));
+    expect(existsSync(r.plist)).toBe(true);
+    expect(existsSync(paths.launcher)).toBe(true);
+    expect(readFileSync(paths.launcher, 'utf8')).toContain("cli='/c'");
+    expect(calls).toEqual([
+      ['systemctl', '--user', 'daemon-reload'],
+      ['systemctl', '--user', 'enable', '--now', SYSTEMD_UNIT],
+    ]);
+    const off = fakeExec();
+    await uninstallService({ paths, env, exec: off.exec, platform: 'linux' });
+    expect(off.calls).toEqual([['systemctl', '--user', 'disable', '--now', SYSTEMD_UNIT]]);
+    expect(existsSync(r.plist)).toBe(false);
+    expect(existsSync(paths.launcher)).toBe(false);
+  });
+  it('status asks systemctl whether the unit is active; a refused enable is an error', async () => {
+    const { env, paths } = setup();
+    expect(await serviceStatus({ env, exec: fakeExec().exec, platform: 'linux' })).toBe(
+      'not-installed',
+    );
+    await installService({
+      paths,
+      env,
+      node: '/n',
+      cli: '/c',
+      exec: fakeExec().exec,
+      platform: 'linux',
+    });
+    expect(await serviceStatus({ env, exec: fakeExec().exec, platform: 'linux' })).toBe(
+      'installed',
+    );
+    const inactive = fakeExec((argv) => argv[2] === 'is-active');
+    expect(await serviceStatus({ env, exec: inactive.exec, platform: 'linux' })).toBe('not-loaded');
+    const refused = fakeExec((argv) => argv[2] === 'enable');
+    await expect(
+      installService({ paths, env, node: '/n', cli: '/c', exec: refused.exec, platform: 'linux' }),
+    ).rejects.toThrow(/systemctl/);
+  });
+  it('names the service manager of a platform, and refuses the ones it has none for', async () => {
+    expect(serviceKind('darwin')).toBe('launchd');
+    expect(serviceKind('linux')).toBe('systemd');
+    expect(serviceKind('win32')).toBeUndefined();
+    const { env, paths } = setup();
+    await expect(
+      installService({
+        paths,
+        env,
+        node: '/n',
+        cli: '/c',
+        exec: fakeExec().exec,
+        platform: 'win32',
+      }),
+    ).rejects.toThrow(/no service manager/);
   });
 });

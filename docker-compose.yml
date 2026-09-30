@@ -1,0 +1,23 @@
+# docker compose up -d
+# Put the token in a .env file next to this file: SHIBAOX_DAEMON_TOKEN=<openssl rand -hex 32>
+# Then, from your machine: shibaox remote set http://<host>:7433 <token>
+services:
+  shibaox:
+    image: ghcr.io/wizardingcode-io/shibaox:latest
+    # build: { context: ., args: { SHIBAOX_VERSION: latest } }   # to build it here instead
+    restart: unless-stopped
+    ports:
+      # the token travels in clear over plain HTTP: keep this on a private network, behind
+      # a TLS proxy, or bind it to 127.0.0.1 and reach it through an SSH tunnel
+      - '7433:7433'
+    environment:
+      SHIBAOX_DAEMON_TOKEN: ${SHIBAOX_DAEMON_TOKEN:?set SHIBAOX_DAEMON_TOKEN in .env}
+      # provider keys can go here too, but the vault is the better place:
+      #   shibaox remote set … then shibaox keys set OPENROUTER_API_KEY …
+      # GH_TOKEN: ${GH_TOKEN}
+    volumes:
+      - shibaox-data:/data          # runs, the vault, daemon.yaml, the default org
+      - ./projects:/projects        # the repositories runs work on (daemon.yaml projects)
+      # - ~/.ssh:/home/shibaox/.ssh:ro   # to push over SSH
+volumes:
+  shibaox-data:

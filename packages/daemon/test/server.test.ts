@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { connect, createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -605,6 +605,28 @@ describe('what a dashboard without a local disk asks the daemon', () => {
     expect(await c2.projects()).toEqual([
       { path: s2.project, source: 'recent' },
       { path: join(s2.home.root, 'workspace'), source: 'workspace' },
+    ]);
+  });
+  it('projects_dir offers every git repository directly inside it (a mounted /projects)', async () => {
+    const s = setup();
+    const repos = join(s.dir, 'repos');
+    mkdirSync(join(repos, 'b', '.git'), { recursive: true });
+    mkdirSync(join(repos, 'a', '.git'), { recursive: true });
+    mkdirSync(join(repos, 'not-a-repo'), { recursive: true });
+    writeFileSync(join(repos, 'file.txt'), '');
+    const { client } = await started(s, {
+      config: {
+        max_concurrent_runs: 2,
+        approval_timeout_minutes: 1,
+        channels: { macos: { enabled: false } },
+        projects: [],
+        projects_dir: repos,
+      },
+    });
+    expect((await client.projects()).map((p) => [p.path, p.source])).toEqual([
+      [join(repos, 'a'), 'config'],
+      [join(repos, 'b'), 'config'],
+      [join(s.home.root, 'workspace'), 'workspace'],
     ]);
   });
 });
