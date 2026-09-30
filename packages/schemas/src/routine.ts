@@ -81,7 +81,8 @@ export const RoutineFileSchema = z
     mode: z.enum(['always', 'on_change']).optional(),
     /** Seconds between looks for watchers (default 120; cron ignores it). */
     every: z.number().int().positive().default(120),
-    enabled: z.boolean().default(true),
+    /** Absent: a paused routine stays paused across syncs; set it to force the state. */
+    enabled: z.boolean().optional(),
   })
   .transform((r) => ({
     ...r,

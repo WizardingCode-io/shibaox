@@ -919,3 +919,78 @@ describe('routines through the API', () => {
     expect((await client.routine('nightly')).project).toBe(s.project);
   });
 });
+
+describe('routines: what the network may add', () => {
+  it('command and file triggers are refused over TCP, private URLs everywhere; the schedules alias touches cron rows only', async () => {
+    const s = setup();
+    const { daemon, client } = await started(s, {
+      store: undefined,
+      env: { SHIBAOX_DAEMON_TOKEN: 'secret-1' },
+      config: {
+        max_concurrent_runs: 2,
+        approval_timeout_minutes: 1,
+        channels: { macos: { enabled: false } },
+        projects: [],
+        listen: { host: '127.0.0.1', port: 0, token_env: 'SHIBAOX_DAEMON_TOKEN' },
+      },
+    });
+    const addr = daemon.listenAddress();
+    const remote = new DaemonClient({
+      baseUrl: `http://127.0.0.1:${addr?.port}`,
+      token: 'secret-1',
+    });
+    const common = {
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'x',
+    };
+    await expect(
+      remote.addRoutine({
+        ...common,
+        trigger: { type: 'command', command: 'cat ~/.shibaox/secrets.json' },
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      remote.addRoutine({ ...common, trigger: { type: 'file', path: '/etc/passwd' } }),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      remote.addRoutine({
+        ...common,
+        trigger: { type: 'url', url: 'http://169.254.169.254/latest/meta-data' },
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      client.addRoutine({
+        ...common,
+        trigger: { type: 'url', url: 'http://127.0.0.1:7433/health' },
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      client.addRoutine({ ...common, trigger: { type: 'url', url: 'ftp://x.test/a' } }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      client.addRoutine({ ...common, trigger: { type: 'cron', cron: '* * * * *' }, intervalS: 5 }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      client.addRoutine({
+        ...common,
+        trigger: { type: 'cron', cron: '* * * * *' },
+        maxDailyUsd: 0,
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    const local = await client.addRoutine({
+      ...common,
+      trigger: { type: 'command', command: 'echo ok' },
+    }); // the socket may
+    const cron = await remote.addRoutine({
+      ...common,
+      trigger: { type: 'cron', cron: '* * * * *' },
+    });
+    expect((await client.schedules()).map((x) => x.id)).toEqual([cron.id]);
+    await expect(client.removeSchedule(local.id)).rejects.toMatchObject({ status: 404 });
+    await expect(client.runSchedule(local.id)).rejects.toMatchObject({ status: 404 });
+    await client.removeSchedule(cron.id);
+    expect(await client.schedules()).toEqual([]);
+  });
+});

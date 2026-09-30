@@ -29,7 +29,7 @@ import { vaultDir } from './runs/notes.js';
 import { profileFor } from './runs/profile.js';
 import { buildRunReport } from './runs/report.js';
 import { orgSummarizer } from './runs/summarize.js';
-import { registryFor } from './runtime.js';
+import { commandEnv, registryFor } from './runtime.js';
 import { SecretsStore } from './secrets.js';
 import {
   DaemonServer,
@@ -452,6 +452,7 @@ export class Daemon {
       repo,
       runs: this.runs,
       log,
+      env: () => commandEnv(this.env),
       now: this.opts.now ? () => new Date(this.opts.now?.() ?? Date.now()) : undefined,
       vaultFor: (orgRoot) => {
         try {

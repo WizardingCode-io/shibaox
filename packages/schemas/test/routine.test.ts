@@ -14,8 +14,8 @@ describe('org/routines/<id>.yaml', () => {
       on: { type: 'cron', cron: '0 9 * * 1-5' },
       mode: 'always',
       every: 120,
-      enabled: true,
     });
+    expect(cron.enabled).toBeUndefined();
     expect(
       RoutineFileSchema.parse({
         routine: 'bugs',

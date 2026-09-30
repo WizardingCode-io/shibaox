@@ -51,4 +51,4 @@ At start and after a key changes, the daemon asks the providers what they offer 
 
 ## The API
 
-Everything the CLI and the dashboard do goes through the socket: `POST /runs`, `GET /runs/:id`, `GET /runs/:id/events` (SSE), `GET /runs/:id/audit[?format=md]`, `POST /runs/prune`, `/inbox`, `/keys`, `/models`, `/orgs/default`, `/orgs/info`, `/orgs/config`, `/projects`, `/projects/profile`, `/schedules`, `/health`, `/shutdown`. On the socket it is unauthenticated by design (0600, local). With `listen` in `daemon.yaml` the same API answers on TCP with a bearer token: [Remote daemon](Remote-daemon).
+Everything the CLI and the dashboard do goes through the socket: `POST /runs`, `GET /runs/:id`, `GET /runs/:id/events` (SSE), `GET /runs/:id/audit[?format=md]`, `POST /runs/prune`, `/inbox`, `/keys`, `/models`, `/orgs/default`, `/orgs/info`, `/orgs/config`, `/projects`, `/projects/profile`, `/routines`, `/schedules` (the cron subset), `/health`, `/shutdown`. On the socket it is unauthenticated by design (0600, local). With `listen` in `daemon.yaml` the same API answers on TCP with a bearer token: [Remote daemon](Remote-daemon).

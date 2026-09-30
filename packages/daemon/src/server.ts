@@ -17,7 +17,12 @@ import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import { RoutineTriggerSchema } from '@wizardingcode/shibaox-schemas';
 import { AlreadyResolvedError, type InboxService, NotFoundError } from './inbox.js';
 import { type OrgConfigPatch, orgInfo, readOrgConfig, writeOrgConfig } from './org-config.js';
-import type { RoutineInput } from './routines.js';
+import { allowedUrl, MIN_INTERVAL_S, type RoutineInput } from './routines.js';
+
+/** Requests that came over the network listener are marked by it. */
+const REMOTE = new WeakSet<IncomingMessage>();
+const isRemote = (req: IncomingMessage) => REMOTE.has(req);
+
 import type { RunManager, SubmitRequest } from './run-manager.js';
 import { AUDIT_RUNTIME_TYPES, buildAudit, renderAuditMarkdown } from './runs/audit.js';
 import type { RuntimeEnvelope } from './runtime-buffer.js';
@@ -293,6 +298,7 @@ export class DaemonServer {
           },
         });
       }
+      REMOTE.add(req);
       this.handle(req, res).catch((e: unknown) => {
         const h = toHttp(e);
         if (!res.headersSent) send(res, h.status, { error: { code: h.code, message: h.message } });
@@ -541,12 +547,22 @@ export class DaemonServer {
       });
       return send(res, 200, asSchedule(row));
     }
+    const cronOnly = (id: string) => {
+      const r = api.get(id);
+      if (r?.trigger.type !== 'cron')
+        throw new HttpError(
+          404,
+          'not_found',
+          `schedule ${id} not found (shibaox routine knows every kind)`,
+        );
+      return r;
+    };
     const run = /^\/schedules\/([^/]+)\/run$/.exec(path);
     if (run && method === 'POST')
-      return send(res, 200, await api.runNow(decodeURIComponent(run[1] as string)));
+      return send(res, 200, await api.runNow(cronOnly(decodeURIComponent(run[1] as string)).id));
     const one = /^\/schedules\/([^/]+)$/.exec(path);
     if (one && method === 'DELETE') {
-      api.remove(decodeURIComponent(one[1] as string));
+      api.remove(cronOnly(decodeURIComponent(one[1] as string)).id);
       return send(res, 200, { ok: true });
     }
     throw new HttpError(404, 'not_found', `no route for ${method} ${path}`);
@@ -573,7 +589,20 @@ export class DaemonServer {
           'bad_request',
           `"trigger": ${trigger.error.issues.map((i) => i.message).join('; ')}`,
         );
+      const t = trigger.data;
+      if ((t.type === 'command' || t.type === 'file') && isRemote(req))
+        throw new HttpError(
+          403,
+          'forbidden',
+          `a ${t.type} trigger is added from the daemon's own machine (the socket) or from org/routines files, not over the network`,
+        );
+      if (t.type === 'url' && !allowedUrl(t.url))
+        throw new HttpError(400, 'bad_request', '"trigger.url" must be a public http(s) address');
       const num = (k: string) => (typeof body[k] === 'number' ? (body[k] as number) : undefined);
+      if (num('intervalS') !== undefined && (num('intervalS') as number) < MIN_INTERVAL_S)
+        throw new HttpError(400, 'bad_request', `"intervalS" is at least ${MIN_INTERVAL_S}`);
+      if (num('maxDailyUsd') !== undefined && (num('maxDailyUsd') as number) <= 0)
+        throw new HttpError(400, 'bad_request', '"maxDailyUsd" must be positive');
       const str = (k: string) => (typeof body[k] === 'string' ? (body[k] as string) : undefined);
       return send(
         res,

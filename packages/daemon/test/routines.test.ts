@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { RunState } from '@wizardingcode/shibaox-core';
@@ -52,8 +60,10 @@ function fakeRuns() {
 function fakeExec() {
   const answers = new Map<string, string>();
   const calls: string[][] = [];
-  const exec = async ({ argv }: { argv: string[] }) => {
+  const envs: (Record<string, string> | undefined)[] = [];
+  const exec = async ({ argv, env }: { argv: string[]; env?: Record<string, string> }) => {
     calls.push(argv);
+    envs.push(env);
     const key = argv.slice(0, 3).join(' ');
     const out = answers.get(key) ?? answers.get(argv[0] ?? '');
     return {
@@ -63,7 +73,7 @@ function fakeExec() {
       timedOut: false,
     };
   };
-  return { exec, calls, answers };
+  return { exec, calls, answers, envs };
 }
 
 function setup(o: { vault?: boolean } = {}) {
@@ -82,6 +92,7 @@ function setup(o: { vault?: boolean } = {}) {
     runs: fr.runs,
     log: (l) => logs.push(l),
     now: () => new Date(t),
+    env: () => ({ GH_TOKEN: 'ghp_vault' }),
     exec: ex.exec as never,
     fetch: (async (url: string) =>
       new Response(pages.get(url) ?? 'nothing', { status: pages.has(url) ? 200 : 404 })) as never,
@@ -370,5 +381,199 @@ describe('Routines: guards, continuity, sync', () => {
       lastRunId: 'run-x',
     });
     expect(repo.get(manual.id)).toBeDefined(); // not from the org: untouched
+  });
+});
+
+describe('Routines: review pass', () => {
+  it('a change seen while the previous run is active is not lost: it fires once the run ends', async () => {
+    const { routines, submitted, answers, advance, finish } = setup();
+    answers.set('gh issue list', JSON.stringify([{ number: 10 }]));
+    routines.add({ ...base, trigger: { type: 'github', watch: 'issues', repo: 'acme/app' } });
+    await routines.tick();
+    expect(submitted).toHaveLength(1);
+    answers.set('gh issue list', JSON.stringify([{ number: 10 }, { number: 11 }]));
+    advance(120_000);
+    await routines.tick(); // seen, but run-1 is still active
+    expect(submitted).toHaveLength(1);
+    finish('run-1');
+    advance(120_000);
+    await routines.tick(); // nothing changed since the blocked look, and yet #11 was never handled
+    expect(submitted).toHaveLength(2);
+    expect(submitted[1]?.input).toContain('11');
+  });
+  it('gh and the command trigger get the daemon env (the vault GH_TOKEN); a failing look waits the interval', async () => {
+    const { routines, answers, envs, calls, advance, logs } = setup();
+    routines.add({
+      ...base,
+      trigger: { type: 'github', watch: 'issues', repo: 'acme/app' },
+      intervalS: 600,
+    });
+    await routines.tick(); // gh fails: no answer set
+    expect(envs.at(-1)).toMatchObject({ GH_TOKEN: 'ghp_vault' });
+    expect(logs.join('\n')).toMatch(/gh issue list/);
+    advance(60_000);
+    await routines.tick();
+    expect(calls.filter((c) => c[0] === 'gh')).toHaveLength(1); // not before its interval
+    advance(600_000);
+    answers.set('gh issue list', '[]');
+    await routines.tick();
+    expect(calls.filter((c) => c[0] === 'gh')).toHaveLength(2);
+  });
+  it('issues change by number, not by activity: a comment on an open issue is not a firing', async () => {
+    const { routines, submitted, answers, advance, finish } = setup();
+    answers.set('gh issue list', JSON.stringify([{ number: 10, updatedAt: 't1' }]));
+    routines.add({ ...base, trigger: { type: 'github', watch: 'issues', repo: 'acme/app' } });
+    await routines.tick();
+    finish('run-1');
+    answers.set('gh issue list', JSON.stringify([{ number: 10, updatedAt: 't2' }]));
+    advance(120_000);
+    await routines.tick();
+    expect(submitted).toHaveLength(1);
+  });
+  it('checks: the default branch when none is given, cancelled runs are not red, only the latest run of each workflow counts', async () => {
+    const { routines, submitted, answers, calls, advance, finish } = setup();
+    answers.set('gh repo view', JSON.stringify({ defaultBranchRef: { name: 'develop' } }));
+    answers.set(
+      'gh run list',
+      JSON.stringify([
+        {
+          databaseId: 3,
+          status: 'completed',
+          conclusion: 'cancelled',
+          name: 'ci',
+          workflowName: 'ci',
+        },
+        {
+          databaseId: 2,
+          status: 'completed',
+          conclusion: 'success',
+          name: 'ci',
+          workflowName: 'ci',
+        },
+        {
+          databaseId: 1,
+          status: 'completed',
+          conclusion: 'failure',
+          name: 'ci',
+          workflowName: 'ci',
+        },
+      ]),
+    );
+    routines.add({ ...base, trigger: { type: 'github', watch: 'checks', repo: 'acme/app' } });
+    await routines.tick();
+    expect(
+      calls.some(
+        (c) => c[0] === 'gh' && c[1] === 'run' && c.includes('--branch') && c.includes('develop'),
+      ),
+    ).toBe(true);
+    expect(submitted).toEqual([]); // latest completed ci run is green; the old failure is history
+    answers.set(
+      'gh run list',
+      JSON.stringify([
+        {
+          databaseId: 4,
+          status: 'completed',
+          conclusion: 'failure',
+          name: 'ci',
+          workflowName: 'ci',
+        },
+        {
+          databaseId: 2,
+          status: 'completed',
+          conclusion: 'success',
+          name: 'ci',
+          workflowName: 'ci',
+        },
+      ]),
+    );
+    advance(120_000);
+    await routines.tick();
+    expect(submitted).toHaveLength(1);
+    finish('run-1');
+    answers.set(
+      'gh run list',
+      JSON.stringify([
+        {
+          databaseId: 5,
+          status: 'completed',
+          conclusion: 'success',
+          name: 'ci',
+          workflowName: 'ci',
+        },
+        {
+          databaseId: 4,
+          status: 'completed',
+          conclusion: 'failure',
+          name: 'ci',
+          workflowName: 'ci',
+        },
+      ]),
+    );
+    advance(120_000);
+    await routines.tick();
+    expect(submitted).toHaveLength(1); // green again: nothing
+  });
+  it('watchers get a daily cap by default; child runs write no continuity line', async () => {
+    const { routines, submitted, advance, finish, logs, vault } = setup({ vault: true });
+    const r = routines.add({
+      ...base,
+      trigger: { type: 'command', command: 'echo x' },
+      mode: 'always',
+      intervalS: 60,
+    });
+    expect(routines.get(r.id)?.maxDailyUsd).toBe(10);
+    await routines.tick();
+    finish('run-1', 'completed', 10);
+    advance(60_000);
+    await routines.tick();
+    expect(submitted).toHaveLength(1);
+    expect(logs.join('\n')).toMatch(/daily budget/);
+    routines.onFinished({
+      runId: 'child',
+      origin: `routine:${r.id}`,
+      parentRunId: 'run-1',
+      status: 'completed',
+      spentUsd: 0,
+      workflow: 'wf',
+      nodes: {},
+    } as unknown as RunState);
+    expect(existsSync(join(vault as string, '90-system', 'routines', `${r.id}.md`))).toBe(false);
+  });
+  it('sync is the truth for org routines: removed fields are cleared, a pause survives, file paths resolve against the org, ids do not cross orgs', async () => {
+    const { routines, repo, dir: d } = setup();
+    const org = join(d, 'org');
+    mkdirSync(join(org, 'routines'), { recursive: true });
+    writeFileSync(
+      join(org, 'routines', 'todo.yaml'),
+      'routine: todo\non: { file: ./TODO.md }\nworkflow: chat\ninput: x\nproject: ../app\nmax_daily_usd: 3\nname: Todo\n',
+    );
+    routines.sync(org);
+    expect(repo.get('todo')).toMatchObject({
+      trigger: { type: 'file', path: join(org, 'TODO.md') },
+      maxDailyUsd: 3,
+      name: 'Todo',
+    });
+    routines.setEnabled('todo', false);
+    writeFileSync(
+      join(org, 'routines', 'todo.yaml'),
+      'routine: todo\non: { file: ./TODO.md }\nworkflow: chat\ninput: x\nproject: ../app\n',
+    );
+    routines.sync(org);
+    // cleared name; the removed cap falls back to the watchers' default; the pause survives
+    expect(repo.get('todo')).toMatchObject({ enabled: false, name: undefined, maxDailyUsd: 10 });
+    writeFileSync(
+      join(org, 'routines', 'todo.yaml'),
+      'routine: todo\non: { file: ./TODO.md }\nworkflow: chat\ninput: x\nproject: ../app\nenabled: true\n',
+    );
+    routines.sync(org);
+    expect(repo.get('todo')?.enabled).toBe(true);
+    const other = join(d, 'org2');
+    mkdirSync(join(other, 'routines'), { recursive: true });
+    writeFileSync(
+      join(other, 'routines', 'todo.yaml'),
+      'routine: todo\non: { cron: "* * * * *" }\nworkflow: chat\n',
+    );
+    expect(() => routines.sync(other)).toThrow(/another org/);
+    expect(repo.get('todo')?.orgRoot).toBe(org);
   });
 });

@@ -131,7 +131,10 @@ export class RoutinesRepo {
   }
 
   /** Changes the given fields only. */
-  update(id: string, patch: Partial<Omit<RoutineRow, 'id' | 'createdAt'>>): void {
+  update(
+    id: string,
+    patch: { [K in keyof Omit<RoutineRow, 'id' | 'createdAt'>]?: RoutineRow[K] | null },
+  ): void {
     const cols: Record<string, unknown> = {};
     const map: Record<string, string> = {
       name: 'name',
@@ -155,7 +158,8 @@ export class RoutinesRepo {
     for (const [k, v] of Object.entries(patch)) {
       const col = map[k];
       if (!col || v === undefined) continue;
-      cols[col] = k === 'trigger' ? JSON.stringify(v) : k === 'enabled' ? (v ? 1 : 0) : v;
+      cols[col] =
+        v === null ? null : k === 'trigger' ? JSON.stringify(v) : k === 'enabled' ? (v ? 1 : 0) : v;
     }
     const keys = Object.keys(cols);
     if (keys.length === 0) return;
