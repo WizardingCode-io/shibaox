@@ -286,7 +286,7 @@ describe('RunManager', () => {
       nextSeq: (runId: string) => rows.filter((e) => e.runId === runId).length + 1,
       forget: (runIds: string[]) => {
         for (let i = rows.length - 1; i >= 0; i--)
-          if (runIds.includes(rows[i]!.runId)) rows.splice(i, 1);
+          if (runIds.includes(rows[i]?.runId ?? '')) rows.splice(i, 1);
       },
     };
     const { manager: first } = manager(store, { vault: s.vault, runtimeStore });
@@ -317,7 +317,7 @@ describe('RunManager', () => {
       nextSeq: (runId: string) => rows.filter((e) => e.runId === runId).length + 1,
       forget: (runIds: string[]) => {
         for (let i = rows.length - 1; i >= 0; i--)
-          if (runIds.includes(rows[i]!.runId)) rows.splice(i, 1);
+          if (runIds.includes(rows[i]?.runId ?? '')) rows.splice(i, 1);
       },
     };
     const { manager: m, inbox } = manager(store, { vault: s.vault, runtimeStore });
