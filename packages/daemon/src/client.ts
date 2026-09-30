@@ -1,4 +1,5 @@
-import { request as httpRequest } from 'node:http';
+import { type ClientRequest, request as httpRequest, type IncomingMessage } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 import type { ProjectProfile, RunState } from '@wizardingcode/shibaox-core';
 import type { ScheduleRow } from '@wizardingcode/shibaox-persistence-sqlite';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
@@ -38,9 +39,49 @@ interface Response {
   body: unknown;
 }
 
-/** A thin client for the daemon's Unix-socket API (Node's `fetch` cannot use sockets). */
+/** Where a client talks to: the local Unix socket, or a remote listener with its token. */
+export type DaemonTarget = string | { baseUrl: string; token?: string };
+
+/** A thin client for the daemon's API over its Unix socket, or over TCP with a bearer token. */
 export class DaemonClient {
-  constructor(readonly socketPath: string) {}
+  /** The socket path, or the remote base URL (what errors name). */
+  readonly socketPath: string;
+  private readonly remote: { url: URL; token?: string } | undefined;
+
+  constructor(target: DaemonTarget) {
+    if (typeof target === 'string') this.socketPath = target;
+    else {
+      const url = new URL(target.baseUrl);
+      this.remote = { url, token: target.token };
+      this.socketPath = url.origin;
+    }
+  }
+
+  /** Whether this client reaches a daemon on another machine. */
+  get isRemote(): boolean {
+    return this.remote !== undefined;
+  }
+
+  /** Node request options for `path`: the socket, or the remote host with the bearer. */
+  private options(path: string, method: string, headers: Record<string, string> = {}) {
+    if (!this.remote) return { socketPath: this.socketPath, path, method, headers };
+    const { url, token } = this.remote;
+    return {
+      protocol: url.protocol,
+      hostname: url.hostname,
+      port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: `${url.pathname.replace(/\/$/, '')}${path}`,
+      method,
+      headers: { ...headers, ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    };
+  }
+
+  private request(
+    options: ReturnType<DaemonClient['options']>,
+    cb: (res: IncomingMessage) => void,
+  ): ClientRequest {
+    return options.protocol === 'https:' ? httpsRequest(options, cb) : httpRequest(options, cb);
+  }
 
   private call(
     method: string,
@@ -50,18 +91,16 @@ export class DaemonClient {
   ): Promise<Response> {
     return new Promise((resolve, reject) => {
       const payload = body === undefined ? undefined : JSON.stringify(body);
-      const req = httpRequest(
-        {
-          socketPath: this.socketPath,
-          path,
-          method,
-          headers: {
-            ...(payload
-              ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
-              : {}),
-            ...headers,
-          },
-        },
+      const req = this.request(
+        this.options(path, method, {
+          ...(payload
+            ? {
+                'content-type': 'application/json',
+                'content-length': String(Buffer.byteLength(payload)),
+              }
+            : {}),
+          ...headers,
+        }),
         (res) => {
           const chunks: Buffer[] = [];
           res.on('data', (c: Buffer) => chunks.push(c));
@@ -195,7 +234,7 @@ export class DaemonClient {
       wake?.();
       wake = undefined;
     };
-    const req = httpRequest({ socketPath: this.socketPath, path, method: 'GET' }, (res) => {
+    const req = this.request(this.options(path, 'GET'), (res) => {
       if ((res.statusCode ?? 0) >= 400) {
         const chunks: Buffer[] = [];
         res.on('data', (c: Buffer) => chunks.push(c));

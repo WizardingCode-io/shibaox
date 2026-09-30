@@ -487,3 +487,81 @@ describe('changeDescriber', () => {
     }
   });
 });
+
+describe('a remote listener (TCP with a bearer token)', () => {
+  const listen = { host: '127.0.0.1', port: 0, token_env: 'SHIBAOX_DAEMON_TOKEN' };
+  it('serves the same API over TCP to a client with the token; refuses the rest', async () => {
+    const s = setup();
+    const { daemon } = await started(s, {
+      env: { SHIBAOX_DAEMON_TOKEN: 'secret-1' },
+      config: {
+        max_concurrent_runs: 2,
+        approval_timeout_minutes: 1,
+        channels: { macos: { enabled: false } },
+        listen,
+      },
+    });
+    const addr = daemon.listenAddress();
+    expect(addr).toMatchObject({ host: '127.0.0.1' });
+    expect(addr?.port).toBeGreaterThan(0);
+    const remote = new DaemonClient({
+      baseUrl: `http://127.0.0.1:${addr?.port}`,
+      token: 'secret-1',
+    });
+    expect((await remote.health()).version).toBe('9.9.9');
+    const { runId } = await remote.submitRun({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'over tcp',
+      adapter: 'mock',
+      workspace: 'inplace',
+    });
+    const seen = await collect(
+      remote.events(runId),
+      (e) => e.kind === 'run' && e.event.type === 'HumanRequested',
+    );
+    expect(seen.some((e) => e.kind === 'runtime')).toBe(true);
+    const inbox = await remote.inbox();
+    expect(inbox).toMatchObject([{ id: `human:${runId}:ship` }]);
+    await remote.answer(inbox[0]?.id ?? '', { approved: true });
+    const rest = await collect(
+      remote.events(runId, { since: seen.at(-1)?.cursor }),
+      (e) => e.kind === 'end',
+    );
+    expect(rest.at(-1)).toMatchObject({ kind: 'end', status: 'completed' });
+    expect((await remote.listRuns()).some((r) => r.runId === runId)).toBe(true);
+    // a wrong token, or none: 401 everywhere but a reduced /health
+    const wrong = new DaemonClient({ baseUrl: `http://127.0.0.1:${addr?.port}`, token: 'nope' });
+    await expect(wrong.listRuns()).rejects.toMatchObject({ status: 401 });
+    const anonymous = new DaemonClient({ baseUrl: `http://127.0.0.1:${addr?.port}` });
+    await expect(anonymous.listRuns()).rejects.toMatchObject({ status: 401 });
+    expect(await anonymous.health()).toEqual({ version: '9.9.9' });
+    // the socket keeps working without any token
+    expect((await new DaemonClient(s.home.socket).health()).version).toBe('9.9.9');
+  });
+  it('refuses to listen without a token, and listens nowhere without `listen`', async () => {
+    const s = setup();
+    const daemon = new Daemon({
+      home: s.home,
+      store: new MemoryEventStore(),
+      channels: [],
+      env: {},
+      log: () => {},
+      version: '9.9.9',
+      vault: s.vault,
+      discovery: false,
+      config: {
+        max_concurrent_runs: 2,
+        approval_timeout_minutes: 1,
+        channels: { macos: { enabled: false } },
+        listen,
+      },
+    });
+    daemons.push(daemon);
+    await expect(daemon.start()).rejects.toThrow(/SHIBAOX_DAEMON_TOKEN/);
+    const s2 = setup();
+    const { daemon: local } = await started(s2);
+    expect(local.listenAddress()).toBeUndefined();
+  });
+});

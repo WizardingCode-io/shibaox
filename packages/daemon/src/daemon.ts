@@ -29,7 +29,13 @@ import { orgSummarizer } from './runs/summarize.js';
 import { registryFor } from './runtime.js';
 import { Scheduler } from './scheduler.js';
 import { SecretsStore } from './secrets.js';
-import { DaemonServer, type Health, type SchedulesApi } from './server.js';
+import {
+  DaemonServer,
+  type Health,
+  type ListenOptions,
+  type SchedulesApi,
+  type ServerDeps,
+} from './server.js';
 
 export interface DaemonOptions {
   home?: HomePaths;
@@ -189,7 +195,31 @@ export class Daemon {
       },
     });
     for (const c of this.channels) this.attach(c);
-    this.server = new DaemonServer(this.paths.socket, {
+    this.server = new DaemonServer(this.paths.socket, this.serverDeps(opts, log));
+  }
+
+  /** Where the network listener answers (undefined without `listen` in daemon.yaml). */
+  listenAddress(): { host: string; port: number; tls: boolean } | undefined {
+    return this.server.address();
+  }
+
+  /**
+   * `listen` from daemon.yaml with the token from the live env (vault or shell). Listening on
+   * the network without a token would hand the machine to anyone who finds the port: refused.
+   */
+  private listenOptions(): ListenOptions | undefined {
+    const l = this.config.listen;
+    if (!l) return undefined;
+    const token = this.env[l.token_env];
+    if (!token)
+      throw new Error(
+        `daemon.yaml asks to listen on ${l.host}:${l.port} but ${l.token_env} is not set: put a token in the vault (shibaox keys set ${l.token_env} …) or drop \`listen\``,
+      );
+    return { host: l.host, port: l.port, token, tls: l.tls };
+  }
+
+  private serverDeps(opts: DaemonOptions, log: (line: string) => void): ServerDeps {
+    return {
       store: this.store,
       runs: this.runs,
       inbox: this.inbox,
@@ -218,7 +248,7 @@ export class Daemon {
         void this.stop(o);
       },
       log,
-    });
+    };
   }
 
   /** The Telegram token the running channel was built with (to notice a change). */
@@ -423,6 +453,7 @@ export class Daemon {
             now: this.opts.now ? () => new Date(this.opts.now?.() ?? Date.now()) : undefined,
           })
         : undefined;
+    this.server.listenOn = this.listenOptions();
     await this.server.listen();
     this.warmModels();
     writeFileSync(this.paths.pid, String(process.pid));

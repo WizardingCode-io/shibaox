@@ -1,5 +1,8 @@
-import { chmodSync, existsSync, unlinkSync } from 'node:fs';
+import { timingSafeEqual } from 'node:crypto';
+import { chmodSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer as createTlsServer } from 'node:https';
+import type { AddressInfo } from 'node:net';
 import { connect } from 'node:net';
 import {
   type EventStore,
@@ -154,14 +157,43 @@ function toHttp(e: unknown): HttpError {
  * The local API over a Unix socket: JSON in and out, SSE for `GET /runs/:id/events`. No
  * authentication: the socket is `0600`, only the same user reaches it.
  */
+/** The network listener: where, with which token, and TLS files when any. */
+export interface ListenOptions {
+  host: string;
+  port: number;
+  token: string;
+  tls?: { cert: string; key: string };
+}
+
+const bearerOk = (header: string | undefined, token: string): boolean => {
+  const given = header?.startsWith('Bearer ') ? header.slice(7) : '';
+  const a = Buffer.from(given);
+  const b = Buffer.from(token);
+  return a.length === b.length && a.length > 0 && timingSafeEqual(a, b);
+};
+
 export class DaemonServer {
   private server: Server | undefined;
+  private remote: Server | undefined;
   private readonly sockets = new Set<import('node:net').Socket>();
+
+  /** Network listener, set before `listen()`; undefined keeps the daemon socket-only. */
+  listenOn: ListenOptions | undefined;
 
   constructor(
     private readonly socketPath: string,
     private readonly deps: ServerDeps,
-  ) {}
+    listenOn?: ListenOptions,
+  ) {
+    this.listenOn = listenOn;
+  }
+
+  /** Where the network listener answers, once listening. */
+  address(): { host: string; port: number; tls: boolean } | undefined {
+    const a = this.remote?.address() as AddressInfo | null | undefined;
+    if (!a || !this.listenOn) return undefined;
+    return { host: a.address, port: a.port, tls: !!this.listenOn.tls };
+  }
 
   /** Refuses when a live daemon owns the socket; removes a stale socket file. */
   async listen(): Promise<void> {
@@ -190,14 +222,58 @@ export class DaemonServer {
     });
     chmodSync(this.socketPath, 0o600);
     this.server = server;
+    if (this.listenOn) await this.listenRemote(this.listenOn);
+  }
+
+  /**
+   * The same API on a TCP port. Every request must carry `Authorization: Bearer <token>`
+   * (compared in constant time); the one exception is `GET /health`, which answers the
+   * version only, so a monitor can watch the daemon without the token.
+   */
+  private async listenRemote(on: ListenOptions): Promise<void> {
+    const handler = (req: IncomingMessage, res: ServerResponse) => {
+      if (!bearerOk(req.headers.authorization, on.token)) {
+        if (req.method === 'GET' && (req.url ?? '/').split('?')[0] === '/health')
+          return send(res, 200, { version: this.deps.health().version });
+        return send(res, 401, {
+          error: {
+            code: 'unauthorized',
+            message: 'a bearer token is required (SHIBAOX_DAEMON_TOKEN)',
+          },
+        });
+      }
+      this.handle(req, res).catch((e: unknown) => {
+        const h = toHttp(e);
+        if (!res.headersSent) send(res, h.status, { error: { code: h.code, message: h.message } });
+        else res.end();
+      });
+    };
+    const server = on.tls
+      ? createTlsServer({ cert: readFileSync(on.tls.cert), key: readFileSync(on.tls.key) }, handler)
+      : createServer(handler);
+    server.on('connection', (s) => {
+      this.sockets.add(s);
+      s.on('close', () => this.sockets.delete(s));
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(on.port, on.host, () => {
+        server.off('error', reject);
+        resolve();
+      });
+    });
+    this.remote = server;
   }
 
   async close(): Promise<void> {
     const server = this.server;
+    const remote = this.remote;
     this.server = undefined;
-    if (!server) return;
+    this.remote = undefined;
+    if (!server && !remote) return;
     for (const s of this.sockets) s.destroy();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (remote) await new Promise<void>((resolve) => remote.close(() => resolve()));
     if (existsSync(this.socketPath)) unlinkSync(this.socketPath);
   }
 
