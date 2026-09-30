@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -129,6 +129,35 @@ describe('MCP servers on a role (direct adapter)', () => {
       /mcp server "echo" failed to start/,
     );
     expect(fake.requests).toHaveLength(0);
+  });
+  it('a stdio server runs in the task workspace, huge results are cut, odd tool names are made safe', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI((_r, turn) =>
+      turn === 0
+        ? {
+            toolCalls: [
+              { name: 'mcp__echo__cwd', args: {} },
+              { name: 'mcp__echo__big', args: {} },
+              { name: 'mcp__echo__weird_name', args: {} },
+            ],
+          }
+        : { toolCalls: [{ name: 'finish', args: { output: {}, summary: 'ok' } }] },
+    );
+    const events = await collect(
+      adapterWith(fake.baseURL, { mcpServers: () => [echoSpec()] }),
+      job(ws),
+    );
+    const result = (name: string) =>
+      events.find((e) => e.type === 'tool_result' && e.name === name) as
+        | { output?: unknown }
+        | undefined;
+    expect(String(result('mcp__echo__cwd')?.output)).toBe(realpathSync(ws));
+    const big = String(result('mcp__echo__big')?.output);
+    expect(big.length).toBeLessThan(120_000);
+    expect(big).toMatch(/truncated/);
+    expect(String(result('mcp__echo__weird_name')?.output)).toBe('weird ok');
+    expect(toolNames(fake.requests[0])).toContain('mcp__echo__weird_name');
+    expect(toolNames(fake.requests[0])).not.toContain('mcp__echo__weird.name');
   });
   it('the skills of the role reach the system prompt', async () => {
     const ws = mkdtempSync(join(tmpdir(), 'ws-'));

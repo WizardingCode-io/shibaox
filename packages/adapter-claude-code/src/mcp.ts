@@ -6,7 +6,7 @@ import {
   type SdkMcpToolDefinition,
   tool,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentTool, McpServerSpec } from '@wizardingcode/shibaox-core';
+import { type AgentTool, type McpServerSpec, modelToolName } from '@wizardingcode/shibaox-core';
 
 /** The MCP tool definitions of a set of daemon tools: results and errors travel as JSON text. */
 export function mcpToolDefinitions(tools: AgentTool[]): SdkMcpToolDefinition[] {
@@ -30,7 +30,11 @@ export function sdkMcpServer(name: string, tools: AgentTool[]): McpSdkServerConf
   return createSdkMcpServer({ name, tools: mcpToolDefinitions(tools), alwaysLoad: true });
 }
 
-/** The SDK configs of the role's catalog servers: a process on stdio, or an http endpoint. */
+/**
+ * The SDK configs of the role's catalog servers: a process on stdio, or an http endpoint. The
+ * config travels on the CLI's argv, so secrets never go in it: `${KEY}` placeholders do, which
+ * Claude Code expands from the subprocess environment (see mcpSecrets).
+ */
 export function mcpServerConfigs(
   specs: readonly McpServerSpec[],
 ): Record<string, McpStdioServerConfig | McpHttpServerConfig> {
@@ -38,14 +42,27 @@ export function mcpServerConfigs(
   for (const s of specs)
     out[s.id] =
       s.transport === 'stdio'
-        ? { type: 'stdio', command: s.command ?? '', args: s.args ?? [], env: s.env }
+        ? {
+            type: 'stdio',
+            command: s.command ?? '',
+            args: s.args ?? [],
+            env: {
+              ...s.env,
+              ...Object.fromEntries(Object.keys(s.secrets).map((k) => [k, `\${${k}}`])),
+            },
+          }
         : { type: 'http', url: s.url ?? '', headers: s.headers ?? {} };
   return out;
+}
+
+/** The vault keys of those servers, for the Claude Code subprocess environment. */
+export function mcpSecrets(specs: readonly McpServerSpec[]): Record<string, string> {
+  return Object.assign({}, ...specs.map((s) => s.secrets));
 }
 
 /** Allow rules for those servers: every tool, or only the allowlisted ones. */
 export function mcpAllowRules(specs: readonly McpServerSpec[]): string[] {
   return specs.flatMap((s) =>
-    s.tools ? s.tools.map((t) => `mcp__${s.id}__${t}`) : [`mcp__${s.id}__*`],
+    s.tools ? s.tools.map((t) => modelToolName(s.id, t)) : [`mcp__${s.id}__*`],
   );
 }

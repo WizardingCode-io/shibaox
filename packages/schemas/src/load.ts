@@ -105,6 +105,13 @@ export function loadOrg(root: string): Org {
   for (const [name, role] of Object.entries(roles)) {
     const file = roleFiles[name] ?? `roles/${name}.yaml`;
     for (const id of role.mcp) {
+      if (id === 'shibaox' || id === 'graphify')
+        throw new OrgLoadError(file, `mcp server "${id}" is reserved for a built-in server`);
+      if (id.includes(':') || id.includes('__'))
+        throw new OrgLoadError(
+          file,
+          `mcp server "${id}" cannot be a tool name (no ':' or '__' in an mcp id)`,
+        );
       const entry = catalog[id];
       if (!entry) throw new OrgLoadError(file, `mcp server "${id}" is not in catalog/`);
       if (entry.type !== 'mcp')

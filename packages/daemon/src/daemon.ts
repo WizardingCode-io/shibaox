@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { QueryFn } from '@wizardingcode/shibaox-adapter-claude-code';
 import { type EventStore, type MockScript, runArgv } from '@wizardingcode/shibaox-core';
 import type { Graphify } from '@wizardingcode/shibaox-memory';
@@ -247,6 +247,10 @@ export class Daemon {
       keys: () => this.secrets.list(opts.env ?? process.env),
       mcpList: (org) => mcpList(org, this.env),
       mcpTest: (id, org) => mcpTest(id, org, this.env, opts.log ?? (() => undefined)),
+      mcpRemoteAllowed: async (org) => {
+        const owned = [this.paths.org, ...(await this.projects()).map((p) => join(p.path, 'org'))];
+        return owned.some((o) => resolve(o) === resolve(org));
+      },
       setKey: (name, value) => {
         this.secrets.set(name, value);
         this.refreshEnv(opts.env ?? process.env);
@@ -485,7 +489,7 @@ export class Daemon {
       seen.add(path);
       out.push({ path, source });
     };
-    for (const p of this.config.projects) add(p, 'config');
+    for (const p of this.config.projects ?? []) add(p, 'config');
     for (const p of reposIn(this.config.projects_dir)) add(p, 'config');
     const runs = await this.runs.list();
     runs.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));

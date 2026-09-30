@@ -4,7 +4,7 @@ import {
   StdioClientTransport,
 } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { McpServerSpec } from '@wizardingcode/shibaox-core';
+import { expandHeaders, type McpServerSpec } from '@wizardingcode/shibaox-core';
 
 export interface McpToolInfo {
   /** The server's own tool name. */
@@ -22,16 +22,16 @@ export interface McpConnection {
   close(): Promise<void>;
 }
 
-/** `mcp__<server>__<tool>`: the name the model sees, the same in every runtime. */
-export const mcpToolName = (server: string, tool: string): string => `mcp__${server}__${tool}`;
-
 /**
  * Starts (stdio) or reaches (http) an MCP server and lists its tools. A server that does not
  * answer within the spec's timeout, or exits, is an error naming the server; nothing hangs.
  */
+/** Longest tool result handed to the model (and kept in the run): the rest is cut with a note. */
+export const MCP_RESULT_MAX_CHARS = 100_000;
+
 export async function connectMcp(
   spec: McpServerSpec,
-  o: { log?: (line: string) => void } = {},
+  o: { log?: (line: string) => void; cwd?: string } = {},
 ): Promise<McpConnection> {
   const client = new Client({ name: 'shibaox', version: '0' });
   const transport =
@@ -39,12 +39,13 @@ export async function connectMcp(
       ? new StdioClientTransport({
           command: spec.command ?? '',
           args: spec.args ?? [],
-          // the SDK's safe subset of the environment (PATH, HOME…) plus the spec's own
-          env: { ...getDefaultEnvironment(), ...spec.env },
+          // the SDK's safe subset of the environment (PATH, HOME…) plus the spec's own and its keys
+          env: { ...getDefaultEnvironment(), ...spec.env, ...spec.secrets },
+          cwd: o.cwd,
           stderr: 'pipe',
         })
       : new StreamableHTTPClientTransport(new URL(spec.url ?? ''), {
-          requestInit: { headers: spec.headers ?? {} },
+          requestInit: { headers: expandHeaders(spec) },
         });
   if (transport instanceof StdioClientTransport)
     transport.stderr?.on('data', (d: Buffer) => {
@@ -56,9 +57,10 @@ export async function connectMcp(
       `mcp server "${spec.id}" failed to start: ${e instanceof Error ? e.message : String(e)}`,
     );
   try {
-    await withTimeout(client.connect(transport), spec.timeoutMs, 'did not answer in time');
+    const opts = { timeout: spec.timeoutMs };
+    await withTimeout(client.connect(transport, opts), spec.timeoutMs, 'did not answer in time');
     const listed = await withTimeout(
-      client.listTools(),
+      client.listTools(undefined, opts),
       spec.timeoutMs,
       'did not list its tools in time',
     );
@@ -83,8 +85,12 @@ export async function connectMcp(
         const text = content
           .map((c) => (c.type === 'text' ? (c.text ?? '') : `[${c.type}]`))
           .join('\n');
-        if (r.isError) throw new Error(text || 'the tool failed');
-        return r.structuredContent ?? text;
+        if (r.isError) throw new Error(clip(text) || 'the tool failed');
+        if (r.structuredContent !== undefined) {
+          const json = JSON.stringify(r.structuredContent);
+          return json.length > MCP_RESULT_MAX_CHARS ? clip(json) : r.structuredContent;
+        }
+        return clip(text);
       },
       async close() {
         await client.close().catch(() => undefined);
@@ -94,6 +100,11 @@ export async function connectMcp(
     await client.close().catch(() => undefined);
     throw fail(e);
   }
+}
+
+function clip(text: string): string {
+  if (text.length <= MCP_RESULT_MAX_CHARS) return text;
+  return `${text.slice(0, MCP_RESULT_MAX_CHARS)}\n…[truncated ${text.length - MCP_RESULT_MAX_CHARS} characters]`;
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {

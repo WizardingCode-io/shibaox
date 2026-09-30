@@ -113,6 +113,8 @@ export interface ServerDeps {
   /** The org's catalog MCP servers, and a health check of one. */
   mcpList: (org: string) => McpServerRow[];
   mcpTest: (id: string, org: string) => Promise<McpTestResult>;
+  /** Whether a network caller may start that org's servers (the daemon's own orgs only). */
+  mcpRemoteAllowed: (org: string) => Promise<boolean>;
   setKey: (name: string, value: string) => void;
   unsetKey: (name: string) => boolean;
   onShutdown: (o: { force?: boolean }) => void;
@@ -392,8 +394,18 @@ export class DaemonServer {
       try {
         if (method === 'GET' && path === '/mcp') return send(res, 200, this.deps.mcpList(org));
         const id = decodeURIComponent(path.split('/')[2] ?? '');
-        if (method === 'POST') return send(res, 200, await this.deps.mcpTest(id, org));
+        if (method === 'POST') {
+          // starting an org-defined command from the network: only for orgs the daemon owns
+          if (isRemote(req) && !(await this.deps.mcpRemoteAllowed(org)))
+            throw new HttpError(
+              403,
+              'forbidden',
+              "over the network, mcp test runs only for the daemon's own org (~/.shibaox/org) or the org of a project in daemon.yaml; use the socket on the daemon's machine for other orgs",
+            );
+          return send(res, 200, await this.deps.mcpTest(id, org));
+        }
       } catch (e) {
+        if (e instanceof HttpError) throw e;
         const m = e instanceof Error ? e.message : String(e);
         throw new HttpError(/not found/i.test(m) ? 404 : 400, 'bad_request', m);
       }

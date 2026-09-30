@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CatalogEntrySchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
-import { mcpServerSpec, skillsPrompt } from '../src/index.js';
+import { expandHeaders, mcpServerSpec, modelToolName, skillsPrompt } from '../src/index.js';
 
 describe('mcpServerSpec', () => {
   const entry = CatalogEntrySchema.parse({
@@ -26,7 +26,8 @@ describe('mcpServerSpec', () => {
       transport: 'stdio',
       command: 'npx',
       args: ['-y', 'docs-mcp'],
-      env: { DOCS_MODE: 'fast', DOCS_TOKEN: 't0k' },
+      env: { DOCS_MODE: 'fast' },
+      secrets: { DOCS_TOKEN: 't0k' },
       tools: ['search'],
       timeoutMs: 30_000,
     });
@@ -51,7 +52,10 @@ describe('mcpServerSpec', () => {
     const spec = mcpServerSpec(http, { WEB_TOKEN: 'abc' });
     expect(spec.transport).toBe('http');
     expect(spec.url).toBe('https://mcp.example.com/mcp');
-    expect(spec.headers).toEqual({ Authorization: 'Bearer abc' });
+    // the spec keeps the template (Claude Code expands it from its own env); the direct adapter expands it
+    expect(spec.headers).toEqual({ Authorization: `Bearer $${'{WEB_TOKEN}'}` });
+    expect(spec.secrets).toEqual({ WEB_TOKEN: 'abc' });
+    expect(expandHeaders(spec)).toEqual({ Authorization: 'Bearer abc' });
   });
   it('an entry that is not an mcp server is refused', () => {
     const tool = CatalogEntrySchema.parse({ id: 'x', type: 'tool', description: 'd' });
@@ -78,5 +82,18 @@ describe('skillsPrompt', () => {
   it('a missing skill is an error naming the file', () => {
     const root = mkdtempSync(join(tmpdir(), 'skills-'));
     expect(() => skillsPrompt(root, ['nope'])).toThrow(/skills\/nope\/SKILL\.md/);
+  });
+});
+
+describe('modelToolName', () => {
+  it('is mcp__<server>__<tool> with only [A-Za-z0-9_-], at most 64 characters, stable', () => {
+    expect(modelToolName('echo', 'echo')).toBe('mcp__echo__echo');
+    expect(modelToolName('docs', 'search.pages')).toBe('mcp__docs__search_pages');
+    expect(modelToolName('docs', 'a/b:c d')).toBe('mcp__docs__a_b_c_d');
+    const long = modelToolName('playwright', 'x'.repeat(80));
+    expect(long).toHaveLength(64);
+    expect(long).toMatch(/^mcp__playwright__x+_[a-z0-9]{6}$/);
+    expect(modelToolName('playwright', 'x'.repeat(80))).toBe(long);
+    expect(modelToolName('playwright', 'x'.repeat(81))).not.toBe(long);
   });
 });

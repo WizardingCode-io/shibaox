@@ -657,7 +657,7 @@ describe('shibaox mcp', () => {
     expect(list.stdout).toContain('backend');
     const test = await s.cli('mcp', 'test', 'echo', '--org', s.org);
     expect(test.code, test.stderr).toBe(0);
-    expect(test.stdout).toMatch(/4 tools/);
+    expect(test.stdout).toMatch(/7 tools/);
     expect(test.stdout).toContain('shout');
     const nope = await s.cli('mcp', 'test', 'nope', '--org', s.org);
     expect(nope.code).not.toBe(0);

@@ -8,6 +8,7 @@ import {
   conversationOf,
   type ExecutionContext,
   type McpServerSpec,
+  modelToolName,
   type RuntimeAdapter,
   type RuntimeEvent,
   skillsPrompt,
@@ -21,7 +22,7 @@ import {
   type ProviderRegistry,
 } from '@wizardingcode/shibaox-providers';
 import type { ModelMessage, ToolSet } from 'ai';
-import { connectMcp, type McpConnection, mcpToolName } from './mcp.js';
+import { connectMcp, type McpConnection } from './mcp.js';
 import { parseTextToolCalls } from './text-tools.js';
 import { APPROVAL_PENDING, buildTools, type McpAgentTool } from './tools.js';
 
@@ -157,7 +158,9 @@ export class DirectAdapter implements RuntimeAdapter {
     const specs = this.opts.mcpServers?.(job) ?? [];
     const connections: McpConnection[] = [];
     try {
-      const settled = await Promise.allSettled(specs.map((s) => connectMcp(s, { log: ctx.log })));
+      const settled = await Promise.allSettled(
+        specs.map((s) => connectMcp(s, { log: ctx.log, cwd: job.workspace })),
+      );
       for (const s of settled) if (s.status === 'fulfilled') connections.push(s.value);
       const failed = settled.find((s) => s.status === 'rejected');
       if (failed && failed.status === 'rejected') {
@@ -166,7 +169,7 @@ export class DirectAdapter implements RuntimeAdapter {
       }
       const mcpTools: McpAgentTool[] = connections.flatMap((c) =>
         c.tools.map((t) => ({
-          name: mcpToolName(c.id, t.name),
+          name: modelToolName(c.id, t.name),
           description: t.description,
           inputSchema: t.inputSchema,
           execute: (input: Record<string, unknown>) => c.call(t.name, input),

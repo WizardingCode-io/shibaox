@@ -1081,5 +1081,30 @@ describe('MCP servers through the API', () => {
     expect(test.ok).toBe(true);
     expect(test.tools?.map((t) => t.name)).toEqual(['echo', 'secret']);
     await expect(client.mcpTest('nope', s.orgRoot)).rejects.toMatchObject({ status: 404 });
+    const pw = before[1];
+    expect(pw?.target).toContain('--isolated');
+    expect(pw?.target).not.toContain('@latest');
+  });
+  it('over the network, mcp test starts servers of the daemon own org only', async () => {
+    const s = setup();
+    const { daemon } = await started(s, {
+      env: { SHIBAOX_DAEMON_TOKEN: 'secret-1' },
+      config: {
+        max_concurrent_runs: 2,
+        approval_timeout_minutes: 1,
+        channels: { macos: { enabled: false } },
+        listen: { host: '127.0.0.1', port: 0, token_env: 'SHIBAOX_DAEMON_TOKEN' },
+      },
+    });
+    const addr = daemon.listenAddress();
+    const remote = new DaemonClient({
+      baseUrl: `http://127.0.0.1:${addr?.port}`,
+      token: 'secret-1',
+    });
+    expect((await remote.mcpList(s.orgRoot)).map((r) => r.id)).toEqual(['playwright']); // listing is fine
+    await expect(remote.mcpTest('playwright', s.orgRoot)).rejects.toMatchObject({ status: 403 });
+    const home = (await remote.defaultOrg()).root;
+    const r = await remote.mcpTest('playwright', home).catch((e: { status?: number }) => e);
+    expect((r as { status?: number }).status).not.toBe(403);
   });
 });

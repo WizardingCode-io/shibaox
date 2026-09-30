@@ -8,7 +8,7 @@
 
 ## MCP servers
 
-A role's `mcp:` list (catalog entries with a `server:`) is passed to Claude Code as MCP servers, stdio or http, with the vault keys of `env_keys`; their tools are allowed as `mcp__<id>__*` (or the allowlisted names). The knowledge graph's own server (`graphify-mcp`) is attached by autorouting as before. See [MCP and skills](MCP-and-skills).
+A role's `mcp:` list (catalog entries with a `server:`) is passed to Claude Code as MCP servers, stdio or http, with the vault keys of `env_keys`; their tools are allowed as `mcp__<id>__*` (or the allowlisted names); the keys travel in the subprocess environment and the config carries `${KEY}` placeholders. A listed server Claude Code cannot start fails the task. The knowledge graph's own server (`graphify-mcp`) is attached by autorouting as before. See [MCP and skills](MCP-and-skills).
 
 ## Tools
 

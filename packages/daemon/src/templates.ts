@@ -193,10 +193,12 @@ description: "A browser (Playwright MCP): open pages, click, fill forms, read th
 tags: [browser, e2e]
 # Add \`mcp: [playwright]\` to a role to give it these tools, in every runtime.
 # The role then browses wherever the model decides: keep it on roles you trust with that.
+# Pinned (npx fetches it on first use; bump deliberately). --isolated: a fresh browser profile per
+# task, so parallel tasks never fight over one profile and no login carries over between runs.
 server:
   transport: stdio
   command: npx
-  args: ['-y', '@playwright/mcp@latest', '--headless']
+  args: ['-y', '@playwright/mcp@0.0.83', '--headless', '--isolated']
 `,
   'vault/00-org/.gitkeep': '',
   'vault/10-projects/.gitkeep': '',

@@ -16,7 +16,7 @@ import {
 } from '@wizardingcode/shibaox-core';
 import { describeError } from '@wizardingcode/shibaox-providers';
 import type { ApprovalCategory } from './bash-command.js';
-import { mcpAllowRules, mcpServerConfigs, sdkMcpServer } from './mcp.js';
+import { mcpAllowRules, mcpSecrets, mcpServerConfigs, sdkMcpServer } from './mcp.js';
 import { buildCanUseTool } from './permissions.js';
 import { mapRoleTools } from './tools-map.js';
 
@@ -128,6 +128,7 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     const onAbort = () => abort.abort(new Error('aborted'));
     ctx.signal.addEventListener('abort', onAbort, { once: true });
     let deferred: { category: ApprovalCategory; approvalId: string } | undefined;
+    let failedServer: string | undefined;
     const pending = (): RuntimeEvent & { type: 'error' } => ({
       type: 'error',
       message: `approval pending for ${deferred?.category}: task ${job.nodeId} waits for the inbox`,
@@ -183,7 +184,11 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
       abortController: abort,
       resume: job.resumeSessionId,
       env: buildSubprocessEnv(
-        typeof this.opts.env === 'function' ? this.opts.env(job) : this.opts.env,
+        {
+          ...(typeof this.opts.env === 'function' ? this.opts.env(job) : this.opts.env),
+          // the catalog servers' vault keys: expanded by Claude Code into their `${KEY}` placeholders
+          ...mcpSecrets(specs),
+        },
         process.env,
         { subscription: isSubscriptionRef(this.opts.modelRef?.(job)) },
       ),
@@ -236,8 +241,19 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
             `[claude-code] ready: model=${m.model} apiKeySource=${m.apiKeySource} tools=${m.tools.length} mcp=${mcp || 'none'}`,
           );
           for (const s of m.mcp_servers)
-            if (s.status === 'failed' || s.status === 'needs-auth')
+            if (s.status === 'failed' || s.status === 'needs-auth') {
+              // a server the role asked for is not optional: the task fails, as it does on direct
+              if (specs.some((spec) => spec.id === s.name)) {
+                failedServer = `mcp server "${s.name}" failed to start (${s.status})`;
+                abort.abort(new Error(failedServer));
+                break;
+              }
               ctx.log(`[claude-code] warning: MCP server ${s.name} ${s.status}`);
+            }
+          if (failedServer) {
+            yield { type: 'error', message: failedServer };
+            return;
+          }
         } else if (m.type === 'assistant') {
           const parentToolUseId = m.parent_tool_use_id ?? undefined;
           const callUsage = (

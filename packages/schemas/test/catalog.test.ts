@@ -97,6 +97,20 @@ describe('catalog entries with an MCP server', () => {
     expect(() => loadOrg(org({ 'roles/tl.yaml': 'role: tl\nskills: [e2e]\n' }))).toThrow(
       /skill "e2e" has no skills\/e2e\/SKILL\.md/,
     );
+    for (const [id, why] of [
+      ['shibaox', 'reserved'],
+      ['graphify', 'reserved'],
+      ['a:b', 'cannot be a tool name'],
+      ['a__b', 'cannot be a tool name'],
+    ] as const)
+      expect(() =>
+        loadOrg(
+          org({
+            'roles/tl.yaml': `role: tl\nmcp: ['${id}']\n`,
+            [`catalog/${id}.yaml`]: `id: '${id}'\ntype: mcp\ndescription: x\nserver: { transport: stdio, command: node }\n`,
+          }),
+        ),
+      ).toThrow(new RegExp(why));
     const ok = loadOrg(
       org({
         'roles/tl.yaml': 'role: tl\nmcp: [echo]\nskills: [e2e]\n',

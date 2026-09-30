@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CatalogEntry } from '@wizardingcode/shibaox-schemas';
@@ -8,9 +9,12 @@ export interface McpServerSpec {
   transport: 'stdio' | 'http';
   command?: string;
   args?: string[];
-  /** stdio: the process environment on top of the daemon's (fixed env + the vault keys). */
+  /** stdio: fixed environment on top of the daemon's (never secrets). */
   env: Record<string, string>;
+  /** The vault keys the server needs, with their values: passed to the process env, expanded in headers. */
+  secrets: Record<string, string>;
   url?: string;
+  /** http: headers as written, `${KEY}` left for the runtime to expand (see expandHeaders). */
   headers?: Record<string, string>;
   /** When set, only these tools are offered. */
   tools?: string[];
@@ -35,11 +39,11 @@ export function mcpServerSpec(entry: CatalogEntry, env: NodeJS.ProcessEnv): McpS
       );
     keys[k] = v;
   }
-  const expand = (s: string) => s.replace(/\$\{([A-Z0-9_]+)\}/g, (m, k: string) => keys[k] ?? m);
   const spec: McpServerSpec = {
     id: entry.id,
     transport: server.transport,
-    env: { ...server.env, ...keys },
+    env: { ...server.env },
+    secrets: keys,
     timeoutMs: server.timeout_ms,
   };
   if (server.transport === 'stdio') {
@@ -47,12 +51,40 @@ export function mcpServerSpec(entry: CatalogEntry, env: NodeJS.ProcessEnv): McpS
     spec.args = server.args;
   } else {
     spec.url = server.url;
-    spec.headers = Object.fromEntries(
-      Object.entries(server.headers).map(([k, v]) => [k, expand(v)]),
-    );
+    spec.headers = { ...server.headers };
   }
   if (server.tools) spec.tools = server.tools;
   return spec;
+}
+
+/** The http headers with `${KEY}` expanded from the spec's secrets (what the direct adapter sends). */
+export function expandHeaders(spec: McpServerSpec): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(spec.headers ?? {}).map(([k, v]) => [
+      k,
+      v.replace(/\$\{([A-Za-z0-9_]+)\}/g, (m, key: string) => spec.secrets[key] ?? m),
+    ]),
+  );
+}
+
+/** Ids a role may not list under `mcp:`: in-process servers of the runtimes, or unusable as tool names. */
+export function mcpIdProblem(id: string): string | undefined {
+  if (id === 'shibaox' || id === 'graphify') return `"${id}" is reserved for a built-in server`;
+  if (id.includes(':') || id.includes('__'))
+    return `"${id}" cannot be a tool name (no ':' or '__' in an mcp id)`;
+  return undefined;
+}
+
+/**
+ * The name the model sees for a server's tool: `mcp__<server>__<tool>` with only
+ * `[A-Za-z0-9_-]`, at most 64 characters (a short hash keeps long names distinct), the same in
+ * every runtime.
+ */
+export function modelToolName(server: string, tool: string): string {
+  const raw = `mcp__${server}__${tool}`.replace(/[^A-Za-z0-9_-]/g, '_');
+  if (raw.length <= 64) return raw;
+  const hash = createHash('sha1').update(`${server}\u0000${tool}`).digest('hex').slice(0, 6);
+  return `${raw.slice(0, 64 - 7)}_${hash}`;
 }
 
 /**

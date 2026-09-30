@@ -23,4 +23,17 @@ server.registerTool('fail', { description: 'Always fails', inputSchema: {} }, as
   content: [{ type: 'text', text: 'boom' }],
   isError: true,
 }));
+server.registerTool('cwd', { description: 'Where the server runs', inputSchema: {} }, async () => ({
+  content: [{ type: 'text', text: process.cwd() }],
+}));
+server.registerTool('big', { description: 'A very long result', inputSchema: {} }, async () => ({
+  content: [{ type: 'text', text: 'x'.repeat(300_000) }],
+}));
+server.registerTool(
+  'weird.name',
+  { description: 'A dotted tool name', inputSchema: {} },
+  async () => ({
+    content: [{ type: 'text', text: 'weird ok' }],
+  }),
+);
 await server.connect(new StdioServerTransport());
