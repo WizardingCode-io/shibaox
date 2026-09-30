@@ -38,8 +38,8 @@ jobs:
                 npm view "$spec" version >/dev/null 2>&1 || ok=0
               done
               # the metadata shows a version minutes before its tarball is served: wait for the tarball too
-    curl -fsSL -o /dev/null "https://registry.npmjs.org/shibaox/-/shibaox-$v.tgz" || ok=0
-    [ "$ok" = 1 ] && exit 0
+              curl -fsSL -o /dev/null "https://registry.npmjs.org/shibaox/-/shibaox-$v.tgz" || ok=0
+              [ "$ok" = 1 ] && exit 0
             fi
             sleep 15
           done
