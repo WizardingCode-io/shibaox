@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MemoryEventStore, type TaskJob } from '@wizardingcode/shibaox-core';
+import { SqliteEventStore } from '@wizardingcode/shibaox-persistence-sqlite';
 import { forgetModels } from '@wizardingcode/shibaox-providers';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DaemonClient, DaemonHttpError, type Envelope } from '../src/client.js';
@@ -701,5 +702,81 @@ describe('pruning old runs', () => {
     expect(await client.pruneRuns('9999-01-01T00:00:00.000Z')).toEqual({ removed: [runId] });
     expect(await client.listRuns()).toEqual([]);
     await expect(client.pruneRuns('not a date')).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+describe('GET /runs/:id/audit', () => {
+  it('answers the audit as JSON or Markdown, with the tool calls, and 404 for an unknown run', async () => {
+    const s = setup();
+    const { client } = await started(s);
+    const { runId } = await submit(client, s);
+    await collect(
+      client.events(runId),
+      (e) => e.kind === 'run' && e.event.type === 'HumanRequested',
+    );
+    await client.answer(`human:${runId}:ship`, { approved: true, note: 'yes' });
+    await collect(client.events(runId), (e) => e.kind === 'end');
+    const doc = await client.audit(runId);
+    expect(doc).toMatchObject({ runId, workflow: 'hello-feature', status: 'completed' });
+    expect(doc.approvals).toEqual([
+      expect.objectContaining({ kind: 'human', approved: true, note: 'yes' }),
+    ]);
+    expect(doc.nodes.some((n) => n.toolCalls.length > 0 || n.type === 'task')).toBe(true);
+    const md = await client.auditMarkdown(runId);
+    expect(md).toContain(`# Run ${runId}`);
+    await expect(client.audit('nope')).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('history after a restart', () => {
+  it('a daemon restarted over the same SQLite file replays a finished run with its tool calls', async () => {
+    const s = setup();
+    const db = join(s.dir, 'events.db');
+    const first = new Daemon({
+      home: s.home,
+      store: new SqliteEventStore(db),
+      channels: [],
+      env: {},
+      log: () => {},
+      version: '9.9.9',
+      vault: s.vault,
+      discovery: false,
+    });
+    daemons.push(first);
+    await first.start();
+    const client = new DaemonClient(s.home.socket);
+    const { runId } = await submit(client, s);
+    await collect(
+      client.events(runId),
+      (e) => e.kind === 'run' && e.event.type === 'HumanRequested',
+    );
+    await client.answer(`human:${runId}:ship`, { approved: true });
+    await collect(client.events(runId), (e) => e.kind === 'end');
+    const before = (
+      await collect(client.events(runId, { historyOnly: true }), (e) => e.kind === 'end')
+    )
+      .filter((e) => e.kind === 'runtime')
+      .map((e) => e.event.seq);
+    expect(before.length).toBeGreaterThan(0);
+    await first.stop({ force: true });
+    const second = new Daemon({
+      home: s.home,
+      store: new SqliteEventStore(db),
+      channels: [],
+      env: {},
+      log: () => {},
+      version: '9.9.9',
+      vault: s.vault,
+      discovery: false,
+    });
+    daemons.push(second);
+    await second.start();
+    const after = (
+      await collect(client.events(runId, { historyOnly: true }), (e) => e.kind === 'end')
+    )
+      .filter((e) => e.kind === 'runtime')
+      .map((e) => e.event.seq);
+    expect(after).toEqual(before);
+    expect((await client.audit(runId)).nodes.some((n) => n.type === 'task')).toBe(true);
   });
 });

@@ -10,6 +10,8 @@
 | `shibaox runs` | every run the daemon knows |
 | `shibaox follow <runId>` | the run view (or plain lines) of a run |
 | `shibaox replay <runId> [--db <path>]` | the event log and the derived state |
+| `shibaox audit <runId> [--format md\|json] [--out <file>]` | everything that happened in a run: request, nodes with attempts and tool calls (with durations), gates with evidence, decisions, who approved what through which channel, git results, cost per node |
+| `shibaox runs prune --before <30d\|12h\|ISO>` | removes finished runs older than that, with their events and tool calls; live runs stay |
 | `shibaox resume <runId> [--budget <usd>] [--adapter …]` | continues a paused or interrupted run |
 | `shibaox cancel <runId>` | cancels a run |
 

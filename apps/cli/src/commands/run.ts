@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { isTerminal, type RunStatus } from '@wizardingcode/shibaox-core';
 import type { AdapterId, GraphMode } from '@wizardingcode/shibaox-daemon';
@@ -173,5 +173,61 @@ export async function replayCommand(runId: string, o: { db?: string }, out: Out)
   const state = await client.getRun(runId);
   for (const l of formatState(state)) out.line(l);
   out.obj({ final: state });
+  return 0;
+}
+
+/** `30d`, `12h`, `45m`, or an ISO date: the moment before which finished runs are removed. */
+export function parseBefore(v: string, now: Date = new Date()): string | undefined {
+  const m = v.match(/^(\d+)([dhm])$/);
+  if (m) {
+    const n = Number(m[1]);
+    const ms = m[2] === 'd' ? n * 86_400_000 : m[2] === 'h' ? n * 3_600_000 : n * 60_000;
+    return new Date(now.getTime() - ms).toISOString();
+  }
+  return Number.isNaN(Date.parse(v)) ? undefined : new Date(v).toISOString();
+}
+
+/** `shibaox runs prune --before 30d`: finished runs older than that go, with their events. */
+export async function runsPruneCommand(o: { before?: string }, out: Out): Promise<number> {
+  const before = o.before ? parseBefore(o.before) : undefined;
+  if (!before) {
+    out.line('Say how old: shibaox runs prune --before 30d (or 12h, 45m, or an ISO date).');
+    out.obj({ removed: [], error: 'bad --before' });
+    return 1;
+  }
+  const client = await connect({ write: true });
+  const { removed } = await client.pruneRuns(before);
+  out.line(
+    removed.length === 0
+      ? `Nothing to remove: no finished run older than ${before}.`
+      : `Removed ${removed.length} run(s) finished before ${before}.`,
+  );
+  out.obj({ removed, before });
+  return 0;
+}
+
+/** `shibaox audit <runId>`: everything that happened in a run, as Markdown (or JSON), to stdout or a file. */
+export async function auditCommand(
+  runId: string,
+  o: { format?: string; out?: string },
+  out: Out,
+): Promise<number> {
+  const client = await connect();
+  const format = o.format ?? (out.json ? 'json' : 'md');
+  if (format !== 'md' && format !== 'json') {
+    out.line('--format takes md or json');
+    return 1;
+  }
+  const text =
+    format === 'md'
+      ? await client.auditMarkdown(runId)
+      : `${JSON.stringify(await client.audit(runId), null, 2)}\n`;
+  if (o.out) {
+    writeFileSync(o.out, text);
+    out.line(`Wrote the audit of ${runId} to ${o.out}`);
+    out.obj({ runId, file: o.out, format });
+    return 0;
+  }
+  process.stdout.write(text);
   return 0;
 }

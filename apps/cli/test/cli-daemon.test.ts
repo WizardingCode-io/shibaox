@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { cpSync, mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -169,6 +169,54 @@ describe('shibaox CLI against a daemon', () => {
     );
     const cancel = await cli('cancel', runId);
     expect(cancel.stdout).toContain('cancelled');
+  });
+
+  it('audit prints the run as Markdown (or JSON, or to a file); runs prune removes old finished runs', async () => {
+    const { org, project, cli, dir } = await setup();
+    const started = await cli(
+      'run',
+      'hello-feature',
+      '--org',
+      org,
+      '--project',
+      project,
+      '--input',
+      'audit me',
+      '--adapter',
+      'mock',
+      '--workspace',
+      'inplace',
+      '--detach',
+      '--json',
+    );
+    const [{ runId }] = json<{ runId: string }>(started);
+    await vi.waitFor(async () => {
+      expect(json<{ id: string }>(await cli('inbox', '--json')).map((i) => i.id)).toEqual([
+        `human:${runId}:ship`,
+      ]);
+    });
+    await cli('approve', `human:${runId}:ship`, '--note', 'go');
+    await vi.waitFor(async () => {
+      expect(json<{ status: string }>(await cli('runs', '--json'))[0]?.status).toBe('completed');
+    });
+    const md = await cli('audit', runId);
+    expect(md.code, md.stderr).toBe(0);
+    expect(md.stdout).toContain(`# Run ${runId} · hello-feature · completed`);
+    expect(md.stdout).toContain('audit me');
+    expect(md.stdout).toContain('go');
+    const asJson = await cli('audit', runId, '--format', 'json');
+    expect(JSON.parse(asJson.stdout)).toMatchObject({ runId, status: 'completed' });
+    const file = join(dir, 'audit.md');
+    const saved = await cli('audit', runId, '--out', file);
+    expect(saved.stdout).toContain(file);
+    expect(readFileSync(file, 'utf8')).toContain('# Run');
+    const kept = await cli('runs', 'prune', '--before', '30d');
+    expect(kept.stdout).toContain('Nothing to remove');
+    const gone = await cli('runs', 'prune', '--before', '0d', '--json');
+    expect(json<{ removed: string[] }>(gone)[0]?.removed).toEqual([runId]);
+    expect((await cli('runs')).stdout).toContain('No runs yet.');
+    const bad = await cli('runs', 'prune', '--before', 'yesterday');
+    expect(bad.code).toBe(1);
   });
 
   it('daemon status reports the version and an empty inbox prints a sentence', async () => {

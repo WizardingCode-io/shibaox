@@ -11,7 +11,7 @@ Shibaox runs agents on your machine with your user's permissions. These are the 
 - **Git nodes land only after a human node.** The template puts `approve-push` before `commit` and `merge`; a cancelled run never lands.
 - **Keys stay in Shibaox.** The vault is a 0600 file in a 0700 directory; runtimes get only the keys they need; channels never receive file contents, diffs or tool output; the socket is 0600 and local.
 - **The network listener needs a token.** With `listen` in `daemon.yaml` (or `shibaox serve`) the API answers on TCP only to requests with the bearer token, compared in constant time; without a token the daemon refuses to listen; a request with no token gets the version and nothing else.
-- **Everything is on the record.** Every tool call, approval and decision is an event in the run log.
+- **Everything is on the record.** Every tool call, approval and decision is an event in the run log, kept on disk across restarts; `shibaox audit <runId>` writes it out as a document (who approved what through which channel, every tool call with its duration, every gate with its evidence, what git did, the cost per node).
 
 ## What is not
 

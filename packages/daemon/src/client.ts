@@ -6,6 +6,7 @@ import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import type { InboxItem } from './inbox.js';
 import type { OrgConfig, OrgConfigPatch, OrgInfo } from './org-config.js';
 import type { RunSummaryPlus, SubmitRequest } from './run-manager.js';
+import type { AuditDoc } from './runs/audit.js';
 import type { DiffResult } from './runs/diff.js';
 import type { KeyRow } from './secrets.js';
 import type { Envelope, Health, ProjectEntry } from './server.js';
@@ -144,6 +145,19 @@ export class DaemonClient {
     if (q.org) p.set('org', q.org);
     const qs = p.toString();
     return this.json('GET', `/runs${qs ? `?${qs}` : ''}`);
+  }
+  /** Everything that happened in a run: nodes, tool calls, gates, decisions, approvals, git, cost. */
+  audit(id: string): Promise<AuditDoc> {
+    return this.json('GET', `/runs/${encodeURIComponent(id)}/audit`);
+  }
+  /** The same, as a Markdown document. */
+  async auditMarkdown(id: string): Promise<string> {
+    const r = await this.call('GET', `/runs/${encodeURIComponent(id)}/audit?format=md`);
+    if (r.status >= 400) {
+      const err = (r.body as { error?: { code?: string; message?: string } } | undefined)?.error;
+      throw new DaemonHttpError(r.status, err?.code ?? 'error', err?.message ?? `HTTP ${r.status}`);
+    }
+    return String(r.body ?? '');
   }
   /** Removes finished runs whose last event is older than `before` (ISO date). */
   pruneRuns(before: string): Promise<{ removed: string[] }> {

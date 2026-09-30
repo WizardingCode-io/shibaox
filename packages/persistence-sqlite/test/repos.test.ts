@@ -106,8 +106,9 @@ describe('runtime events on disk', () => {
       [3, 'tool_result'],
     ]);
     expect(r1[2]?.event).toMatchObject({ durationMs: 7 });
-    const out = (r1[2]?.event as { output: string }).output;
-    expect(out.length).toBeLessThan(5000); // clipped for storage, like the buffer
+    const third = r1[2]?.event as { output: string } | undefined;
+    expect(third?.output.length ?? 0).toBeLessThan(5000); // clipped for storage, like the buffer
+    expect(third?.output.length ?? 0).toBeGreaterThan(4000);
     expect(again.read('r1', 2).map((e) => e.seq)).toEqual([3]);
     expect(again.nextSeq('r1')).toBe(4);
     expect(again.read('r2')).toHaveLength(1);

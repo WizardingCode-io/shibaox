@@ -9,6 +9,7 @@ import {
   isTerminal,
   type ProjectProfile,
   type RunStatus,
+  replay,
   type StoredEvent,
 } from '@wizardingcode/shibaox-core';
 import type { ScheduleRow } from '@wizardingcode/shibaox-persistence-sqlite';
@@ -16,6 +17,7 @@ import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import { AlreadyResolvedError, type InboxService, NotFoundError } from './inbox.js';
 import { type OrgConfigPatch, orgInfo, readOrgConfig, writeOrgConfig } from './org-config.js';
 import type { RunManager, SubmitRequest } from './run-manager.js';
+import { buildAudit, renderAuditMarkdown } from './runs/audit.js';
 import type { RuntimeEnvelope } from './runtime-buffer.js';
 import type { KeyRow } from './secrets.js';
 
@@ -405,6 +407,19 @@ export class DaemonServer {
     const runGet = param(/^\/runs\/([^/]+)$/);
     if (runGet !== undefined && method === 'GET')
       return send(res, 200, await this.deps.runs.state(runGet));
+    const runAudit = param(/^\/runs\/([^/]+)\/audit$/);
+    if (method === 'GET' && runAudit) {
+      const events = await this.deps.store.read(runAudit);
+      if (events.length === 0) throw new HttpError(404, 'not_found', `run ${runAudit} not found`);
+      const doc = buildAudit(replay(events), events, this.deps.runs.runtimeEvents(runAudit));
+      if (url.searchParams.get('format') === 'md') {
+        const md = renderAuditMarkdown(doc);
+        res.writeHead(200, { 'content-type': 'text/markdown; charset=utf-8' });
+        res.end(md);
+        return;
+      }
+      return send(res, 200, doc);
+    }
     const runDiff = param(/^\/runs\/([^/]+)\/diff$/);
     if (runDiff !== undefined && method === 'GET') {
       const d = await this.deps.runs.diff(runDiff);

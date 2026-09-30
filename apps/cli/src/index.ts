@@ -19,12 +19,14 @@ import { modelsCommand } from './commands/models.js';
 import { providersListCommand, providersTestCommand } from './commands/providers.js';
 import { remoteClear, remoteSet, remoteShow } from './commands/remote.js';
 import {
+  auditCommand,
   cancelCommand,
   followAny,
   replayCommand,
   resumeCommand,
   runCommand,
   runsCommand,
+  runsPruneCommand,
 } from './commands/run.js';
 import { scheduleAdd, scheduleList, scheduleRemove, scheduleRun } from './commands/schedule.js';
 import { tiersList, tiersSet } from './commands/tiers.js';
@@ -161,13 +163,29 @@ program
   .action(async function (this: Command, runId: string) {
     exitWith(await cancelCommand(runId, out(this)));
   });
-program
+const runs = program
   .command('runs')
   .description('list runs')
   .option('--status <status>', 'only runs in this status')
   .option('--org <dir>', 'only runs of this org')
   .action(async function (this: Command, o: { status?: string; org?: string }) {
     exitWith(await runsCommand(o, out(this)));
+  });
+runs
+  .command('prune')
+  .description('remove finished runs older than --before, with their events')
+  .requiredOption('--before <age>', '30d, 12h, 45m, or an ISO date')
+  .action(async function (this: Command, o: { before: string }) {
+    exitWith(await runsPruneCommand(o, out(this)));
+  });
+program
+  .command('audit')
+  .argument('<runId>')
+  .description('everything that happened in a run: nodes, tool calls, gates, approvals, git, cost')
+  .option('--format <fmt>', 'md (default) or json')
+  .option('--out <file>', 'write to this file instead of stdout')
+  .action(async function (this: Command, runId: string, o: { format?: string; out?: string }) {
+    exitWith(await auditCommand(runId, o, out(this)));
   });
 program
   .command('replay')
