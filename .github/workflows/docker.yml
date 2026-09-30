@@ -9,6 +9,10 @@ on:
       version:
         description: 'shibaox version on npm (default: latest)'
         default: latest
+      latest:
+        description: 'also move the latest tag'
+        type: boolean
+        default: false
 permissions:
   contents: read
   packages: write
@@ -24,14 +28,20 @@ jobs:
           else
             echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
           fi
-      - name: wait for the version on npm (a tag may arrive before the publish propagates)
+      - name: wait for the version and its packages on npm (a tag may arrive before the publish propagates)
         run: |
           v="${{ steps.v.outputs.version }}"
           for i in $(seq 1 40); do
-            if npm view "shibaox@$v" version >/dev/null 2>&1; then exit 0; fi
+            if deps="$(npm view "shibaox@$v" dependencies --json 2>/dev/null)"; then
+              ok=1
+              for spec in $(echo "$deps" | node -e 'const d=JSON.parse(require("fs").readFileSync(0,"utf8")); for (const [n,r] of Object.entries(d)) if (n.startsWith("@wizardingcode/")) console.log(n+"@"+r)'); do
+                npm view "$spec" version >/dev/null 2>&1 || ok=0
+              done
+              [ "$ok" = 1 ] && exit 0
+            fi
             sleep 15
           done
-          echo "shibaox@$v is not on npm" >&2; exit 1
+          echo "shibaox@$v (or one of its packages) is not on npm" >&2; exit 1
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -48,4 +58,4 @@ jobs:
           # `latest` moves only with a tag push: a dispatch of an older version never rolls it back
           tags: |
             ghcr.io/wizardingcode-io/shibaox:${{ steps.v.outputs.version }}
-            ${{ github.event_name == 'push' && 'ghcr.io/wizardingcode-io/shibaox:latest' || '' }}
+            ${{ (github.event_name == 'push' || inputs.latest) && 'ghcr.io/wizardingcode-io/shibaox:latest' || '' }}
