@@ -13,7 +13,7 @@ shibaox serve                   # the daemon in the foreground, reachable over t
 
 ## The service (Linux)
 
-`daemon install` writes `~/.config/systemd/user/shibaox.service` (`ExecStart` is the launcher below, `Restart=always`, output to `daemon.log`) and runs `systemctl --user enable --now shibaox.service`. `loginctl enable-linger $USER` keeps a user service running with nobody logged in. The environment is the user's systemd session, not your shell: keys belong in the vault.
+`daemon install` writes `~/.config/systemd/user/shibaox.service` (`ExecStart` is the launcher below, `Restart=always`, output to `daemon.log`, needs systemd 240 or later) and runs `systemctl --user enable --now shibaox.service`. `loginctl enable-linger $USER` keeps a user service running with nobody logged in. The unit records the `PATH` of the shell that installed it (so nvm's node and the tools next to it are found) and nothing else of your shell's environment: keys belong in the vault. `shibaox daemon install` again after changing that PATH.
 
 ## The service (macOS)
 

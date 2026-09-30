@@ -42,18 +42,31 @@ describe('shibaox daemon install / uninstall', () => {
     const o = fakeOut();
     // no daemon is running: nothing to stop first
     expect(
-      await daemonInstall(o.out, { env, paths, exec, uid: 501, stopRunning: async () => false }),
+      await daemonInstall(o.out, {
+        env,
+        paths,
+        exec,
+        uid: 501,
+        platform: 'darwin',
+        stopRunning: async () => false,
+      }),
     ).toBe(0);
     expect(existsSync(plistPath(env))).toBe(true);
     expect(o.lines.join('\n')).toContain('launchd');
     expect(o.lines.join('\n')).toContain(plistPath(env));
     expect(calls.some((c) => c[1] === 'bootstrap')).toBe(true);
-    expect(await serviceLine({ env, exec, uid: 501 })).toBe('service: launchd (installed)');
+    expect(await serviceLine({ env, exec, uid: 501, platform: 'darwin' })).toBe(
+      'service: launchd (installed)',
+    );
     const u = fakeOut();
-    expect(await daemonUninstall(u.out, { env, paths, exec, uid: 501 })).toBe(0);
+    expect(await daemonUninstall(u.out, { env, paths, exec, uid: 501, platform: 'darwin' })).toBe(
+      0,
+    );
     expect(existsSync(plistPath(env))).toBe(false);
     expect(u.lines.join('\n')).toContain('removed');
-    expect(await serviceLine({ env, exec, uid: 501 })).toBe('service: not installed');
+    expect(await serviceLine({ env, exec, uid: 501, platform: 'darwin' })).toBe(
+      'service: not installed',
+    );
     expect(calls.some((c) => c[1] === 'bootout' && c[2] === `gui/501/${LAUNCHD_LABEL}`)).toBe(true);
   });
   it('stops a detached daemon before launchd takes over', async () => {

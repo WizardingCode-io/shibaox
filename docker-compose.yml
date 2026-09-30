@@ -6,6 +6,8 @@ services:
     image: ghcr.io/wizardingcode-io/shibaox:latest
     # build: { context: ., args: { SHIBAOX_VERSION: latest } }   # to build it here instead
     restart: unless-stopped
+    init: true                    # reaps the children of gates and runtimes
+    stop_grace_period: 75s        # the daemon waits up to 60 s for active runs on stop
     ports:
       # the token travels in clear over plain HTTP: keep this on a private network, behind
       # a TLS proxy, or bind it to 127.0.0.1 and reach it through an SSH tunnel

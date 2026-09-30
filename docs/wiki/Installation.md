@@ -39,13 +39,13 @@ The `shibaox` package brings the CLI, the daemon and the dashboard (`@wizardingc
 ## In Docker (a server)
 
 ```sh
-docker run -d --name shibaox --restart unless-stopped -p 7433:7433 \
+docker run -d --name shibaox --restart unless-stopped --init --stop-timeout 75 -p 7433:7433 \
   -e SHIBAOX_DAEMON_TOKEN=$(openssl rand -hex 32) \
   -v shibaox-data:/data -v /srv/projects:/projects \
   ghcr.io/wizardingcode-io/shibaox
 ```
 
-The image (`Dockerfile` in the repository; built from the npm packages by GitHub Actions on every version tag, `linux/amd64` and `linux/arm64`) runs `shibaox serve` as an unprivileged user with git, `gh` and Claude Code installed. `/data` is the shibaox home (runs, vault, `daemon.yaml`, the default org); every git repository mounted under `/projects` is offered to the dashboard (`projects_dir: /projects` is written to `daemon.yaml` on first start). `docker-compose.yml` in the repository does the same with a `.env` holding the token. Then, from your machine, `shibaox remote set http://<host>:7433 <token>`: see [Remote daemon](Remote-daemon) for the token, TLS and the Claude login inside the container.
+The image (`Dockerfile` in the repository; built from the npm packages by GitHub Actions on every version tag, `linux/amd64` and `linux/arm64`) runs `shibaox serve` as `node` (uid 1000) with git, `gh` and Claude Code installed. `/data` is the shibaox home (runs, vault, `daemon.yaml`, the default org): use a named volume, or a host directory owned by uid 1000. Repositories bind-mounted under `/projects` must be writable by uid 1000 (`chown -R 1000 /srv/projects`); every git repository directly inside is offered to the dashboard (`projects_dir: /projects` is written to `daemon.yaml` on first start). `--stop-timeout 75` (compose: `stop_grace_period`) lets the daemon wait for active runs before the container stops; `--init` reaps the children of gates and runtimes. `docker-compose.yml` in the repository sets all of this with a `.env` holding the token. The token can also live in the vault instead of the environment: start once with the variable, `shibaox keys set SHIBAOX_DAEMON_TOKEN …` from your machine, then restart without it. Then, from your machine, `shibaox remote set http://<host>:7433 <token>`: see [Remote daemon](Remote-daemon) for the token, TLS and the Claude login inside the container.
 
 ## Linux
 

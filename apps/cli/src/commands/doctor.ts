@@ -1,4 +1,4 @@
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { runCommand } from '@wizardingcode/shibaox-core';
 import {
@@ -97,7 +97,8 @@ export async function doctorCommand(): Promise<number> {
   lines.push(await which('codex'));
   lines.push(await which('cursor'));
   lines.push(await daemonLine());
-  const kind = serviceKind();
+  const kind =
+    process.env.SHIBAOX_CONTAINER || existsSync('/.dockerenv') ? undefined : serviceKind();
   if (kind) {
     const s = await serviceStatus();
     const hint = await staleServiceHint(homePaths());

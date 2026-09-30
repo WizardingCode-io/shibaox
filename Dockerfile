@@ -6,8 +6,8 @@ FROM node:22-bookworm-slim
 
 ARG SHIBAOX_VERSION=latest
 
-# git for the git cycle, gh for pull requests, ssh for remotes, python/build tools only if a
-# prebuilt better-sqlite3 is missing for this platform
+# git for the git cycle, gh for pull requests, ssh for remotes (better-sqlite3 ships prebuilt
+# binaries for linux amd64 and arm64 on Node 22: no toolchain here)
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl git gnupg openssh-client \
   && mkdir -p -m 755 /etc/apt/keyrings \
@@ -22,10 +22,12 @@ RUN apt-get update \
 RUN npm install -g "shibaox@${SHIBAOX_VERSION}" @anthropic-ai/claude-code \
   && npm cache clean --force
 
-RUN useradd --create-home --shell /bin/bash shibaox \
-  && mkdir -p /data /projects \
-  && chown shibaox:shibaox /data /projects
-USER shibaox
+# the daemon runs as `node` (uid 1000, the image's own user): repositories bind-mounted under
+# /projects must be writable by uid 1000 (`chown -R 1000 /srv/projects`, or run the container
+# with `--user $(id -u)` and mount a home with a .gitconfig)
+RUN mkdir -p /data /projects \
+  && chown node:node /data /projects
+USER node
 
 # mounted repositories may belong to another uid: git must still work in them
 RUN git config --global --add safe.directory '*' \
@@ -34,7 +36,8 @@ RUN git config --global --add safe.directory '*' \
 
 ENV SHIBAOX_HOME=/data \
     CLAUDE_CONFIG_DIR=/data/claude \
-    SHIBAOX_NO_AUTOSTART=1
+    SHIBAOX_NO_AUTOSTART=1 \
+    SHIBAOX_CONTAINER=1
 VOLUME ["/data", "/projects"]
 WORKDIR /projects
 EXPOSE 7433

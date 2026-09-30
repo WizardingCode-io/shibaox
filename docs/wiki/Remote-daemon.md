@@ -28,7 +28,7 @@ A request with no token gets a reduced `GET /health` (`{ version }`) so a monito
 
 ### In Docker
 
-`docker run -d -p 7433:7433 -e SHIBAOX_DAEMON_TOKEN=… -v shibaox-data:/data -v /srv/projects:/projects ghcr.io/wizardingcode-io/shibaox` is `shibaox serve` in a container (see [Installation](Installation)); `docker-compose.yml` in the repository is the same with a `.env`. Provider keys go into the vault over the API once the remote is set (`shibaox keys set …`), or into the container's environment. For `anthropic-subscription` roles log Claude Code in once inside the container: `docker exec -it shibaox claude` (its config lives in `/data/claude`). To push over SSH, mount a key read-only into `/home/shibaox/.ssh`.
+`docker run -d --name shibaox --init --stop-timeout 75 -p 7433:7433 -e SHIBAOX_DAEMON_TOKEN=… -v shibaox-data:/data -v /srv/projects:/projects ghcr.io/wizardingcode-io/shibaox` is `shibaox serve` in a container (see [Installation](Installation)); `docker-compose.yml` in the repository is the same with a `.env`. Provider keys go into the vault over the API once the remote is set (`shibaox keys set …`), or into the container's environment. For `anthropic-subscription` roles log Claude Code in once inside the container: `docker exec -it shibaox claude` (its config lives in `/data/claude`). To push over SSH, mount a key read-only into `/home/shibaox/.ssh`.
 
 ## On your machine
 

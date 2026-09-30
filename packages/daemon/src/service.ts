@@ -53,19 +53,23 @@ export function serviceFile(
   return serviceKind(platform) === 'systemd' ? unitPath(env) : plistPath(env);
 }
 
+/** systemd's own quoting: `%` is a specifier, the double quotes keep a path with spaces whole. */
+const unitArg = (s: string) => `"${s.replace(/%/g, '%%').replace(/"/g, '\\"')}"`;
+
 /**
  * The systemd user unit: the launcher, restarted when it exits, output appended to
- * `daemon.log`. The environment is the user's systemd session (keys belong in the vault).
+ * `daemon.log`. A unit has no login shell, so the PATH of the shell that installs it is
+ * recorded (nvm's node and the tools next to it: claude, bun); keys belong in the vault.
  * `loginctl enable-linger <user>` keeps it running when nobody is logged in.
  */
-export function renderUnit(o: { launcher: string; paths: HomePaths }): string {
+export function renderUnit(o: { launcher: string; paths: HomePaths; path?: string }): string {
   return [
     '[Unit]',
     'Description=shibaox daemon',
-    'After=network-online.target',
     '',
     '[Service]',
-    `ExecStart=${o.launcher}`,
+    `ExecStart=${unitArg(o.launcher)}`,
+    ...(o.path ? [`Environment=PATH=${o.path.replace(/%/g, '%%')}`] : []),
     'Restart=always',
     'RestartSec=3',
     `WorkingDirectory=${o.paths.root}`,
@@ -130,7 +134,7 @@ export function renderLauncher(o: { node: string; cli: string; modules?: string 
   const modules = o.modules ?? process.versions.modules;
   return [
     '#!/bin/sh',
-    '# Written by `shibaox daemon install`; launchd runs it through a login shell.',
+    '# Written by `shibaox daemon install`; the service (launchd or systemd) runs it.',
     `node=${sh(o.node)}`,
     `cli=${sh(o.cli)}`,
     `modules=${sh(modules)}`,
@@ -192,7 +196,10 @@ export async function installService(
   writeFileSync(o.paths.launcher, renderLauncher({ node: o.node, cli: o.cli }));
   chmodSync(o.paths.launcher, 0o755);
   if (kind === 'systemd') {
-    writeFileSync(file, renderUnit({ launcher: o.paths.launcher, paths: o.paths }));
+    const shellPath = (o.env ?? process.env).PATH ?? '';
+    const nodeDir = dirname(o.node);
+    const path = shellPath.split(':').includes(nodeDir) ? shellPath : `${nodeDir}:${shellPath}`;
+    writeFileSync(file, renderUnit({ launcher: o.paths.launcher, paths: o.paths, path }));
     await systemctl(exec, ['daemon-reload']);
     const r = await systemctl(exec, ['enable', '--now', SYSTEMD_UNIT]);
     if (r.exitCode !== 0)
@@ -240,6 +247,8 @@ export async function uninstallService(o: ServiceArgs & { paths: HomePaths }): P
   const file = serviceFile(o.env, o.platform);
   if (existsSync(file)) unlinkSync(file);
   if (existsSync(o.paths.launcher)) unlinkSync(o.paths.launcher);
+  // the unit is gone: tell systemd, so nothing keeps running from a file that no longer exists
+  if (kind === 'systemd') await systemctl(exec, ['daemon-reload']);
 }
 
 export type ServiceStatus = 'installed' | 'not-loaded' | 'not-installed';

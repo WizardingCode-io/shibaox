@@ -67,6 +67,7 @@ describe('launchd service', () => {
       cli: '/c',
       exec,
       uid: 501,
+      platform: 'darwin',
       pollMs: 1,
     });
     const file = plistPath(env);
@@ -91,7 +92,7 @@ describe('launchd service', () => {
       ['launchctl', 'bootstrap', 'gui/501', file],
     ]);
     calls.splice(0);
-    await uninstallService({ paths, env, exec, uid: 501 });
+    await uninstallService({ paths, env, exec, uid: 501, platform: 'darwin' });
     expect(calls).toEqual([['launchctl', 'bootout', `gui/501/${LAUNCHD_LABEL}`]]);
     expect(existsSync(file)).toBe(false);
     expect(existsSync(paths.launcher)).toBe(false);
@@ -134,7 +135,9 @@ describe('launchd service', () => {
 
   it('status reads launchctl print and the plist', async () => {
     const { env, paths } = setup();
-    expect(await serviceStatus({ env, exec: fakeExec().exec, uid: 501 })).toBe('not-installed');
+    expect(await serviceStatus({ env, exec: fakeExec().exec, uid: 501, platform: 'darwin' })).toBe(
+      'not-installed',
+    );
     await installService({
       paths,
       env,
@@ -142,11 +145,16 @@ describe('launchd service', () => {
       cli: '/c',
       exec: fakeExec((argv) => argv[1] === 'print').exec,
       uid: 501,
+      platform: 'darwin',
       pollMs: 1,
     });
-    expect(await serviceStatus({ env, exec: fakeExec().exec, uid: 501 })).toBe('installed');
+    expect(await serviceStatus({ env, exec: fakeExec().exec, uid: 501, platform: 'darwin' })).toBe(
+      'installed',
+    );
     const off = fakeExec((argv) => argv[1] === 'print');
-    expect(await serviceStatus({ env, exec: off.exec, uid: 501 })).toBe('not-loaded');
+    expect(await serviceStatus({ env, exec: off.exec, uid: 501, platform: 'darwin' })).toBe(
+      'not-loaded',
+    );
   });
 });
 
@@ -165,9 +173,15 @@ describe('a plist from before the launcher', () => {
 describe('systemd user service (Linux)', () => {
   it('renders a unit that runs the launcher, restarts it and logs to daemon.log', () => {
     const { paths } = setup();
-    const unit = renderUnit({ launcher: paths.launcher, paths });
+    const unit = renderUnit({ launcher: paths.launcher, paths, path: '/opt/node/bin:/usr/bin' });
     expect(unit).toContain('[Unit]');
-    expect(unit).toContain(`ExecStart=${paths.launcher}`);
+    expect(unit).toContain(`ExecStart="${paths.launcher}"`);
+    // the user's PATH at install time: a unit has no login shell, so nvm's node and the
+    // tools next to it (claude, bun) would be invisible otherwise
+    expect(unit).toContain('Environment=PATH=/opt/node/bin:/usr/bin');
+    expect(unit).not.toContain('network-online');
+    const odd = renderUnit({ launcher: '/home/me/my app/100%/daemon.sh', paths, path: '/usr/bin' });
+    expect(odd).toContain('ExecStart="/home/me/my app/100%%/daemon.sh"');
     expect(unit).toContain('Restart=always');
     expect(unit).toContain(`WorkingDirectory=${paths.root}`);
     expect(unit).toContain(`StandardOutput=append:${paths.log}`);
@@ -177,8 +191,16 @@ describe('systemd user service (Linux)', () => {
   it('install writes ~/.config/systemd/user/shibaox.service and enables it now; uninstall disables and removes it', async () => {
     const { env, paths } = setup();
     const { calls, exec } = fakeExec();
-    const r = await installService({ paths, env, node: '/n', cli: '/c', exec, platform: 'linux' });
+    const r = await installService({
+      paths,
+      env: { ...env, PATH: '/usr/bin' },
+      node: '/opt/node/bin/node',
+      cli: '/c',
+      exec,
+      platform: 'linux',
+    });
     expect(r.plist).toBe(unitPath(env));
+    expect(readFileSync(r.plist, 'utf8')).toContain('Environment=PATH=/opt/node/bin:/usr/bin');
     expect(r.plist).toBe(join(env.HOME, '.config', 'systemd', 'user', SYSTEMD_UNIT));
     expect(existsSync(r.plist)).toBe(true);
     expect(existsSync(paths.launcher)).toBe(true);
@@ -189,7 +211,10 @@ describe('systemd user service (Linux)', () => {
     ]);
     const off = fakeExec();
     await uninstallService({ paths, env, exec: off.exec, platform: 'linux' });
-    expect(off.calls).toEqual([['systemctl', '--user', 'disable', '--now', SYSTEMD_UNIT]]);
+    expect(off.calls).toEqual([
+      ['systemctl', '--user', 'disable', '--now', SYSTEMD_UNIT],
+      ['systemctl', '--user', 'daemon-reload'],
+    ]);
     expect(existsSync(r.plist)).toBe(false);
     expect(existsSync(paths.launcher)).toBe(false);
   });
