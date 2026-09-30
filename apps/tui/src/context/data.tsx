@@ -149,6 +149,8 @@ export function DataProvider(
       workflow: previous.workflow,
       input: text,
       messages,
+      // every turn of this tab belongs to the conversation of its first run
+      thread: rootId,
       ...(o.event ? { event: true } : {}),
       // with a model the daemon derives the adapter from it
       ...(model ? { model } : {}),
@@ -171,12 +173,8 @@ export function DataProvider(
       .filter(([, n]) => n.summary)
       .map(([id, n]) => `${id}: ${String(n.summary).replace(/\s+/g, ' ').slice(0, 200)}`);
     const files = timeline(st.runId)().find((c) => c.kind === 'summary');
-    const schema = st.input.output_schema;
-    const answer = schema
-      ? Object.entries(st.nodes)
-          .filter(([, n]) => n.status === 'completed' && n.output !== undefined)
-          .at(-1)?.[1].output
-      : undefined;
+    // the answering task's output, in the requested shape, once the run completed
+    const answer = st.input.output_schema && status === 'completed' ? st.answer : undefined;
     const parts = [
       `workflow ${st.workflow} finished: ${status}`,
       ...(answer !== undefined ? [`answer: ${JSON.stringify(answer).slice(0, 1500)}`] : []),

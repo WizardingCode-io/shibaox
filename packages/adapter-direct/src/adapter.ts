@@ -136,6 +136,11 @@ export class DirectAdapter implements RuntimeAdapter {
       `Input: ${JSON.stringify(input)}`,
       `Previous outputs: ${JSON.stringify(job.context.previousOutputs).slice(0, 60_000)}`,
       `Last gate report: ${JSON.stringify(job.context.lastGateReport ?? null).slice(0, 20_000)}`,
+      ...(job.outputSchema
+        ? [
+            `Output schema (the \`output\` you pass to finish must match it): ${JSON.stringify(job.outputSchema)}`,
+          ]
+        : []),
       ...(job.resumeNote ? [job.resumeNote] : []),
     ].join('\n\n');
   }
@@ -146,6 +151,8 @@ export class DirectAdapter implements RuntimeAdapter {
     // flight; `wake` resolves the waiting loop as soon as one arrives, so no
     // polling timer is needed and ordering is preserved.
     const queue: RuntimeEvent[] = [];
+    // a finish whose output missed the schema: the model is told what is wrong and asked again
+    let refusedFinish: string[] | undefined;
     let wake: (() => void) | undefined;
     const emit = (e: RuntimeEvent) => {
       queue.push(e);
@@ -182,6 +189,10 @@ export class DirectAdapter implements RuntimeAdapter {
             emit,
             onFinish: (output, summary) => {
               finished = { output, summary };
+            },
+            outputSchema: job.outputSchema,
+            onFinishRefused: (problems) => {
+              refusedFinish = problems;
             },
             approvals: this.opts.approvals,
             approvedCommands: job.approvedCommands ?? {},
@@ -251,6 +262,22 @@ export class DirectAdapter implements RuntimeAdapter {
       totals.inputTokens += settled.r.usage.inputTokens;
       totals.outputTokens += settled.r.usage.outputTokens;
       shown = false;
+      if (refusedFinish && !finished && round < TEXT_TOOL_ROUNDS) {
+        const problems = refusedFinish;
+        refusedFinish = undefined;
+        while (queue.length > 0) yield queue.shift() as RuntimeEvent;
+        messages = [
+          ...messages,
+          { role: 'assistant', content: settled.r.text || '(called finish)' },
+          {
+            role: 'user',
+            content: `The output you passed to finish does not match the output schema: ${problems.join('; ')}. Call finish again with an output that matches it.`,
+          },
+        ];
+        streamer = new TextStreamer((text) => emit({ type: 'text', text }));
+        settled = yield* drain(callModel(messages));
+        continue;
+      }
       if (finished || !tools || settled.r.finishReason !== 'stop' || round >= TEXT_TOOL_ROUNDS)
         break;
       const parsed = parseTextToolCalls(settled.r.text);

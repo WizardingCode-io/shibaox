@@ -14,6 +14,7 @@
 | `shibaox runs prune --before <30d\|12h\|45m\|ISO>` | removes finished runs older than that, with their events and tool calls; a run whose task is still out stays; worktrees and `shibaox/<runId>` branches are not touched (`shibaox worktree rm`) |
 | `shibaox resume <runId> [--budget <usd>] [--adapter …]` | continues a paused or interrupted run |
 | `shibaox cancel <runId>` | cancels a run |
+| `shibaox steer <runId> <note…> [--node <id>]` | redirects the running task: it stops and starts again with the note (the node when several tasks run at once); only a task with a live model call can be steered |
 
 ## Approvals and inbox
 

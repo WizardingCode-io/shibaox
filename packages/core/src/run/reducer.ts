@@ -1,4 +1,5 @@
 import type { RunEvent } from '@wizardingcode/shibaox-schemas';
+import { finalTaskIds } from './final-tasks.js';
 import type { NodeState, PendingApproval, RunState, RunStatus } from './state.js';
 
 function nodeOf(state: RunState, id: string): NodeState {
@@ -90,6 +91,8 @@ function applyEvent(s: RunState, event: NonCreatedEvent, idx: number): RunState 
       return { ...next, pendingApprovals, status };
     }
     case 'NodeSteered': {
+      // only a running task can be redirected: a late note never reopens a finished node
+      if (nodeOf(s, event.nodeId).status !== 'running') return s;
       // the task stops and is never-started again, keeping its session; the note travels with it
       const { startedIdx: _startedIdx, ...rest } = nodeOf(s, event.nodeId);
       return {
@@ -122,15 +125,23 @@ function applyEvent(s: RunState, event: NonCreatedEvent, idx: number): RunState 
         },
       };
     }
-    case 'NodeCompleted':
+    case 'NodeCompleted': {
       // a finished attempt closes its session: a rework starts fresh with the gate report
-      return withNode(s, event.nodeId, {
+      const done = withNode(s, event.nodeId, {
         status: 'completed',
         finishedIdx: idx,
         output: event.output,
         summary: event.summary,
         sessionId: undefined,
       });
+      // the answering task's output is the run's answer
+      const answers =
+        s.workflowSnapshot !== undefined && finalTaskIds(s.workflowSnapshot).includes(event.nodeId);
+      return answers ? { ...done, answer: event.output } : done;
+    }
+    case 'NodeAttemptDiscarded':
+      // the cost was counted above; the node itself is already pending with its note
+      return s;
     case 'NodeFailed':
       return {
         ...withNode(s, event.nodeId, {
@@ -246,6 +257,7 @@ export function reduce(state: RunState | undefined, event: RunEvent, idx: number
       baseBranch: event.baseBranch,
       orgRoot: event.orgRoot,
       parentRunId: event.parentRunId,
+      thread: event.thread,
       origin: event.origin,
       model: event.model,
       status: 'queued',

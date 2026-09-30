@@ -17,6 +17,7 @@ import { injectTeamGates } from '../org/inject-gates.js';
 import { withSetup } from '../org/with-setup.js';
 import type { ApprovalHandler } from './approvals.js';
 import type { Decider, HumanHandler } from './deciders.js';
+import { finalTaskIds } from './final-tasks.js';
 import type { MergeQueue } from './merge-queue.js';
 import { isTerminal, replay } from './reducer.js';
 import { isStalled, readyNodes } from './scheduler.js';
@@ -78,6 +79,8 @@ export interface StartOptions {
   baseBranch?: string;
   orgRoot?: string;
   parentRunId?: string;
+  /** The conversation this run belongs to (defaults to the run's own id). */
+  thread?: string;
   origin?: string;
   model?: string;
   /** A dependency install to run first (a fresh worktree): becomes a `setup` node in the snapshot. */
@@ -127,6 +130,7 @@ export class RunEngine {
       baseBranch: opts.baseBranch,
       orgRoot: opts.orgRoot,
       parentRunId: opts.parentRunId,
+      thread: opts.thread ?? runId,
       origin: opts.origin,
       model: opts.model,
     });
@@ -265,8 +269,11 @@ export class RunEngine {
     const state = await this.state(runId);
     if (isTerminal(state.status))
       throw new Error(`run ${runId} is ${state.status}: nothing to steer`);
+    if (!o.note.trim()) throw new Error('the steering note is empty');
+    // only a task with a live adapter call can be redirected: gates, git, decisions and
+    // human nodes have nothing to tell, and a task that just finished is past steering
     const running = Object.entries(state.nodes)
-      .filter(([, n]) => n.status === 'running')
+      .filter(([id, n]) => n.status === 'running' && this.nodeControllers.has(`${runId}:${id}`))
       .map(([id]) => id);
     const nodeId = o.nodeId ?? (running.length === 1 ? running[0] : undefined);
     if (!nodeId)
@@ -275,8 +282,13 @@ export class RunEngine {
           ? `run ${runId}: no task is running (status ${state.status})`
           : `run ${runId}: ${running.length} tasks are running, name one: ${running.join(', ')}`,
       );
-    if (!running.includes(nodeId)) throw new Error(`run ${runId}: node ${nodeId} is not running`);
-    if (!o.note.trim()) throw new Error('the steering note is empty');
+    const key = `${runId}:${nodeId}`;
+    const controller = this.nodeControllers.get(key);
+    if (!controller || !running.includes(nodeId))
+      throw new Error(`run ${runId}: ${nodeId} is not a running task`);
+    // stop the task before the note is written: whatever it yields from now on is set aside
+    this.steered.add(key);
+    controller.abort(new SteerSignal(nodeId, o.note.trim()));
     await this.emit({
       type: 'NodeSteered',
       runId,
@@ -285,10 +297,26 @@ export class RunEngine {
       note: o.note.trim(),
       via: o.via,
     });
-    const key = `${runId}:${nodeId}`;
-    this.steered.add(key);
-    this.nodeControllers.get(key)?.abort(new SteerSignal(nodeId, o.note.trim()));
     return this.state(runId);
+  }
+
+  /** A steered attempt ended: its cost counts, its result does not; the task re-runs with the note. */
+  private async discardAttempt(
+    runId: string,
+    nodeId: string,
+    summary: string | undefined,
+    cost: { usd: number; inputTokens: number; outputTokens: number } | undefined,
+  ): Promise<void> {
+    await this.emit({
+      type: 'NodeAttemptDiscarded',
+      runId,
+      nodeId,
+      at: this.now(),
+      reason: 'steered',
+      ...(summary ? { summary } : {}),
+      ...(cost ? { cost } : {}),
+    });
+    this.log(`[${runId}] ${nodeId}: steered, running it again with the note`);
   }
 
   /** Aborts a run's tasks without recording anything (the log stays as it is). */
@@ -328,14 +356,21 @@ export class RunEngine {
   }
 
   /** A task's own signal: aborted by a steer of that task, or by the run's cancellation. */
-  private nodeSignal(runId: string, nodeId: string): AbortSignal {
+  private nodeSignal(runId: string, nodeId: string): { signal: AbortSignal; dispose: () => void } {
     const key = `${runId}:${nodeId}`;
     const c = new AbortController();
     this.nodeControllers.set(key, c);
     const run = this.controllerFor(runId).signal;
+    const follow = () => c.abort(run.reason);
     if (run.aborted) c.abort(run.reason);
-    else run.addEventListener('abort', () => c.abort(run.reason), { once: true });
-    return c.signal;
+    else run.addEventListener('abort', follow, { once: true });
+    return {
+      signal: c.signal,
+      dispose: () => {
+        run.removeEventListener('abort', follow);
+        this.nodeControllers.delete(key);
+      },
+    };
   }
 
   private controllerFor(runId: string): AbortController {
@@ -509,7 +544,7 @@ export class RunEngine {
               resolved.map((a) => [a.argvHash, a.approved as boolean]),
             ),
             // the last task of a run asked for a structured output answers in that shape
-            outputSchema: outputSchemaFor(state, node),
+            outputSchema: outputSchemaFor(state, workflow, nodeId),
             // a node suspended with a session resumes it; a fresh node starts clean
             resumeSessionId: nodeState?.sessionId,
             ...(workflow.conversation ? { conversation: true } : {}),
@@ -523,14 +558,19 @@ export class RunEngine {
           const pendingEmits: Promise<void>[] = [];
           const nodeSignal = this.nodeSignal(runId, nodeId);
           const result = await collectRun(adapter, job, {
-            signal: nodeSignal,
+            signal: nodeSignal.signal,
             log: this.log,
             onEvent: (e) => this.onRuntimeEvent(runId, nodeId, e, pendingEmits),
           }).finally(() => {
-            this.nodeControllers.delete(`${runId}:${nodeId}`);
+            nodeSignal.dispose();
             return Promise.all(pendingEmits);
           });
           await Promise.all(pendingEmits);
+          if (this.steered.delete(`${runId}:${nodeId}`)) {
+            // the adapter finished anyway: the note came first, so this attempt is set aside
+            await this.discardAttempt(runId, nodeId, result.summary, result.cost);
+            return;
+          }
           if (job.outputSchema) {
             const problems = validateJson(result.output, job.outputSchema);
             if (problems.length)
@@ -750,7 +790,12 @@ export class RunEngine {
     } catch (e) {
       if (this.steered.delete(`${runId}:${nodeId}`) || e instanceof SteerSignal) {
         // the task was redirected: NodeSteered already put it back to pending with the note
-        this.log(`[${runId}] ${nodeId}: steered, running it again with the note`);
+        await this.discardAttempt(
+          runId,
+          nodeId,
+          undefined,
+          e instanceof AdapterError ? e.cost : undefined,
+        );
         return;
       }
       if (e instanceof AdapterError && e.reason === 'approval_pending') {
@@ -803,14 +848,15 @@ export class RunEngine {
   }
 }
 
-/** `input.output_schema` for a task with no `next` (the run's answer), nothing for the others. */
+/** `input.output_schema` for the tasks that answer the run (see finalTaskIds), nothing for the others. */
 function outputSchemaFor(
   state: RunState,
-  node: { next?: string },
+  workflow: Workflow,
+  nodeId: string,
 ): Record<string, unknown> | undefined {
   const schema = state.input.output_schema;
-  if (node.next || !schema || typeof schema !== 'object' || Array.isArray(schema)) return undefined;
-  return schema as Record<string, unknown>;
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return undefined;
+  return finalTaskIds(workflow).includes(nodeId) ? (schema as Record<string, unknown>) : undefined;
 }
 
 /** What a re-run task is told: the steering notes (newest last), then the answer to its approval. */
@@ -823,8 +869,8 @@ function resumeNoteFor(
   if (steering.length)
     parts.push(
       steering.length === 1
-        ? `Steering from the operator (${steering[0]?.via}): ${steering[0]?.note}`
-        : `Steering from the operator, in order:\n${steering.map((x) => `- (${x.via}) ${x.note}`).join('\n')}`,
+        ? `${steerSource(steering[0]?.via ?? 'api')}: ${steering[0]?.note}`
+        : `Steering notes, in order:\n${steering.map((x) => `- ${steerSource(x.via)}: ${x.note}`).join('\n')}`,
     );
   if (last && nodeState?.sessionId)
     parts.push(
@@ -832,6 +878,13 @@ function resumeNoteFor(
     );
   else if (steering.length) parts.push('Continue the task.');
   return parts.length ? parts.join(parts.length > 1 && steering.length ? '\n\n' : ' ') : undefined;
+}
+
+/** Who a steering note is from: the orchestrating agent's notes never pass as the operator's. */
+function steerSource(via: string): string {
+  return via === 'orchestrator'
+    ? 'Steering from the orchestrating agent (not the operator)'
+    : `Steering from the operator (via ${via})`;
 }
 
 /** The reason a steered task's signal aborts with. */

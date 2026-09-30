@@ -71,6 +71,8 @@ export interface SubmitRequest {
   event?: boolean;
   /** Who asked (`schedule:<id>`, `telegram:<chatId>`): the run reports back there when it ends. */
   origin?: string;
+  /** The conversation this run belongs to: given for a chat turn, inherited from the parent, else the run itself. */
+  thread?: string;
   /** A model ref (`provider/model`) for every task of the run; the adapter follows from it. */
   model?: string;
   /**
@@ -137,6 +139,8 @@ export interface RunSummaryPlus extends RunSummary {
   spentUsd: number;
   parentRunId?: string;
   origin?: string;
+  /** The conversation the run belongs to (turns and their children share it). */
+  thread?: string;
 }
 
 interface Prepared {
@@ -201,6 +205,15 @@ export class RunManager {
     const mode = await workspaceMode(project, req.workspace, (l) => warnings.push(l));
     const budgetUsd = req.budgetUsd ?? org.org.budgets.per_run_usd;
     const runId = randomUUID();
+    // a chat turn names its conversation; a dispatched run inherits its parent's; a root run is its own
+    const thread =
+      req.thread ??
+      (req.parentRunId
+        ? await this.state(req.parentRunId)
+            .then((p) => p.thread)
+            .catch(() => undefined)
+        : undefined) ??
+      runId;
     const graph = await this.graphFor({
       project,
       org,
@@ -219,6 +232,7 @@ export class RunManager {
       project,
       workspaceMode: mode,
       origin: req.origin,
+      thread,
       model,
       warn: (w) => warnings.push(w),
     });
@@ -260,6 +274,7 @@ export class RunManager {
       orgRoot,
       parentRunId: req.parentRunId,
       origin: req.origin,
+      thread,
       model,
       setup,
     });
@@ -371,7 +386,7 @@ export class RunManager {
   }
 
   async list(
-    filter: { status?: RunStatus; orgRoot?: string; parent?: string } = {},
+    filter: { status?: RunStatus; orgRoot?: string; parent?: string; thread?: string } = {},
   ): Promise<RunSummaryPlus[]> {
     const out: RunSummaryPlus[] = [];
     for (const run of await this.opts.store.listRuns()) {
@@ -379,6 +394,7 @@ export class RunManager {
       const state = replay(await this.opts.store.read(run.runId));
       if (filter.orgRoot && state.orgRoot !== resolve(filter.orgRoot)) continue;
       if (filter.parent && state.parentRunId !== filter.parent) continue;
+      if (filter.thread && state.thread !== filter.thread) continue;
       out.push({
         ...run,
         project: state.project,
@@ -386,6 +402,7 @@ export class RunManager {
         spentUsd: state.spentUsd,
         parentRunId: state.parentRunId,
         origin: state.origin,
+        thread: state.thread,
       });
     }
     return out;
@@ -661,6 +678,8 @@ export class RunManager {
       project?: string;
       workspaceMode?: WorkspaceMode;
       origin?: string;
+      /** The conversation the run belongs to (its orchestrator sees every run dispatched in it). */
+      thread?: string;
       model?: string;
       warn: (w: string) => void;
     },
@@ -718,6 +737,7 @@ export class RunManager {
       project?: string;
       workspaceMode?: WorkspaceMode;
       origin?: string;
+      thread?: string;
       model?: string;
     },
   ): RuntimeOptions['tools'] {
@@ -762,14 +782,17 @@ export class RunManager {
               input: request,
               adapter: r.adapter,
               parentRunId: r.runId,
-              // a dispatched run reports where its parent was asked from
+              // a dispatched run reports where its parent was asked from, in the same conversation
               origin: r.origin,
+              thread: r.thread,
               model: r.model,
               outputSchema: o?.outputSchema,
             });
             return { runId };
           },
-          listRuns: () => this.list({ parent: r.runId }),
+          thread: r.thread,
+          listRuns: () =>
+            r.thread ? this.list({ thread: r.thread }) : this.list({ parent: r.runId }),
           runStatus: (id) => this.state(id),
           steerRun: async (id, note) => {
             await this.steer(id, { note, via: 'orchestrator' });

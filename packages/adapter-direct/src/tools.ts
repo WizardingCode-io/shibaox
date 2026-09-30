@@ -9,6 +9,7 @@ import {
   ghPolicy,
   type RuntimeEvent,
   runArgv,
+  validateJson,
 } from '@wizardingcode/shibaox-core';
 import type { Role } from '@wizardingcode/shibaox-schemas';
 import { type ToolSet, tool } from 'ai';
@@ -24,6 +25,9 @@ export interface ToolArgs {
   ctx: ExecutionContext;
   emit: (e: RuntimeEvent) => void;
   onFinish: (output: unknown, summary: string) => void;
+  /** When set, `finish` refuses an output that does not match it (the model tries again). */
+  outputSchema?: Record<string, unknown>;
+  onFinishRefused?: (problems: string[]) => void;
   /** Answers push/deploy commands for roles with `approval_required`. */
   approvals: ApprovalHandler;
   /** argvHash → approved, for commands already answered on this node. */
@@ -358,6 +362,17 @@ export function buildTools(a: ToolArgs): ToolSet {
         'Finish the task. Call exactly once when done, with the structured output and a one-line summary.',
       inputSchema: z.object({ output: z.unknown(), summary: z.string() }),
       execute: guarded('finish', ({ output, summary }: { output?: unknown; summary: string }) => {
+        if (a.outputSchema) {
+          const problems = validateJson(output, a.outputSchema);
+          if (problems.length) {
+            a.onFinishRefused?.(problems);
+            return {
+              ok: false,
+              problems,
+              hint: 'call finish again with an output that matches the output schema',
+            };
+          }
+        }
         a.onFinish(output, summary);
         return { ok: true };
       }),

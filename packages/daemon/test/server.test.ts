@@ -1021,7 +1021,7 @@ describe('steering through the API', () => {
     expect((await client.getRun(runId)).nodes.implement?.output).toMatchObject({
       heard: expect.stringContaining('Use the other API'),
     });
-    await expect(client.steer(runId, { note: 'too late' })).rejects.toMatchObject({ status: 409 });
+    await expect(client.steer(runId, { note: 'too late' })).rejects.toMatchObject({ status: 409 }); // nothing runs: waiting for a human
     await expect(client.steer(runId, { note: '  ' })).rejects.toMatchObject({ status: 400 });
     await expect(client.steer('nope', { note: 'x' })).rejects.toMatchObject({ status: 404 });
     release?.();

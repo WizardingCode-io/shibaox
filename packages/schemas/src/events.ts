@@ -52,6 +52,8 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     orgRoot: z.string().optional(),
     /** The run that dispatched this one (a workflow started by the orchestrator). */
     parentRunId: z.string().optional(),
+    /** The conversation this run belongs to (a root run's own id): turns and their children share it. */
+    thread: z.string().optional(),
     /** Who asked for the run when it was not the CLI or the dashboard: `schedule:<id>`, `telegram:<chatId>`. */
     origin: z.string().optional(),
     /** A model ref (`provider/model`) chosen for this run, over the org's routing. */
@@ -98,6 +100,14 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     type: z.literal('NodeSteered'),
     note: z.string().min(1),
     via: z.enum(['cli', 'telegram', 'api', 'orchestrator']),
+  }),
+  /** A steered task finished (or failed) before it noticed the abort: the attempt is set aside, its cost counted. */
+  z.object({
+    ...node,
+    type: z.literal('NodeAttemptDiscarded'),
+    reason: z.literal('steered'),
+    summary: z.string().optional(),
+    cost: CostSchema.optional(),
   }),
   z.object({
     ...node,

@@ -25,7 +25,7 @@ With a [remote daemon](Remote-daemon) the dashboard reads nothing from your disk
 
 A run opens as a tab and reads like a conversation: one card per node with the agent's text in Markdown, tool calls (`> Read src/a.ts · 7 ms · done`; `enter` shows input and output), touched files, gate checks with evidence, the decision and its confidence, and a summary at the end (status, cost, duration, files changed, branch).
 
-While the run waits for you, the bottom asks: `a` approves, `d` denies, `n` adds a note (a command approval asks `y` first). Tabs pulse when their run ends or starts waiting.
+While the run waits for you, the bottom asks: `a` approves, `d` denies, `n` adds a note (a command approval asks `y` first). While a task runs, `s` steers it: type a note and the task stops and starts again with it (a Claude Code session is resumed with the note; the direct agent loop gets it in its prompt). Tabs pulse when their run ends or starts waiting.
 
 When a run ends, the prompt comes back at the bottom of its tab: the next request runs in the same tab and the conversation so far travels with it. A chat turn reads as a message; a run the orchestrator dispatched shows under `→ <workflow>` with its own cards, approvals and diff, and when it ends a quiet `↳ workflow … finished` line hands the outcome back to the orchestrator, which replies.
 
@@ -37,7 +37,7 @@ The sidebar (automatic from 120 columns, `ctrl+b`) shows the request, cost and p
 
 `ctrl+n` home · `ctrl+o` open a run · `ctrl+k` command palette · `ctrl+]` / `ctrl+p` next and previous tab · `ctrl+w` close tab · `ctrl+b` sidebar · `?` help · `ctrl+q` quit (the daemon keeps running).
 
-In a run: `j`/`k` move the cursor, `↑`/`↓` or the wheel scroll, `enter` expand, `g`/`G` top and follow, `d` diff of the run's checkout, `c` cancel, `r` resume, `tab` sidebar.
+In a run: `j`/`k` move the cursor, `↑`/`↓` or the wheel scroll, `enter` expand, `g`/`G` top and follow, `d` diff of the run's checkout, `c` cancel, `s` steer the running task, `r` resume, `tab` sidebar.
 
 `SHIBAOX_NO_MOTION=1` (or `"animations": false` in `ui.json`) turns every animation off.
 

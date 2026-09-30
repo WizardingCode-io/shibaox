@@ -827,3 +827,41 @@ describe('DirectAdapter', () => {
     ).rejects.toThrow();
   });
 });
+
+describe('a task with an output schema', () => {
+  it('is told the shape in the prompt, and finish refuses an output that does not match it', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI((_r, turn) =>
+      turn === 0
+        ? {
+            toolCalls: [
+              { name: 'finish', args: { output: { verdict: 7 }, summary: 'wrong shape' } },
+            ],
+          }
+        : { toolCalls: [{ name: 'finish', args: { output: { verdict: 'ship' }, summary: 'ok' } }] },
+    );
+    const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    const schema = {
+      type: 'object',
+      required: ['verdict'],
+      properties: { verdict: { type: 'string' } },
+    };
+    const events: RuntimeEvent[] = [];
+    for await (const e of adapter.run({ ...jobFor(ws), outputSchema: schema }, ctx()))
+      events.push(e);
+    const req = fake.requests[0] as { messages: { role: string; content: string }[] };
+    const user = req.messages.find((m) => m.role === 'user')?.content ?? '';
+    expect(user).toContain('Output schema');
+    expect(user).toContain(JSON.stringify(schema));
+    const result = events.find((e) => e.type === 'result');
+    expect(result && 'output' in result ? result.output : undefined).toEqual({ verdict: 'ship' });
+    const refused = events.find(
+      (e) => e.type === 'tool_result' && JSON.stringify(e.output).includes('verdict'),
+    );
+    expect(JSON.stringify(refused)).toMatch(/expected string/);
+  });
+});

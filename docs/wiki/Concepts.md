@@ -53,3 +53,5 @@ A run works **in place** (on the project checkout) or in a **worktree** (`<proje
 ## The daemon
 
 Everything runs inside a per-user **daemon** (`~/.shibaox/`): runs, the inbox of approvals, schedules, channels, the key vault, model discovery. The CLI and the dashboard talk to it over a Unix socket. See [Daemon and service](Daemon-and-service).
+
+A running task can be **steered**: a note from you (`shibaox steer`, `s` in the dashboard) or from the orchestrator (`steer_run`) stops it and starts it again with the note, its runtime session kept; the run log records `NodeSteered` (and `NodeAttemptDiscarded` when the task finished anyway before it noticed, its cost still counted) and the audit lists the notes. Only a task with a live model call can be steered: gates, git steps, decisions and human nodes cannot, and a task that just finished is past steering. Runs of one conversation share a **thread** (the first run's id): the orchestrator sees and steers every run dispatched in it, whichever turn started it.

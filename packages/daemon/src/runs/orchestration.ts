@@ -6,6 +6,8 @@ import type { RunSummaryPlus } from '../run-manager.js';
 
 export interface OrchestrationArgs {
   runId: string;
+  /** The conversation this run belongs to (see RunCreated.thread). */
+  thread?: string;
   /** The workflow this run executes (never offered to itself). */
   current: string;
   workflows: { name: string; description?: string }[];
@@ -29,9 +31,17 @@ export function orchestrationTools(a: OrchestrationArgs): AgentTool[] {
     .map((w) => `${w.name}${w.description ? ` — ${w.description}` : ''}`)
     .join('; ');
   /** An error when `id` is not a run this run dispatched; undefined when it is. */
-  /** The runs this run dispatched (whatever the daemon lists, only its own children count). */
+  /**
+   * The runs dispatched in this conversation: every turn is a run of its own, so a child of an
+   * earlier turn still counts. The turns themselves (no parent) never do. Without a thread,
+   * only this run's own children.
+   */
   const children = async () =>
-    ((await a.listRuns?.()) ?? []).filter((r) => r.parentRunId === a.runId);
+    ((await a.listRuns?.()) ?? []).filter((r) =>
+      a.thread
+        ? r.thread === a.thread && r.parentRunId !== undefined && r.runId !== a.runId
+        : r.parentRunId === a.runId,
+    );
   const mine = async (id: string): Promise<{ error: string } | undefined> => {
     const runs = await children();
     if (!runs.some((r) => r.runId === id))
@@ -201,8 +211,13 @@ export function toolsForRole(
   tools: { orchestration: AgentTool[]; memory: AgentTool[] },
 ): AgentTool[] {
   const out: AgentTool[] = [];
-  if (role.capabilities.includes('orchestrate') && !isEventTurn(input))
-    out.push(...tools.orchestration);
+  // an event turn (a child finished) may look, steer and cancel, but never dispatch more work
+  if (role.capabilities.includes('orchestrate'))
+    out.push(
+      ...(isEventTurn(input)
+        ? tools.orchestration.filter((t) => t.name !== 'start_workflow')
+        : tools.orchestration),
+    );
   if (role.capabilities.includes('memory')) out.push(...tools.memory);
   return out;
 }

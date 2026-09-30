@@ -508,6 +508,40 @@ describe('RunManager', () => {
     await expect(m.list()).resolves.toEqual([]); // no orphan events broke the list
   });
 
+  it("every run belongs to a conversation thread: its own id, the one it was told, or its parent's", async () => {
+    const s = setup();
+    const store = new MemoryEventStore();
+    const { manager: m } = manager(store, { vault: s.vault });
+    const a = await submitMock(m, s, 'inplace');
+    await vi.waitFor(async () => expect((await m.state(a.runId)).status).toBe('waiting_human'));
+    expect((await m.state(a.runId)).thread).toBe(a.runId);
+    const b = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'turn 2',
+      adapter: 'mock',
+      workspace: 'inplace',
+      thread: a.runId,
+    });
+    const c = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'child',
+      adapter: 'mock',
+      workspace: 'inplace',
+      parentRunId: b.runId,
+    });
+    await vi.waitFor(async () => expect((await m.state(c.runId)).status).toBe('waiting_human'));
+    expect((await m.state(b.runId)).thread).toBe(a.runId);
+    expect((await m.state(c.runId)).thread).toBe(a.runId);
+    expect((await m.list({ thread: a.runId })).map((r) => r.runId).sort()).toEqual(
+      [a.runId, b.runId, c.runId].sort(),
+    );
+    expect((await m.list({ thread: a.runId }))[0]?.thread).toBe(a.runId);
+  });
+
   it('submit queues a run, executes it and writes the vault note when it ends', async () => {
     const s = setup();
     const store = new MemoryEventStore();

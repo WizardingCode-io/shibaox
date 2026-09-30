@@ -153,6 +153,18 @@ describe('orchestration: seeing and steering the dispatched runs', () => {
         return { ok: true };
       },
     });
+  it('list_runs shows the runs dispatched anywhere in this conversation (each turn is a run), not the turns themselves', async () => {
+    const list = tools().find((t) => t.name === 'list_runs');
+    const r = (await list?.execute({})) as { runs: { runId: string }[] };
+    expect(r.runs.map((x) => x.runId)).toEqual(['child-1']);
+  });
+  it('on an event turn the orchestrator keeps list/status/steer/cancel but never start_workflow', () => {
+    const role = RoleSchema.parse({ role: 'assistant', capabilities: ['orchestrate'] });
+    const names = toolsForRole(role, { event: true }, { orchestration: tools(), memory: [] }).map(
+      (t) => t.name,
+    );
+    expect(names).toEqual(['list_runs', 'run_status', 'steer_run', 'cancel_run']);
+  });
   it('list_runs shows only the runs this run dispatched; run_status tells where one is', async () => {
     const list = tools().find((t) => t.name === 'list_runs');
     const r = (await list?.execute({})) as { runs: { runId: string }[] };

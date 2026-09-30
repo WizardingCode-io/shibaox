@@ -83,6 +83,10 @@ export interface RunState {
   orgRoot?: string;
   /** The run that dispatched this one (recorded since phase 3A). */
   parentRunId?: string;
+  /** The conversation this run belongs to (see RunCreated.thread). */
+  thread?: string;
+  /** The output of the run's answering task (see finalTaskIds), once it completed. */
+  answer?: unknown;
   /** Who asked for the run (`schedule:<id>`, `telegram:<chatId>`); absent for the CLI and the dashboard. */
   origin?: string;
   /** The model ref chosen for the run (`/model` in the dashboard, `--model` in the CLI). */

@@ -436,10 +436,16 @@ export class DaemonServer {
       const status = url.searchParams.get('status') ?? undefined;
       const orgRoot = url.searchParams.get('org') ?? undefined;
       const parent = url.searchParams.get('parent') ?? undefined;
+      const thread = url.searchParams.get('thread') ?? undefined;
       return send(
         res,
         200,
-        await this.deps.runs.list({ status: status as RunStatus | undefined, orgRoot, parent }),
+        await this.deps.runs.list({
+          status: status as RunStatus | undefined,
+          orgRoot,
+          parent,
+          thread,
+        }),
       );
     }
     const runGet = param(/^\/runs\/([^/]+)$/);
@@ -488,7 +494,11 @@ export class DaemonServer {
         );
       } catch (e) {
         const m = e instanceof Error ? e.message : String(e);
-        if (/nothing to steer|not running|are running|is not running/.test(m))
+        if (
+          /nothing to steer|no task is running|not a running task|are running|is not running/.test(
+            m,
+          )
+        )
           throw new HttpError(409, 'conflict', m);
         throw e;
       }

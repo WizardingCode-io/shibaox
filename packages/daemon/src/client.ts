@@ -140,11 +140,14 @@ export class DaemonClient {
   submitRun(req: SubmitRequest): Promise<{ runId: string; warnings: string[] }> {
     return this.json('POST', '/runs', req);
   }
-  listRuns(q: { status?: string; org?: string; parent?: string } = {}): Promise<RunSummaryPlus[]> {
+  listRuns(
+    q: { status?: string; org?: string; parent?: string; thread?: string } = {},
+  ): Promise<RunSummaryPlus[]> {
     const p = new URLSearchParams();
     if (q.status) p.set('status', q.status);
     if (q.org) p.set('org', q.org);
     if (q.parent) p.set('parent', q.parent);
+    if (q.thread) p.set('thread', q.thread);
     const qs = p.toString();
     return this.json('GET', `/runs${qs ? `?${qs}` : ''}`);
   }

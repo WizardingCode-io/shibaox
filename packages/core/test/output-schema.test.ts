@@ -5,6 +5,7 @@ import { loadOrg } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import {
   AutoApproveHuman,
+  finalTaskIds,
   MemoryEventStore,
   MockAdapter,
   RunEngine,
@@ -100,5 +101,70 @@ describe('a workflow asked for a structured output', () => {
       workspace: process.cwd(),
     });
     expect(none.status).toBe('completed');
+  });
+});
+
+describe('which task answers', () => {
+  it('finalTaskIds: the tasks from which no other task is reachable (a human or git node after them is fine)', () => {
+    const wf = {
+      workflow: 'w',
+      start: 'analyse',
+      nodes: {
+        analyse: { type: 'task', role: 'a', next: 'implement' },
+        implement: { type: 'task', role: 'b', next: 'qa' },
+        qa: { type: 'gate', gates: ['t'], on_pass: 'ship', on_fail: 'implement', max_retries: 1 },
+        ship: { type: 'human', action: 'ok', next: 'commit' },
+        commit: { type: 'git', action: 'commit', timeout_ms: 1 },
+      },
+    } as never;
+    expect(finalTaskIds(wf)).toEqual(['implement']);
+    const par = {
+      workflow: 'p',
+      start: 'fan',
+      nodes: {
+        fan: { type: 'parallel', branches: ['a', 'b'], join: 'merge' },
+        a: { type: 'task', role: 'r' },
+        b: { type: 'task', role: 'r' },
+        merge: { type: 'task', role: 'r' },
+      },
+    } as never;
+    expect(finalTaskIds(par)).toEqual(['merge']);
+  });
+  it('the schema reaches the last task of a template-like workflow that ends on a human node', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oschema-'));
+    const files: Record<string, string> = {
+      'org.yaml': 'organization: wc\nteams: [eng]\n',
+      'teams/eng.yaml': 'team: eng\nlead: tl\nroles: [tl, a]\ngates: []\nworkflows: [h]\n',
+      'roles/tl.yaml': 'role: tl\n',
+      'roles/a.yaml': 'role: a\nruntime: mock\n',
+      'workflows/h.yaml':
+        'workflow: h\nteam: eng\nstart: work\nnodes:\n  work: { type: task, role: a, instruction: answer, next: ok }\n  ok: { type: human, action: approve }\n',
+    };
+    for (const [rel, content] of Object.entries(files)) {
+      mkdirSync(join(dir, rel, '..'), { recursive: true });
+      writeFileSync(join(dir, rel), content);
+    }
+    const jobs: TaskJob[] = [];
+    const engine = new RunEngine({
+      store: new MemoryEventStore(),
+      org: loadOrg(dir),
+      adapters: {
+        mock: new MockAdapter((j) => {
+          jobs.push(j);
+          return { output: { verdict: 'ship' }, summary: 'x' };
+        }),
+      },
+      decider: new ScriptedDecider({}),
+      human: new AutoApproveHuman(),
+    });
+    const schema = { type: 'object', required: ['verdict'] };
+    const st = await engine.start({
+      workflow: 'h',
+      input: { output_schema: schema },
+      workspace: process.cwd(),
+    });
+    expect(st.status).toBe('completed');
+    expect(jobs[0]?.outputSchema).toEqual(schema);
+    expect(st.answer).toEqual({ verdict: 'ship' });
   });
 });
