@@ -43,7 +43,7 @@ describe('detectTypecheckCommand', () => {
     expect(detectTypecheckCommand(dir({ 'mypy.ini': '' }))).toBe('mypy .');
     expect(detectTypecheckCommand(dir({ 'pyrightconfig.json': '{}' }))).toBe('pyright');
     expect(detectTypecheckCommand(dir({ 'pyproject.toml': '' }))).toBeUndefined();
-    expect(detectTypecheckCommand(dir({ 'go.mod': 'module x' }))).toBe('go vet ./...');
+    expect(detectTypecheckCommand(dir({ 'go.mod': 'module x' }))).toBe('go build ./...');
     expect(detectTypecheckCommand(dir({ 'composer.json': '{}', 'phpstan.neon': '' }))).toBe(
       'vendor/bin/phpstan analyse --no-progress',
     );

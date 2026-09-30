@@ -807,6 +807,7 @@ describe('a setup step before the first node', () => {
       command: 'pnpm install --frozen-lockfile',
       timeout_ms: 120_000,
       skip_if_missing: true,
+      ok_exit_codes: [0],
       next: 'analyse',
     });
     expect(Object.keys(out.nodes)).toHaveLength(Object.keys(wf.nodes).length + 1);

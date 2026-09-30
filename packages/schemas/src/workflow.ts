@@ -13,6 +13,8 @@ export const CodeNodeSchema = z.object({
   timeout_ms: z.number().int().positive().default(300_000),
   /** When the program is not installed (exit 127), complete with a note instead of failing the run. */
   skip_if_missing: z.boolean().default(false),
+  /** Exit codes that count as done (an audit that found something exits 1 and still has a report). */
+  ok_exit_codes: z.array(z.number().int().min(0).max(255)).min(1).default([0]),
   next: Id.optional(),
 });
 export const HumanNodeSchema = z.object({

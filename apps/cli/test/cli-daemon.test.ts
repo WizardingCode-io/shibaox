@@ -695,13 +695,18 @@ describe('shibaox init --stack', () => {
     const r = await cli('init', dir, '--stack', 'auto');
     expect(r.code, r.stderr).toBe(0);
     expect(r.stdout).toMatch(/stack: node/);
-    expect(readFileSync(join(dir, 'shibaox.yaml'), 'utf8')).toContain('tests: "npm test"');
+    const project = readFileSync(join(dir, 'shibaox.yaml'), 'utf8');
+    expect(project).toContain('detected: tests: npm test'); // detection runs on every checkout: only a comment here
+    expect(project).toMatch(/^protected:/m);
     expect(existsSync(join(dir, 'org', 'workflows', 'security-scan.yaml'))).toBe(true);
-    expect(existsSync(join(dir, 'org', 'gates', 'typecheck.yaml'))).toBe(false); // no tsconfig in the sample
+    expect(existsSync(join(dir, 'org', 'gates', 'typecheck.yaml'))).toBe(true); // resolved at run time; passes with a note when nothing is found
     const bad = await cli('init', join(dir, 'other'), '--stack', 'cobol');
     expect(bad.code).not.toBe(0);
     const none = await cli('init', join(dir, 'empty'), '--stack', 'auto');
     expect(none.code).toBe(0);
-    expect(none.stdout).toMatch(/no stack detected/i);
+    expect(none.stdout).toMatch(/does not exist/i);
+    const again = await cli('init', dir, '--stack', 'node');
+    expect(again.code).toBe(0);
+    expect(again.stdout).toMatch(/kept existing/i);
   });
 });

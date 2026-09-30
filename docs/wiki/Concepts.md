@@ -15,7 +15,7 @@ A **workflow** is a graph of nodes:
 | Node | What it does |
 | --- | --- |
 | `task` | an agent of a role works on the instruction (`role`, `instruction`, `next`) |
-| `code` | runs a shell command in the workspace (`command`, `timeout_ms`) |
+| `code` | runs a shell command in the workspace (`command`, `timeout_ms`, `skip_if_missing` to complete with a note when the program is not installed, `ok_exit_codes` for tools that exit non-zero when they have something to report, default `[0]`) |
 | `gate` | runs gates; `on_pass` / `on_fail` (with `max_retries`) route the run |
 | `decide` | a decision model picks one of `options` (`by`, `question`, `next: { option: node }`) |
 | `human` | waits for you in the inbox (`action`, `prompt`) |
@@ -26,7 +26,7 @@ A workflow marked `conversation: true` is a chat: one turn per run, in place on 
 
 ## Gates and checks
 
-A **gate** lists checks: `tests` (the project's own test runner), `lint` (its linter), `review` (a model reviews the change against a rubric), `judge` (a model answers a rubric), `jev` (a typed question to Jev), `code` (a command), `human`. A team's gates are injected into every workflow of the team that does not already cover them. See [Gates](Gates).
+A **gate** lists checks: `tests` (the project's own test runner), `lint` (its linter), `review` (a model reviews the change against a rubric), `judge` (a model answers a rubric), `jev` (a typed question to Jev), `code` (a command, `skip_if_missing` allowed), `typecheck` (the project's type checker, found at run time), `human`. A team's gates are injected into every workflow of the team that does not already cover them. See [Gates](Gates).
 
 ## Runs and events
 

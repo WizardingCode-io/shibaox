@@ -8,6 +8,15 @@ export const CheckSchema = z.discriminatedUnion('type', [
     type: z.literal('code'),
     command: z.string().min(1),
     timeout_ms: z.number().int().positive().default(300_000),
+    /** When the program is not installed (exit 127, "not found"), pass with a note instead of failing. */
+    skip_if_missing: z.boolean().default(false),
+  }),
+  /** Runs the project's type checker, detected in the workspace (shibaox.yaml typecheck, a typecheck script, tsc, mypy/pyright, go build, phpstan), or `command`; none, or one not installed, passes with a note. */
+  z.object({
+    ...base,
+    type: z.literal('typecheck'),
+    command: z.string().min(1).optional(),
+    timeout_ms: z.number().int().positive().default(300_000),
   }),
   /** Runs the project's own test runner, detected in the workspace (npm/pnpm/yarn/bun test, pytest, go test, cargo test, make test, phpunit, rspec). */
   z.object({

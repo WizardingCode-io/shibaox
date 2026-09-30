@@ -615,7 +615,7 @@ export class RunEngine {
             });
             return;
           }
-          if (r.exitCode !== 0 || r.timedOut)
+          if (r.exitCode === null || !node.ok_exit_codes.includes(r.exitCode) || r.timedOut)
             throw new Error(
               `\`${node.command}\` failed (exit ${r.exitCode}${r.timedOut ? ', timed out' : ''}): ${(r.stderr || r.stdout).slice(-500)}`,
             );

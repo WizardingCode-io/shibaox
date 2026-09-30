@@ -217,93 +217,129 @@ server:
 /** The stacks `shibaox init --stack` knows (`auto` detects one from the directory). */
 export { STACKS } from '@wizardingcode/shibaox-core';
 
-const STACK_DEFAULTS: Record<
-  Stack,
-  { tests: string; lint?: string; typecheck?: string; audit: string; criteria: string[] }
-> = {
-  node: {
-    tests: 'npm test',
-    audit: 'npm audit --audit-level=high',
-    criteria: [
-      'No new `any` or type assertions that hide a real type problem',
-      'Errors are handled or propagated, never swallowed; async code awaits what it starts',
-      'No stray console.log or commented-out code in the diff',
-      'New behaviour has tests next to it; existing tests were not weakened',
-    ],
-  },
-  python: {
-    tests: 'pytest',
-    lint: 'ruff check .',
-    audit: 'pip-audit',
-    criteria: [
-      'Public functions have type hints; no bare `except:`',
-      'No print debugging left; logging is used where output matters',
-      'Dependencies added to the project file, never installed ad hoc',
-      'New behaviour has tests next to it; existing tests were not weakened',
-    ],
-  },
-  'php-laravel': {
-    tests: 'php artisan test',
-    lint: 'vendor/bin/pint --test',
-    audit: 'composer audit',
-    criteria: [
-      'Validation lives in FormRequests, not in controllers',
-      'No queries or business logic in Blade views',
-      'Migrations are reversible (down) and never edit a migration that already ran',
-      'New behaviour has feature or unit tests; existing tests were not weakened',
-    ],
-  },
-  go: {
-    tests: 'go test ./...',
-    typecheck: 'go vet ./...',
-    audit: 'govulncheck ./...',
-    criteria: [
-      'Every error is handled or returned wrapped with context (%w); none discarded with _',
-      'context.Context is passed to everything that blocks or does I/O',
-      'No panic in library code; goroutines have a way to stop',
-      'New behaviour has tests next to it; existing tests were not weakened',
-    ],
-  },
+const STACK_CRITERIA: Record<Stack, string[]> = {
+  node: [
+    'No new `any` or type assertions that hide a real type problem',
+    'Errors are handled or propagated, never swallowed; async code awaits what it starts',
+    'No stray console.log or commented-out code in the diff',
+    'New behaviour has tests next to it; existing tests were not weakened',
+  ],
+  python: [
+    'Public functions have type hints; no bare `except:`',
+    'No print debugging left; logging is used where output matters',
+    'Dependencies added to the project file, never installed ad hoc',
+    'New behaviour has tests next to it; existing tests were not weakened',
+  ],
+  'php-laravel': [
+    'Validation lives in FormRequests, not in controllers',
+    'No queries or business logic in Blade views',
+    'Migrations are reversible (down) and never edit a migration that already ran',
+    'New behaviour has feature or unit tests; existing tests were not weakened',
+  ],
+  go: [
+    'Every error is handled or returned wrapped with context (%w); none discarded with _',
+    'context.Context is passed to everything that blocks or does I/O',
+    'No panic in library code; goroutines have a way to stop',
+    'New behaviour has tests next to it; existing tests were not weakened',
+  ],
 };
 
 const yamlList = (items: string[]) => `[${items.join(', ')}]`;
 const quote = (s: string) => JSON.stringify(s);
+const has = (dir: string, file: string) => existsSync(join(dir, file));
+
+/** The dependency audit of a project and the exit codes that still carry a report (findings). */
+function auditFor(dir: string, stack: Stack): { command: string; ok: number[] } {
+  switch (stack) {
+    case 'node':
+      if (has(dir, 'pnpm-lock.yaml'))
+        return { command: 'pnpm audit --audit-level high', ok: [0, 1] };
+      if (has(dir, 'yarn.lock'))
+        return has(dir, '.yarnrc.yml')
+          ? { command: 'yarn npm audit --severity high', ok: [0, 1] }
+          : // classic yarn exits with a severity bitmask (up to 31) when it finds something
+            { command: 'yarn audit --level high || [ $? -lt 32 ]', ok: [0] };
+      if (has(dir, 'bun.lock') || has(dir, 'bun.lockb'))
+        return { command: 'bun audit', ok: [0, 1] };
+      if (has(dir, 'package-lock.json'))
+        return { command: 'npm audit --audit-level=high', ok: [0, 1] };
+      // no lockfile: npm builds the tree it would install and audits that
+      return { command: 'npm audit --audit-level=high --package-lock-only', ok: [0, 1] };
+    case 'python':
+      if (has(dir, 'uv.lock'))
+        return { command: 'uv run --with pip-audit pip-audit .', ok: [0, 1] };
+      if (has(dir, 'requirements.txt'))
+        return { command: 'pip-audit -r requirements.txt', ok: [0, 1] };
+      return { command: 'pip-audit .', ok: [0, 1] };
+    case 'php-laravel':
+      return { command: 'composer audit', ok: [0, 1, 2, 3] };
+    case 'go':
+      return { command: 'govulncheck ./...', ok: [0, 3] };
+  }
+}
+
+/** The stack files that are written first (the generic scaffold fills the rest). */
+export const STACK_FILES = [
+  'shibaox.yaml',
+  'org/gates/typecheck.yaml',
+  'org/gates/review.yaml',
+  'org/workflows/security-scan.yaml',
+  'org/routines/security-scan.yaml',
+  'org/teams/engineering.yaml',
+  'org/workflows/hello-feature.yaml',
+  'org/workflows/land-feature.yaml',
+  'org/workflows/fix-issue.yaml',
+  'org/roles/frontend.yaml',
+  'org/prompts/frontend.md',
+] as const;
 
 /** The files a stack adds on top of the generic scaffold, computed from the project directory. */
 function stackFiles(dir: string, stack: Stack): Record<string, string> {
-  const d = STACK_DEFAULTS[stack];
-  const setup = detectSetupCommand(dir)?.command;
-  const tests = detectTestCommand(dir) ?? d.tests;
-  const lint = detectLintCommand(dir) ?? d.lint;
-  const typecheck = detectTypecheckCommand(dir) ?? d.typecheck;
+  const detected: [string, string | undefined][] = [
+    ['setup', detectSetupCommand(dir)?.command],
+    ['tests', detectTestCommand(dir)],
+    ['lint', detectLintCommand(dir)],
+    ['typecheck', detectTypecheckCommand(dir)],
+  ];
+  const audit = auditFor(dir, stack);
   const project = [
-    `# shibaox.yaml: what a run needs to know about this ${stack} project (every key optional)`,
-    ...(setup
-      ? [`setup: ${quote(setup)}                    # dependency install in a fresh worktree`]
-      : []),
-    `tests: ${quote(tests)}`,
-    ...(lint ? [`lint: ${quote(lint)}`] : []),
-    ...(typecheck ? [`typecheck: ${quote(typecheck)}`] : []),
-    `protected: ['.github/workflows/**', '.env', '.env.*']   # never written by a run without a protected approval`,
+    `# shibaox.yaml: what a run needs to know about this ${stack} project (every key optional).`,
+    '# setup, tests, lint and typecheck are detected on every run from what the checkout contains;',
+    '# set one only when detection is wrong for this project. Detected when this file was written:',
+    ...detected.map(([k, v]) => `#   ${v ? `detected: ${k}: ${v}` : `${k}: nothing detected`}`),
+    '# Files no run may write without a `protected` approval (see Security in the wiki):',
+    `protected: ['shibaox.yaml', '.github/workflows/**', '.env', '.env.local', '.env.*.local']`,
     '',
   ].join('\n');
+  // the generic workflows, with the team's gates in their own qa gate (so nothing is injected)
+  const withTypecheck = (rel: string) =>
+    (ORG_TEMPLATE[rel] ?? '').replace('gates: [tests]', 'gates: [tests, typecheck]');
   const files: Record<string, string> = {
     'shibaox.yaml': project,
+    'org/gates/typecheck.yaml': `gate: typecheck
+checks:
+  # the project's type checker, found at run time: shibaox.yaml typecheck, a typecheck script,
+  # tsc (tsconfig), mypy/pyright (their config), go build, phpstan; none, or not installed, passes with a note
+  - { name: typecheck, type: typecheck, timeout_ms: 300000 }
+`,
     'org/gates/review.yaml': `gate: review
 checks:
   # a code review by the judge model, criterion by criterion (the ${stack} checklist; edit freely)
   - name: review
     type: review
     criteria:
-${d.criteria.map((c) => `      - ${quote(c)}`).join('\n')}
+${STACK_CRITERIA[stack].map((c) => `      - ${quote(c)}`).join('\n')}
 `,
     'org/workflows/security-scan.yaml': `workflow: security-scan
 team: engineering
+team_gates: false                 # a scan runs no test or type gate of its own
 description: Weekly dependency audit; a triage of what it found.
 start: audit
 nodes:
-  audit:  { type: code, command: ${quote(d.audit)}, skip_if_missing: true, next: triage }   # passes with a note when the tool is not installed
-  triage: { type: task, role: analyst, instruction: "Read the audit output in the previous outputs. List each vulnerability with its severity and the package; propose the smallest upgrade or workaround for each; say when nothing was found." }
+  # the audit exits non-zero when it finds something: those codes still complete the node (ok_exit_codes);
+  # a tool that is not installed completes with { skipped: true } (skip_if_missing)
+  audit:  { type: code, command: ${quote(audit.command)}, ok_exit_codes: ${yamlList(audit.ok.map(String))}, skip_if_missing: true, next: triage }
+  triage: { type: task, role: analyst, instruction: "Read the audit output in the previous outputs (the audit node: exitCode, stdout, or skipped: true). If skipped is true, say the audit tool is not installed and how to install it. Otherwise list each vulnerability with its severity and the package, propose the smallest upgrade or workaround for each, and say plainly when nothing was found." }
 `,
     'org/routines/security-scan.yaml': `routine: security-scan
 name: Weekly security scan
@@ -311,28 +347,26 @@ on: { cron: "0 9 * * 1" }       # Mondays 09:00 (daemon local time)
 workflow: security-scan
 input: Weekly dependency audit.
 max_daily_usd: 2
+# adapter: direct                 # the org's adapter is used when unset (the scaffold defaults to mock: set one)
 # load it with: shibaox routine sync --org ./org
 `,
     'org/teams/engineering.yaml': `team: engineering
 lead: team-leader
 roles: ${yamlList(['team-leader', 'analyst', 'backend', ...(stack === 'node' ? ['frontend'] : [])])}
-gates: ${yamlList(['tests', ...(typecheck ? ['typecheck'] : [])])}
+gates: [tests, typecheck]
 workflows: [hello-feature, land-feature, fix-issue, review-pr, security-scan]
 `,
+    'org/workflows/hello-feature.yaml': withTypecheck('org/workflows/hello-feature.yaml'),
+    'org/workflows/land-feature.yaml': withTypecheck('org/workflows/land-feature.yaml'),
+    'org/workflows/fix-issue.yaml': withTypecheck('org/workflows/fix-issue.yaml'),
   };
-  // no checker found: no gate (add `typecheck:` to shibaox.yaml and a gate file later)
-  if (typecheck)
-    files['org/gates/typecheck.yaml'] = `gate: typecheck
-checks:
-  - { name: typecheck, type: code, command: ${quote(typecheck)}, timeout_ms: 300000 }
-`;
   if (stack === 'node') {
     files['org/roles/frontend.yaml'] = `role: frontend
 description: Implements UI and client-side changes with tests.
 model_tier: strong
-tools: [read, write, git, node, npm, pnpm, npx]
+tools: [read, write, git, node, npm, pnpm, yarn, bun, npx]
 permissions:
-  approval_required: [push, deploy]
+  approval_required: [push, deploy]   # add execute to be asked for npx of a package that is not installed
 system_prompt: prompts/frontend.md
 `;
     files['org/prompts/frontend.md'] = `# Frontend
@@ -351,17 +385,24 @@ unless the task is about it.
  * a `stack`, the stack's files (shibaox.yaml, typecheck and review gates, security-scan
  * workflow and routine, frontend role) come first and the generic scaffold fills the rest.
  */
-export function scaffoldOrg(dir: string, o: { stack?: Stack } = {}): string[] {
+export function scaffoldOrg(
+  dir: string,
+  o: { stack?: Stack; onKept?: (rel: string) => void } = {},
+): string[] {
   const created: string[] = [];
-  const write = (rel: string, content: string) => {
+  const write = (rel: string, content: string, stackFile = false) => {
     const file = join(dir, rel);
-    if (existsSync(file)) return;
+    if (existsSync(file)) {
+      if (stackFile) o.onKept?.(rel);
+      return;
+    }
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, content);
     created.push(rel);
   };
   if (o.stack)
-    for (const [rel, content] of Object.entries(stackFiles(dir, o.stack))) write(rel, content);
+    for (const [rel, content] of Object.entries(stackFiles(dir, o.stack)))
+      write(rel, content, true);
   for (const [rel, content] of Object.entries(ORG_TEMPLATE)) write(rel, content);
   return created;
 }

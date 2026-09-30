@@ -16,6 +16,7 @@ export function withSetup(workflow: Workflow, command: string, timeoutMs: number
         command,
         timeout_ms: timeoutMs,
         skip_if_missing: true,
+        ok_exit_codes: [0],
         next: workflow.start,
       },
       ...workflow.nodes,

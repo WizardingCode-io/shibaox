@@ -203,19 +203,41 @@ export function detectStack(dir: string): Stack | undefined {
 export function detectTypecheckCommand(dir: string): string | undefined {
   const own = projectFile(dir)?.typecheck;
   if (own) return own;
-  if (has(dir, 'package.json') && has(dir, 'tsconfig.json'))
-    return has(dir, 'pnpm-lock.yaml') ? 'pnpm exec tsc --noEmit' : 'npx --no tsc --noEmit';
-  if (has(dir, 'mypy.ini')) return 'mypy .';
-  if (has(dir, 'pyproject.toml')) {
+  if (has(dir, 'package.json')) {
     try {
-      if (/^\[tool\.mypy\]/m.test(readFileSync(join(dir, 'pyproject.toml'), 'utf8')))
-        return 'mypy .';
+      const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
+        scripts?: Record<string, string>;
+      };
+      const script = ['typecheck', 'type-check', 'check-types', 'types'].find(
+        (n) => pkg.scripts?.[n],
+      );
+      if (script) return `${nodeRunner(dir)} ${script}`;
     } catch {
-      // unreadable pyproject
+      // unreadable package.json: fall through to tsconfig
     }
+    if (has(dir, 'tsconfig.json')) {
+      if (has(dir, 'pnpm-lock.yaml')) return 'pnpm exec tsc --noEmit';
+      if (has(dir, 'yarn.lock')) return 'yarn tsc --noEmit';
+      if (has(dir, 'bun.lock') || has(dir, 'bun.lockb')) return 'bunx tsc --noEmit';
+      return 'npx --no tsc --noEmit';
+    }
+    return undefined;
   }
-  if (has(dir, 'pyrightconfig.json')) return 'pyright';
-  if (has(dir, 'go.mod')) return 'go vet ./...';
+  const py = (cmd: string) => (has(dir, 'uv.lock') ? `uv run ${cmd}` : cmd);
+  if (has(dir, 'mypy.ini') || has(dir, '.mypy.ini')) return py('mypy .');
+  for (const [file, section] of [
+    ['pyproject.toml', /^\[tool\.mypy\]/m],
+    ['setup.cfg', /^\[mypy\]/m],
+  ] as const)
+    if (has(dir, file)) {
+      try {
+        if (section.test(readFileSync(join(dir, file), 'utf8'))) return py('mypy .');
+      } catch {
+        // unreadable config
+      }
+    }
+  if (has(dir, 'pyrightconfig.json')) return py('pyright');
+  if (has(dir, 'go.mod')) return 'go build ./...';
   if (has(dir, 'composer.json') && (has(dir, 'phpstan.neon') || has(dir, 'phpstan.neon.dist')))
     return 'vendor/bin/phpstan analyse --no-progress';
   return undefined;

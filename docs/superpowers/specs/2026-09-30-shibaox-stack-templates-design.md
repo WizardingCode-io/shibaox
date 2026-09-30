@@ -52,3 +52,20 @@ detectável, `auto` cai no genérico com uma nota. A saída lista o stack e os f
 
 Installation/Quickstart (`shibaox init --stack auto`), Configuration (`shibaox.yaml
 typecheck`, gate `typecheck`), Gates, Routines (`security-scan`), CLI reference, README.
+
+## Revisão (2026-09-30, passagem de correcções)
+
+- O `typecheck` passou a ser um tipo de check (`type: typecheck`) resolvido em cada run (como
+  `tests`/`lint`); o gate é escrito sempre e entra nos gates `qa` dos workflows genéricos, que
+  o scaffold do stack reescreve com `[tests, typecheck]` (assim não há injecção de gates de
+  equipa noutro sítio); `security-scan` tem `team_gates: false`.
+- O nó `code` ganhou `ok_exit_codes` (default `[0]`): o audit encontra vulnerabilidades e sai
+  com 1 (npm/pnpm/pip-audit/composer) ou 3 (govulncheck) e a triagem corre na mesma; o comando
+  do audit depende do lockfile (pnpm/yarn/bun/npm, `--package-lock-only` sem lockfile;
+  `pip-audit -r requirements.txt` ou `uv run --with pip-audit pip-audit .`).
+- `shibaox.yaml` escreve só `protected` (com `shibaox.yaml` e `.env.local`/`.env.*.local`);
+  o que foi detectado fica em comentário (a detecção corre em cada checkout, nunca fica
+  congelada). `go` usa `go build ./...` como typecheck. Checks `code` aceitam
+  `skip_if_missing`.
+- `init --stack` num org existente lista os ficheiros que manteve e como ligar o resto à mão;
+  `auto` numa pasta inexistente diz que ela não existe.

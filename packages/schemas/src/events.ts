@@ -10,7 +10,18 @@ export type Cost = z.infer<typeof CostSchema>;
 
 export const CheckResultSchema = z.object({
   name: z.string(),
-  type: z.enum(['code', 'tests', 'lint', 'review', 'ci', 'jev', 'judge', 'human', 'mock']),
+  type: z.enum([
+    'code',
+    'tests',
+    'lint',
+    'typecheck',
+    'review',
+    'ci',
+    'jev',
+    'judge',
+    'human',
+    'mock',
+  ]),
   passed: z.boolean(),
   skipped: z.boolean().default(false),
   evidence: z.string(),
