@@ -92,6 +92,8 @@ describe('RunManager', () => {
     const store = new MemoryEventStore();
     const { manager: m } = manager(store, {
       vault: s.vault,
+      // the daemon's env (vault included) reaches the git node: the commit is authored with it
+      env: { GIT_AUTHOR_NAME: 'Vault Author', GIT_COMMITTER_NAME: 'Vault Author' },
       mockScript: (job) => {
         writeFileSync(join(job.workspace, 'landed.txt'), 'ok\n');
         return { output: { did: 'wrote landed.txt' }, summary: 'wrote landed.txt' };
@@ -119,6 +121,11 @@ describe('RunManager', () => {
     });
     expect(log.split('\n')[0]).toBe('Land a file');
     expect(log).toContain('Land a file');
+    const author = execFileSync('git', ['log', '-1', '--format=%an', 'develop'], {
+      cwd: s.project,
+      encoding: 'utf8',
+    }).trim();
+    expect(author).toBe('Vault Author');
   });
 
   it('compacts a long conversation at submit with the summariser and returns the thread it used', async () => {

@@ -761,3 +761,35 @@ describe('RunEngine', () => {
     expect(done.budgetUsd).toBe(9);
   });
 });
+
+describe('the engine environment reaches commands, gates and git nodes', () => {
+  const probeOrg = () => ({
+    ...orgFiles('printenv SHX_PROBE'),
+    'workflows/probe.yaml': [
+      'workflow: probe',
+      'team: eng',
+      'start: run',
+      'nodes:',
+      '  run: { type: code, command: "printenv SHX_PROBE", next: qa }',
+      '  qa: { type: gate, gates: [tests], on_pass: done, on_fail: run, max_retries: 0 }',
+      '  done: { type: task, role: backend, instruction: done }',
+      '',
+    ].join('\n'),
+  });
+  it('a code node and a code check see EngineDeps.env (the vault keys of the daemon)', async () => {
+    const dir = scaffold(probeOrg());
+    const { engine } = engineFor(dir, { env: { SHX_PROBE: 'from-the-vault' } });
+    const state = await engine.start({ workflow: 'probe', input: {}, workspace: process.cwd() });
+    expect(state.status).toBe('completed');
+    expect(state.nodes.run?.output).toMatchObject({
+      stdout: expect.stringContaining('from-the-vault'),
+    });
+    expect(state.lastGateReport?.checks[0]?.evidence).toContain('from-the-vault');
+  });
+  it('without it the same command fails: nothing leaks from elsewhere', async () => {
+    const dir = scaffold(probeOrg());
+    const { engine } = engineFor(dir, { env: {} });
+    const state = await engine.start({ workflow: 'probe', input: {}, workspace: process.cwd() });
+    expect(state.status).toBe('failed');
+  });
+});

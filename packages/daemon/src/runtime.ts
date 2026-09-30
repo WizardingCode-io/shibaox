@@ -345,6 +345,10 @@ export function buildRuntime(o: RuntimeOptions) {
     newRunId: o.newRunId,
     approvals,
     onRuntimeEvent: o.onRuntimeEvent,
+    // code nodes, gate commands and git nodes run with the daemon's env (vault keys included)
+    env: Object.fromEntries(
+      Object.entries(env).filter((e): e is [string, string] => typeof e[1] === 'string'),
+    ),
     decider,
     human: o.human,
     checkRunners,

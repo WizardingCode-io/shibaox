@@ -13,6 +13,8 @@ export interface CheckContext {
   signal?: AbortSignal;
   /** Diff of the run's workspace, when the engine was given a `diffProvider`. */
   diff?: () => Promise<string>;
+  /** The environment of check commands (the daemon's, vault keys included). */
+  env?: Record<string, string>;
 }
 export type CheckRunner = (check: Check, ctx: CheckContext) => Promise<CheckResult>;
 export type CheckRunners = Partial<Record<Check['type'], CheckRunner>>;
@@ -25,6 +27,7 @@ export const codeCheckRunner: CheckRunner = async (check, ctx) => {
     command: check.command,
     cwd: ctx.workspace,
     timeoutMs: check.timeout_ms,
+    env: ctx.env,
   });
   const passed = r.exitCode === 0 && !r.timedOut;
   const evidence = r.timedOut
@@ -52,7 +55,12 @@ export const testsCheckRunner: CheckRunner = async (check, ctx) => {
       skipped: true,
       evidence: `no test runner found in ${ctx.workspace} (package.json scripts.test, pyproject, go.mod, Cargo.toml, Makefile test, composer, Gemfile)`,
     };
-  const r = await runCommand({ command, cwd: ctx.workspace, timeoutMs: check.timeout_ms });
+  const r = await runCommand({
+    command,
+    cwd: ctx.workspace,
+    timeoutMs: check.timeout_ms,
+    env: ctx.env,
+  });
   const passed = r.exitCode === 0 && !r.timedOut;
   const evidence = r.timedOut
     ? `${command}: timed out after ${check.timeout_ms}ms\n${tail(r.stdout)}${tail(r.stderr)}`
@@ -83,7 +91,12 @@ export const lintCheckRunner: CheckRunner = async (check, ctx) => {
       skipped: true,
       evidence: `no linter found in ${ctx.workspace} (package.json scripts.lint, make lint, biome, eslint, ruff, phpstan, golangci-lint, go vet, clippy)`,
     };
-  const r = await runCommand({ command, cwd: ctx.workspace, timeoutMs: check.timeout_ms });
+  const r = await runCommand({
+    command,
+    cwd: ctx.workspace,
+    timeoutMs: check.timeout_ms,
+    env: ctx.env,
+  });
   const missing = r.exitCode === 127 || (r.exitCode !== 0 && NOT_INSTALLED.test(r.stderr));
   if (missing)
     return {

@@ -64,6 +64,10 @@ describe('SecretsStore', () => {
     expect(rows.find((r) => r.name === 'SHIBAOX_TELEGRAM_TOKEN')).toMatchObject({ set: false });
     expect(JSON.stringify(rows)).not.toContain('1234567890');
     expect(KNOWN_KEYS.map((k) => k.name)).toContain('OPENAI_API_KEY');
+    // gh in git nodes and gates reads these: the vault must know them
+    expect(KNOWN_KEYS.map((k) => k.name)).toEqual(
+      expect.arrayContaining(['GH_TOKEN', 'GITHUB_TOKEN']),
+    );
   });
   it('rejects names that are not environment variable names and empty values', () => {
     const { s } = store();

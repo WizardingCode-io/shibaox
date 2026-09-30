@@ -45,6 +45,11 @@ export interface EngineDeps {
   approvals?: ApprovalHandler;
   /** Every RuntimeEvent a task adapter yields, for streaming (never persisted here). */
   onRuntimeEvent?: (runId: string, nodeId: string, e: RuntimeEvent) => void;
+  /**
+   * The environment of `code` nodes, gate commands and `git` nodes (the daemon's, vault keys
+   * included, so `gh` finds its token); absent, the process environment alone.
+   */
+  env?: Record<string, string>;
   checkRunners?: CheckRunners;
   /** Writes commit messages and PR bodies for `git` nodes (absent: deterministic text). */
   describeChange?: (r: DescribeRequest) => Promise<string>;
@@ -476,6 +481,7 @@ export class RunEngine {
             command: node.command,
             cwd: state.workspace,
             timeoutMs: node.timeout_ms,
+            env: this.deps.env,
           });
           if (r.exitCode !== 0 || r.timedOut)
             throw new Error(
@@ -501,6 +507,7 @@ export class RunEngine {
             project: state.project ?? state.workspace,
             branch: state.branch,
             base: state.baseBranch,
+            env: this.deps.env,
             signal: this.controllerFor(runId).signal,
             spec:
               typeof state.input.spec === 'string' ? state.input.spec : JSON.stringify(state.input),
@@ -560,6 +567,7 @@ export class RunEngine {
               workspace: state.workspace,
               state,
               log: this.log,
+              env: this.deps.env,
               signal: this.controllerFor(runId).signal,
               diff: diffProvider
                 ? async () => {

@@ -26,6 +26,12 @@ const NAME_RE = /^[A-Z][A-Z0-9_]*$/;
 const BUILT_IN: KnownKey[] = [
   { name: 'TYPESAFE_API_KEY', description: 'Jev decisions and checks (TypeSafe)' },
   { name: 'SHIBAOX_TELEGRAM_TOKEN', description: 'Telegram bot (channels.telegram)' },
+  { name: 'GH_TOKEN', description: 'GitHub (gh in git nodes and gates: pull requests, merges)' },
+  { name: 'GITHUB_TOKEN', description: 'GitHub (gh reads it when GH_TOKEN is not set)' },
+  {
+    name: 'SHIBAOX_DAEMON_TOKEN',
+    description: 'The token clients present to a daemon that listens on the network',
+  },
 ];
 
 /** The keys shibaox knows what to do with: every provider's, plus Jev and Telegram. */
