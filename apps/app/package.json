@@ -29,6 +29,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "@wizardingcode/shibaox-core": "workspace:*",
     "@wizardingcode/shibaox-daemon": "workspace:*",
+    "@wizardingcode/shibaox-providers": "workspace:*",
     "@wizardingcode/shibaox-schemas": "workspace:*",
     "@wizardingcode/shibaox-view": "workspace:*",
     "happy-dom": "^20.14.5",

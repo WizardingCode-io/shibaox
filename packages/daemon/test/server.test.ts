@@ -1184,3 +1184,13 @@ describe('the app served by the daemon', () => {
     expect((await new DaemonClient(s.home.socket).health()).listen).toBeUndefined();
   });
 });
+
+describe('org info for the app', () => {
+  it('names each workflow with its description and lists the catalog entries', async () => {
+    const s = setup();
+    const { client } = await started(s);
+    const info = await client.orgInfo(s.orgRoot);
+    expect(info.descriptions['hello-feature']).toMatch(/Analyse/);
+    expect(info.catalog.find((c) => c.id === 'playwright')).toMatchObject({ type: 'mcp' });
+  });
+});

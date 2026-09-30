@@ -418,6 +418,48 @@ function LogsTab(props: { rootId: string }): JSX.Element {
   );
 }
 
+/** The model the next turns run on: a quiet button, then the configured models to pick from. */
+function ModelPicker(props: { rootId: string; current?: string }): JSX.Element {
+  const S = ds();
+  const store = useStore();
+  const state = useAppState();
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (open && !state.integrations) void store.loadIntegrations();
+  }, [open, state.integrations, store]);
+  const chosen = state.threadModels[props.rootId];
+  if (!open)
+    return (
+      <S.Button size="sm" variant="quiet" icon="brain" onClick={() => setOpen(true)}>
+        Model: {shortModel(chosen) ?? props.current ?? 'org tiers'}
+      </S.Button>
+    );
+  const models = (state.integrations?.models ?? []).filter((m) => m.configured || m.available);
+  return (
+    <span className="row">
+      <label className="muted" htmlFor="thread-model">
+        Model for this conversation
+      </label>
+      <select
+        id="thread-model"
+        className="sx-select"
+        value={chosen ?? ''}
+        onChange={(e) => {
+          store.setThreadModel(props.rootId, e.target.value || undefined);
+          setOpen(false);
+        }}
+      >
+        <option value="">The org's tiers</option>
+        {models.map((m) => (
+          <option key={m.ref} value={m.ref}>
+            {m.ref}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
 /** The mockup's main column for one conversation: top bar, tabs, thread, composer. */
 export function ThreadScreen(props: { rootId: string }): JSX.Element {
   const S = ds();
@@ -464,6 +506,7 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
             />
           )
         ) : null}
+        <ModelPicker rootId={props.rootId} current={model} />
         <S.Tabs
           items={[
             { id: 'chat', label: 'Chat' },

@@ -6,10 +6,10 @@ import { useAppState, useStore } from '../store/hooks.js';
 
 const SECTIONS = [
   { id: 'chats', label: 'Chats', icon: 'message-square', path: '#/chats' },
-  { id: 'scheduled', label: 'Scheduled', icon: 'clock', path: '#/soon/scheduled' },
-  { id: 'skills', label: 'Skills', icon: 'zap', path: '#/soon/skills' },
-  { id: 'memory', label: 'Memory', icon: 'brain', path: '#/soon/memory' },
-  { id: 'integrations', label: 'Integrations', icon: 'plug', path: '#/soon/integrations' },
+  { id: 'scheduled', label: 'Scheduled', icon: 'clock', path: '#/scheduled' },
+  { id: 'skills', label: 'Skills', icon: 'zap', path: '#/skills' },
+  { id: 'memory', label: 'Memory', icon: 'brain', path: '#/memory' },
+  { id: 'integrations', label: 'Integrations', icon: 'plug', path: '#/integrations' },
 ] as const;
 
 /** The mockup's sidebar: brand, New chat, the sections, the recent threads, and you. */
@@ -28,7 +28,8 @@ export function Sidebar(props: { route: Route; onNewChat: () => void }): JSX.Ele
   const needsYou = state.inbox.length;
   const active = (id: string) =>
     (props.route.name === 'chats' && id === 'chats') ||
-    (props.route.name === 'soon' && props.route.section === id);
+    (props.route.name === 'section' && props.route.section === id);
+  const scheduled = state.routines?.filter((r) => r.enabled).length ?? 0;
   return (
     <aside className="side">
       <a className="brand" href="#/">
@@ -49,7 +50,13 @@ export function Sidebar(props: { route: Route; onNewChat: () => void }): JSX.Ele
           icon={s.icon}
           label={s.label}
           active={active(s.id)}
-          count={s.id === 'chats' && needsYou > 0 ? needsYou : undefined}
+          count={
+            s.id === 'chats' && needsYou > 0
+              ? needsYou
+              : s.id === 'scheduled' && scheduled > 0
+                ? scheduled
+                : undefined
+          }
           onClick={() => navigate(s.path)}
         />
       ))}

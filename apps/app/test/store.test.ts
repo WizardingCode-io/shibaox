@@ -118,6 +118,89 @@ function fakeClient() {
       rec('auditMarkdown', id);
       return `# Audit of ${id}`;
     },
+    async routines() {
+      rec('routines');
+      return [
+        {
+          id: 'scan',
+          name: 'Weekly scan',
+          trigger: { type: 'cron', cron: '0 9 * * 1' },
+          orgRoot: '/o',
+          project: '/p',
+          workflow: 'security-scan',
+          input: 'x',
+          mode: 'always',
+          intervalS: 120,
+          enabled: true,
+          source: 'org',
+          createdAt: 't',
+        },
+      ] as never;
+    },
+    async runRoutine(id: string) {
+      rec('runRoutine', id);
+      return { runId: 'rr' };
+    },
+    async pauseRoutine(id: string) {
+      rec('pauseRoutine', id);
+      return {} as never;
+    },
+    async resumeRoutine(id: string) {
+      rec('resumeRoutine', id);
+      return {} as never;
+    },
+    async removeRoutine(id: string) {
+      rec('removeRoutine', id);
+    },
+    async addRoutine(r: unknown) {
+      rec('addRoutine', r);
+      return {} as never;
+    },
+    async syncRoutines(orgRoot: string) {
+      rec('syncRoutines', orgRoot);
+      return {} as never;
+    },
+    async keys() {
+      rec('keys');
+      return [{ name: 'OPENAI_API_KEY', description: 'OpenAI', set: false }];
+    },
+    async setKey(name: string, value: string) {
+      rec('setKey', name, value);
+      return { name, set: true as const };
+    },
+    async unsetKey(name: string) {
+      rec('unsetKey', name);
+      return { name, removed: true };
+    },
+    async orgConfig(root: string) {
+      rec('orgConfig', root);
+      return { root, organization: 'wc', tiers: { strong: 'a/b' } };
+    },
+    async setOrgConfig(root: string, patch: unknown) {
+      rec('setOrgConfig', root, patch);
+      return { root, organization: 'wc', tiers: {} };
+    },
+    async mcpList(org: string) {
+      rec('mcpList', org);
+      return [
+        {
+          id: 'playwright',
+          description: 'browser',
+          transport: 'stdio' as const,
+          target: 'npx …',
+          roles: [],
+          keys: [],
+        },
+      ];
+    },
+    async mcpTest(id: string, org: string) {
+      rec('mcpTest', id, org);
+      return { ok: true, tools: [{ name: 'browser_navigate', description: 'go' }] };
+    },
+    async projectProfile(path: string, org?: string) {
+      rec('projectProfile', path, org);
+      return { name: 'p', path, git: true, stack: ['node'], files: 3, truncated: false } as never;
+    },
     async cancel(id: string) {
       rec('cancel', id);
       return {};
@@ -142,6 +225,8 @@ function fakeClient() {
         single: ['chat'],
         subscription: false,
         adapter: 'direct' as const,
+        descriptions: { 'hello-feature': 'Analyse, implement, test, judge, ship.' },
+        catalog: [{ id: 'playwright', type: 'mcp', description: 'browser' }],
       };
     },
     async *stream(id: string) {
@@ -409,6 +494,86 @@ describe('AppStore: the review fixes', () => {
       status: 'completed',
     });
     expect(store.threads()[0]?.updatedAt).toBe(f.runs.get('root')?.summary.updatedAt);
+    store.stop();
+  });
+});
+
+describe('AppStore: the sections', () => {
+  it('loads routines, skills, memory and integrations on demand and acts on them', async () => {
+    const f = fakeClient();
+    const store = new AppStore({ client: f.client });
+    await store.loadRoutines();
+    expect(store.get().routines?.[0]?.id).toBe('scan');
+    await store.runRoutine('scan');
+    await store.pauseRoutine('scan');
+    await store.resumeRoutine('scan');
+    await store.removeRoutine('scan');
+    await store.addRoutine({
+      trigger: { type: 'cron', cron: '* * * * *' },
+      workflow: 'w',
+      input: 'x',
+    });
+    await store.syncRoutines();
+    expect(f.calls.filter((c) => c.name === 'addRoutine')[0]?.args[0]).toMatchObject({
+      orgRoot: '/o',
+      project: '/p',
+      workflow: 'w',
+    });
+    await store.loadSkills();
+    expect(store.get().skills?.workflows.map((w) => w.name)).toEqual(['chat', 'hello-feature']);
+    expect(store.get().skills?.workflows[1]?.description).toMatch(/Analyse/);
+    await store.loadMemory();
+    expect(store.get().memory?.profile?.stack).toEqual(['node']);
+    await store.loadIntegrations();
+    expect(store.get().integrations?.mcp[0]?.id).toBe('playwright');
+    expect(store.get().integrations?.keys[0]?.name).toBe('OPENAI_API_KEY');
+    expect(store.get().integrations?.config?.tiers.strong).toBe('a/b');
+    await store.setKey('OPENAI_API_KEY', 'sk');
+    await store.unsetKey('OPENAI_API_KEY');
+    await store.saveOrgConfig({ judge: null });
+    const test = await store.testMcp('playwright');
+    expect(test?.tools?.[0]?.name).toBe('browser_navigate');
+    expect(f.calls.map((c) => c.name)).toEqual(
+      expect.arrayContaining([
+        'runRoutine',
+        'pauseRoutine',
+        'resumeRoutine',
+        'removeRoutine',
+        'syncRoutines',
+        'setKey',
+        'unsetKey',
+        'setOrgConfig',
+        'mcpTest',
+        'projectProfile',
+      ]),
+    );
+  });
+  it('runWorkflow starts a run of any workflow and opens it; a thread model is used by the next turn', async () => {
+    const f = fakeClient();
+    f.add('root', { input: { spec: 'hi' } });
+    const store = new AppStore({ client: f.client, intervals: { fast: 20, slow: 20 } });
+    store.start();
+    const id = await store.runWorkflow({
+      workflow: 'hello-feature',
+      text: 'Add a thing',
+      model: 'x/y',
+    });
+    expect(id).toBe('new-2');
+    expect(f.calls.find((c) => c.name === 'submitRun')?.args[0]).toMatchObject({
+      workflow: 'hello-feature',
+      input: 'Add a thing',
+      model: 'x/y',
+      workspace: 'worktree',
+    });
+    expect(store.get().open).toBe('new-2');
+    store.openThread('root');
+    await vi.waitFor(() => expect(store.thread('root')).toBeDefined());
+    store.setThreadModel('root', 'lmstudio/q');
+    await store.send('root', 'next');
+    expect(f.calls.filter((c) => c.name === 'submitRun')[1]?.args[0]).toMatchObject({
+      model: 'lmstudio/q',
+      thread: 'root',
+    });
     store.stop();
   });
 });

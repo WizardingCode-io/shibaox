@@ -1,14 +1,22 @@
-import type { RunState } from '@wizardingcode/shibaox-core';
+import type { ProjectProfile, RunState } from '@wizardingcode/shibaox-core';
 import type {
   AuditDoc,
   Envelope,
   Health,
   InboxItem,
+  KeyRow,
+  McpServerRow,
+  McpTestResult,
+  OrgConfig,
+  OrgConfigPatch,
   OrgInfo,
   ProjectEntry,
+  RoutineInput,
+  RoutineRow,
   RunSummaryPlus,
   SubmitRequest,
 } from '@wizardingcode/shibaox-daemon';
+import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 
 /** An error the daemon answered with (status, its code and message). */
 export class AppHttpError extends Error {
@@ -20,14 +28,6 @@ export class AppHttpError extends Error {
     super(message);
     this.name = 'AppHttpError';
   }
-}
-
-export interface ModelRow {
-  provider: string;
-  model: string;
-  ref: string;
-  configured: boolean;
-  [k: string]: unknown;
 }
 
 /**
@@ -116,8 +116,55 @@ export class AppClient {
   answer(id: string, a: { approved: boolean; note?: string }): Promise<unknown> {
     return this.json('POST', `/inbox/${encodeURIComponent(id)}`, { via: 'api', ...a });
   }
-  models(): Promise<ModelRow[]> {
+  models(): Promise<ModelChoice[]> {
     return this.json('GET', '/models');
+  }
+  routines(): Promise<RoutineRow[]> {
+    return this.json('GET', '/routines');
+  }
+  runRoutine(id: string): Promise<{ runId: string }> {
+    return this.json('POST', `/routines/${encodeURIComponent(id)}/run`);
+  }
+  pauseRoutine(id: string): Promise<RoutineRow> {
+    return this.json('POST', `/routines/${encodeURIComponent(id)}/pause`);
+  }
+  resumeRoutine(id: string): Promise<RoutineRow> {
+    return this.json('POST', `/routines/${encodeURIComponent(id)}/resume`);
+  }
+  removeRoutine(id: string): Promise<void> {
+    return this.json('DELETE', `/routines/${encodeURIComponent(id)}`);
+  }
+  addRoutine(r: RoutineInput): Promise<RoutineRow> {
+    return this.json('POST', '/routines', r);
+  }
+  syncRoutines(orgRoot: string): Promise<unknown> {
+    return this.json('POST', '/routines/sync', { orgRoot });
+  }
+  keys(): Promise<KeyRow[]> {
+    return this.json('GET', '/keys');
+  }
+  setKey(name: string, value: string): Promise<{ name: string; set: true }> {
+    return this.json('PUT', `/keys/${encodeURIComponent(name)}`, { value });
+  }
+  unsetKey(name: string): Promise<{ name: string; removed: boolean }> {
+    return this.json('DELETE', `/keys/${encodeURIComponent(name)}`);
+  }
+  orgConfig(root: string): Promise<OrgConfig> {
+    return this.json('GET', `/orgs/config?org=${encodeURIComponent(root)}`);
+  }
+  setOrgConfig(root: string, patch: OrgConfigPatch): Promise<OrgConfig> {
+    return this.json('PUT', `/orgs/config?org=${encodeURIComponent(root)}`, patch);
+  }
+  mcpList(org: string): Promise<McpServerRow[]> {
+    return this.json('GET', `/mcp?org=${encodeURIComponent(org)}`);
+  }
+  mcpTest(id: string, org: string): Promise<McpTestResult> {
+    return this.json('POST', `/mcp/${encodeURIComponent(id)}/test?org=${encodeURIComponent(org)}`);
+  }
+  projectProfile(path: string, org?: string): Promise<ProjectProfile> {
+    const p = new URLSearchParams({ path });
+    if (org) p.set('org', org);
+    return this.json('GET', `/projects/profile?${p.toString()}`);
   }
   projects(): Promise<ProjectEntry[]> {
     return this.json('GET', '/projects');

@@ -5,6 +5,7 @@ export type Route =
   | { name: 'chats' }
   | { name: 'thread'; id: string }
   | { name: 'settings' }
+  | { name: 'section'; section: 'scheduled' | 'skills' | 'memory' | 'integrations' }
   | { name: 'soon'; section: string };
 
 /** `#/`, `#/chats`, `#/t/<rootId>`, `#/settings`, `#/soon/<section>`. */
@@ -20,6 +21,12 @@ export function parseRoute(hash: string): Route {
   }
   if (path === '/chats') return { name: 'chats' };
   if (path === '/settings') return { name: 'settings' };
+  const section = /^\/(scheduled|skills|memory|integrations)$/.exec(path);
+  if (section?.[1])
+    return {
+      name: 'section',
+      section: section[1] as 'scheduled' | 'skills' | 'memory' | 'integrations',
+    };
   const soon = /^\/soon\/([a-z]+)$/.exec(path);
   if (soon?.[1]) return { name: 'soon', section: soon[1] };
   return { name: 'home' };

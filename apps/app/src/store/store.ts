@@ -2,6 +2,8 @@ import type { RunState, RunStatus } from '@wizardingcode/shibaox-core';
 import type {
   Envelope,
   InboxItem,
+  OrgConfigPatch,
+  RoutineInput,
   RunSummaryPlus,
   SubmitRequest,
 } from '@wizardingcode/shibaox-daemon';
@@ -36,6 +38,21 @@ export type StoreClient = Pick<
   | 'orgInfo'
   | 'stream'
   | 'auditMarkdown'
+  | 'routines'
+  | 'runRoutine'
+  | 'pauseRoutine'
+  | 'resumeRoutine'
+  | 'removeRoutine'
+  | 'addRoutine'
+  | 'syncRoutines'
+  | 'keys'
+  | 'setKey'
+  | 'unsetKey'
+  | 'orgConfig'
+  | 'setOrgConfig'
+  | 'mcpList'
+  | 'mcpTest'
+  | 'projectProfile'
 >;
 
 interface StorageLike {
@@ -406,7 +423,9 @@ export class AppStore {
           messages,
           thread: rootId,
           ...(o.event ? { event: true } : {}),
-          ...(prev.model ? { model: prev.model } : {}),
+          ...((this.state.threadModels[rootId] ?? prev.model)
+            ? { model: this.state.threadModels[rootId] ?? prev.model }
+            : {}),
           adapter: prev.adapter as SubmitRequest['adapter'],
           workspace: prev.workspaceMode,
           budgetUsd: prev.budgetUsd,
@@ -453,6 +472,196 @@ export class AppStore {
   /** The audit of a run as Markdown, fetched with the token. */
   audit(runId: string): Promise<string> {
     return this.client.auditMarkdown(runId);
+  }
+  /** The model the next turns of a thread run on. */
+  setThreadModel(rootId: string, ref: string | undefined): void {
+    this.set((s) => {
+      const threadModels = { ...s.threadModels };
+      if (ref) threadModels[rootId] = ref;
+      else delete threadModels[rootId];
+      return { threadModels };
+    });
+  }
+
+  // ---- the other sections
+
+  private async defaults(): Promise<{ project: string; orgRoot: string }> {
+    const project = this.state.settings.project ?? (await this.client.projects())[0]?.path;
+    if (!project) throw new Error('no project to work in: pick one in Settings');
+    const orgRoot = this.state.settings.org ?? (await this.client.defaultOrg()).root;
+    return { project, orgRoot };
+  }
+  private async load<T>(what: () => Promise<T>): Promise<T | undefined> {
+    try {
+      return await what();
+    } catch (e) {
+      if (isUnauthorized(e)) this.set({ unauthorized: true });
+      else this.set({ error: message(e) });
+      return undefined;
+    }
+  }
+
+  /** Any workflow of the org on a request (a task, not a chat): opens its thread. */
+  async runWorkflow(o: {
+    workflow: string;
+    text: string;
+    project?: string;
+    model?: string;
+  }): Promise<string | undefined> {
+    return this.load(async () => {
+      const d = await this.defaults();
+      const info = await this.client.orgInfo(d.orgRoot);
+      const single = info.single.includes(o.workflow);
+      const { runId } = await this.client.submitRun({
+        orgRoot: d.orgRoot,
+        project: o.project ?? d.project,
+        workflow: o.workflow,
+        input: o.text,
+        adapter: info.adapter && info.adapter !== 'mock' ? info.adapter : 'direct',
+        workspace: single ? 'inplace' : 'worktree',
+        ...((o.model ?? this.state.settings.model)
+          ? { model: o.model ?? this.state.settings.model }
+          : {}),
+      } as SubmitRequest);
+      await this.refresh();
+      this.openThread(runId);
+      return runId;
+    });
+  }
+
+  loadRoutines(): Promise<void> {
+    return this.load(async () => {
+      this.set({ routines: await this.client.routines() });
+    }).then(() => undefined);
+  }
+  runRoutine(id: string): Promise<void> {
+    return this.act(async () => {
+      await this.client.runRoutine(id);
+      await this.loadRoutines();
+    });
+  }
+  pauseRoutine(id: string): Promise<void> {
+    return this.act(async () => {
+      await this.client.pauseRoutine(id);
+      await this.loadRoutines();
+    });
+  }
+  resumeRoutine(id: string): Promise<void> {
+    return this.act(async () => {
+      await this.client.resumeRoutine(id);
+      await this.loadRoutines();
+    });
+  }
+  removeRoutine(id: string): Promise<void> {
+    return this.act(async () => {
+      await this.client.removeRoutine(id);
+      await this.loadRoutines();
+    });
+  }
+  /** A routine on the default project and org unless given. */
+  addRoutine(
+    r: Omit<RoutineInput, 'orgRoot' | 'project'> & { orgRoot?: string; project?: string },
+  ): Promise<void> {
+    return this.act(async () => {
+      const d = await this.defaults();
+      await this.client.addRoutine({
+        orgRoot: r.orgRoot ?? d.orgRoot,
+        project: r.project ?? d.project,
+        ...r,
+      } as RoutineInput);
+      await this.loadRoutines();
+    });
+  }
+  syncRoutines(): Promise<void> {
+    return this.act(async () => {
+      const d = await this.defaults();
+      await this.client.syncRoutines(d.orgRoot);
+      await this.loadRoutines();
+    });
+  }
+
+  loadSkills(): Promise<void> {
+    return this.load(async () => {
+      const d = await this.defaults();
+      const info = await this.client.orgInfo(d.orgRoot);
+      this.set({
+        skills: {
+          org: d.orgRoot,
+          workflows: info.workflows.map((name) => ({
+            name,
+            description: info.descriptions?.[name] ?? '',
+            conversation: info.single.includes(name),
+          })),
+          catalog: info.catalog ?? [],
+        },
+      });
+    }).then(() => undefined);
+  }
+
+  loadMemory(): Promise<void> {
+    return this.load(async () => {
+      const d = await this.defaults();
+      const [profile, org] = await Promise.all([
+        this.client.projectProfile(d.project, d.orgRoot).catch((e: unknown) => {
+          this.set((s) => ({ memory: { ...s.memory, error: message(e) } }));
+          return undefined;
+        }),
+        this.client.orgConfig(d.orgRoot).catch(() => undefined),
+      ]);
+      this.set((s) => ({
+        memory: {
+          ...s.memory,
+          project: d.project,
+          profile: profile ?? undefined,
+          org: org ?? undefined,
+        },
+      }));
+    }).then(() => undefined);
+  }
+
+  loadIntegrations(): Promise<void> {
+    return this.load(async () => {
+      const d = await this.defaults();
+      const [mcp, models, keys, config] = await Promise.all([
+        this.client.mcpList(d.orgRoot).catch(() => []),
+        this.client.models().catch(() => []),
+        this.client.keys().catch(() => []),
+        this.client.orgConfig(d.orgRoot).catch(() => undefined),
+      ]);
+      this.set({
+        integrations: { org: d.orgRoot, mcp, models, keys, config: config ?? undefined },
+      });
+    }).then(() => undefined);
+  }
+  setKey(name: string, value: string): Promise<void> {
+    return this.act(async () => {
+      await this.client.setKey(name, value);
+      await this.loadIntegrations();
+    });
+  }
+  unsetKey(name: string): Promise<void> {
+    return this.act(async () => {
+      await this.client.unsetKey(name);
+      await this.loadIntegrations();
+    });
+  }
+  saveOrgConfig(patch: OrgConfigPatch): Promise<void> {
+    return this.act(async () => {
+      const d = await this.defaults();
+      await this.client.setOrgConfig(d.orgRoot, patch);
+      await this.loadIntegrations();
+    });
+  }
+  /** Starts a catalog server on the daemon and lists its tools (undefined and an error when it could not). */
+  testMcp(
+    id: string,
+  ): Promise<
+    { ok: boolean; tools?: { name: string; description: string }[]; error?: string } | undefined
+  > {
+    return this.load(async () => {
+      const d = await this.defaults();
+      return this.client.mcpTest(id, d.orgRoot);
+    });
   }
   clearError(): void {
     this.set({ error: undefined });

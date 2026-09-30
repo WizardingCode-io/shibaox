@@ -205,3 +205,17 @@ pre.out {
   font-family: var(--font-mono);
   font-size: 12px;
 }
+
+.sx-select {
+  height: var(--control-md, 36px);
+  padding: 0 var(--space-3, 12px);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: 500 14px / 1 var(--font-sans);
+}
+.sx-select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}

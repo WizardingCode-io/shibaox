@@ -1,5 +1,15 @@
-import type { RunState, RunStatus } from '@wizardingcode/shibaox-core';
-import type { Health, InboxItem, RunSummaryPlus } from '@wizardingcode/shibaox-daemon';
+import type { ProjectProfile, RunState, RunStatus } from '@wizardingcode/shibaox-core';
+import type {
+  Health,
+  InboxItem,
+  KeyRow,
+  McpServerRow,
+  OrgConfig,
+  OrgInfo,
+  RoutineRow,
+  RunSummaryPlus,
+} from '@wizardingcode/shibaox-daemon';
+import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import type { Card } from '@wizardingcode/shibaox-view';
 
 export interface Settings {
@@ -34,6 +44,23 @@ export interface AppState {
   error?: string;
   /** The daemon refused the token: back to Connect. */
   unauthorized?: boolean;
+  /** The sections, loaded when opened. */
+  routines?: RoutineRow[];
+  skills?: {
+    org: string;
+    workflows: { name: string; description: string; conversation: boolean }[];
+    catalog: NonNullable<OrgInfo['catalog']>;
+  };
+  memory?: { project?: string; profile?: ProjectProfile; org?: OrgConfig; error?: string };
+  integrations?: {
+    org: string;
+    mcp: McpServerRow[];
+    models: ModelChoice[];
+    keys: KeyRow[];
+    config?: OrgConfig;
+  };
+  /** A model chosen for the next turns of a thread (`provider/model`). */
+  threadModels: Record<string, string>;
 }
 
 export const initialState = (settings: Settings): AppState => ({
@@ -44,6 +71,7 @@ export const initialState = (settings: Settings): AppState => ({
   cards: {},
   ended: {},
   busy: {},
+  threadModels: {},
   settings,
 });
 

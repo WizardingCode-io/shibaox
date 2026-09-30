@@ -76,6 +76,7 @@ function client(
     states?: Record<string, RunState>;
     frames?: Record<string, Envelope[]>;
     inbox?: InboxItem[];
+    routines?: unknown[];
   } = {},
 ) {
   const calls: { name: string; args: unknown[] }[] = [];
@@ -125,7 +126,29 @@ function client(
       return {};
     },
     async models() {
-      return [];
+      return [
+        {
+          ref: 'anthropic/claude-opus',
+          provider: 'anthropic',
+          model: 'claude-opus',
+          configured: true,
+        },
+        {
+          ref: 'lmstudio/qwen',
+          provider: 'lmstudio',
+          model: 'qwen',
+          configured: true,
+          local: true,
+          available: true,
+        },
+        {
+          ref: 'openai/gpt-5',
+          provider: 'openai',
+          model: 'gpt-5',
+          configured: false,
+          missing: ['OPENAI_API_KEY'],
+        },
+      ];
     },
     async projects() {
       return [{ path: '/p', source: 'config' as const }];
@@ -139,6 +162,8 @@ function client(
         single: ['chat'],
         subscription: false,
         adapter: 'direct' as const,
+        descriptions: {},
+        catalog: [],
       };
     },
     async *stream(id) {
@@ -146,6 +171,94 @@ function client(
       const st = o.states?.[id];
       if (st && st.status !== 'running')
         yield { kind: 'end', seq: 99, cursor: '99:0', status: st.status } as Envelope;
+    },
+    async routines() {
+      return (o.routines ?? []) as never;
+    },
+    async runRoutine(id) {
+      rec('runRoutine', id);
+      return { runId: 'rr' };
+    },
+    async pauseRoutine(id) {
+      rec('pauseRoutine', id);
+      return {} as never;
+    },
+    async resumeRoutine(id) {
+      rec('resumeRoutine', id);
+      return {} as never;
+    },
+    async removeRoutine(id) {
+      rec('removeRoutine', id);
+    },
+    async addRoutine(r) {
+      rec('addRoutine', r);
+      return {} as never;
+    },
+    async syncRoutines(org) {
+      rec('syncRoutines', org);
+      return {};
+    },
+    async keys() {
+      return [
+        { name: 'OPENAI_API_KEY', description: 'OpenAI', set: false },
+        {
+          name: 'GH_TOKEN',
+          description: 'GitHub',
+          set: true,
+          source: 'vault' as const,
+          masked: 'gh…12',
+        },
+      ];
+    },
+    async setKey(name, value) {
+      rec('setKey', name, value);
+      return { name, set: true as const };
+    },
+    async unsetKey(name) {
+      rec('unsetKey', name);
+      return { name, removed: true };
+    },
+    async orgConfig(root) {
+      return {
+        root,
+        organization: 'wc',
+        tiers: { strong: 'anthropic/claude-opus', cheap: 'openai/gpt-5-mini' },
+        adapter: 'direct' as const,
+        per_run_usd: 3,
+      };
+    },
+    async setOrgConfig(root, patch) {
+      rec('setOrgConfig', root, patch);
+      return { root, organization: 'wc', tiers: {} };
+    },
+    async mcpList() {
+      return [
+        {
+          id: 'playwright',
+          description: 'A browser',
+          transport: 'stdio' as const,
+          target: 'npx -y @playwright/mcp',
+          roles: ['browser-qa'],
+          keys: [{ name: 'PW_TOKEN', present: false }],
+        },
+      ];
+    },
+    async mcpTest(id, org) {
+      rec('mcpTest', id, org);
+      return { ok: true, tools: [{ name: 'browser_navigate', description: 'Open a page' }] };
+    },
+    async projectProfile(path) {
+      return {
+        name: 'sample',
+        path,
+        git: true,
+        branch: 'main',
+        stack: ['node'],
+        packageManager: 'pnpm',
+        testCommand: 'pnpm test',
+        files: 12,
+        truncated: false,
+      } as never;
     },
   };
   return { client: c, calls };
@@ -412,5 +525,116 @@ describe('the app: the review fixes', () => {
       expect(screen.getByRole('heading', { name: 'Connect to your daemon' })).toBeTruthy(),
     );
     expect(screen.getByText(/refused the token/)).toBeTruthy();
+  });
+});
+
+describe('the sections', () => {
+  const routine = {
+    id: 'scan',
+    name: 'Weekly scan',
+    trigger: { type: 'cron', cron: '0 9 * * 1' },
+    orgRoot: '/o',
+    project: '/p',
+    workflow: 'security-scan',
+    input: 'x',
+    mode: 'always',
+    intervalS: 120,
+    enabled: true,
+    source: 'org',
+    createdAt: 't',
+    lastFiredAt: '2026-09-30T09:00:00.000Z',
+  };
+  it('Scheduled lists the routines with Run now, Pause and Sync from org; Add routine posts one', async () => {
+    const { client: c, calls } = client({ routines: [routine] });
+    mount(c, { hash: '#/scheduled' });
+    await waitFor(() => expect(screen.getByText('Weekly scan')).toBeTruthy());
+    expect(screen.getByText(/security-scan/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    await waitFor(() => expect(calls.find((x) => x.name === 'runRoutine')?.args[0]).toBe('scan'));
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+    await waitFor(() => expect(calls.find((x) => x.name === 'pauseRoutine')?.args[0]).toBe('scan'));
+    fireEvent.click(screen.getByRole('button', { name: 'Sync from org' }));
+    await waitFor(() => expect(calls.find((x) => x.name === 'syncRoutines')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Add routine' }));
+    fireEvent.change(screen.getByLabelText('Trigger'), { target: { value: 'url' } });
+    fireEvent.change(screen.getByLabelText('Watch'), {
+      target: { value: 'https://example.com/status' },
+    });
+    fireEvent.change(screen.getByLabelText('Workflow'), { target: { value: 'hello-feature' } });
+    fireEvent.change(screen.getByLabelText('Request'), { target: { value: 'Check it' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save routine' }));
+    await waitFor(() =>
+      expect(calls.find((x) => x.name === 'addRoutine')?.args[0]).toMatchObject({
+        trigger: { type: 'url', url: 'https://example.com/status' },
+        workflow: 'hello-feature',
+        input: 'Check it',
+      }),
+    );
+  });
+  it('Skills lists the workflows and runs one as a task', async () => {
+    const { client: c, calls } = client();
+    mount(c, { hash: '#/skills' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run task' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Run task' }));
+    fireEvent.change(screen.getByLabelText('Request'), { target: { value: 'Add a footer' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await waitFor(() =>
+      expect(calls.find((x) => x.name === 'submitRun')?.args[0]).toMatchObject({
+        workflow: 'chat',
+        input: 'Add a footer',
+      }),
+    );
+  });
+  it('Memory shows the project profile and the org', async () => {
+    const { client: c } = client();
+    mount(c, { hash: '#/memory' });
+    await waitFor(() => expect(screen.getByText('sample')).toBeTruthy());
+    expect(screen.getByText(/main/)).toBeTruthy();
+    expect(screen.getByText(/pnpm test/)).toBeTruthy();
+    expect(screen.getByText(/claude-opus/)).toBeTruthy();
+  });
+  it('Integrations: MCP with Test, models, keys with Set/Unset, tiers with Save', async () => {
+    const { client: c, calls } = client();
+    mount(c, { hash: '#/integrations' });
+    await waitFor(() => expect(screen.getByText('playwright')).toBeTruthy());
+    expect(screen.getByText(/PW_TOKEN/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Test' }));
+    await waitFor(() => expect(screen.getByText(/browser_navigate/)).toBeTruthy());
+    expect(screen.getByText('lmstudio/qwen')).toBeTruthy();
+    expect(screen.getAllByText(/OPENAI_API_KEY/).length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByLabelText('OPENAI_API_KEY'), { target: { value: 'sk-new' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Set' })[0] as HTMLElement);
+    await waitFor(() =>
+      expect(calls.find((x) => x.name === 'setKey')?.args).toEqual(['OPENAI_API_KEY', 'sk-new']),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Unset' }));
+    await waitFor(() => expect(calls.find((x) => x.name === 'unsetKey')?.args[0]).toBe('GH_TOKEN'));
+    fireEvent.change(screen.getByLabelText('Cheap'), { target: { value: 'openai/gpt-5-nano' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save tiers' }));
+    await waitFor(() =>
+      expect(calls.find((x) => x.name === 'setOrgConfig')?.args[1]).toMatchObject({
+        tiers: { cheap: 'openai/gpt-5-nano' },
+      }),
+    );
+  });
+  it('a conversation can pick its model for the next turns', async () => {
+    const { client: c, calls } = client({
+      runs: [summary('root')],
+      states: { root: state('root') },
+    });
+    mount(c, { hash: '#/t/root' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /Model/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /Model/ }));
+    fireEvent.change(await screen.findByLabelText('Model for this conversation'), {
+      target: { value: 'lmstudio/qwen' },
+    });
+    const box = screen.getByRole('textbox', { name: 'Message' });
+    fireEvent.change(box, { target: { value: 'again' } });
+    fireEvent.keyDown(box, { key: 'Enter', metaKey: true });
+    await waitFor(() =>
+      expect(calls.find((x) => x.name === 'submitRun')?.args[0]).toMatchObject({
+        model: 'lmstudio/qwen',
+      }),
+    );
   });
 });

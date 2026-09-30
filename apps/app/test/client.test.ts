@@ -109,6 +109,52 @@ describe('AppClient', () => {
   });
 });
 
+describe('AppClient: the sections', () => {
+  it('routines, keys, org config, mcp and the project profile use the daemon paths', async () => {
+    const f = fakeFetch(() => json({ ok: true }));
+    const c = new AppClient('http://d', 't', { fetch: f.fetch });
+    await c.routines();
+    await c.runRoutine('r1');
+    await c.pauseRoutine('r1');
+    await c.resumeRoutine('r1');
+    await c.removeRoutine('r1');
+    await c.addRoutine({
+      trigger: { type: 'cron', cron: '0 9 * * 1' },
+      orgRoot: '/o',
+      project: '/p',
+      workflow: 'w',
+      input: 'x',
+    });
+    await c.syncRoutines('/o');
+    await c.keys();
+    await c.setKey('OPENAI_API_KEY', 'sk');
+    await c.unsetKey('OPENAI_API_KEY');
+    await c.orgConfig('/o');
+    await c.setOrgConfig('/o', { judge: null });
+    await c.mcpList('/o');
+    await c.mcpTest('pw', '/o');
+    await c.projectProfile('/p', '/o');
+    expect(f.calls.map((x) => `${x.init.method} ${x.url.replace('http://d', '')}`)).toEqual([
+      'GET /routines',
+      'POST /routines/r1/run',
+      'POST /routines/r1/pause',
+      'POST /routines/r1/resume',
+      'DELETE /routines/r1',
+      'POST /routines',
+      'POST /routines/sync',
+      'GET /keys',
+      'PUT /keys/OPENAI_API_KEY',
+      'DELETE /keys/OPENAI_API_KEY',
+      'GET /orgs/config?org=%2Fo',
+      'PUT /orgs/config?org=%2Fo',
+      'GET /mcp?org=%2Fo',
+      'POST /mcp/pw/test?org=%2Fo',
+      'GET /projects/profile?path=%2Fp&org=%2Fo',
+    ]);
+    expect(JSON.parse(String(f.calls[8]?.init.body))).toEqual({ value: 'sk' });
+  });
+});
+
 describe('the connection', () => {
   const storage = () => {
     const m = new Map<string, string>();

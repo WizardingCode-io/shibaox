@@ -40,6 +40,10 @@ export interface OrgInfo {
   subscription: boolean;
   /** `org.yaml adapter`: the org's default runtime. */
   adapter?: 'mock' | 'direct' | 'claude-code';
+  /** Each workflow's description (the app's Skills cards). */
+  descriptions?: Record<string, string>;
+  /** The catalog entries (skills, plugins, MCP servers, tools). */
+  catalog?: { id: string; type: string; description: string }[];
 }
 
 /** The org's workflows and runtime hints; throws (`not found` in the message) when it is not an org. */
@@ -53,6 +57,14 @@ export function orgInfo(root: string): OrgInfo {
       .map((w) => w.workflow),
     subscription: /-subscription\//.test(strong),
     adapter: org.org.adapter,
+    descriptions: Object.fromEntries(
+      Object.values(org.workflows).map((w) => [w.workflow, w.description ?? '']),
+    ),
+    catalog: Object.values(org.catalog).map((c) => ({
+      id: c.id,
+      type: c.type,
+      description: c.description,
+    })),
   };
 }
 

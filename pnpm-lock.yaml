@@ -51,6 +51,9 @@ importers:
       '@wizardingcode/shibaox-daemon':
         specifier: workspace:*
         version: link:../../packages/daemon
+      '@wizardingcode/shibaox-providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@wizardingcode/shibaox-schemas':
         specifier: workspace:*
         version: link:../../packages/schemas

@@ -19,7 +19,7 @@ The app reads the token off the fragment once, keeps it in the browser's storage
 
 ## What is on screen
 
-The sidebar: the Shiba and the wordmark, **New chat**, the sections **Chats · Scheduled · Skills · Memory · Integrations** (the last four arrive in the next releases; until then the CLI covers them), the **Recent** conversations, and you (name and Settings).
+The sidebar: the Shiba and the wordmark, **New chat**, the sections **Chats · Scheduled · Skills · Memory · Integrations**, the **Recent** conversations, and you (name and Settings). The Chats count is what waits for you; the Scheduled count is the routines that are on.
 
 A conversation: the title (your first request), the agent's status (Working, Needs you, Online, Sleeping, Error), and three tabs.
 
@@ -27,7 +27,17 @@ A conversation: the title (your first request), the agent's status (Working, Nee
 - **Tasks**: the runs the orchestrator dispatched in this conversation, with status and cost, **Open**, **Steer** (a note for a running one), **Cancel**, and **Resume** with a budget for one that paused on its budget; what a dispatched run asks for (a command approval, a human node) shows on its card and in the chat.
 - **Logs**: every node, gate (with each check), decision, approval (who, via which channel) and the run summary; **Open audit** fetches the full audit document with your token and opens it.
 
-**Chats** lists every conversation with its project, last activity, cost and status. **Settings**: theme (light, dark, system), your name, the project, org and model new chats use, the daemon's address and version, Disconnect.
+**Chats** lists every conversation with its project, last activity, cost and status. In a conversation, **Model** in the top bar picks the model of its next turns from the configured ones (the org's tiers otherwise).
+
+**Scheduled**: the daemon's routines ([Routines](Routines)), each with its trigger in words, workflow, project, last run, and **Run now**, **Pause**/**Resume**, **Remove** (for routines added here; the ones from `org/routines/*.yaml` are kept by **Sync from org**), **Open last run**; **Add routine** takes a trigger (cron, GitHub issues/PRs/checks, a URL, a file, a command), a workflow and a request.
+
+**Skills**: the org's workflows with their descriptions, each with **Run task** (a request, optionally a project and a model: a worktree run that opens as a conversation), and the catalog entries.
+
+**Memory**: the project profile (git branch, stack, package manager, test command, files), the org (adapter, tiers, judge, budget), and where the vault notes live.
+
+**Integrations**: the MCP servers of the catalog with the roles using them and the keys they miss, each with **Test** (starts it on the daemon and lists its tools); every model the daemon knows, configured or missing a key, local servers up or down; the keys of the vault (**Set** a value, never shown again; **Unset**); the org's tiers, judge and budget per run (**Save tiers**).
+
+**Settings**: theme (light, dark, system), your name, the project, org and model new chats use, the daemon's address and version, Disconnect.
 
 When a dispatched run ends while its conversation is open, the app tells the orchestrator (an event turn), as the terminal dashboard does; the orchestrator may then answer or dispatch more.
 
