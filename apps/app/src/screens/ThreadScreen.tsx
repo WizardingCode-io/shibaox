@@ -1,0 +1,422 @@
+import type { InboxItem } from '@wizardingcode/shibaox-daemon';
+import {
+  type Block,
+  type Card,
+  summarizeInput,
+  type ThreadMessage,
+} from '@wizardingcode/shibaox-view';
+import { useEffect, useMemo, useState } from 'react';
+import { ds } from '../ds.js';
+import { clock, duration, money, RUN_STATUS_TONE, RUN_STATUS_WORD, shortModel } from '../format.js';
+import { navigate } from '../router.js';
+import { useAppState, useStore } from '../store/hooks.js';
+
+const TOOL_ICON: Record<string, string> = {
+  browser: 'globe',
+  web_fetch: 'globe',
+  run_command: 'terminal',
+  read_file: 'file-text',
+  write_file: 'file-text',
+  list_files: 'folder',
+  mcp: 'plug',
+};
+type IconName = Parameters<Window['Shibaox']['Icon']>[0]['name'];
+const iconFor = (name: string): IconName =>
+  (TOOL_ICON[name] ??
+    TOOL_ICON[name.split(/[._]/)[0] ?? ''] ??
+    (name.startsWith('mcp__') ? 'plug' : 'zap')) as IconName;
+
+function Paragraphs(props: { text: string }): JSX.Element {
+  const parts = props.text.split(/\n{2,}/).filter((p) => p.trim());
+  return (
+    <>
+      {parts.map((p, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: paragraphs have no identity of their own
+        <p key={i} style={{ whiteSpace: 'pre-wrap', margin: 0 }}>
+          {p}
+        </p>
+      ))}
+    </>
+  );
+}
+
+function ToolBlocks(props: { blocks: Block[] }): JSX.Element {
+  const S = ds();
+  return (
+    <div className="stack">
+      {props.blocks.map((b) =>
+        b.kind === 'tool' ? (
+          <S.ToolCall
+            key={b.key}
+            tool={b.name}
+            summary={b.summary || summarizeInput(b.input)}
+            status={b.status}
+            icon={iconFor(b.name)}
+            duration={duration(b.ms)}
+            args={b.input as Record<string, unknown>}
+            defaultOpen={b.status === 'error'}
+          >
+            {b.output !== undefined ? (
+              <pre className="out">
+                {typeof b.output === 'string'
+                  ? b.output
+                  : JSON.stringify(b.output, null, 2).slice(0, 4000)}
+              </pre>
+            ) : undefined}
+          </S.ToolCall>
+        ) : b.kind === 'file' ? (
+          <S.ToolCall key={b.key} tool="file" summary={b.path} status="done" icon="file-text" />
+        ) : null,
+      )}
+    </div>
+  );
+}
+
+/** A pending approval of a command or a file write, as the mockup's ToolCall with Approve/Deny. */
+function ApprovalCall(props: { item: InboxItem }): JSX.Element {
+  const S = ds();
+  const store = useStore();
+  const d = props.item.detail;
+  return (
+    <S.ToolCall
+      tool={d.tool === 'file' ? 'write' : (d.program ?? 'command')}
+      summary={props.item.prompt}
+      status="approval"
+      icon={d.tool === 'file' ? 'file-text' : 'terminal'}
+      defaultOpen
+      onApprove={() => void store.answer(props.item.id, true)}
+      onDeny={() => void store.answer(props.item.id, false)}
+    >
+      <div className="muted">
+        {d.category ? `${d.category} · ` : ''}
+        {d.role ? `role ${d.role}` : ''}
+      </div>
+    </S.ToolCall>
+  );
+}
+
+/** A human node waiting for you: the prompt, a note, Approve and Deny. */
+function HumanAsk(props: { item: InboxItem }): JSX.Element {
+  const S = ds();
+  const store = useStore();
+  const [note, setNote] = useState('');
+  return (
+    <S.Message from="agent" name="Shibaox">
+      <p style={{ margin: 0 }}>{props.item.prompt}</p>
+      <div className="row" style={{ marginTop: 8 }}>
+        <S.Input
+          placeholder="A note (optional)"
+          value={note}
+          onChange={(e) => setNote((e.target as HTMLInputElement).value)}
+        />
+        <S.Button
+          variant="primary"
+          onClick={() => void store.answer(props.item.id, true, note || undefined)}
+        >
+          Approve
+        </S.Button>
+        <S.Button
+          variant="danger"
+          onClick={() => void store.answer(props.item.id, false, note || undefined)}
+        >
+          Deny
+        </S.Button>
+      </div>
+    </S.Message>
+  );
+}
+
+function ChatTab(props: {
+  rootId: string;
+  messages: ThreadMessage[];
+  inbox: InboxItem[];
+  running: string[];
+}): JSX.Element {
+  const S = ds();
+  const byRun = (runId: string) => props.inbox.filter((i) => i.runId === runId);
+  return (
+    <div className="thread">
+      {props.messages.map((m) =>
+        m.from === 'user' ? (
+          <S.Message key={m.key} from="user" time={clock(m.time)}>
+            <Paragraphs text={m.text} />
+          </S.Message>
+        ) : (
+          <div key={m.key} className="stack">
+            {(m.text || m.blocks.length > 0) && (
+              <S.Message
+                from="agent"
+                name="Shibaox"
+                time={m.pending ? undefined : clock(m.time)}
+                mood={m.pending ? 'working' : 'default'}
+              >
+                {m.text ? <Paragraphs text={m.text} /> : null}
+                {m.blocks.length > 0 ? <ToolBlocks blocks={m.blocks} /> : null}
+              </S.Message>
+            )}
+            {byRun(m.runId).map((i) =>
+              i.kind === 'approval' ? (
+                <ApprovalCall key={i.id} item={i} />
+              ) : (
+                <HumanAsk key={i.id} item={i} />
+              ),
+            )}
+            {m.pending && byRun(m.runId).length === 0 ? <S.ThinkingIndicator /> : null}
+            {byRun(m.runId).length > 0 ? (
+              <S.ThinkingIndicator label="Waiting for your approval" />
+            ) : null}
+          </div>
+        ),
+      )}
+      {props.messages.length === 0 ? (
+        <div className="empty">
+          <S.Mascot mood="default" size={96} />
+          <h2>Nothing here yet</h2>
+          <p>Ask Shibaox to do something below.</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TasksTab(props: { rootId: string }): JSX.Element {
+  const S = ds();
+  const store = useStore();
+  const state = useAppState();
+  const tasks = store.tasksOf(props.rootId);
+  return (
+    <div className="page">
+      {tasks.length === 0 ? (
+        <p className="muted">No runs were dispatched in this conversation yet.</p>
+      ) : null}
+      {tasks.map((t) => {
+        const st = state.states[t.runId];
+        const live = !['completed', 'failed', 'cancelled'].includes(t.status);
+        return (
+          <S.Card
+            key={t.runId}
+            icon="zap"
+            title={t.workflow}
+            description={st ? (st.error ?? `${Object.keys(st.nodes).length} nodes`) : undefined}
+            action={
+              <S.Badge tone={RUN_STATUS_TONE[t.status] ?? 'neutral'}>
+                {RUN_STATUS_WORD[t.status] ?? t.status}
+              </S.Badge>
+            }
+            footer={
+              <div className="row">
+                <span className="muted">{money(t.spentUsd)}</span>
+                <span className="grow" />
+                <S.Button size="sm" onClick={() => navigate(`#/t/${encodeURIComponent(t.runId)}`)}>
+                  Open
+                </S.Button>
+                {live ? (
+                  <S.Button size="sm" variant="danger" onClick={() => void store.cancel(t.runId)}>
+                    Cancel
+                  </S.Button>
+                ) : null}
+              </div>
+            }
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function LogsTab(props: { rootId: string; auditUrl?: (id: string) => string }): JSX.Element {
+  const S = ds();
+  const store = useStore();
+  const state = useAppState();
+  const turns = store.turnsOf(props.rootId);
+  const cards: { runId: string; card: Card }[] = turns.flatMap((t) =>
+    (state.cards[t.runId] ?? []).map((card) => ({ runId: t.runId, card })),
+  );
+  const line = (
+    c: Card,
+  ): {
+    title: string;
+    description?: string;
+    tone: 'neutral' | 'matcha' | 'info' | 'warning' | 'danger';
+    word: string;
+  } => {
+    switch (c.kind) {
+      case 'node':
+        return {
+          title: `${c.nodeId}${c.role ? ` · ${c.role}` : ''}`,
+          description: `${c.tools} tool call${c.tools === 1 ? '' : 's'}${c.costUsd !== undefined ? ` · ${money(c.costUsd)}` : ''}`,
+          tone: c.status === 'failed' ? 'danger' : c.status === 'completed' ? 'matcha' : 'info',
+          word: c.status,
+        };
+      case 'gate':
+        return {
+          title: `gate ${c.nodeId}`,
+          description: c.checks
+            .map((k) => `${k.name}: ${k.passed ? 'passed' : 'failed'}`)
+            .join(' · '),
+          tone: c.passed === false ? 'danger' : c.passed ? 'matcha' : 'info',
+          word: c.passed === undefined ? c.status : c.passed ? 'passed' : 'failed',
+        };
+      case 'decide':
+        return {
+          title: `decision ${c.nodeId}`,
+          description: c.choice,
+          tone: 'info',
+          word: c.status,
+        };
+      case 'human':
+        return {
+          title: c.prompt,
+          description: c.answer
+            ? `${c.answer.approved ? 'approved' : 'denied'}${c.answer.via ? ` via ${c.answer.via}` : ''}`
+            : undefined,
+          tone: c.pending ? 'warning' : 'matcha',
+          word: c.pending ? 'waiting' : 'answered',
+        };
+      case 'error':
+        return { title: c.message, tone: 'danger', word: 'error' };
+      case 'summary':
+        return {
+          title: `run ${c.status}`,
+          description: `${money(c.costUsd)}${c.files.length ? ` · ${c.files.length} files` : ''}${c.branch ? ` · ${c.branch}` : ''}`,
+          tone: c.status === 'completed' ? 'matcha' : c.status === 'failed' ? 'danger' : 'neutral',
+          word: c.status,
+        };
+      case 'earlier':
+        return { title: `${c.count} earlier events`, tone: 'neutral', word: '' };
+    }
+  };
+  return (
+    <div className="page">
+      <div className="row">
+        <span className="muted">Every node, gate, decision and approval of this conversation.</span>
+        <span className="grow" />
+        {props.auditUrl ? (
+          <S.Button
+            size="sm"
+            icon="file-text"
+            onClick={() =>
+              window.open(
+                props.auditUrl?.(turns[turns.length - 1]?.runId ?? props.rootId),
+                '_blank',
+              )
+            }
+          >
+            Audit
+          </S.Button>
+        ) : null}
+      </div>
+      {cards.map(({ runId, card }) => {
+        const l = line(card);
+        return (
+          <S.Card
+            key={`${runId}:${card.key}`}
+            title={l.title}
+            description={l.description}
+            action={l.word ? <S.Badge tone={l.tone}>{l.word}</S.Badge> : undefined}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/** The mockup's main column for one conversation: top bar, tabs, thread, composer. */
+export function ThreadScreen(props: {
+  rootId: string;
+  auditUrl?: (id: string) => string;
+}): JSX.Element {
+  const S = ds();
+  const store = useStore();
+  const state = useAppState();
+  const [tab, setTab] = useState<'chat' | 'tasks' | 'logs'>('chat');
+  const [steering, setSteering] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    store.openThread(props.rootId);
+    return () => store.openThread(undefined);
+  }, [store, props.rootId]);
+  const view = store.thread(props.rootId);
+  const turns = store.turnsOf(props.rootId);
+  const runIds = useMemo(
+    () =>
+      new Set([...turns.map((t) => t.runId), ...store.tasksOf(props.rootId).map((t) => t.runId)]),
+    [turns, store, props.rootId],
+  );
+  const inbox = state.inbox.filter((i) => runIds.has(i.runId));
+  const live = store.liveTurn(props.rootId);
+  const model = shortModel(
+    state.states[turns[turns.length - 1]?.runId ?? '']?.model ?? state.settings.model,
+  );
+  const busy = live !== undefined || state.busy[props.rootId] === true;
+  const runningTasks = store
+    .tasksOf(props.rootId)
+    .filter((t) => !['completed', 'failed', 'cancelled'].includes(t.status)).length;
+  return (
+    <main className="main">
+      <div className="top">
+        <h2>{view?.title || 'Conversation'}</h2>
+        <S.AgentStatus status={view?.status ?? 'idle'} />
+        <span className="grow" />
+        {live ? (
+          steering === undefined ? (
+            <S.IconButton
+              icon="send-horizontal"
+              label="Steer"
+              size="sm"
+              onClick={() => setSteering('')}
+            />
+          ) : (
+            <form
+              className="steer"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (steering.trim()) void store.steer(live.runId, steering.trim());
+                setSteering(undefined);
+              }}
+            >
+              <S.Input
+                placeholder="A note for the running task"
+                value={steering}
+                onChange={(e) => setSteering((e.target as HTMLInputElement).value)}
+              />
+              <S.Button size="sm" variant="primary" type="submit">
+                Steer
+              </S.Button>
+            </form>
+          )
+        ) : null}
+        <S.Tabs
+          items={[
+            { id: 'chat', label: 'Chat' },
+            { id: 'tasks', label: 'Tasks', count: runningTasks || undefined },
+            { id: 'logs', label: 'Logs' },
+          ]}
+          value={tab}
+          onChange={(id) => setTab(id as typeof tab)}
+        />
+      </div>
+      {tab === 'chat' ? (
+        <ChatTab
+          rootId={props.rootId}
+          messages={view?.messages ?? []}
+          inbox={inbox}
+          running={view?.running ?? []}
+        />
+      ) : null}
+      {tab === 'tasks' ? <TasksTab rootId={props.rootId} /> : null}
+      {tab === 'logs' ? <LogsTab rootId={props.rootId} auditUrl={props.auditUrl} /> : null}
+      {tab === 'chat' ? (
+        <div className="compose">
+          <S.Composer
+            key={props.rootId}
+            model={model}
+            busy={busy}
+            placeholder="Ask Shibaox to do something…"
+            onSend={(text) => void store.send(props.rootId, text)}
+            onStop={() => void store.stopThread(props.rootId)}
+          />
+        </div>
+      ) : null}
+    </main>
+  );
+}

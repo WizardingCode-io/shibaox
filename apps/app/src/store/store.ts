@@ -191,6 +191,9 @@ export class AppStore {
         const [runs, inbox] = await Promise.all([this.client.listRuns(), this.client.inbox()]);
         this.set({ runs, inbox, reachable: true });
         if (this.state.open) await this.syncThread(this.state.open);
+        // the sidebar names the recent threads by their request: fetch those states once
+        for (const t of this.threads().slice(0, 8))
+          if (!this.state.states[t.runId]) await this.refreshState(t.runId);
       } catch (e) {
         this.set({ reachable: false });
         this.log(`poll failed: ${e instanceof Error ? e.message : String(e)}`);
