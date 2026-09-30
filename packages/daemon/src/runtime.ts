@@ -17,6 +17,7 @@ import {
   type MockScript,
   type ModelResolution,
   mcpServerSpec,
+  protectedGlobs,
   RunEngine,
   type RuntimeEvent,
   resolveModel,
@@ -34,6 +35,7 @@ import {
   reviewCheckRunner,
 } from '@wizardingcode/shibaox-providers';
 import type { Org, Role, Workflow } from '@wizardingcode/shibaox-schemas';
+import { loadProjectFile } from '@wizardingcode/shibaox-schemas';
 import { diffRunWorkspace } from '@wizardingcode/shibaox-workspace';
 import { changeDescriber } from './runs/summarize.js';
 
@@ -329,6 +331,18 @@ export function buildRuntime(o: RuntimeOptions) {
 
   const orgRoot = o.orgRoot ?? o.org.root;
   const approvals: ApprovalHandler = o.approvals ?? humanApprovals(o.human);
+  // files a task may not write: the role's globs plus the project's shibaox.yaml
+  const protectedFor = (job: TaskJob): string[] => {
+    let project: { protected: string[] } | undefined;
+    try {
+      project = loadProjectFile(job.workspace);
+    } catch (e) {
+      o.log(
+        `warn: shibaox.yaml not read for protected files: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+    return protectedGlobs(job.role, project);
+  };
   // the role's catalog MCP servers, with their vault keys (a missing key fails the task clearly)
   const mcpFor = (job: TaskJob): McpServerSpec[] =>
     job.role.mcp.map((id) => {
@@ -351,6 +365,7 @@ export function buildRuntime(o: RuntimeOptions) {
         extraTools: o.tools?.extra,
         preamble: o.tools?.preamble,
         mcpServers: mcpFor,
+        protectedPaths: protectedFor,
       }),
       'claude-code': new ClaudeCodeAdapter({
         approvals,
@@ -366,6 +381,7 @@ export function buildRuntime(o: RuntimeOptions) {
         },
         mcpServers: () => ({ ...o.graph?.mcpServers }),
         mcpSpecs: mcpFor,
+        protectedPaths: protectedFor,
         queryFn: o.queryFn,
         extraTools: o.tools?.extra,
         preamble: o.tools?.preamble,

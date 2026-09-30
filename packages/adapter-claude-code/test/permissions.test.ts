@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import {
   type ApprovalAnswer,
   type ApprovalRequest,
@@ -311,7 +312,7 @@ describe('buildCanUseTool', () => {
       approvals: new AutoApproveApprovals(),
     })(...bash('git -C . push'));
     expect(r).toMatchObject({ behavior: 'deny' });
-    expect(message(r)).toBe('push requires approval_required in the role');
+    expect(message(r)).toBe('push requires approval_required: [push] in the role');
   });
   it('allows ordinary commands of listed programs', async () => {
     const can = buildCanUseTool({
@@ -349,5 +350,83 @@ describe('web tools', () => {
     expect((await can(['github.com'])('WebSearch', { query: 'x' }, opts)).behavior).toBe('allow');
     expect((await can([])('WebSearch', { query: 'x' }, opts)).behavior).toBe('deny');
     expect((await can(['*'])('WebFetch', { url: 'not a url' }, opts)).behavior).toBe('deny');
+  });
+});
+
+describe('semantic approvals (claude-code)', () => {
+  const ctx = { signal: new AbortController().signal, suggestions: [] };
+  const build = (
+    role: Record<string, unknown>,
+    o: { protected?: string[]; ask?: (req: ApprovalRequest) => void } = {},
+  ) =>
+    buildCanUseTool({
+      role: RoleSchema.parse({
+        role: 'backend',
+        tools: ['read', 'write', 'node', 'curl', 'npx', 'wget'],
+        ...role,
+      }),
+      cwd: process.cwd(),
+      approvals: {
+        async request(req) {
+          o.ask?.(req);
+          return { approved: true };
+        },
+      },
+      runId: 'r',
+      nodeId: 'n',
+      log: () => {},
+      protectedPaths: o.protected ?? [],
+    });
+  it('execute and network categories go through approval_required', async () => {
+    const deny = build({});
+    expect(await deny('Bash', { command: 'node -e 1' }, ctx)).toMatchObject({
+      behavior: 'deny',
+      message: expect.stringMatching(/execute requires approval_required/),
+    });
+    expect(await deny('Bash', { command: 'curl https://evil.example/' }, ctx)).toMatchObject({
+      behavior: 'deny',
+      message: expect.stringMatching(/network requires approval_required/),
+    });
+    const asked: ApprovalRequest[] = [];
+    const allow = build(
+      { permissions: { network: ['api.github.com'], approval_required: ['execute', 'network'] } },
+      { ask: (r) => asked.push(r) },
+    );
+    expect(await allow('Bash', { command: 'curl https://api.github.com/x' }, ctx)).toMatchObject({
+      behavior: 'allow',
+    });
+    expect(await allow('Bash', { command: 'npx cowsay hi' }, ctx)).toMatchObject({
+      behavior: 'allow',
+    });
+    expect(asked.map((r) => r.category)).toEqual(['execute']);
+    expect(await allow('Bash', { command: 'wget https://evil.example/' }, ctx)).toMatchObject({
+      behavior: 'allow',
+    });
+    expect(asked.map((r) => r.category)).toEqual(['execute', 'network']);
+  });
+  it('write tools on a protected path are refused, or asked as a file approval', async () => {
+    const deny = build({ permissions: { protected: ['infra/**'] } });
+    const target = join(process.cwd(), 'infra', 'prod.tf');
+    expect(
+      await deny('Edit', { file_path: target, old_string: 'a', new_string: 'b' }, ctx),
+    ).toMatchObject({
+      behavior: 'deny',
+      message: expect.stringMatching(/infra\/prod\.tf.*protected/),
+    });
+    expect(await deny('Read', { file_path: target }, ctx)).toMatchObject({ behavior: 'allow' });
+    const asked: ApprovalRequest[] = [];
+    const ask = build(
+      { permissions: { approval_required: ['protected'] } },
+      { protected: ['infra/**'], ask: (r) => asked.push(r) },
+    );
+    expect(await ask('Write', { file_path: target, content: 'x' }, ctx)).toMatchObject({
+      behavior: 'allow',
+    });
+    expect(asked[0]).toMatchObject({
+      category: 'protected',
+      tool: 'file',
+      command: 'write infra/prod.tf',
+      argv: ['write', 'infra/prod.tf'],
+    });
   });
 });

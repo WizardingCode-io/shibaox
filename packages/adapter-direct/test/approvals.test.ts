@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -176,5 +176,115 @@ describe('direct adapter approvals', () => {
     };
     expect(result.output.error).toContain('push requires approval_required');
     expect(h.requests).toHaveLength(0);
+  });
+});
+
+describe('semantic approvals (direct)', () => {
+  const setup = async (
+    role: Record<string, unknown>,
+    script: Parameters<typeof startFakeOpenAI>[0],
+    o: { protected?: string[] } = {},
+  ) => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI(script);
+    const asked: ApprovalRequest[] = [];
+    const approvals: ApprovalHandler = {
+      async request(req) {
+        asked.push(req);
+        return { approved: true };
+      },
+    };
+    const adapter = new DirectAdapter({
+      approvals,
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+      protectedPaths: () => o.protected ?? [],
+    });
+    const events: RuntimeEvent[] = [];
+    for await (const e of adapter.run(
+      {
+        ...job(ws),
+        role: RoleSchema.parse({
+          role: 'backend',
+          tools: ['read', 'write', 'node', 'curl'],
+          ...role,
+        }),
+      },
+      ctx(),
+    ))
+      events.push(e);
+    // tool results arrive in completion order: pair each with its call through the id
+    const result = (name: string, match?: (input: Record<string, unknown>) => boolean) => {
+      const use = events.find(
+        (e) =>
+          e.type === 'tool_use' &&
+          e.name === name &&
+          (!match || match(e.input as Record<string, unknown>)),
+      ) as { id: string } | undefined;
+      return JSON.stringify(events.find((e) => e.type === 'tool_result' && e.id === use?.id));
+    };
+    return { ws, asked, events, result };
+  };
+  const finishAfter =
+    (calls: { name: string; args: Record<string, unknown> }[]) => (_r: unknown, turn: number) =>
+      turn === 0
+        ? { toolCalls: calls }
+        : { toolCalls: [{ name: 'finish', args: { output: {}, summary: 'ok' } }] };
+
+  it('node -e is an execute escape hatch: refused without approval_required, asked with it', async () => {
+    const a = await setup(
+      {},
+      finishAfter([{ name: 'run_command', args: { command: 'node -e 1' } }]),
+    );
+    expect(a.result('run_command')).toMatch(/execute requires approval_required/);
+    expect(a.asked).toHaveLength(0);
+    const b = await setup(
+      { permissions: { approval_required: ['execute'] } },
+      finishAfter([{ name: 'run_command', args: { command: 'node -e console.log(7)' } }]),
+    );
+    expect(b.asked[0]).toMatchObject({ category: 'execute', program: 'node', tool: 'Bash' });
+    expect(b.result('run_command')).toContain('7');
+  });
+  it('curl to an allowed host runs; another host is a network approval', async () => {
+    const a = await setup(
+      { permissions: { network: ['127.0.0.1'], approval_required: ['network'] } },
+      finishAfter([
+        { name: 'run_command', args: { command: 'curl -s http://127.0.0.1:9/x' } },
+        { name: 'run_command', args: { command: 'curl -s https://evil.example/x' } },
+      ]),
+    );
+    expect(a.asked.map((r) => [r.category, r.command])).toEqual([
+      ['network', 'curl -s https://evil.example/x'],
+    ]);
+    const b = await setup(
+      { permissions: { network: ['127.0.0.1'] } },
+      finishAfter([{ name: 'run_command', args: { command: 'curl -s https://evil.example/x' } }]),
+    );
+    expect(b.result('run_command')).toMatch(/network requires approval_required/);
+  });
+  it('a protected path (role globs + shibaox.yaml) is refused or asked as a file approval', async () => {
+    const calls = [
+      { name: 'write_file', args: { path: 'infra/prod.tf', content: 'x' } },
+      { name: 'write_file', args: { path: 'src/ok.ts', content: 'y' } },
+    ];
+    const a = await setup({ permissions: { protected: ['infra/**'] } }, finishAfter(calls));
+    expect(a.result('write_file', (i) => i.path === 'infra/prod.tf')).toMatch(
+      /infra\/prod\.tf.*protected/,
+    );
+    expect(existsSync(join(a.ws, 'infra/prod.tf'))).toBe(false);
+    expect(existsSync(join(a.ws, 'src/ok.ts'))).toBe(true);
+    const b = await setup(
+      { permissions: { approval_required: ['protected'] } },
+      finishAfter(calls),
+      { protected: ['infra/**'] },
+    );
+    expect(b.asked[0]).toMatchObject({
+      category: 'protected',
+      tool: 'file',
+      command: 'write infra/prod.tf',
+      argv: ['write', 'infra/prod.tf'],
+    });
+    expect(existsSync(join(b.ws, 'infra/prod.tf'))).toBe(true);
+    expect(b.asked).toHaveLength(1);
   });
 });

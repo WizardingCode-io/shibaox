@@ -51,9 +51,9 @@ export interface PendingApproval {
   runId: string;
   nodeId: string;
   role: string;
-  tool: 'Bash';
+  tool: 'Bash' | 'file';
   program: string;
-  category: 'push' | 'deploy';
+  category: 'push' | 'deploy' | 'execute' | 'network' | 'protected';
   command: string;
   argvHash: string;
   at: string;

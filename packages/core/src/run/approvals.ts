@@ -1,13 +1,17 @@
 import { createHash } from 'node:crypto';
+import type { ApprovalCategory } from './command-policy.js';
 
-/** A push/deploy command an adapter wants to run for a role with `approval_required`. */
+/**
+ * A command (tool `Bash`) or a file write (tool `file`, program `write`, argv `['write', path]`)
+ * an adapter wants to do for a role with `approval_required`.
+ */
 export interface ApprovalRequest {
   runId: string;
   nodeId: string;
   role: string;
-  tool: 'Bash';
+  tool: 'Bash' | 'file';
   program: string;
-  category: 'push' | 'deploy';
+  category: ApprovalCategory;
   command: string;
   argv: string[];
 }

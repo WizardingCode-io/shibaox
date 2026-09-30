@@ -15,7 +15,7 @@ export const ProjectFileSchema = z.object({
   tests: z.string().min(1).optional(),
   /** The lint command of the `lint` check (detected when absent). */
   lint: z.string().min(1).optional(),
-  /** Globs of files a run must not change (reserved: enforced by a later version). */
+  /** Globs (relative to the project root) a run may not write without a `protected` approval. */
   protected: z.array(z.string().min(1)).default([]),
 });
 export type ProjectFile = z.infer<typeof ProjectFileSchema>;

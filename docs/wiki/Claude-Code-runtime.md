@@ -14,9 +14,9 @@ A role's `mcp:` list (catalog entries with a `server:`) is passed to Claude Code
 
 A role's `tools:` map to Claude Code permissions: `read` → Read/Glob/Grep, `write` → Edit/Write/MultiEdit/NotebookEdit, any other name → `Bash(<name> *)`. File tools get no blanket allow: each call is allowed only when its path resolves, through symlinks, inside the task's working directory; `~`, `..` and absolute paths elsewhere are denied, and writes under `.git` are denied. `WebFetch` and `WebSearch` are allowed only for the hosts in `permissions.network`. Compound shell commands (`;`, `&&`, pipes, substitutions) are refused. `rm -rf` is always denied.
 
-## Push and deploy
+## Push, deploy, execute, network, protected
 
-`git` and the deploy programs below never get a blanket allow: every call is classified, and a push or deploy is refused unless the role lists it in `permissions.approval_required` and a human approves it at that moment (in the inbox, the dashboard or Telegram). Gated programs must be called by bare name and without shell expansion.
+`git` and the deploy programs below never get a blanket allow: every call is classified, and a push or deploy is refused unless the role lists it in `permissions.approval_required` and a human approves it at that moment (in the inbox, the dashboard or Telegram). The same classifier (shared with the direct adapter) marks `execute` (inline code: `sh -c`, `node -e`, `python -c`; `sudo`; `npx`/`bunx`/`pnpm dlx`/`uvx`/`pipx run` of a package not installed in the workspace) and `network` (`curl`/`wget`/`http` outside `permissions.network`, `ssh`/`scp`/`rsync` to a remote); writes by Edit/Write/MultiEdit/NotebookEdit to a path under `permissions.protected` or the project's `shibaox.yaml protected` are `protected`. See [Security](Security). Gated programs must be called by bare name and without shell expansion.
 
 | Program | Deploy verbs |
 | --- | --- |

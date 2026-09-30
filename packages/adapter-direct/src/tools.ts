@@ -1,12 +1,24 @@
 import { randomUUID } from 'node:crypto';
-import { lstatSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import {
   type AgentTool,
+  type ApprovalCategory,
   type ApprovalHandler,
   argvHash,
+  classifyArgv,
   type ExecutionContext,
   ghPolicy,
+  isProtected,
   type RuntimeEvent,
   runArgv,
   validateJson,
@@ -48,6 +60,8 @@ export interface ToolArgs {
   graphQuery?: (question: string) => Promise<string>;
   /** Tools added by the daemon (orchestration, memory), exposed under their own names. */
   extraTools?: AgentTool[];
+  /** Globs (relative to the workspace) the task may not write without a `protected` approval. */
+  protectedPaths?: readonly string[];
   /** Tools of the role's MCP servers (names already prefixed `mcp__<server>__`). */
   mcpTools?: McpAgentTool[];
   /** `web_fetch` timeout and size (defaults 15 s, 200 kB). */
@@ -145,26 +159,6 @@ function summarizeInput(input: unknown): string {
   return s.length > 120 ? s.slice(0, 120) : s;
 }
 
-/** Programs whose mutating verbs deploy (the full table lives in the Claude Code adapter). */
-const DEPLOY_VERBS: Record<string, string[]> = {
-  npm: ['publish', 'unpublish', 'dist-tag', 'dist-tags', 'deprecate'],
-  pnpm: ['publish', 'unpublish', 'dist-tag', 'dist-tags', 'deprecate'],
-  yarn: ['publish', 'unpublish', 'dist-tag', 'dist-tags', 'deprecate'],
-  docker: ['push'],
-};
-const DEPLOY_PROGRAMS = [
-  'vercel',
-  'fly',
-  'flyctl',
-  'netlify',
-  'heroku',
-  'railway',
-  'wrangler',
-  'kubectl',
-  'terraform',
-  'helm',
-];
-
 /** Why a `gh` invocation is never run (extensions, aliases, auth, keys, gists, codespaces); undefined when it may run. */
 export function ghRefusal(argv: string[]): string | undefined {
   const [program = '', ...rest] = argv;
@@ -173,17 +167,12 @@ export function ghRefusal(argv: string[]): string | undefined {
   return p.kind === 'refused' ? p.reason : undefined;
 }
 
-/** `push` for git pushes, `deploy` for publishing/deploy programs (and `gh` writes), else `undefined`. */
-export function approvalCategory(argv: string[]): 'push' | 'deploy' | undefined {
-  const [program = '', ...rest] = argv;
-  if (program === 'git')
-    return rest.includes('push') || rest.includes('send-pack') ? 'push' : undefined;
-  if (program === 'gh') return ghPolicy(rest).kind === 'deploy' ? 'deploy' : undefined;
-  if (DEPLOY_PROGRAMS.includes(program)) return 'deploy';
-  const verbs = DEPLOY_VERBS[program];
-  if (verbs && rest.some((w) => verbs.includes(w) || (program === 'docker' && w === '--push')))
-    return 'deploy';
-  return undefined;
+/** The category of a command for the role: see `classifyArgv` (one policy for both runtimes). */
+export function approvalCategory(
+  argv: string[],
+  ctx: { network?: readonly string[]; localBin?: (name: string) => boolean } = {},
+): ApprovalCategory | undefined {
+  return classifyArgv(argv, ctx).category;
 }
 
 export const APPROVAL_PENDING = 'approval pending: the run is waiting for the inbox';
@@ -224,6 +213,43 @@ export function buildTools(a: ToolArgs): ToolSet {
   const canWrite = !readOnly && a.role.tools.includes('write');
   const network = a.role.permissions.network;
   const graphQuery = a.graphQuery;
+  /** The workspace as file tools see it (symlinks resolved, like safePath's results). */
+  const workspaceRoot = () => {
+    try {
+      return realpathSync(a.workspace);
+    } catch {
+      return a.workspace;
+    }
+  };
+  const localBin = (name: string) =>
+    existsSync(join(a.workspace, 'node_modules', '.bin', name)) ||
+    existsSync(join(a.workspace, 'node_modules', name));
+  /** The human's yes for a categorised command or file write; throws when refused or pending. */
+  const approve = async (
+    category: ApprovalCategory,
+    what: { tool: 'Bash' | 'file'; program: string; command: string; argv: string[] },
+  ) => {
+    if (!a.role.permissions.approval_required.includes(category))
+      throw new Error(
+        what.tool === 'file'
+          ? `${what.argv[1]} is protected: ${category} requires approval_required: [${category}] in the role`
+          : `${category} requires approval_required: [${category}] in the role`,
+      );
+    const hash = argvHash(what.argv);
+    const earlier = a.approvedCommands[hash];
+    if (earlier === false) throw new Error(`${category} was already denied by the human`);
+    if (earlier === true) return;
+    const answer = await a.approvals.request(
+      { runId: a.runId, nodeId: a.nodeId, role: a.role.role, category, ...what },
+      { signal: a.ctx.signal },
+    );
+    if ('deferred' in answer) {
+      a.onSuspend(answer.approvalId);
+      throw new Error(APPROVAL_PENDING);
+    }
+    if (!answer.approved)
+      throw new Error(`human rejected ${category}${answer.note ? `: ${answer.note}` : ''}`);
+  };
   const extra: ToolSet = {};
   for (const t of a.extraTools ?? [])
     extra[t.name] = tool({
@@ -264,8 +290,22 @@ export function buildTools(a: ToolArgs): ToolSet {
             inputSchema: z.object({ path: z.string(), content: z.string() }),
             execute: guarded(
               'write_file',
-              ({ path, content }: { path: string; content: string }) => {
+              async ({ path, content }: { path: string; content: string }) => {
                 const p = safePath(a.workspace, path, { write: true });
+                // a new file's path is not resolved through symlinks; an existing one is
+                const rel =
+                  [relative(a.workspace, p), relative(workspaceRoot(), p)].find(
+                    (r) => !r.startsWith('..'),
+                  ) ?? relative(a.workspace, p);
+                if (
+                  isProtected(rel, [...a.role.permissions.protected, ...(a.protectedPaths ?? [])])
+                )
+                  await approve('protected', {
+                    tool: 'file',
+                    program: 'write',
+                    command: `write ${rel}`,
+                    argv: ['write', rel],
+                  });
                 mkdirSync(dirname(p), { recursive: true });
                 writeFileSync(p, content);
                 a.emit({ type: 'file_changed', path });
@@ -295,40 +335,10 @@ export function buildTools(a: ToolArgs): ToolSet {
                 if (leavesWorkspace(arg)) throw new Error(`argument "${arg}" leaves the workspace`);
                 if (touchesGit(arg)) throw new Error(`argument "${arg}" targets .git`);
               }
-              const refused = ghRefusal(argv);
-              if (refused) throw new Error(`refused: ${refused}`);
-              const category = approvalCategory(argv);
-              if (category) {
-                if (!a.role.permissions.approval_required.includes(category))
-                  throw new Error(`${category} requires approval_required in the role`);
-                const hash = argvHash(argv);
-                const earlier = a.approvedCommands[hash];
-                if (earlier === false)
-                  throw new Error(`${category} was already denied by the human`);
-                if (earlier !== true) {
-                  const answer = await a.approvals.request(
-                    {
-                      runId: a.runId,
-                      nodeId: a.nodeId,
-                      role: a.role.role,
-                      tool: 'Bash',
-                      category,
-                      program,
-                      command,
-                      argv,
-                    },
-                    { signal: a.ctx.signal },
-                  );
-                  if ('deferred' in answer) {
-                    a.onSuspend(answer.approvalId);
-                    throw new Error(APPROVAL_PENDING);
-                  }
-                  if (!answer.approved)
-                    throw new Error(
-                      `human rejected ${category}${answer.note ? `: ${answer.note}` : ''}`,
-                    );
-                }
-              }
+              const cls = classifyArgv(argv, { network, localBin });
+              if (cls.refused) throw new Error(`refused: ${cls.refused}`);
+              if (cls.category)
+                await approve(cls.category, { tool: 'Bash', program, command, argv });
               const r = await runArgv({
                 argv,
                 cwd: a.workspace,

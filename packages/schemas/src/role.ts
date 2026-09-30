@@ -23,8 +23,13 @@ export const RoleSchema = z.object({
     .object({
       fs: z.array(z.string()).default(['workspace']),
       network: z.array(z.string()).default([]),
-      approval_required: z.array(z.string()).default([]),
+      /** What asks a human first (else refused): push | deploy | execute | network | protected. */
+      approval_required: z
+        .array(z.enum(['push', 'deploy', 'execute', 'network', 'protected']))
+        .default([]),
+      /** Globs (relative to the workspace) a task of this role may not write without `protected` approval. */
+      protected: z.array(z.string().min(1)).default([]),
     })
-    .default(() => ({ fs: ['workspace'], network: [], approval_required: [] })),
+    .default(() => ({ fs: ['workspace'], network: [], approval_required: [], protected: [] })),
 });
 export type Role = z.infer<typeof RoleSchema>;

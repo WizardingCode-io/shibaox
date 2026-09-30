@@ -1,8 +1,13 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { CanUseTool, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
-import { type ApprovalHandler, argvHash, hostAllowed } from '@wizardingcode/shibaox-core';
+import {
+  type ApprovalHandler,
+  argvHash,
+  hostAllowed,
+  isProtected,
+} from '@wizardingcode/shibaox-core';
 import type { Role } from '@wizardingcode/shibaox-schemas';
 import { type ApprovalCategory, analyseBashCommand, type ToolCategory } from './bash-command.js';
 import { FILE_TOOLS } from './tools-map.js';
@@ -89,6 +94,8 @@ export interface CanUseToolArgs {
   approvedCommands?: Record<string, boolean>;
   /** Called when nobody answered in time (the task is then interrupted). */
   onDeferred?: (category: ApprovalCategory, approvalId: string) => void;
+  /** Globs (relative to cwd) write tools may not touch without a `protected` approval. */
+  protectedPaths?: readonly string[];
 }
 
 /**
@@ -110,6 +117,23 @@ export function buildCanUseTool(args: CanUseToolArgs): CanUseTool {
         return deny(toolName, input, notAllowed(toolName));
       const violation = fileToolViolation(toolName, input, args.cwd);
       if (violation) return deny(toolName, input, violation);
+      if (fileGroup[0] === 'write') {
+        const raw = input.file_path ?? input.notebook_path ?? input.path;
+        const rel = relative(args.cwd, resolve(args.cwd, String(raw ?? '')));
+        if (isProtected(rel, [...args.role.permissions.protected, ...(args.protectedPaths ?? [])]))
+          return ask(
+            toolName,
+            input,
+            'protected',
+            {
+              tool: 'file',
+              program: 'write',
+              command: `write ${rel}`,
+              argv: ['write', rel],
+            },
+            options?.signal,
+          );
+      }
       return { behavior: 'allow', updatedInput: input };
     }
     if (toolName === 'WebFetch' || toolName === 'WebSearch') {
@@ -132,30 +156,47 @@ export function buildCanUseTool(args: CanUseToolArgs): CanUseTool {
     }
     if (toolName !== 'Bash') return deny(toolName, input, notAllowed(toolName));
     const command = String(input.command ?? '');
-    const a = analyseBashCommand(command);
+    const a = analyseBashCommand(command, {
+      network: args.role.permissions.network,
+      localBin: (name) =>
+        existsSync(join(args.cwd, 'node_modules', '.bin', name)) ||
+        existsSync(join(args.cwd, 'node_modules', name)),
+    });
     if (!a.ok) return deny(toolName, input, a.reason);
     if (!args.role.tools.includes(a.program)) return deny(toolName, input, notAllowed(a.program));
     if (a.category === 'other') return { behavior: 'allow', updatedInput: input };
-    const category = a.category;
+    return ask(
+      toolName,
+      input,
+      a.category,
+      { tool: 'Bash', program: a.program, command, argv: a.argv },
+      options?.signal,
+    );
+  };
+  /** The human's answer for a categorised command or file write, remembered per node. */
+  async function ask(
+    toolName: string,
+    input: Record<string, unknown>,
+    category: ApprovalCategory,
+    what: { tool: 'Bash' | 'file'; program: string; command: string; argv: string[] },
+    signal?: AbortSignal,
+  ): Promise<PermissionResult> {
     if (!args.role.permissions.approval_required.includes(category))
-      return deny(toolName, input, `${category} requires approval_required in the role`);
-    const hash = argvHash(a.argv);
+      return deny(
+        toolName,
+        input,
+        what.tool === 'file'
+          ? `${what.argv[1]} is protected: ${category} requires approval_required: [${category}] in the role`
+          : `${category} requires approval_required: [${category}] in the role`,
+      );
+    const hash = argvHash(what.argv);
     const earlier = args.approvedCommands?.[hash];
     if (earlier === true) return { behavior: 'allow', updatedInput: input };
     if (earlier === false)
       return deny(toolName, input, `${category} was already denied by the human`);
     const answer = await args.approvals.request(
-      {
-        runId: args.runId,
-        nodeId: args.nodeId,
-        role: args.role.role,
-        tool: 'Bash',
-        program: a.program,
-        category,
-        command,
-        argv: a.argv,
-      },
-      { signal: options?.signal },
+      { runId: args.runId, nodeId: args.nodeId, role: args.role.role, category, ...what },
+      { signal },
     );
     if ('deferred' in answer) {
       args.onDeferred?.(category, answer.approvalId);
@@ -167,5 +208,5 @@ export function buildCanUseTool(args: CanUseToolArgs): CanUseTool {
       input,
       `human rejected ${category}${answer.note ? `: ${answer.note}` : ''}`,
     );
-  };
+  }
 }

@@ -91,7 +91,7 @@ description: Implements the change with tests.
 model_tier: strong
 tools: [read, write, git, node, npm, pnpm]
 permissions:
-  approval_required: [push, deploy]
+  approval_required: [push, deploy]   # also: execute (sh -c, node -e, npx of a package not installed), network (curl outside permissions.network), protected (files under permissions.protected / shibaox.yaml protected)
 system_prompt: prompts/backend.md
 `,
   'org/roles/reviewer.yaml': `role: reviewer

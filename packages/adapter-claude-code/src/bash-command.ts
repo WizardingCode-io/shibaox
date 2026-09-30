@@ -1,7 +1,13 @@
 import { basename } from 'node:path';
-import { ghPolicy } from '@wizardingcode/shibaox-core';
+import {
+  type ApprovalCategory,
+  type ClassifyContext,
+  classifyArgv,
+  DEPLOY_VERBS,
+  ghPolicy,
+} from '@wizardingcode/shibaox-core';
 
-export type ApprovalCategory = 'push' | 'deploy';
+export type { ApprovalCategory };
 export type ToolCategory = ApprovalCategory | 'other';
 export type BashAnalysis =
   | { ok: true; program: string; category: ToolCategory; argv: string[] }
@@ -9,48 +15,6 @@ export type BashAnalysis =
 
 export const COMPOUND_REASON = 'compound commands are not allowed; run one command per call';
 
-/** Deploy-capable programs and the verbs (positional arguments) that make an invocation mutate. */
-export const DEPLOY_VERBS: Record<string, string[]> = {
-  vercel: ['deploy', 'redeploy', 'promote', 'rollback', 'alias', 'remove', 'rm'],
-  fly: ['launch', 'deploy'],
-  flyctl: ['launch', 'deploy'],
-  netlify: ['deploy'],
-  heroku: ['deploy', 'container:push', 'container:release', 'releases:rollback'],
-  railway: ['up', 'deploy'],
-  wrangler: ['deploy', 'publish'],
-  kubectl: ['apply', 'create', 'replace', 'patch', 'scale', 'set', 'edit', 'delete', 'rollout'],
-  terraform: ['apply', 'destroy', 'import', 'state'],
-  helm: ['install', 'upgrade', 'uninstall', 'rollback'],
-  npm: ['publish', 'unpublish', 'dist-tag', 'dist-tags', 'deprecate'],
-  pnpm: ['publish', 'unpublish', 'dist-tag', 'dist-tags', 'deprecate'],
-  yarn: ['publish', 'unpublish', 'dist-tag', 'dist-tags', 'deprecate'],
-  docker: ['push'],
-};
-/** Flags that make an otherwise read-only deploy-program invocation publish (`docker buildx build --push`). */
-const DEPLOY_FLAGS: Record<string, string[]> = { docker: ['--push'] };
-/** vercel subcommands that do not deploy; any other invocation of `vercel` deploys a directory. */
-const VERCEL_READ_ONLY = [
-  'env',
-  'ls',
-  'list',
-  'logs',
-  'inspect',
-  'whoami',
-  'login',
-  'logout',
-  'help',
-  'pull',
-  'link',
-  'dev',
-  'build',
-  'domains',
-  'dns',
-  'certs',
-  'projects',
-  'project',
-  'teams',
-  'switch',
-];
 /** Programs that never get a blanket allow rule: every call goes through `canUseTool`. */
 export const GATED_PROGRAMS = ['git', 'gh', ...Object.keys(DEPLOY_VERBS)];
 
@@ -122,7 +86,6 @@ const GIT_CONFIG_WRITE = [
   '--edit',
   '-e',
 ];
-const HELP = ['--help', '-h', '--version', '-v'];
 
 interface Token {
   text: string;
@@ -211,7 +174,7 @@ function analyseGit(args: Token[], assignments: string[]): BashAnalysis {
  * Parses one Bash command: rejects compound commands, finds the program (after `VAR=val`
  * prefixes and a leading `env`), and classifies git pushes and deploy-program invocations.
  */
-export function analyseBashCommand(command: string): BashAnalysis {
+export function analyseBashCommand(command: string, ctx: ClassifyContext = {}): BashAnalysis {
   if (COMPOUND.test(command)) return { ok: false, reason: COMPOUND_REASON };
   const tokens = tokenize(command.trim());
   if (!tokens) return { ok: false, reason: 'unbalanced quotes' };
@@ -249,19 +212,7 @@ export function analyseBashCommand(command: string): BashAnalysis {
     if (policy.kind === 'refused') return { ok: false, reason: policy.reason };
     return { ok: true, program, category: policy.kind === 'deploy' ? 'deploy' : 'other', argv };
   }
-  const verbs = DEPLOY_VERBS[program];
-  if (verbs) {
-    const words = args.map((t) => t.text);
-    const positional = words.filter((w) => !w.startsWith('-'));
-    const deploys =
-      positional.some((w) => verbs.includes(w)) ||
-      words.some((w) => DEPLOY_FLAGS[program]?.includes(w)) ||
-      // `vercel`, `vercel ./dir`, `vercel --prod` deploy; only its read-only subcommands do not.
-      (program === 'vercel' &&
-        (positional.length === 0
-          ? !words.some((w) => HELP.includes(w))
-          : !VERCEL_READ_ONLY.includes(positional[0] as string)));
-    return { ok: true, program, category: deploys ? 'deploy' : 'other', argv };
-  }
-  return { ok: true, program, category: 'other', argv };
+  const cls = classifyArgv(argv, ctx);
+  if (cls.refused) return { ok: false, reason: cls.refused };
+  return { ok: true, program, category: cls.category ?? 'other', argv };
 }

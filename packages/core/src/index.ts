@@ -15,6 +15,7 @@ export * from './org/with-setup.js';
 export * from './project/profile.js';
 export * from './run/approvals.js';
 export * from './run/autorouting.js';
+export * from './run/command-policy.js';
 export * from './run/deciders.js';
 export * from './run/engine.js';
 export * from './run/final-tasks.js';

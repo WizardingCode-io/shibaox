@@ -44,6 +44,8 @@ export interface DirectAdapterOptions {
   extraTools?: (job: TaskJob) => AgentTool[];
   /** The MCP servers of the job's role (resolved specs): started before the first call, stopped after. */
   mcpServers?: (job: TaskJob) => McpServerSpec[];
+  /** Globs the task may not write without a `protected` approval (role + project). */
+  protectedPaths?: (job: TaskJob) => string[];
   /** Context appended to the system prompt (project profile, memory). */
   preamble?: (job: TaskJob) => string | undefined;
 }
@@ -244,6 +246,7 @@ export class DirectAdapter implements RuntimeAdapter {
             graphQuery: this.opts.graphQuery,
             extraTools: this.opts.extraTools?.(job) ?? [],
             mcpTools,
+            protectedPaths: this.opts.protectedPaths?.(job) ?? job.role.permissions.protected,
           })
         : undefined;
       messages = [

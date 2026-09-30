@@ -50,7 +50,8 @@ tools: [read, write, git, node, pnpm]
 permissions:
   fs: [workspace]
   network: [github.com]             # hosts it may fetch; '*' = any
-  approval_required: [push, deploy]
+  approval_required: [push, deploy]  # what asks a human: push | deploy | execute | network | protected
+  protected: ['infra/**', '*.lock']  # files a task may not write without a protected approval
 capabilities: [orchestrate, memory] # start_workflow; remember/recall
 mcp: [playwright]                   # catalog MCP servers whose tools it gets, in every runtime
 skills: [e2e-checklist]             # org/skills/<id>/SKILL.md appended to its prompt
@@ -99,7 +100,7 @@ setup: pnpm install --frozen-lockfile   # what a fresh worktree runs first; fals
 setup_timeout_ms: 600000
 tests: pnpm test                        # the `tests` check (detected when absent)
 lint: pnpm lint                         # the `lint` check (detected when absent)
-protected: ['.github/**']               # reserved: enforced by a later version
+protected: ['.github/**']               # files no run may write without a `protected` approval (see Security)
 ```
 
 The file is read from the run's worktree, so it must be committed to count in worktree mode. Without `setup`, the install is detected from the lockfile (of the project, or of the monorepo above it), frozen: `pnpm install --frozen-lockfile`, `yarn install --frozen-lockfile`, `bun install --frozen-lockfile`, `npm ci` (or `npm install --no-package-lock` without any lockfile), `uv sync --frozen`, `composer install --no-interaction`, `go mod download`, `cargo fetch --locked`, `bundle install`. A tool that is not installed skips the step; see [Worktrees](Worktrees) for what the step runs and how to turn it off.

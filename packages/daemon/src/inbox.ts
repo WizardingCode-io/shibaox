@@ -23,7 +23,12 @@ export interface InboxItem {
   at: string;
   /** The human prompt, or the command awaiting approval. */
   prompt: string;
-  detail: { action?: string; role?: string; program?: string; category?: 'push' | 'deploy' };
+  detail: {
+    action?: string;
+    role?: string;
+    program?: string;
+    category?: 'push' | 'deploy' | 'execute' | 'network' | 'protected';
+  };
 }
 
 export interface InboxAnswer {

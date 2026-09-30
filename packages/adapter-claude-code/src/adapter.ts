@@ -38,6 +38,8 @@ export interface ClaudeCodeAdapterOptions {
   mcpServers?: (job: TaskJob) => McpServers;
   /** The role's catalog MCP servers (resolved specs): started by Claude Code, tools allowlisted. */
   mcpSpecs?: (job: TaskJob) => McpServerSpec[];
+  /** Globs the task may not write without a `protected` approval (role + project). */
+  protectedPaths?: (job: TaskJob) => string[];
   /** Default 60. */
   maxTurns?: number;
   /** Injectable for tests; defaults to the SDK's `query`. */
@@ -170,6 +172,7 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
         nodeId: job.nodeId,
         log: ctx.log,
         approvedCommands: job.approvedCommands,
+        protectedPaths: this.opts.protectedPaths?.(job) ?? job.role.permissions.protected,
         onDeferred: (category, approvalId) => {
           deferred = { category, approvalId };
         },

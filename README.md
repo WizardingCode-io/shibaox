@@ -23,6 +23,7 @@ Shibaox runs on your machine, or on a server you reach with a token. A daemon ke
 
 - **Your org, as files.** Teams, roles, gates and workflows in `org/*.yaml`. Version it, review it, share it.
 - **One orchestrator.** Ask for what you want in your own language. It reads and edits the project, runs tools, and hands larger work to the right workflow.
+- **Approvals that mean something.** Push, deploy, inline code, network and protected files each ask a human first, per role, in both runtimes; plain commands never do.
 - **Gates before anything ships.** The project's own tests, its linter, a model review with a rubric, and a human approval where it matters.
 - **A git cycle that lands.** Worktree per run, a commit with a written message, a pull request or a merge through a per-project queue.
 - **Nothing off-screen.** Event-sourced runs you can replay, a cost line per turn, approvals in an inbox, reports on Telegram.
