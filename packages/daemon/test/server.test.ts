@@ -565,3 +565,42 @@ describe('a remote listener (TCP with a bearer token)', () => {
     expect(local.listenAddress()).toBeUndefined();
   });
 });
+
+describe('what a dashboard without a local disk asks the daemon', () => {
+  it('GET /orgs/info describes an org: workflows, conversations, adapter, subscription', async () => {
+    const s = setup();
+    const { client } = await started(s);
+    const info = await client.orgInfo(s.orgRoot);
+    expect(info.workflows).toContain('hello-feature');
+    expect(info.subscription).toBe(false);
+    expect(Array.isArray(info.single)).toBe(true);
+    await expect(client.orgInfo(join(s.dir, 'nowhere'))).rejects.toMatchObject({ status: 404 });
+    await expect(client.orgInfo('')).rejects.toMatchObject({ status: 400 });
+  });
+  it('GET /projects lists the configured projects, then recent ones, then the home workspace (created)', async () => {
+    const s = setup();
+    const { client } = await started(s, {
+      config: {
+        max_concurrent_runs: 2,
+        approval_timeout_minutes: 1,
+        channels: { macos: { enabled: false } },
+        projects: ['/cfg/a', s.project],
+      },
+    });
+    await submit(client, s);
+    const workspace = join(s.home.root, 'workspace');
+    expect(await client.projects()).toEqual([
+      { path: '/cfg/a', source: 'config' },
+      { path: s.project, source: 'config' },
+      { path: workspace, source: 'workspace' },
+    ]);
+    expect(existsSync(workspace)).toBe(true);
+    const s2 = setup();
+    const { client: c2 } = await started(s2);
+    await submit(c2, s2);
+    expect(await c2.projects()).toEqual([
+      { path: s2.project, source: 'recent' },
+      { path: join(s2.home.root, 'workspace'), source: 'workspace' },
+    ]);
+  });
+});

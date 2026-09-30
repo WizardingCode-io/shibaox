@@ -1,4 +1,5 @@
-import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { QueryFn } from '@wizardingcode/shibaox-adapter-claude-code';
 import { type EventStore, type MockScript, runArgv } from '@wizardingcode/shibaox-core';
 import type { Graphify } from '@wizardingcode/shibaox-memory';
@@ -33,6 +34,7 @@ import {
   DaemonServer,
   type Health,
   type ListenOptions,
+  type ProjectEntry,
   type SchedulesApi,
   type ServerDeps,
 } from './server.js';
@@ -232,6 +234,7 @@ export class Daemon {
         }),
       models: () => this.models(),
       defaultOrg: () => this.defaultOrg(),
+      projects: () => this.projects(),
       keys: () => this.secrets.list(opts.env ?? process.env),
       setKey: (name, value) => {
         this.secrets.set(name, value);
@@ -432,6 +435,32 @@ export class Daemon {
   }
 
   /** The default org, created on first use. */
+  /** The home workspace: where the orchestrator works when no project is chosen. */
+  get workspace(): string {
+    return join(this.paths.root, 'workspace');
+  }
+
+  /**
+   * Projects a dashboard may pick: `daemon.yaml projects` first, then the projects of recent
+   * runs (newest first), then the home workspace, created here so a run can start in it.
+   */
+  async projects(): Promise<ProjectEntry[]> {
+    const out: ProjectEntry[] = [];
+    const seen = new Set<string>();
+    const add = (path: string, source: ProjectEntry['source']) => {
+      if (seen.has(path)) return;
+      seen.add(path);
+      out.push({ path, source });
+    };
+    for (const p of this.config.projects) add(p, 'config');
+    const runs = await this.runs.list();
+    runs.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
+    for (const r of runs) if (r.project && r.project !== this.workspace) add(r.project, 'recent');
+    mkdirSync(this.workspace, { recursive: true });
+    add(this.workspace, 'workspace');
+    return out;
+  }
+
   async defaultOrg(): Promise<{ root: string; created: boolean }> {
     const claude =
       this.opts.claudeInstalled ??

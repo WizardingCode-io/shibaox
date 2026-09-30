@@ -31,6 +31,31 @@ const isModelRef = (v: unknown): v is string =>
 /** Jev (`jev-latest`) is a typed decision API, not a chat model: only the decision tier may name it. */
 const isJev = (v: unknown): v is string => typeof v === 'string' && /^jev-[\w.-]+$/i.test(v);
 
+/** What a dashboard needs to offer an org's workflows without reading its files itself. */
+export interface OrgInfo {
+  workflows: string[];
+  /** Workflows marked `conversation: true` (the org's `chat`): they run in place. */
+  single: string[];
+  /** Whether the strong tier runs on a subscription runtime (Claude Code). */
+  subscription: boolean;
+  /** `org.yaml adapter`: the org's default runtime. */
+  adapter?: 'mock' | 'direct' | 'claude-code';
+}
+
+/** The org's workflows and runtime hints; throws (`not found` in the message) when it is not an org. */
+export function orgInfo(root: string): OrgInfo {
+  const org = loadOrg(root);
+  const strong = String(org.models.tiers?.strong ?? '');
+  return {
+    workflows: Object.keys(org.workflows),
+    single: Object.values(org.workflows)
+      .filter((w) => w.conversation)
+      .map((w) => w.workflow),
+    subscription: /-subscription\//.test(strong),
+    adapter: org.org.adapter,
+  };
+}
+
 export function readOrgConfig(root: string): OrgConfig {
   const org = loadOrg(root);
   return {

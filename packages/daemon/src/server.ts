@@ -14,7 +14,7 @@ import {
 import type { ScheduleRow } from '@wizardingcode/shibaox-persistence-sqlite';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import { AlreadyResolvedError, type InboxService, NotFoundError } from './inbox.js';
-import { type OrgConfigPatch, readOrgConfig, writeOrgConfig } from './org-config.js';
+import { type OrgConfigPatch, orgInfo, readOrgConfig, writeOrgConfig } from './org-config.js';
 import type { RunManager, SubmitRequest } from './run-manager.js';
 import type { RuntimeEnvelope } from './runtime-buffer.js';
 import type { KeyRow } from './secrets.js';
@@ -54,6 +54,12 @@ export interface SchedulesApi {
   runNow(id: string): Promise<{ runId: string }>;
 }
 
+/** A project a dashboard may pick: configured in daemon.yaml, seen in a recent run, or the home workspace. */
+export interface ProjectEntry {
+  path: string;
+  source: 'config' | 'recent' | 'workspace';
+}
+
 export interface ServerDeps {
   store: EventStore;
   runs: RunManager;
@@ -66,6 +72,8 @@ export interface ServerDeps {
   models: () => Promise<ModelChoice[]>;
   /** The org under the shibaox home, created on first use. */
   defaultOrg: () => Promise<{ root: string; created: boolean }>;
+  /** Where runs may work: `daemon.yaml projects`, recent runs, the home workspace. */
+  projects: () => Promise<ProjectEntry[]>;
   /** The key vault, masked; set/unset take effect at once. */
   keys: () => KeyRow[];
   setKey: (name: string, value: string) => void;
@@ -314,6 +322,17 @@ export class DaemonServer {
     }
     if (method === 'GET' && path === '/orgs/default')
       return send(res, 200, await this.deps.defaultOrg());
+    if (method === 'GET' && path === '/orgs/info') {
+      const org = url.searchParams.get('org') ?? '';
+      if (!org) throw new HttpError(400, 'bad_request', '"org" is required');
+      try {
+        return send(res, 200, orgInfo(org));
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        throw new HttpError(/not found/i.test(m) ? 404 : 400, 'bad_request', m);
+      }
+    }
+    if (method === 'GET' && path === '/projects') return send(res, 200, await this.deps.projects());
     if (method === 'GET' && path === '/keys') return send(res, 200, this.deps.keys());
     const keyName = param(/^\/keys\/([^/]+)$/);
     if (keyName !== undefined && method === 'PUT') {

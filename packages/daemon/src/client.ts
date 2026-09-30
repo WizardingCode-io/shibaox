@@ -4,13 +4,13 @@ import type { ProjectProfile, RunState } from '@wizardingcode/shibaox-core';
 import type { ScheduleRow } from '@wizardingcode/shibaox-persistence-sqlite';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import type { InboxItem } from './inbox.js';
-import type { OrgConfig, OrgConfigPatch } from './org-config.js';
+import type { OrgConfig, OrgConfigPatch, OrgInfo } from './org-config.js';
 import type { RunSummaryPlus, SubmitRequest } from './run-manager.js';
 import type { DiffResult } from './runs/diff.js';
 import type { KeyRow } from './secrets.js';
-import type { Envelope, Health } from './server.js';
+import type { Envelope, Health, ProjectEntry } from './server.js';
 
-export type { Envelope, Health } from './server.js';
+export type { Envelope, Health, ProjectEntry } from './server.js';
 
 export class DaemonHttpError extends Error {
   constructor(
@@ -156,6 +156,14 @@ export class DaemonClient {
     return this.json('PUT', `/orgs/config?org=${encodeURIComponent(root)}`, patch);
   }
   /** The org under the shibaox home (`~/.shibaox/org`), created on first use. */
+  /** The org's workflows and runtime hints (404 when `root` is not an org). */
+  orgInfo(root: string): Promise<OrgInfo> {
+    return this.json('GET', `/orgs/info?org=${encodeURIComponent(root)}`);
+  }
+  /** Projects a dashboard may pick, the daemon's home workspace last. */
+  projects(): Promise<ProjectEntry[]> {
+    return this.json('GET', '/projects');
+  }
   defaultOrg(): Promise<{ root: string; created: boolean }> {
     return this.json('GET', '/orgs/default');
   }
