@@ -1,6 +1,7 @@
 import type { RunState } from '@wizardingcode/shibaox-core';
 import { DaemonHttpError } from '@wizardingcode/shibaox-daemon';
 import { describe, expect, it } from 'vitest';
+import { followRun } from '../src/commands/follow.js';
 import { followAny } from '../src/commands/run.js';
 import { makeOut } from '../src/output.js';
 
@@ -78,5 +79,33 @@ describe('tuiSpawnOptions', () => {
       LC_ALL: 'C',
       TERM: 'xterm',
     });
+  });
+});
+
+describe('followRun over a connection that drops', () => {
+  it('reopens the stream after the last cursor when it ends without an end frame', async () => {
+    const lines: string[] = [];
+    const out = makeOut(true, (l) => lines.push(l));
+    const calls: (string | undefined)[] = [];
+    const client = {
+      async *events(_id: string, o: { since?: string }) {
+        calls.push(o.since);
+        if (calls.length === 1) {
+          yield {
+            kind: 'run',
+            seq: 1,
+            cursor: '1:0',
+            event: { runId: 'r1', seq: 1, type: 'RunStarted' },
+          };
+          return; // the proxy closed the connection: no end frame
+        }
+        yield { kind: 'end', seq: 0, cursor: '2:0', status: 'completed' };
+      },
+      getRun: async () => state(calls.length === 1 ? 'running' : 'completed'),
+      inbox: async () => [],
+    } as never;
+    const code = await followRun(client, 'r1', { reconnectMs: 1 }, out);
+    expect(code).toBe(0);
+    expect(calls).toEqual([undefined, '1:0']);
   });
 });

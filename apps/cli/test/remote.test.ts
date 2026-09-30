@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MemoryEventStore } from '@wizardingcode/shibaox-core';
@@ -39,7 +47,7 @@ describe('the remote daemon setting', () => {
     });
     expect(remoteTarget({ SHIBAOX_REMOTE: 'http://10.0.0.5:7433' }, root)).toEqual({
       baseUrl: 'http://10.0.0.5:7433',
-      token: 'file-token',
+      token: undefined, // the saved token belongs to another daemon
       source: 'env',
     });
     expect(
@@ -61,6 +69,24 @@ describe('the remote daemon setting', () => {
     expect(clearRemote(root)).toBe(true);
     expect(existsSync(file)).toBe(false);
     expect(clearRemote(root)).toBe(false);
+  });
+
+  it('the saved token is reused only for the URL it was saved for; the env URL is validated', () => {
+    const root = tmp();
+    saveRemote(root, { baseUrl: 'https://vps:7433', token: 'T' });
+    expect(remoteTarget({ SHIBAOX_REMOTE: 'http://10.0.0.9:7433' }, root)?.token).toBeUndefined();
+    expect(remoteTarget({ SHIBAOX_REMOTE: 'https://vps:7433/' }, root)?.token).toBe('T');
+    expect(() => remoteTarget({ SHIBAOX_REMOTE: 'box:7433' }, root)).toThrow(/http/);
+  });
+
+  it('remote set puts an existing remote.json back to 0600; a malformed file is refused, not ignored', () => {
+    const root = tmp();
+    const file = saveRemote(root, { baseUrl: 'http://127.0.0.1:7433', token: 'a' });
+    chmodSync(file, 0o644);
+    saveRemote(root, { baseUrl: 'http://127.0.0.1:7433', token: 'b' });
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    writeFileSync(file, '{not json');
+    expect(() => remoteTarget({}, root)).toThrow(/remote clear/);
   });
 
   it('accepts http(s) URLs only, normalised; warns about a token in clear to another host', () => {

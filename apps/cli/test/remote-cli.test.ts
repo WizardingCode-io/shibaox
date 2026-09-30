@@ -119,6 +119,10 @@ describe('shibaox remote', () => {
     })('doctor');
     expect(good.stdout).toMatch(new RegExp(`daemon.*remote ${baseUrl}.*version 0\\.1\\.7`));
     expect(good.stdout).not.toContain('restart it'); // no restart nag about a daemon we cannot restart
+    const noToken = await cliIn({ SHIBAOX_HOME: clientHome, HOME: dir, SHIBAOX_REMOTE: baseUrl })(
+      'doctor',
+    );
+    expect(noToken.stdout).toMatch(/FAIL|warn.*daemon.*no token/);
   });
 
   it('remote set refuses a URL that is not http(s), and warns when the token travels in clear', async () => {

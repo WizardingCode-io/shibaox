@@ -22,7 +22,7 @@ projects:                              # what a remote dashboard offers as proje
   - /srv/other
 ```
 
-Without `listen` nothing changes: the daemon answers on its 0600 socket only.
+Without `listen` nothing changes: the daemon answers on its 0600 socket only. Note the defaults: `serve` binds `0.0.0.0` unless told otherwise, while `listen.host` in `daemon.yaml` defaults to `127.0.0.1` (loopback: for an SSH tunnel, or a reverse proxy on the same machine); set `host: 0.0.0.0` there for the service to answer the network.
 
 A request with no token gets a reduced `GET /health` (`{ version }`) so a monitor can watch the daemon; a wrong token is `401` everywhere, including `/health`.
 
@@ -35,7 +35,7 @@ shibaox                                             # the dashboard, on the remo
 shibaox remote show | clear
 ```
 
-From then on every command goes to the remote. `--remote <url>` or `SHIBAOX_REMOTE` (with `SHIBAOX_REMOTE_TOKEN`, else the saved token) override the file for one command or one shell; `SHIBAOX_REMOTE=` empty in a script means "the file, or local".
+From then on every command goes to the remote. `--remote <url>` or `SHIBAOX_REMOTE` (with `SHIBAOX_REMOTE_TOKEN`; the saved token is reused only when the URL is the one it was saved for) override the file for one command or one shell; `SHIBAOX_REMOTE=` empty in a script means "the file, or local". Prefer piping the token (`echo $TOKEN | shibaox remote set <url>`) to typing it on the command line, where the shell history and `ps` see it.
 
 With a remote set, the CLI never starts or restarts a daemon: a remote that does not answer, refuses the token or is older than the CLI is explained, and you fix it on the server (`shibaox upgrade` there, or `npm i -g shibaox@latest`, then restart `serve`). `daemon start|stop|install` stay local commands.
 
@@ -48,5 +48,7 @@ The dashboard reads nothing from your disk when it talks to a remote: the projec
 **A daemon token is shell access on that machine as the user running the daemon.** The API takes any org and any project path, a task runs the programs its role lists, and a `code` node runs commands. Treat the token as you treat an SSH key: one per person or machine when you can (rotate by changing the vault key and restarting `serve`), never in a repository, never in a chat.
 
 Plain HTTP sends the token in clear at every request. Use it only on a loopback or a private network you trust, or through an SSH tunnel (`ssh -L 7433:127.0.0.1:7433 box`, then `remote set http://127.0.0.1:7433 …`) or a VPN; on the open internet put TLS in front (a reverse proxy, or `listen.tls` with a certificate). `remote set` and `serve` both say so when the URL is plain HTTP to another host.
+
+Behind a reverse proxy, let the event stream through: it is server-sent events, so turn response buffering off (`proxy_buffering off` in nginx) and allow long reads; the daemon sends a heartbeat comment every 20 s so idle timeouts of a minute or more never cut a run that waits on you, and `shibaox follow` reopens a cut stream where it left off.
 
 Keys stay in the vault on the server (`shibaox keys set` from your machine sets them there over the API, masked in every listing); a remote dashboard sees masked keys only.

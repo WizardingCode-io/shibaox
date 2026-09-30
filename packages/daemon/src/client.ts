@@ -155,7 +155,6 @@ export class DaemonClient {
   setOrgConfig(root: string, patch: OrgConfigPatch): Promise<OrgConfig> {
     return this.json('PUT', `/orgs/config?org=${encodeURIComponent(root)}`, patch);
   }
-  /** The org under the shibaox home (`~/.shibaox/org`), created on first use. */
   /** The org's workflows and runtime hints (404 when `root` is not an org). */
   orgInfo(root: string): Promise<OrgInfo> {
     return this.json('GET', `/orgs/info?org=${encodeURIComponent(root)}`);
@@ -164,6 +163,7 @@ export class DaemonClient {
   projects(): Promise<ProjectEntry[]> {
     return this.json('GET', '/projects');
   }
+  /** The org under the shibaox home (`~/.shibaox/org`), created on first use. */
   defaultOrg(): Promise<{ root: string; created: boolean }> {
     return this.json('GET', '/orgs/default');
   }

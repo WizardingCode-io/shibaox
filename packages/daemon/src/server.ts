@@ -80,6 +80,8 @@ export interface ServerDeps {
   unsetKey: (name: string) => boolean;
   onShutdown: (o: { force?: boolean }) => void;
   log: (line: string) => void;
+  /** Interval of the SSE heartbeat comment (default 20 s; tests shorten it). */
+  heartbeatMs?: number;
 }
 
 export class HttpError extends Error {
@@ -161,10 +163,6 @@ function toHttp(e: unknown): HttpError {
   return new HttpError(400, 'bad_request', message);
 }
 
-/**
- * The local API over a Unix socket: JSON in and out, SSE for `GET /runs/:id/events`. No
- * authentication: the socket is `0600`, only the same user reaches it.
- */
 /** The network listener: where, with which token, and TLS files when any. */
 export interface ListenOptions {
   host: string;
@@ -174,12 +172,17 @@ export interface ListenOptions {
 }
 
 const bearerOk = (header: string | undefined, token: string): boolean => {
-  const given = header?.startsWith('Bearer ') ? header.slice(7) : '';
+  const given = header ? (header.match(/^bearer\s+(.*)$/i)?.[1] ?? '') : '';
   const a = Buffer.from(given);
   const b = Buffer.from(token);
   return a.length === b.length && a.length > 0 && timingSafeEqual(a, b);
 };
 
+/**
+ * The API over a Unix socket (JSON in and out, SSE for `GET /runs/:id/events`; no
+ * authentication: the socket is `0600`, only the same user reaches it) and, with `listenOn`,
+ * the same API on TCP behind a bearer token.
+ */
 export class DaemonServer {
   private server: Server | undefined;
   private remote: Server | undefined;
@@ -230,7 +233,15 @@ export class DaemonServer {
     });
     chmodSync(this.socketPath, 0o600);
     this.server = server;
-    if (this.listenOn) await this.listenRemote(this.listenOn);
+    if (this.listenOn) {
+      try {
+        await this.listenRemote(this.listenOn);
+      } catch (e) {
+        // a port in use or a bad certificate: nothing stays half open behind the failure
+        await this.close();
+        throw e;
+      }
+    }
   }
 
   /**
@@ -369,6 +380,10 @@ export class DaemonServer {
       for (const k of ['orgRoot', 'project', 'workflow', 'input'])
         if (typeof body[k] !== 'string')
           throw new HttpError(400, 'bad_request', `"${k}" is required`);
+      // an empty path would resolve to the daemon's own working directory
+      for (const k of ['orgRoot', 'project'])
+        if (!(body[k] as string).trim())
+          throw new HttpError(400, 'bad_request', `"${k}" must be a directory path`);
       return send(res, 200, await this.deps.runs.submit(body as unknown as SubmitRequest));
     }
     if (method === 'GET' && path === '/runs') {
@@ -503,9 +518,15 @@ export class DaemonServer {
     };
     let offStore = () => {};
     let offRuntime = () => {};
+    // a comment frame now and then keeps proxies and idle TCP connections from cutting a
+    // stream that waits on a human
+    const heartbeat = setInterval(() => {
+      if (!closed) res.write(': ping\n\n');
+    }, this.deps.heartbeatMs ?? 20_000);
     const finish = () => {
       if (closed) return;
       closed = true;
+      clearInterval(heartbeat);
       offStore();
       offRuntime();
       res.end();
@@ -556,6 +577,7 @@ export class DaemonServer {
     });
     const events = await this.deps.store.read(runId);
     if (events.length === 0) {
+      clearInterval(heartbeat);
       offStore();
       offRuntime();
       throw new HttpError(404, 'not_found', `run ${runId} not found`);

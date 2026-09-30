@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homePaths } from '@wizardingcode/shibaox-daemon';
 
@@ -49,44 +49,54 @@ interface RemoteFile {
   token?: string;
 }
 
+/** A remote.json that cannot be read is said, not skipped: skipping it would start a local daemon. */
 function readRemoteFile(root: string): RemoteFile | undefined {
   const file = remoteFile(root);
   if (!existsSync(file)) return undefined;
+  let raw: Partial<RemoteFile>;
   try {
-    const raw = JSON.parse(readFileSync(file, 'utf8')) as Partial<RemoteFile>;
-    if (typeof raw.baseUrl !== 'string' || !raw.baseUrl) return undefined;
-    return { baseUrl: raw.baseUrl, token: typeof raw.token === 'string' ? raw.token : undefined };
+    raw = JSON.parse(readFileSync(file, 'utf8')) as Partial<RemoteFile>;
   } catch {
-    return undefined;
+    throw new Error(`${file} is not valid JSON: shibaox remote clear, then remote set again`);
   }
+  if (typeof raw.baseUrl !== 'string' || !raw.baseUrl)
+    throw new Error(`${file} has no baseUrl: shibaox remote clear, then remote set again`);
+  return {
+    baseUrl: validateRemoteUrl(raw.baseUrl),
+    token: typeof raw.token === 'string' ? raw.token : undefined,
+  };
 }
 
 /**
- * Where commands go: `SHIBAOX_REMOTE` (with `SHIBAOX_REMOTE_TOKEN`, else the saved token) wins,
- * then `~/.shibaox/remote.json`; nothing means the local socket.
+ * Where commands go: `SHIBAOX_REMOTE` (with `SHIBAOX_REMOTE_TOKEN`, else the saved token when it
+ * was saved for that same URL) wins, then `~/.shibaox/remote.json`; nothing means the local socket.
  */
 export function remoteTarget(
   env: NodeJS.ProcessEnv,
   root: string = homePaths(env).root,
 ): RemoteTarget | undefined {
   const saved = readRemoteFile(root);
-  if (env.SHIBAOX_REMOTE)
+  if (env.SHIBAOX_REMOTE) {
+    const baseUrl = validateRemoteUrl(env.SHIBAOX_REMOTE);
     return {
-      baseUrl: env.SHIBAOX_REMOTE,
-      token: env.SHIBAOX_REMOTE_TOKEN || saved?.token,
+      baseUrl,
+      // a token is for one daemon: the saved one never travels to another URL
+      token: env.SHIBAOX_REMOTE_TOKEN || (saved?.baseUrl === baseUrl ? saved.token : undefined),
       source: 'env',
     };
+  }
   if (saved) return { ...saved, source: 'file' };
   return undefined;
 }
 
-/** Writes remote.json readable by its owner only; returns the file path. */
+/** Writes remote.json readable by its owner only (also when it already existed); returns the file path. */
 export function saveRemote(root: string, r: RemoteFile): string {
   mkdirSync(root, { recursive: true });
   const file = remoteFile(root);
   writeFileSync(file, `${JSON.stringify({ baseUrl: r.baseUrl, token: r.token }, null, 2)}\n`, {
     mode: 0o600,
   });
+  chmodSync(file, 0o600);
   return file;
 }
 

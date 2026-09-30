@@ -151,6 +151,13 @@ async function daemonLine(): Promise<CheckLine> {
   const paths = homePaths();
   const remote = remoteTarget(process.env);
   if (remote) {
+    if (!remote.token)
+      return {
+        name: 'daemon',
+        ok: false,
+        detail: `remote ${remote.baseUrl}: no token (shibaox remote set ${remote.baseUrl} <token>, or SHIBAOX_REMOTE_TOKEN)`,
+        required: false,
+      };
     try {
       const h = await new DaemonClient({ baseUrl: remote.baseUrl, token: remote.token }).health();
       const older = h.version !== CLI_VERSION ? ` (this CLI is ${CLI_VERSION})` : '';

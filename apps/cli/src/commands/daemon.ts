@@ -51,7 +51,12 @@ export async function daemonStart(o: { detach?: boolean }, out: Out): Promise<nu
 }
 
 const listenUrl = (a: { host: string; port: number; tls: boolean }) =>
-  `${a.tls ? 'https' : 'http'}://${a.host}:${a.port}`;
+  `${a.tls ? 'https' : 'http'}://${a.host.includes(':') ? `[${a.host}]` : a.host}:${a.port}`;
+/** What a client dials: a bind-all address stands for whatever name reaches this machine. */
+const dialUrl = (a: { host: string; port: number; tls: boolean }) =>
+  a.host === '0.0.0.0' || a.host === '::'
+    ? listenUrl({ ...a, host: '<this-machine>' })
+    : listenUrl(a);
 
 /** Stays until SIGINT/SIGTERM, then stops the daemon (waiting for its runs). */
 function foreground(daemon: Daemon): Promise<number> {
@@ -126,7 +131,7 @@ export async function serveCommand(
           'Plain HTTP: the token travels in clear. Reach it through an SSH tunnel or a VPN, or put TLS in front (daemon.yaml listen.tls).',
         ]
       : []),
-    `From another machine: shibaox remote set ${url} <token>`,
+    `From another machine: shibaox remote set ${dialUrl(addr)} <token>`,
   ];
   console.log(banner.join('\n'));
   return foreground(daemon);

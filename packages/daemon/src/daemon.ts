@@ -67,6 +67,8 @@ export interface DaemonOptions {
   summarize?: (transcript: string, org: Org) => Promise<string>;
   /** Tokens a conversation may carry before it is compacted (tests lower it). */
   conversationTokens?: number;
+  /** Interval of the SSE heartbeat comment (default 20 s; tests shorten it). */
+  heartbeatMs?: number;
 }
 
 /** Turns kept per Telegram chat for the orchestrator's conversation. */
@@ -235,6 +237,7 @@ export class Daemon {
       models: () => this.models(),
       defaultOrg: () => this.defaultOrg(),
       projects: () => this.projects(),
+      heartbeatMs: opts.heartbeatMs,
       keys: () => this.secrets.list(opts.env ?? process.env),
       setKey: (name, value) => {
         this.secrets.set(name, value);
@@ -434,7 +437,6 @@ export class Daemon {
     };
   }
 
-  /** The default org, created on first use. */
   /** The home workspace: where the orchestrator works when no project is chosen. */
   get workspace(): string {
     return join(this.paths.root, 'workspace');
@@ -461,6 +463,7 @@ export class Daemon {
     return out;
   }
 
+  /** The default org, created on first use. */
   async defaultOrg(): Promise<{ root: string; created: boolean }> {
     const claude =
       this.opts.claudeInstalled ??

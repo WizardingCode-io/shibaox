@@ -723,3 +723,23 @@ test('a remote daemon: project and org come from the daemon, paths are checked t
     m.done();
   }
 });
+
+test('a remote daemon that offers no project: submitting says to pick one, nothing is sent', async () => {
+  const m = await mount({
+    width: 120,
+    remote: 'http://10.0.0.5:7433',
+    noLocalOrg: true,
+    defaultOrgRoot: '/srv/org',
+    projects: [],
+    orgInfos: { '/srv/org': { workflows: ['chat'], single: ['chat'], subscription: false } },
+  });
+  try {
+    await m.type('do it');
+    await m.setup.mockInput.pressEnter();
+    const f = await m.frame();
+    expect(f).toContain('/project');
+    expect(m.client.calls.some((c) => c.method === 'submitRun')).toBe(false);
+  } finally {
+    m.done();
+  }
+});

@@ -1,5 +1,6 @@
 import { cpSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { connect } from 'node:net';
+import { request as httpRequest } from 'node:http';
+import { connect, createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -604,5 +605,83 @@ describe('what a dashboard without a local disk asks the daemon', () => {
       { path: s2.project, source: 'recent' },
       { path: join(s2.home.root, 'workspace'), source: 'workspace' },
     ]);
+  });
+});
+
+describe('the fix pass of the remote daemon', () => {
+  it('a network listener that cannot open leaves nothing behind: start rejects and the socket is closed', async () => {
+    const taken = createNetServer();
+    await new Promise<void>((r) => taken.listen(0, '127.0.0.1', r));
+    const port = (taken.address() as { port: number }).port;
+    try {
+      const s = setup();
+      const daemon = new Daemon({
+        home: s.home,
+        store: new MemoryEventStore(),
+        channels: [],
+        env: { SHIBAOX_DAEMON_TOKEN: 't' },
+        log: () => {},
+        version: '9.9.9',
+        vault: s.vault,
+        discovery: false,
+        config: {
+          max_concurrent_runs: 2,
+          approval_timeout_minutes: 1,
+          channels: { macos: { enabled: false } },
+          projects: [],
+          listen: { host: '127.0.0.1', port, token_env: 'SHIBAOX_DAEMON_TOKEN' },
+        },
+      });
+      daemons.push(daemon);
+      await expect(daemon.start()).rejects.toThrow(/EADDRINUSE/);
+      expect(existsSync(s.home.socket)).toBe(false);
+      await expect(new DaemonClient(s.home.socket).health()).rejects.toBeInstanceOf(Error);
+      expect(daemon.listenAddress()).toBeUndefined();
+    } finally {
+      await new Promise<void>((r) => taken.close(() => r()));
+    }
+  });
+
+  it('POST /runs refuses an empty project or org (an empty path would be the daemon cwd)', async () => {
+    const s = setup();
+    const { client } = await started(s);
+    await expect(
+      client.submitRun({ orgRoot: s.orgRoot, project: '', workflow: 'hello-feature', input: 'x' }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      client.submitRun({ orgRoot: '', project: s.project, workflow: 'hello-feature', input: 'x' }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('the event stream carries a heartbeat comment while a run waits, so proxies keep it open', async () => {
+    const s = setup();
+    const { client, daemon } = await started(s, { heartbeatMs: 30 });
+    const { runId } = await submit(client, s);
+    await collect(
+      client.events(runId),
+      (e) => e.kind === 'run' && e.event.type === 'HumanRequested',
+    );
+    const raw = await new Promise<string>((resolve, reject) => {
+      const req = httpRequest(
+        { socketPath: s.home.socket, path: `/runs/${runId}/events`, method: 'GET' },
+        (res) => {
+          let buf = '';
+          res.setEncoding('utf8');
+          res.on('data', (c: string) => {
+            buf += c;
+            if ((buf.match(/: ping/g) ?? []).length >= 2) {
+              req.destroy();
+              resolve(buf);
+            }
+          });
+          res.on('error', () => resolve(buf));
+        },
+      );
+      req.on('error', () => undefined);
+      setTimeout(() => reject(new Error('no heartbeat')), 3000);
+      req.end();
+    });
+    expect(raw).toContain(': ping');
+    expect(daemon.listenAddress()).toBeUndefined();
   });
 });

@@ -146,7 +146,18 @@ export function Home(): JSX.Element {
     if (d?.root && !ctx().org) setCtx((c) => ({ ...c, org: d.root }));
   });
   // the projects a remote daemon offers (daemon.yaml projects, recent runs, its workspace)
-  const [projects] = createResource(() => (remote ? client.projects().catch(() => []) : []));
+  const [projects] = createResource(async () => {
+    if (!remote) return [];
+    for (const wait of [0, 250, 1000, 2000]) {
+      if (wait) await new Promise((r) => setTimeout(r, wait));
+      try {
+        return await client.projects();
+      } catch {
+        // try again: the daemon may still be settling
+      }
+    }
+    return [];
+  });
   createEffect(() => {
     const first = projects()?.[0];
     if (first && !ctx().project) setCtx((c) => ({ ...c, project: first.path }));
@@ -226,8 +237,7 @@ export function Home(): JSX.Element {
       const p = cmd.arg.trim();
       const label = cmd.command === 'org' ? 'Org' : 'Project';
       if (!p) return setError(`${label} directory is required`);
-      if (!isAbsolute(p))
-        return setError(`Remote daemon: absolute path needed (/srv/app)`);
+      if (!isAbsolute(p)) return setError(`Remote daemon: absolute path needed (/srv/app)`);
       const check = cmd.command === 'org' ? client.orgInfo(p) : client.projectProfile(p);
       void check.then(
         () => setCtx((c) => (cmd.command === 'org' ? { ...c, org: p } : { ...c, project: p })),
@@ -245,6 +255,8 @@ export function Home(): JSX.Element {
     if (org().error) return setError(org().error);
     const wf = workflow();
     if (!wf) return setError('Pick a workflow first: /workflow <name>');
+    // an empty project would run in the daemon's own working directory
+    if (!ctx().project.trim()) return setError('No project: /project <path>');
     const req = toSubmitRequest({ ...ctx(), workflow: wf }, text);
     // a conversation acts on the checkout itself; teams get the org default (a worktree)
     if (req.workspace === undefined && org().single.includes(wf)) req.workspace = 'inplace';
