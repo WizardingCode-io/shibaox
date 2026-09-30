@@ -1,0 +1,57 @@
+{
+  "name": "@wizardingcode/shibaox-desktop",
+  "version": "0.2.2",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "The Shibaox desktop app: the browser app in an Electron window, on the local daemon (through the bridge) or a remote one",
+  "main": "dist/main.mjs",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && node build.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "electron .",
+    "dist": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "@wizardingcode/shibaox-app": "workspace:*",
+    "@wizardingcode/shibaox-bridge": "workspace:*",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.2"
+  },
+  "build": {
+    "appId": "io.wizardingcode.shibaox",
+    "productName": "Shibaox",
+    "copyright": "Copyright © 2026 WizardingCode",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "npmRebuild": false,
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png",
+      "artifactName": "Shibaox-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "artifactName": "Shibaox-${version}-${arch}.${ext}"
+    }
+  }
+}
