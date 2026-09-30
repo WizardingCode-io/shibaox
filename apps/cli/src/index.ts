@@ -135,6 +135,7 @@ program
           graph: o.graph as GraphMode | undefined,
           budget: o.budget as number | undefined,
           model: o.model as string | undefined,
+          setup: o.setup as string | undefined,
           detach: Boolean(o.detach),
         },
         out(this),
