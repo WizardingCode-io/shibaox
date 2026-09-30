@@ -22,6 +22,7 @@
 Shibaox runs on your machine, or on a server you reach with a token. A daemon keeps your runs going after you close the terminal, a dashboard in your terminal or your browser shows what every agent is doing, and your models stay yours: Claude (subscription or API), OpenAI, OpenRouter, Ollama, LM Studio, and thirty more providers through one catalog.
 
 - **A dashboard in your browser.** `shibaox app`: the same conversations, tool calls and approvals as a web page, on the Shibaox design system, against a local or remote daemon.
+- **A desktop app for macOS.** `Shibaox.app` (dmg on each release): the same app in a window, on the local daemon or a remote one.
 - **Your org, as files.** Teams, roles, gates and workflows in `org/*.yaml`. Version it, review it, share it. `shibaox init --stack auto` starts a Node, Python, Laravel or Go team with its gates, protected files and a weekly security scan.
 - **One orchestrator.** Ask for what you want in your own language. It reads and edits the project, runs tools, and hands larger work to the right workflow.
 - **Approvals that mean something.** Push, deploy, inline code, network and protected files each ask a human first, per role, in both runtimes; plain commands never do.

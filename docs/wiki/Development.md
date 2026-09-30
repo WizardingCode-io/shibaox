@@ -24,8 +24,11 @@ node apps/cli/dist/index.js --help
 | `packages/adapter-claude-code` | `@wizardingcode/shibaox-adapter-claude-code` | the Claude Agent SDK runtime, tool rules, approvals |
 | `packages/workspace` | `@wizardingcode/shibaox-workspace` | git worktree per run: create, list, remove, diff |
 | `packages/memory` | `@wizardingcode/shibaox-memory` | vault notes, `Graphify` runner and MCP config |
+| `packages/bridge` | `@wizardingcode/shibaox-bridge` | the loopback bridge and the static server of the browser app (no dependencies: shared by the daemon, the CLI and the desktop app) |
 | `packages/daemon` | `@wizardingcode/shibaox-daemon` | the daemon: run manager, inbox, socket API and client, channels, schedules, key vault, org config, service, runtime wiring |
 | `apps/tui` | `@wizardingcode/shibaox-tui` | the OpenTUI + Solid dashboard (Bun); published as built JavaScript |
+| `apps/app` | `@wizardingcode/shibaox-app` | the browser app (React 18 + Vite on the design system), served by the daemon under `/app` |
+| `apps/desktop` | (private) | the macOS app: Electron main process bundled by esbuild, dmg by electron-builder (`pnpm --filter @wizardingcode/shibaox-desktop dist`) |
 | `apps/cli` | `shibaox` | the CLI: `shibaox [ui] / init / doctor / daemon / run / … / upgrade` |
 | `examples/sample-repo` | | a tiny Node project used by the sample workflow and the e2e tests |
 | `docs/wiki` | | this wiki's source |

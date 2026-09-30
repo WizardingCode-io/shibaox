@@ -1,0 +1,44 @@
+# Builds the macOS desktop app (dmg, arm64 + x64) on every version tag and on demand, and
+# attaches it to a DRAFT release of that tag: nothing goes public until the release is published.
+name: desktop
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'the tag to build and attach to (v0.2.3)'
+        required: true
+permissions:
+  contents: write
+jobs:
+  dmg:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm --filter @wizardingcode/shibaox-desktop test
+      - name: package the dmg (unsigned)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: pnpm --filter @wizardingcode/shibaox-desktop exec electron-builder --mac --publish never
+      - name: attach to a draft release of the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" apps/desktop/release/Shibaox-*.dmg --clobber
+          else
+            gh release create "$TAG" --draft --title "shibaox ${TAG#v}" \
+              --notes "Shibaox desktop app for macOS (unsigned: control-click Open the first time). The CLI and daemon: npm i -g shibaox@${TAG#v}" \
+              apps/desktop/release/Shibaox-*.dmg
+          fi
