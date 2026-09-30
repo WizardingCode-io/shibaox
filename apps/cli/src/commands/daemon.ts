@@ -8,6 +8,7 @@ import {
   homePaths,
   installService,
   loadDaemonConfig,
+  resolveAppDist,
   SecretsStore,
   type ServiceArgs,
   serviceKind,
@@ -41,6 +42,7 @@ export async function daemonStart(o: { detach?: boolean }, out: Out): Promise<nu
     return 0;
   }
   const daemon = new Daemon({
+    appDist: resolveAppDist(import.meta.url),
     version: CLI_VERSION,
     log: (l) => console.log(`${new Date().toISOString()} ${l}`),
   });
@@ -92,6 +94,7 @@ export async function serveCommand(
     tls: base.listen?.tls,
   };
   const daemon = new Daemon({
+    appDist: resolveAppDist(import.meta.url),
     version: CLI_VERSION,
     env,
     log: (l) => console.log(`${new Date().toISOString()} ${l}`),

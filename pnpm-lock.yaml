@@ -72,6 +72,9 @@ importers:
       '@wizardingcode/shibaox-adapter-direct':
         specifier: workspace:*
         version: link:../../packages/adapter-direct
+      '@wizardingcode/shibaox-app':
+        specifier: workspace:*
+        version: link:../app
       '@wizardingcode/shibaox-core':
         specifier: workspace:*
         version: link:../../packages/core

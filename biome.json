@@ -7,7 +7,8 @@
       "!**/node_modules",
       "!**/.turbo",
       "!**/.superpowers",
-      "!docs/assets"
+      "!docs/assets",
+      "!apps/app/vendor"
     ]
   },
   "formatter": {

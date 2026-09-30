@@ -1,7 +1,6 @@
 import { requestText } from '@wizardingcode/shibaox-view';
 import { ds } from '../ds.js';
 import { clock, money, RUN_STATUS_TONE, RUN_STATUS_WORD } from '../format.js';
-import { navigate } from '../router.js';
 import { useAppState, useStore } from '../store/hooks.js';
 
 /** Every conversation, newest activity first. */
@@ -26,15 +25,10 @@ export function ChatsScreen(): JSX.Element {
         {threads.map((t) => {
           const st = state.states[t.runId];
           return (
-            <div
+            <a
               key={t.runId}
-              role="link"
-              tabIndex={0}
-              style={{ cursor: 'pointer' }}
-              onClick={() => navigate(`#/t/${encodeURIComponent(t.runId)}`)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') navigate(`#/t/${encodeURIComponent(t.runId)}`);
-              }}
+              href={`#/t/${encodeURIComponent(t.runId)}`}
+              style={{ color: 'inherit', textDecoration: 'none', display: 'block' }}
             >
               <S.Card
                 interactive
@@ -47,7 +41,7 @@ export function ChatsScreen(): JSX.Element {
                   </S.Badge>
                 }
               />
-            </div>
+            </a>
           );
         })}
       </div>

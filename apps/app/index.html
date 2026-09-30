@@ -12,11 +12,16 @@
     <link rel="stylesheet" href="%BASE_URL%design-system/components/bundle.css" />
     <script>
       // the theme before the first paint: the saved choice, else the system's
-      try {
-        var t = localStorage.getItem('shibaox.theme');
-        document.documentElement.dataset.theme =
-          t === 'light' || t === 'dark' ? t : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      } catch (e) {}
+      (() => {
+        let saved = null;
+        try {
+          saved = localStorage.getItem('shibaox.theme');
+        } catch {
+          saved = null;
+        }
+        const dark = saved === 'dark' || (saved !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      })();
     </script>
   </head>
   <body>

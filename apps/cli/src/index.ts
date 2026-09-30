@@ -2,6 +2,7 @@
 import { ADAPTER_IDS, type AdapterId, type GraphMode } from '@wizardingcode/shibaox-daemon';
 import { Command, InvalidArgumentError, Option } from 'commander';
 import { connect } from './client.js';
+import { appCommand } from './commands/app.js';
 import {
   daemonInstall,
   daemonStart,
@@ -185,6 +186,18 @@ program
   .option('--budget <usd>', 'new budget in USD (required to resume a budget pause)', parseBudget)
   .action(async function (this: Command, runId: string, o: { budget?: number }) {
     exitWith(await resumeCommand(runId, o, out(this)));
+  });
+program
+  .command('app')
+  .description(
+    'the browser app (the dashboard as a web page): opens it against this daemon, or a remote one',
+  )
+  .option('--no-open', 'print the address, do not open the browser')
+  .option('--port <n>', 'the bridge port (socket-only daemons; default: any free port)', (v) =>
+    Number.parseInt(v, 10),
+  )
+  .action(async function (this: Command, o: { open?: boolean; port?: number }) {
+    exitWith(await appCommand(o, out(this)));
   });
 program
   .command('steer')

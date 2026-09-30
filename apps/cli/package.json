@@ -20,6 +20,7 @@
   "dependencies": {
     "@wizardingcode/shibaox-adapter-claude-code": "workspace:*",
     "@wizardingcode/shibaox-adapter-direct": "workspace:*",
+    "@wizardingcode/shibaox-app": "workspace:*",
     "@wizardingcode/shibaox-core": "workspace:*",
     "@wizardingcode/shibaox-daemon": "workspace:*",
     "@wizardingcode/shibaox-jev": "workspace:*",
@@ -27,9 +28,9 @@
     "@wizardingcode/shibaox-persistence-sqlite": "workspace:*",
     "@wizardingcode/shibaox-providers": "workspace:*",
     "@wizardingcode/shibaox-schemas": "workspace:*",
+    "@wizardingcode/shibaox-tui": "workspace:*",
     "@wizardingcode/shibaox-workspace": "workspace:*",
-    "commander": "^15.0.0",
-    "@wizardingcode/shibaox-tui": "workspace:*"
+    "commander": "^15.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
