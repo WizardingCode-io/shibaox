@@ -141,23 +141,21 @@
     return h(
       Tag,
       { className: cx('sx-shimmer', p.className), 'aria-label': text, style: p.style },
-      text
-        .split('')
-        .map((ch, i) =>
-          h(
-            'span',
-            {
-              key: i,
-              'aria-hidden': true,
-              className: 'sx-shimmer__c',
-              style: {
-                animationDuration: cycle + 's',
-                animationDelay: (i * dur) / spread / n + 's',
-              },
+      text.split('').map((ch, i) =>
+        h(
+          'span',
+          {
+            key: i,
+            'aria-hidden': true,
+            className: 'sx-shimmer__c',
+            style: {
+              animationDuration: cycle + 's',
+              animationDelay: (i * dur) / spread / n + 's',
             },
-            ch,
-          ),
+          },
+          ch,
         ),
+      ),
     );
   }
   function Spinner(p) {
