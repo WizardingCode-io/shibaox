@@ -112,7 +112,7 @@ describe('connect() with a remote daemon', () => {
       channels: [],
       env: { SHIBAOX_DAEMON_TOKEN: 'tok' },
       log: () => {},
-      version: '0.1.8',
+      version: '0.1.9',
       discovery: false,
       config: {
         max_concurrent_runs: 2,
@@ -139,7 +139,7 @@ describe('connect() with a remote daemon', () => {
       write: true,
     });
     expect(client.isRemote).toBe(true);
-    expect((await client.health()).version).toBe('0.1.8');
+    expect((await client.health()).version).toBe('0.1.9');
     expect(existsSync(join(clientHome, 'daemon.sock'))).toBe(false);
     expect(lines).toEqual([]);
   });
