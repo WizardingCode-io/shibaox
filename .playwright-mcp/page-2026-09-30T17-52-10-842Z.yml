@@ -1,0 +1,37 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - link [ref=e5] [cursor=pointer]:
+      - /url: "#/"
+      - img "Shibaox" [ref=e6]
+      - text: shibaox
+    - button "New chat" [ref=e25] [cursor=pointer]
+    - button "Chats 2" [ref=e28] [cursor=pointer]:
+      - generic [ref=e31]: Chats
+      - generic [ref=e32]: "2"
+    - button "Scheduled" [ref=e33] [cursor=pointer]
+    - button "Skills" [ref=e38] [cursor=pointer]
+    - button "Memory" [ref=e42] [cursor=pointer]
+    - button "Integrations" [ref=e54] [cursor=pointer]
+    - generic [ref=e58]: Recent
+    - generic [ref=e59]:
+      - button "scan" [ref=e60] [cursor=pointer]
+      - button "probe" [ref=e62] [cursor=pointer]
+      - button "Open https://example.com and repo…" [ref=e108] [cursor=pointer]
+      - button "Add a multiply(a,b) function to m…" [ref=e109] [cursor=pointer]
+      - button "Add a subtract(a,b) function to m…" [ref=e110] [cursor=pointer]
+      - button "the watched file changed" [ref=e111] [cursor=pointer]
+      - button "status changed" [ref=e112] [cursor=pointer]
+      - button "setup live" [ref=e113] [cursor=pointer]
+    - generic [ref=e76]:
+      - generic [ref=e77]: "Y"
+      - text: You
+      - button "Settings" [ref=e79] [cursor=pointer]
+  - main [ref=e169]:
+    - heading "Memory" [level=2] [ref=e171]
+    - generic [ref=e172]:
+      - heading "The project" [level=3] [ref=e173]
+      - paragraph [ref=e174]: Reading the project…
+      - heading "The org" [level=3] [ref=e175]
+      - paragraph [ref=e176]: Reading the org…
+      - heading "Notes" [level=3] [ref=e177]
+      - paragraph [ref=e178]: Every run leaves a note in the org's vault (10-projects/<project>/runs), routines keep their continuity under 90-system/routines, and the orchestrator's remember/recall work on the same files. They live on the daemon's machine, next to the org.

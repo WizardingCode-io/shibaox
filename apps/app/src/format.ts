@@ -47,3 +47,17 @@ export const RUN_STATUS_WORD: Record<string, string> = {
   failed: 'Failed',
   cancelled: 'Cancelled',
 };
+
+/** `30 Sep, 09:00` in the local clock (the date matters for routines). */
+export function when(iso: string | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}

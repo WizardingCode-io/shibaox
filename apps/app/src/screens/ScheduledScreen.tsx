@@ -1,7 +1,7 @@
 import type { RoutineRow } from '@wizardingcode/shibaox-daemon';
 import { useEffect, useState } from 'react';
 import { ds } from '../ds.js';
-import { clock } from '../format.js';
+import { when } from '../format.js';
 import { navigate } from '../router.js';
 import { useAppState, useStore } from '../store/hooks.js';
 
@@ -39,6 +39,10 @@ function AddRoutine(props: { onDone: () => void }): JSX.Element {
   const [workflow, setWorkflow] = useState('');
   const [input, setInput] = useState('');
   const [name, setName] = useState('');
+  const [watch, setWatch] = useState<'issues' | 'prs' | 'checks'>('issues');
+  const [repo, setRepo] = useState('');
+  const [label, setLabel] = useState('');
+  const [branch, setBranch] = useState('');
   useEffect(() => {
     if (!state.skills) void store.loadSkills();
   }, [store, state.skills]);
@@ -48,10 +52,10 @@ function AddRoutine(props: { onDone: () => void }): JSX.Element {
     if (type === 'github')
       return {
         type,
-        watch: (['issues', 'prs', 'checks'].includes(v) ? v : 'issues') as
-          | 'issues'
-          | 'prs'
-          | 'checks',
+        watch,
+        ...(repo.trim() ? { repo: repo.trim() } : {}),
+        ...(label.trim() ? { label: label.trim() } : {}),
+        ...(branch.trim() ? { branch: branch.trim() } : {}),
       };
     if (type === 'url') return { type, url: v };
     if (type === 'file') return { type, path: v };
@@ -67,7 +71,7 @@ function AddRoutine(props: { onDone: () => void }): JSX.Element {
         className="stack"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!value.trim() || !workflow.trim()) return;
+          if ((type !== 'github' && !value.trim()) || !workflow.trim()) return;
           void store
             .addRoutine({
               trigger: trigger(),
@@ -75,7 +79,9 @@ function AddRoutine(props: { onDone: () => void }): JSX.Element {
               input: input.trim(),
               ...(name.trim() ? { name: name.trim() } : {}),
             })
-            .then(props.onDone);
+            .then((ok) => {
+              if (ok) props.onDone();
+            });
         }}
       >
         <label className="muted" htmlFor="routine-trigger">
@@ -93,12 +99,51 @@ function AddRoutine(props: { onDone: () => void }): JSX.Element {
             </option>
           ))}
         </select>
-        <S.Input
-          label="Watch"
-          placeholder={hint}
-          value={value}
-          onChange={(e) => setValue((e.target as HTMLInputElement).value)}
-        />
+        {type === 'github' ? (
+          <>
+            <label className="muted" htmlFor="routine-watch">
+              What to watch
+            </label>
+            <select
+              id="routine-watch"
+              className="sx-select"
+              value={watch}
+              onChange={(e) => setWatch(e.target.value as typeof watch)}
+            >
+              <option value="issues">Issues</option>
+              <option value="prs">Pull requests</option>
+              <option value="checks">Checks (CI)</option>
+            </select>
+            <S.Input
+              label="Repository"
+              placeholder="owner/name (empty = the project's origin)"
+              value={repo}
+              onChange={(e) => setRepo((e.target as HTMLInputElement).value)}
+            />
+            {watch === 'checks' ? (
+              <S.Input
+                label="Branch"
+                placeholder="empty = the default branch"
+                value={branch}
+                onChange={(e) => setBranch((e.target as HTMLInputElement).value)}
+              />
+            ) : (
+              <S.Input
+                label="Label"
+                placeholder="only issues or PRs with this label (optional)"
+                value={label}
+                onChange={(e) => setLabel((e.target as HTMLInputElement).value)}
+              />
+            )}
+          </>
+        ) : (
+          <S.Input
+            label="Watch"
+            placeholder={hint}
+            value={value}
+            onChange={(e) => setValue((e.target as HTMLInputElement).value)}
+          />
+        )}
         <S.Input
           label="Workflow"
           placeholder={state.skills?.workflows.map((w) => w.name).join(', ') || 'hello-feature'}
@@ -175,7 +220,7 @@ export function ScheduledScreen(): JSX.Element {
               <div className="row">
                 <span className="muted">
                   {r.source === 'org' ? 'from the org' : 'added here'}
-                  {r.lastFiredAt ? ` · last run ${clock(r.lastFiredAt) ?? ''}` : ' · never ran'}
+                  {r.lastFiredAt ? ` · last run ${when(r.lastFiredAt)}` : ' · never ran'}
                 </span>
                 <span className="grow" />
                 {r.lastRunId ? (

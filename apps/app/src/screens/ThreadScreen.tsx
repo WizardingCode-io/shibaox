@@ -431,7 +431,7 @@ function ModelPicker(props: { rootId: string; current?: string }): JSX.Element {
   if (!open)
     return (
       <S.Button size="sm" variant="quiet" icon="brain" onClick={() => setOpen(true)}>
-        Model: {shortModel(chosen) ?? props.current ?? 'org tiers'}
+        Model: {props.current ?? "the org's tiers"}
       </S.Button>
     );
   const models = (state.integrations?.models ?? []).filter((m) => m.configured || m.available);
@@ -444,6 +444,7 @@ function ModelPicker(props: { rootId: string; current?: string }): JSX.Element {
         id="thread-model"
         className="sx-select"
         value={chosen ?? ''}
+        onBlur={() => setOpen(false)}
         onChange={(e) => {
           store.setThreadModel(props.rootId, e.target.value || undefined);
           setOpen(false);
@@ -480,8 +481,11 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
   );
   const inbox = state.inbox.filter((i) => runIds.has(i.runId));
   const live = store.liveTurn(props.rootId);
+  const picked = state.threadModels[props.rootId];
   const model = shortModel(
-    state.states[turns[turns.length - 1]?.runId ?? '']?.model ?? state.settings.model,
+    picked !== undefined
+      ? picked || undefined
+      : (state.states[turns[turns.length - 1]?.runId ?? '']?.model ?? state.settings.model),
   );
   const busy = live !== undefined || state.busy[props.rootId] === true;
   const runningTasks = store

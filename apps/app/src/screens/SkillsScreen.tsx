@@ -23,7 +23,8 @@ function RunTask(props: { workflow: string; onDone: () => void }): JSX.Element {
             ...(model.trim() ? { model: model.trim() } : {}),
           })
           .then((id) => {
-            if (id) window.location.hash = `#/t/${encodeURIComponent(id)}`;
+            if (!id) return;
+            window.location.hash = `#/t/${encodeURIComponent(id)}`;
             props.onDone();
           });
       }}
@@ -98,18 +99,20 @@ export function SkillsScreen(): JSX.Element {
             ) : null}
           </S.Card>
         ))}
-        {(skills?.catalog.length ?? 0) > 0 ? (
+        {(skills?.catalog.filter((c) => c.type !== 'mcp').length ?? 0) > 0 ? (
           <>
             <h3>Catalog</h3>
-            {skills?.catalog.map((c) => (
-              <S.Card
-                key={c.id}
-                icon={c.type === 'mcp' ? 'plug' : 'zap'}
-                title={c.id}
-                description={c.description}
-                action={<S.Badge>{c.type}</S.Badge>}
-              />
-            ))}
+            {skills?.catalog
+              .filter((c) => c.type !== 'mcp')
+              .map((c) => (
+                <S.Card
+                  key={c.id}
+                  icon={c.type === 'mcp' ? 'plug' : 'zap'}
+                  title={c.id}
+                  description={c.description}
+                  action={<S.Badge>{c.type}</S.Badge>}
+                />
+              ))}
           </>
         ) : null}
       </div>

@@ -23,7 +23,7 @@ The sidebar: the Shiba and the wordmark, **New chat**, the sections **Chats · S
 
 A conversation: the title (your first request), the agent's status (Working, Needs you, Online, Sleeping, Error), and three tabs.
 
-- **Chat**: your turns and the agent's replies as they stream; each tool call as a card (tool, gist, status, duration, arguments and output on demand); a command or a protected-file write waiting for you as a card with **Approve** and **Deny**; a human node (approve-push and the like) as a message with a note field and the two buttons. While a task runs, **Steer** in the top bar sends it a note (it stops and starts again with it). The composer sends the next turn (Cmd/Ctrl+Enter) once the previous one settled; **Stop** cancels the live turn. The model label is the run's model (choosing another one per conversation comes in the next release; Settings sets the model new chats start on).
+- **Chat**: your turns and the agent's replies as they stream; each tool call as a card (tool, gist, status, duration, arguments and output on demand); a command or a protected-file write waiting for you as a card with **Approve** and **Deny**; a human node (approve-push and the like) as a message with a note field and the two buttons. While a task runs, **Steer** in the top bar sends it a note (it stops and starts again with it). The composer sends the next turn (Cmd/Ctrl+Enter) once the previous one settled; **Stop** cancels the live turn. The model label is the model of the next turn: **Model** in the top bar picks one for this conversation (in memory until a turn runs on it), Settings sets the one new chats start on.
 - **Tasks**: the runs the orchestrator dispatched in this conversation, with status and cost, **Open**, **Steer** (a note for a running one), **Cancel**, and **Resume** with a budget for one that paused on its budget; what a dispatched run asks for (a command approval, a human node) shows on its card and in the chat.
 - **Logs**: every node, gate (with each check), decision, approval (who, via which channel) and the run summary; **Open audit** fetches the full audit document with your token and opens it.
 
@@ -31,7 +31,7 @@ A conversation: the title (your first request), the agent's status (Working, Nee
 
 **Scheduled**: the daemon's routines ([Routines](Routines)), each with its trigger in words, workflow, project, last run, and **Run now**, **Pause**/**Resume**, **Remove** (for routines added here; the ones from `org/routines/*.yaml` are kept by **Sync from org**), **Open last run**; **Add routine** takes a trigger (cron, GitHub issues/PRs/checks, a URL, a file, a command), a workflow and a request.
 
-**Skills**: the org's workflows with their descriptions, each with **Run task** (a request, optionally a project and a model: a worktree run that opens as a conversation), and the catalog entries.
+**Skills**: the org's workflows with their descriptions, each with **Run task** (a request, optionally a project and a model: a run in a worktree, or in place for a conversation workflow, that opens as a conversation), and the catalog's skills, plugins and tools (MCP servers are under Integrations).
 
 **Memory**: the project profile (git branch, stack, package manager, test command, files), the org (adapter, tiers, judge, budget), and where the vault notes live.
 

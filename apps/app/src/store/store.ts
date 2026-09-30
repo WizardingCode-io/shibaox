@@ -221,8 +221,18 @@ export class AppStore {
     if (this.ticking) return this.ticking;
     this.ticking = (async () => {
       try {
-        const [runs, inbox] = await Promise.all([this.client.listRuns(), this.client.inbox()]);
-        this.set({ runs, inbox, reachable: true, unauthorized: false });
+        const [runs, inbox, routines] = await Promise.all([
+          this.client.listRuns(),
+          this.client.inbox(),
+          this.client.routines().catch(() => undefined),
+        ]);
+        this.set({
+          runs,
+          inbox,
+          reachable: true,
+          unauthorized: false,
+          ...(routines ? { routines } : {}),
+        });
         if (this.state.open) await this.syncThread(this.state.open);
         // the sidebar names the recent threads by their request: fetch those states once
         for (const t of this.threads().slice(0, 8))
@@ -423,9 +433,12 @@ export class AppStore {
           messages,
           thread: rootId,
           ...(o.event ? { event: true } : {}),
-          ...((this.state.threadModels[rootId] ?? prev.model)
-            ? { model: this.state.threadModels[rootId] ?? prev.model }
-            : {}),
+          ...(() => {
+            // a model picked for the thread wins; '' picked means the org's tiers (no model at all)
+            const m =
+              rootId in this.state.threadModels ? this.state.threadModels[rootId] : prev.model;
+            return m ? { model: m } : {};
+          })(),
           adapter: prev.adapter as SubmitRequest['adapter'],
           workspace: prev.workspaceMode,
           budgetUsd: prev.budgetUsd,
@@ -449,24 +462,27 @@ export class AppStore {
     const live = this.liveTurn(rootId);
     if (live) await this.cancel(live.runId);
   }
-  private async act(what: () => Promise<unknown>): Promise<void> {
+  /** Runs an action; the error becomes the toast; the result says whether it worked. */
+  private async act(what: () => Promise<unknown>): Promise<boolean> {
     try {
       await what();
       if (this.running) await this.refresh();
+      return true;
     } catch (e) {
       this.set({ error: message(e) });
+      return false;
     }
   }
-  answer(inboxId: string, approved: boolean, note?: string): Promise<void> {
+  answer(inboxId: string, approved: boolean, note?: string): Promise<boolean> {
     return this.act(() => this.client.answer(inboxId, { approved, ...(note ? { note } : {}) }));
   }
-  steer(runId: string, note: string): Promise<void> {
+  steer(runId: string, note: string): Promise<boolean> {
     return this.act(() => this.client.steer(runId, { note }));
   }
-  cancel(runId: string): Promise<void> {
+  cancel(runId: string): Promise<boolean> {
     return this.act(() => this.client.cancel(runId));
   }
-  resume(runId: string, budgetUsd?: number): Promise<void> {
+  resume(runId: string, budgetUsd?: number): Promise<boolean> {
     return this.act(() => this.client.resume(runId, budgetUsd !== undefined ? { budgetUsd } : {}));
   }
   /** The audit of a run as Markdown, fetched with the token. */
@@ -475,12 +491,8 @@ export class AppStore {
   }
   /** The model the next turns of a thread run on. */
   setThreadModel(rootId: string, ref: string | undefined): void {
-    this.set((s) => {
-      const threadModels = { ...s.threadModels };
-      if (ref) threadModels[rootId] = ref;
-      else delete threadModels[rootId];
-      return { threadModels };
-    });
+    // undefined = the org's tiers from now on (kept as '' so it overrides the previous turn's model)
+    this.set((s) => ({ threadModels: { ...s.threadModels, [rootId]: ref ?? '' } }));
   }
 
   // ---- the other sections
@@ -534,25 +546,25 @@ export class AppStore {
       this.set({ routines: await this.client.routines() });
     }).then(() => undefined);
   }
-  runRoutine(id: string): Promise<void> {
+  runRoutine(id: string): Promise<boolean> {
     return this.act(async () => {
       await this.client.runRoutine(id);
       await this.loadRoutines();
     });
   }
-  pauseRoutine(id: string): Promise<void> {
+  pauseRoutine(id: string): Promise<boolean> {
     return this.act(async () => {
       await this.client.pauseRoutine(id);
       await this.loadRoutines();
     });
   }
-  resumeRoutine(id: string): Promise<void> {
+  resumeRoutine(id: string): Promise<boolean> {
     return this.act(async () => {
       await this.client.resumeRoutine(id);
       await this.loadRoutines();
     });
   }
-  removeRoutine(id: string): Promise<void> {
+  removeRoutine(id: string): Promise<boolean> {
     return this.act(async () => {
       await this.client.removeRoutine(id);
       await this.loadRoutines();
@@ -561,7 +573,7 @@ export class AppStore {
   /** A routine on the default project and org unless given. */
   addRoutine(
     r: Omit<RoutineInput, 'orgRoot' | 'project'> & { orgRoot?: string; project?: string },
-  ): Promise<void> {
+  ): Promise<boolean> {
     return this.act(async () => {
       const d = await this.defaults();
       await this.client.addRoutine({
@@ -572,7 +584,7 @@ export class AppStore {
       await this.loadRoutines();
     });
   }
-  syncRoutines(): Promise<void> {
+  syncRoutines(): Promise<boolean> {
     return this.act(async () => {
       const d = await this.defaults();
       await this.client.syncRoutines(d.orgRoot);
@@ -622,30 +634,41 @@ export class AppStore {
   loadIntegrations(): Promise<void> {
     return this.load(async () => {
       const d = await this.defaults();
+      const failed: string[] = [];
+      const part = <T>(what: Promise<T>, fallback: T): Promise<T> =>
+        what.catch((e: unknown) => {
+          if (isUnauthorized(e)) this.set({ unauthorized: true });
+          failed.push(message(e));
+          return fallback;
+        });
       const [mcp, models, keys, config] = await Promise.all([
-        this.client.mcpList(d.orgRoot).catch(() => []),
-        this.client.models().catch(() => []),
-        this.client.keys().catch(() => []),
-        this.client.orgConfig(d.orgRoot).catch(() => undefined),
+        part(this.client.mcpList(d.orgRoot), [] as Awaited<ReturnType<StoreClient['mcpList']>>),
+        part(this.client.models(), [] as Awaited<ReturnType<StoreClient['models']>>),
+        part(this.client.keys(), [] as Awaited<ReturnType<StoreClient['keys']>>),
+        part(
+          this.client.orgConfig(d.orgRoot),
+          undefined as Awaited<ReturnType<StoreClient['orgConfig']>> | undefined,
+        ),
       ]);
+      if (failed.length) this.set({ error: failed[0] });
       this.set({
         integrations: { org: d.orgRoot, mcp, models, keys, config: config ?? undefined },
       });
     }).then(() => undefined);
   }
-  setKey(name: string, value: string): Promise<void> {
+  setKey(name: string, value: string): Promise<boolean> {
     return this.act(async () => {
       await this.client.setKey(name, value);
       await this.loadIntegrations();
     });
   }
-  unsetKey(name: string): Promise<void> {
+  unsetKey(name: string): Promise<boolean> {
     return this.act(async () => {
       await this.client.unsetKey(name);
       await this.loadIntegrations();
     });
   }
-  saveOrgConfig(patch: OrgConfigPatch): Promise<void> {
+  saveOrgConfig(patch: OrgConfigPatch): Promise<boolean> {
     return this.act(async () => {
       const d = await this.defaults();
       await this.client.setOrgConfig(d.orgRoot, patch);

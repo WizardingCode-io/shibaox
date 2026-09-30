@@ -127,7 +127,11 @@ function Tiers(): JSX.Element {
       onSubmit={(e) => {
         e.preventDefault();
         const patch: Record<string, unknown> = {};
-        const changed = Object.fromEntries(Object.entries(tiers).filter(([, v]) => v.trim()));
+        const changed = Object.fromEntries(
+          Object.entries(tiers)
+            .filter(([, v]) => v.trim())
+            .map(([k, v]) => [k, v.trim()]),
+        );
         if (Object.keys(changed).length) patch.tiers = changed;
         if (judge !== undefined) patch.judge = judge.trim() || null;
         if (budget !== undefined)

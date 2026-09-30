@@ -577,3 +577,64 @@ describe('AppStore: the sections', () => {
     store.stop();
   });
 });
+
+describe('AppStore: the slice-2 review fixes', () => {
+  it('"the org tiers" after an explicit model really drops the model from the next turn', async () => {
+    const f = fakeClient();
+    f.add('root', { input: { spec: 'hi' } });
+    const store = new AppStore({ client: f.client, intervals: { fast: 20, slow: 20 } });
+    store.start();
+    store.openThread('root');
+    await vi.waitFor(() => expect(store.thread('root')).toBeDefined());
+    store.setThreadModel('root', 'lmstudio/q');
+    await store.send('root', 'one');
+    const t2 = f.runs.get('new-2') as Turn;
+    t2.state = { ...t2.state, status: 'completed', model: 'lmstudio/q' } as RunState;
+    t2.summary = { ...t2.summary, status: 'completed' };
+    store.setThreadModel('root', undefined);
+    await store.send('root', 'two');
+    const submits = f.calls
+      .filter((c) => c.name === 'submitRun')
+      .map((c) => c.args[0] as SubmitRequest);
+    expect(submits[0]?.model).toBe('lmstudio/q');
+    expect(submits[1]?.model).toBeUndefined();
+    store.stop();
+  });
+  it('the routines come with the poll, so the sidebar count is there without visiting Scheduled', async () => {
+    const f = fakeClient();
+    const store = new AppStore({ client: f.client, intervals: { fast: 20, slow: 20 } });
+    store.start();
+    await vi.waitFor(() => expect(store.get().routines?.length).toBe(1));
+    store.stop();
+  });
+  it('a failing part of Integrations surfaces as the error, the rest still loads; addRoutine says whether it worked', async () => {
+    const f = fakeClient();
+    const broken = {
+      ...f.client,
+      mcpList: async () => {
+        throw new Error('org not found');
+      },
+    };
+    const store = new AppStore({ client: broken });
+    await store.loadIntegrations();
+    expect(store.get().error).toContain('org not found');
+    expect(store.get().integrations?.keys[0]?.name).toBe('OPENAI_API_KEY');
+    const refusing = {
+      ...f.client,
+      addRoutine: async () => {
+        throw new Error('a command trigger is added from the daemon own machine');
+      },
+    };
+    const s2 = new AppStore({ client: refusing });
+    expect(
+      await s2.addRoutine({ trigger: { type: 'command', command: 'x' }, workflow: 'w', input: '' }),
+    ).toBe(false);
+    expect(
+      await store.addRoutine({
+        trigger: { type: 'cron', cron: '* * * * *' },
+        workflow: 'w',
+        input: '',
+      }),
+    ).toBe(true);
+  });
+});

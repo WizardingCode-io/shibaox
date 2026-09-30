@@ -638,3 +638,32 @@ describe('the sections', () => {
     );
   });
 });
+
+describe('the sections: the review fixes', () => {
+  it('a GitHub routine takes what to watch and the optional repo, label and branch', async () => {
+    const { client: c, calls } = client();
+    mount(c, { hash: '#/scheduled' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Add routine' }));
+    fireEvent.change(screen.getByLabelText('Trigger'), { target: { value: 'github' } });
+    fireEvent.change(await screen.findByLabelText('What to watch'), { target: { value: 'prs' } });
+    fireEvent.change(screen.getByLabelText('Label'), { target: { value: 'bug' } });
+    fireEvent.change(screen.getByLabelText('Repository'), { target: { value: 'wc/app' } });
+    fireEvent.change(screen.getByLabelText('Workflow'), { target: { value: 'review-pr' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save routine' }));
+    await waitFor(() =>
+      expect(calls.find((x) => x.name === 'addRoutine')?.args[0]).toMatchObject({
+        trigger: { type: 'github', watch: 'prs', label: 'bug', repo: 'wc/app' },
+        workflow: 'review-pr',
+      }),
+    );
+  });
+  it('the composer shows the model picked for the conversation', async () => {
+    const { client: c } = client({ runs: [summary('root')], states: { root: state('root') } });
+    mount(c, { hash: '#/t/root' });
+    fireEvent.click(await screen.findByRole('button', { name: /Model/ }));
+    fireEvent.change(await screen.findByLabelText('Model for this conversation'), {
+      target: { value: 'lmstudio/qwen' },
+    });
+    await waitFor(() => expect(screen.getByText('qwen')).toBeTruthy());
+  });
+});

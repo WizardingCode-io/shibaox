@@ -1,0 +1,55 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - link [ref=e5] [cursor=pointer]:
+      - /url: "#/"
+      - img "Shibaox" [ref=e6]
+      - text: shibaox
+    - button "New chat" [ref=e25] [cursor=pointer]
+    - button "Chats 2" [ref=e28] [cursor=pointer]:
+      - generic [ref=e31]: Chats
+      - generic [ref=e32]: "2"
+    - button "Scheduled" [ref=e33] [cursor=pointer]
+    - button "Skills" [ref=e38] [cursor=pointer]
+    - button "Memory" [ref=e42] [cursor=pointer]
+    - button "Integrations" [ref=e54] [cursor=pointer]
+    - generic [ref=e58]: Recent
+    - generic [ref=e59]:
+      - button "scan" [ref=e60] [cursor=pointer]
+      - button "probe" [ref=e62] [cursor=pointer]
+      - button "Open https://example.com and repo…" [ref=e108] [cursor=pointer]
+      - button "Add a multiply(a,b) function to m…" [ref=e109] [cursor=pointer]
+      - button "Add a subtract(a,b) function to m…" [ref=e110] [cursor=pointer]
+      - button "the watched file changed" [ref=e111] [cursor=pointer]
+      - button "status changed" [ref=e112] [cursor=pointer]
+      - button "setup live" [ref=e113] [cursor=pointer]
+    - generic [ref=e76]:
+      - generic [ref=e77]: "Y"
+      - text: You
+      - button "Settings" [ref=e79] [cursor=pointer]
+  - main [ref=e169]:
+    - heading "Memory" [level=2] [ref=e171]
+    - generic [ref=e172]:
+      - heading "The project" [level=3] [ref=e173]
+      - generic [ref=e179]:
+        - generic [ref=e184]:
+          - generic [ref=e185]: sample-repo
+          - generic [ref=e186]: /private/tmp/claude-501/shx-stack-heZa
+        - generic [ref=e188]:
+          - generic [ref=e189]: git · main
+          - generic [ref=e190]: · JavaScript
+          - generic [ref=e191]: · npm
+          - generic [ref=e192]: "· tests: npm test"
+          - generic [ref=e193]: · 39 files
+      - heading "The org" [level=3] [ref=e175]
+      - generic [ref=e194]:
+        - generic [ref=e207]:
+          - generic [ref=e208]: my-org
+          - generic [ref=e209]: /Users/andreagroferreira/.shibaox/org
+        - generic [ref=e211]:
+          - generic [ref=e212]: adapter direct
+          - generic [ref=e213]: "· strong: openrouter/anthropic/claude-sonnet-4.5"
+          - generic [ref=e214]: "· cheap: openrouter/qwen/qwen3-coder"
+          - generic [ref=e215]: "· decision: openrouter/typesafe/jev-router"
+          - generic [ref=e216]: · $5 per run
+      - heading "Notes" [level=3] [ref=e177]
+      - paragraph [ref=e178]: Every run leaves a note in the org's vault (10-projects/<project>/runs), routines keep their continuity under 90-system/routines, and the orchestrator's remember/recall work on the same files. They live on the daemon's machine, next to the org.

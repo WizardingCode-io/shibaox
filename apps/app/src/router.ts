@@ -8,7 +8,7 @@ export type Route =
   | { name: 'section'; section: 'scheduled' | 'skills' | 'memory' | 'integrations' }
   | { name: 'soon'; section: string };
 
-/** `#/`, `#/chats`, `#/t/<rootId>`, `#/settings`, `#/soon/<section>`. */
+/** `#/`, `#/chats`, `#/t/<rootId>`, `#/scheduled|skills|memory|integrations`, `#/settings`, `#/soon/<section>`. */
 export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#/, '').split('&')[0] ?? '';
   const m = /^\/t\/([^/]+)$/.exec(path);
