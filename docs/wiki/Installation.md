@@ -26,6 +26,7 @@ Then:
 shibaox doctor           # what is ready, what is missing
 shibaox daemon install   # keep the daemon running across logins (launchd on macOS, systemd --user on Linux)
 shibaox                  # the dashboard
+shibaox app              # the same, as a web page in your browser
 ```
 
 ## With npm

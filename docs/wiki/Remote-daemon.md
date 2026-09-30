@@ -43,6 +43,10 @@ From then on every command goes to the remote. `--remote <url>` or `SHIBAOX_REMO
 
 With a remote set, the CLI never starts or restarts a daemon: a remote that does not answer, refuses the token or is older than the CLI is explained, and you fix it on the server (`shibaox upgrade` there, or `npm i -g shibaox@latest`, then restart `serve`). `daemon start|stop|install` stay local commands.
 
+## The app on a remote
+
+The daemon serves the browser app at `<url>/app/` (public files; the API behind them needs the token). `shibaox app` on your machine opens it with the token in the URL fragment; anyone with the URL alone gets the Connect screen. See [The app](App).
+
 ## The dashboard on a remote
 
 The dashboard reads nothing from your disk when it talks to a remote: the project list comes from `daemon.yaml projects` on the server, the projects of recent runs and the daemon's own workspace; the org is the daemon's default org (or `/org <absolute path on the server>`); `/project` takes an absolute path on the server and the daemon checks it exists. The footer names the remote (`remote box.example:7433`). Runs, approvals, diffs, keys and tiers work as they do locally, over the API.

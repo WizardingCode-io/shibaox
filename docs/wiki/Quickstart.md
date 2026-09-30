@@ -24,6 +24,8 @@ A project can carry its own org instead: `shibaox init .` scaffolds `org/` and `
 
 ## 3. Talk
 
+`shibaox` opens the terminal dashboard; `shibaox app` opens the same in your browser ([The app](App)).
+
 ```sh
 cd your-project
 shibaox

@@ -6,6 +6,7 @@
 
 **Using Shibaox**
 - [Dashboard](Dashboard)
+- [The app](App)
 - [Orchestrator](Orchestrator)
 - [Providers and models](Providers-and-models)
 - [Gates](Gates)

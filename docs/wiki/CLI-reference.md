@@ -38,6 +38,11 @@
 
 | Command | |
 | --- | --- |
+| `shibaox app [--no-open] [--port <n>]` | the browser app: opens it against this daemon (or a remote one); a socket-only daemon gets a loopback bridge that lives while the command runs ([The app](App)) |
+
+
+| Command | |
+| --- | --- |
 | `shibaox daemon start [--detach]`, `status`, `stop [--force]` | the daemon |
 | `shibaox daemon install`, `uninstall` | the service: launchd (macOS) or `systemd --user` (Linux) |
 | `shibaox serve [--host <addr>] [--port <n>]` | the daemon in the foreground, reachable over the network with the token in `SHIBAOX_DAEMON_TOKEN` (vault or environment) |
