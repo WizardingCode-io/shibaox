@@ -31,13 +31,15 @@ jobs:
       - name: wait for the version and its packages on npm (a tag may arrive before the publish propagates)
         run: |
           v="${{ steps.v.outputs.version }}"
-          for i in $(seq 1 40); do
+          for i in $(seq 1 80); do
             if deps="$(npm view "shibaox@$v" dependencies --json 2>/dev/null)"; then
               ok=1
               for spec in $(echo "$deps" | node -e 'const d=JSON.parse(require("fs").readFileSync(0,"utf8")); for (const [n,r] of Object.entries(d)) if (n.startsWith("@wizardingcode/")) console.log(n+"@"+r)'); do
                 npm view "$spec" version >/dev/null 2>&1 || ok=0
               done
-              [ "$ok" = 1 ] && exit 0
+              # the metadata shows a version minutes before its tarball is served: wait for the tarball too
+    curl -fsSL -o /dev/null "https://registry.npmjs.org/shibaox/-/shibaox-$v.tgz" || ok=0
+    [ "$ok" = 1 ] && exit 0
             fi
             sleep 15
           done
