@@ -534,6 +534,7 @@ describe('a remote listener (TCP with a bearer token)', () => {
     // a wrong token, or none: 401 everywhere but a reduced /health
     const wrong = new DaemonClient({ baseUrl: `http://127.0.0.1:${addr?.port}`, token: 'nope' });
     await expect(wrong.listRuns()).rejects.toMatchObject({ status: 401 });
+    await expect(wrong.health()).rejects.toMatchObject({ status: 401 }); // a wrong token is told at once
     const anonymous = new DaemonClient({ baseUrl: `http://127.0.0.1:${addr?.port}` });
     await expect(anonymous.listRuns()).rejects.toMatchObject({ status: 401 });
     expect(await anonymous.health()).toEqual({ version: '9.9.9' });

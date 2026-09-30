@@ -3,12 +3,14 @@ import { join, resolve } from 'node:path';
 import { runCommand } from '@wizardingcode/shibaox-core';
 import {
   DaemonClient,
+  DaemonHttpError,
   DaemonUnavailableError,
   homePaths,
   loadDaemonConfig,
   SecretsStore,
   serviceStatus,
 } from '@wizardingcode/shibaox-daemon';
+import { remoteTarget } from '../remote.js';
 import { CLI_VERSION } from '../version.js';
 import { staleServiceHint } from './daemon.js';
 
@@ -147,6 +149,27 @@ export async function doctorCommand(): Promise<number> {
 
 async function daemonLine(): Promise<CheckLine> {
   const paths = homePaths();
+  const remote = remoteTarget(process.env);
+  if (remote) {
+    try {
+      const h = await new DaemonClient({ baseUrl: remote.baseUrl, token: remote.token }).health();
+      const older = h.version !== CLI_VERSION ? ` (this CLI is ${CLI_VERSION})` : '';
+      return {
+        name: 'daemon',
+        ok: true,
+        detail: `remote ${remote.baseUrl}, version ${h.version}${older}`,
+        required: false,
+      };
+    } catch (e) {
+      const detail =
+        e instanceof DaemonUnavailableError
+          ? `no answer at ${remote.baseUrl} (is shibaox serve running there?)`
+          : e instanceof DaemonHttpError && e.status === 401
+            ? `${remote.baseUrl} refused the token: shibaox remote set ${remote.baseUrl} <token>`
+            : String(e);
+      return { name: 'daemon', ok: false, detail, required: false };
+    }
+  }
   try {
     const h = await new DaemonClient(paths.socket).health();
     const stale = h.version !== CLI_VERSION ? ` (CLI is ${CLI_VERSION}: restart it)` : '';

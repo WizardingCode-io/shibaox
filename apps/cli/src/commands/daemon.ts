@@ -17,6 +17,7 @@ import {
 } from '@wizardingcode/shibaox-daemon';
 import { connect, spawnDaemon } from '../client.js';
 import type { Out } from '../output.js';
+import { remoteTarget, TOKEN_WARNING } from '../remote.js';
 import { CLI_VERSION } from '../version.js';
 
 /** `shibaox daemon start`: foreground by default, detached with `--detach`. */
@@ -44,15 +45,82 @@ export async function daemonStart(o: { detach?: boolean }, out: Out): Promise<nu
   });
   await daemon.start();
   console.log(`shibaox daemon ${CLI_VERSION} listening on ${paths.socket}`);
-  await new Promise<void>((resolve) => {
+  const addr = daemon.listenAddress();
+  if (addr) console.log(`also serving on ${listenUrl(addr)} (daemon.yaml listen)`);
+  return foreground(daemon);
+}
+
+const listenUrl = (a: { host: string; port: number; tls: boolean }) =>
+  `${a.tls ? 'https' : 'http'}://${a.host}:${a.port}`;
+
+/** Stays until SIGINT/SIGTERM, then stops the daemon (waiting for its runs). */
+function foreground(daemon: Daemon): Promise<number> {
+  return new Promise<number>((resolve) => {
     const stop = () => {
       console.log('Stopping the shibaox daemon...');
-      void daemon.stop().then(resolve);
+      void daemon.stop().then(() => resolve(0));
     };
     process.once('SIGINT', stop);
     process.once('SIGTERM', stop);
   });
-  return 0;
+}
+
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+/**
+ * `shibaox serve`: the daemon in the foreground, reachable over the network with a token.
+ * Host, port and the token variable come from `daemon.yaml listen` and are overridden by the
+ * flags; the token itself from the vault or the environment.
+ */
+export async function serveCommand(
+  o: { host?: string; port?: number },
+  out: Out,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<number> {
+  const paths = homePaths(env);
+  const base = loadDaemonConfig(paths.config);
+  const listen = {
+    host: o.host ?? base.listen?.host ?? '0.0.0.0',
+    port: o.port ?? base.listen?.port ?? 7433,
+    token_env: base.listen?.token_env ?? 'SHIBAOX_DAEMON_TOKEN',
+    tls: base.listen?.tls,
+  };
+  const daemon = new Daemon({
+    version: CLI_VERSION,
+    env,
+    log: (l) => console.log(`${new Date().toISOString()} ${l}`),
+    config: { ...base, listen },
+  });
+  try {
+    await daemon.start();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (new RegExp(`${listen.token_env} is not set`).test(msg)) {
+      out.line(`No token: ${listen.token_env} is not in the vault nor in the environment.`);
+      out.line(
+        `Create one: shibaox keys set ${listen.token_env} $(openssl rand -hex 32)   (then give it to the clients: shibaox remote set <url> <token>)`,
+      );
+      out.line(TOKEN_WARNING);
+      out.obj({ serving: false, error: msg });
+      return 1;
+    }
+    throw e;
+  }
+  const addr = daemon.listenAddress();
+  if (!addr) throw new Error('serve: the daemon started without a network listener');
+  const url = listenUrl(addr);
+  const banner = [
+    `shibaox daemon ${CLI_VERSION} serving on ${url} (socket ${paths.socket})`,
+    TOKEN_WARNING,
+    ...(!addr.tls && !LOOPBACK.has(addr.host)
+      ? [
+          'Plain HTTP: the token travels in clear. Reach it through an SSH tunnel or a VPN, or put TLS in front (daemon.yaml listen.tls).',
+        ]
+      : []),
+    `From another machine: shibaox remote set ${url} <token>`,
+  ];
+  console.log(banner.join('\n'));
+  return foreground(daemon);
 }
 
 export async function daemonStop(o: { force?: boolean }, out: Out): Promise<number> {
@@ -232,17 +300,31 @@ export async function daemonUninstall(out: Out, d: ServiceDeps = {}): Promise<nu
 
 export async function daemonStatus(out: Out): Promise<number> {
   const paths = homePaths();
+  const remote = remoteTarget(process.env);
   let client: DaemonClient;
-  const serviceHint = await staleServiceHint(paths);
+  const serviceHint = remote ? undefined : await staleServiceHint(paths);
   try {
     client = await connect({ env: { ...process.env, SHIBAOX_NO_AUTOSTART: '1' }, log: () => {} });
-  } catch {
+  } catch (e) {
+    if (remote) {
+      out.line(e instanceof Error ? e.message : String(e));
+      out.obj({ running: false, remote: remote.baseUrl });
+      return 1;
+    }
     out.line(`No shibaox daemon is running (socket: ${paths.socket}).`);
     if (serviceHint) out.line(serviceHint);
     out.obj({ running: false, socket: paths.socket });
     return 1;
   }
   const h = await client.health();
+  if (remote) {
+    out.line(`shibaox daemon version ${h.version}, up ${h.uptimeSeconds}s`);
+    out.line(`runs: ${h.runs.running} running, ${h.runs.queued} queued`);
+    out.line(`channels: ${h.channels.length ? h.channels.join(', ') : 'none'}`);
+    out.line(`remote: ${remote.baseUrl}`);
+    out.obj({ running: true, remote: remote.baseUrl, ...h });
+    return 0;
+  }
   const pid = existsSync(paths.pid) ? readFileSync(paths.pid, 'utf8').trim() : undefined;
   out.line(
     `shibaox daemon version ${h.version}${pid ? ` (pid ${pid})` : ''}, up ${h.uptimeSeconds}s`,

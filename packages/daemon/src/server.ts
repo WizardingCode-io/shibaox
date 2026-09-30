@@ -235,18 +235,22 @@ export class DaemonServer {
 
   /**
    * The same API on a TCP port. Every request must carry `Authorization: Bearer <token>`
-   * (compared in constant time); the one exception is `GET /health`, which answers the
-   * version only, so a monitor can watch the daemon without the token.
+   * (compared in constant time); the one exception is `GET /health` without any token, which
+   * answers the version only, so a monitor can watch the daemon without the token.
    */
   private async listenRemote(on: ListenOptions): Promise<void> {
     const handler = (req: IncomingMessage, res: ServerResponse) => {
       if (!bearerOk(req.headers.authorization, on.token)) {
-        if (req.method === 'GET' && (req.url ?? '/').split('?')[0] === '/health')
+        // no token at all: a monitor may still read the version; a wrong one is told so at once
+        const anonymous = req.headers.authorization === undefined;
+        if (anonymous && req.method === 'GET' && (req.url ?? '/').split('?')[0] === '/health')
           return send(res, 200, { version: this.deps.health().version });
         return send(res, 401, {
           error: {
             code: 'unauthorized',
-            message: 'a bearer token is required (SHIBAOX_DAEMON_TOKEN)',
+            message: anonymous
+              ? 'a bearer token is required (SHIBAOX_DAEMON_TOKEN)'
+              : 'the bearer token is wrong (SHIBAOX_DAEMON_TOKEN)',
           },
         });
       }

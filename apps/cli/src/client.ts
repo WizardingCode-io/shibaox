@@ -2,11 +2,13 @@ import { spawn } from 'node:child_process';
 import { openSync } from 'node:fs';
 import {
   DaemonClient,
+  DaemonHttpError,
   DaemonUnavailableError,
   ensureDaemon,
   type HomePaths,
   homePaths,
 } from '@wizardingcode/shibaox-daemon';
+import { type RemoteTarget, remoteTarget } from './remote.js';
 import { CLI_VERSION } from './version.js';
 
 export interface ConnectOptions {
@@ -116,6 +118,8 @@ export async function connect(o: ConnectOptions = {}): Promise<DaemonClient> {
   const env = o.env ?? process.env;
   const paths = homePaths(env);
   const log = o.log ?? ((l: string) => console.error(l));
+  const remote = remoteTarget(env);
+  if (remote) return connectRemote(remote, o, log);
   let client: DaemonClient;
   if (env.SHIBAOX_NO_AUTOSTART) {
     client = new DaemonClient(paths.socket);
@@ -159,6 +163,46 @@ export async function connect(o: ConnectOptions = {}): Promise<DaemonClient> {
     });
     if (!r.restarted && o.write)
       throw new Error(`Daemon ${r.version} is older than this CLI (${CLI_VERSION}).`);
+  }
+  return client;
+}
+
+/**
+ * A client to a daemon on another machine. Nothing is started or restarted from here: a remote
+ * that does not answer, refuses the token or is older than this CLI is explained, not fixed.
+ */
+async function connectRemote(
+  remote: RemoteTarget,
+  o: ConnectOptions,
+  log: (line: string) => void,
+): Promise<DaemonClient> {
+  const how =
+    remote.source === 'env'
+      ? 'SHIBAOX_REMOTE / --remote'
+      : `shibaox remote set ${remote.baseUrl} <token>`;
+  if (!remote.token)
+    throw new Error(
+      `The remote ${remote.baseUrl} is set but no token is: shibaox remote set ${remote.baseUrl} <token> (or SHIBAOX_REMOTE_TOKEN).`,
+    );
+  const client = new DaemonClient({ baseUrl: remote.baseUrl, token: remote.token });
+  let health: Awaited<ReturnType<DaemonClient['health']>>;
+  try {
+    health = await client.health();
+  } catch (e) {
+    if (e instanceof DaemonUnavailableError)
+      throw new Error(
+        `No shibaox daemon answers at ${remote.baseUrl} (${how}). Is \`shibaox serve\` running there?`,
+      );
+    if (e instanceof DaemonHttpError && e.status === 401)
+      throw new Error(
+        `The daemon at ${remote.baseUrl} refused the token. Set the right one: shibaox remote set ${remote.baseUrl} <token>`,
+      );
+    throw e;
+  }
+  if (olderThan(health.version, CLI_VERSION)) {
+    const msg = `Daemon ${health.version} at ${remote.baseUrl} is older than this CLI (${CLI_VERSION}): upgrade it there (shibaox upgrade, or npm i -g shibaox@latest, then restart shibaox serve).`;
+    if (o.write) throw new Error(msg);
+    log(`warn: ${msg}`);
   }
   return client;
 }

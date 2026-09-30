@@ -8,6 +8,7 @@ import {
   daemonStatus,
   daemonStop,
   daemonUninstall,
+  serveCommand,
 } from './commands/daemon.js';
 import { doctorCommand } from './commands/doctor.js';
 import { graphBuild, graphQuery, graphUpdate } from './commands/graph.js';
@@ -16,6 +17,7 @@ import { initCommand } from './commands/init.js';
 import { keysList, keysSet, keysUnset } from './commands/keys.js';
 import { modelsCommand } from './commands/models.js';
 import { providersListCommand, providersTestCommand } from './commands/providers.js';
+import { remoteClear, remoteSet, remoteShow } from './commands/remote.js';
 import {
   cancelCommand,
   followAny,
@@ -53,6 +55,14 @@ const program = new Command()
   .description('Agent OS over coding runtimes')
   .version(CLI_VERSION)
   .option('--json', 'one JSON object per line instead of text')
+  .option(
+    '--remote <url>',
+    'talk to a daemon at this URL (token: SHIBAOX_REMOTE_TOKEN or remote.json)',
+  )
+  .hook('preAction', (thisCommand) => {
+    const remote = thisCommand.optsWithGlobals().remote as string | undefined;
+    if (remote) process.env.SHIBAOX_REMOTE = remote;
+  })
   .action(async () => exitWith(await uiCommand()));
 
 program
@@ -277,6 +287,43 @@ schedule
   .description('submit the schedule now')
   .action(async function (this: Command, id: string) {
     exitWith(await scheduleRun(id, out(this)));
+  });
+
+program
+  .command('serve')
+  .description('run the daemon reachable over the network with a token (daemon.yaml listen)')
+  .option('--host <host>', 'address to listen on (default: 0.0.0.0, or daemon.yaml listen.host)')
+  .option('--port <port>', 'port (default: 7433, or daemon.yaml listen.port)', (v: string) => {
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 0 || n > 65535) throw new InvalidArgumentError('bad port');
+    return n;
+  })
+  .action(async function (this: Command, o: { host?: string; port?: number }) {
+    exitWith(await serveCommand(o, out(this)));
+  });
+
+const remote = program
+  .command('remote')
+  .description('a daemon on another machine (shibaox serve there)');
+remote
+  .command('set')
+  .argument('<url>', 'http(s)://host:port the daemon serves on')
+  .argument('[token]', 'its SHIBAOX_DAEMON_TOKEN (or pipe it on stdin)')
+  .description('send every command to that daemon (saved in ~/.shibaox/remote.json)')
+  .action(async function (this: Command, url: string, token: string | undefined) {
+    exitWith(await remoteSet(url, token, out(this)));
+  });
+remote
+  .command('show')
+  .description('where commands go')
+  .action(function (this: Command) {
+    exitWith(remoteShow(out(this)));
+  });
+remote
+  .command('clear')
+  .description('back to the local daemon')
+  .action(function (this: Command) {
+    exitWith(remoteClear(out(this)));
   });
 
 const daemon = program.command('daemon').description('the local daemon that executes runs');

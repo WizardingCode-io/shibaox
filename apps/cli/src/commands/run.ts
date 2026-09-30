@@ -7,7 +7,7 @@ import type { WorkspaceMode } from '@wizardingcode/shibaox-workspace';
 import { connect } from '../client.js';
 import { exitCodeFor, formatState, type Out } from '../output.js';
 import { followRun } from './follow.js';
-import { bunAvailable, spawnTui, TUI_ENTRY } from './ui.js';
+import { bunAvailable, daemonArgs, daemonEnv, spawnTui, TUI_ENTRY } from './ui.js';
 
 export interface RunCommandOptions {
   /** Absent: `./org` when it exists, else the daemon's default org. */
@@ -70,7 +70,7 @@ export async function runCommand(
 export interface FollowDeps {
   tty: boolean;
   bunAvailable: () => Promise<boolean>;
-  spawnTui: (args: string[]) => Promise<number>;
+  spawnTui: (args: string[], env?: Record<string, string>) => Promise<number>;
 }
 
 const defaultDeps = (): FollowDeps => ({
@@ -94,14 +94,10 @@ export async function followAny(
     // an unknown run is refused here, with the same error as the text path
     await client.getRun(runId);
     const paths = homePaths();
-    const code = await deps.spawnTui([
-      'stream',
-      runId,
-      '--socket',
-      paths.socket,
-      '--home',
-      paths.root,
-    ]);
+    const code = await deps.spawnTui(
+      ['stream', runId, ...daemonArgs(paths), '--home', paths.root],
+      daemonEnv(),
+    );
     const state = await client.getRun(runId);
     if (isTerminal(state.status as RunStatus)) for (const l of formatState(state)) out.line(l);
     return code;

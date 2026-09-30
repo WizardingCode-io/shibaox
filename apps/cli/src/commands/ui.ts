@@ -4,8 +4,9 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runCommand } from '@wizardingcode/shibaox-core';
-import { homePaths } from '@wizardingcode/shibaox-daemon';
+import { type HomePaths, homePaths } from '@wizardingcode/shibaox-daemon';
 import { connect } from '../client.js';
+import { remoteTarget } from '../remote.js';
 import { CLI_VERSION } from '../version.js';
 
 export const NO_TTY_MESSAGE = 'The dashboard needs an interactive terminal. Try: shibaox runs';
@@ -102,11 +103,13 @@ export const TERMINAL_RESTORE =
  * Runs the OpenTUI app under Bun with the terminal attached; resolves with its exit code. A
  * crash restores the terminal and says so; a signal to the CLI is forwarded to Bun.
  */
-export function spawnTui(args: string[]): Promise<number> {
+export function spawnTui(args: string[], extraEnv: Record<string, string> = {}): Promise<number> {
   return new Promise((resolve, reject) => {
+    const opts = tuiSpawnOptions();
     const child = spawn('bun', [...TUI_ARGS, TUI_ENTRY, ...args], {
       stdio: 'inherit',
-      ...tuiSpawnOptions(),
+      cwd: opts.cwd,
+      env: { ...opts.env, ...extraEnv },
     });
     const forward = (sig: NodeJS.Signals) => () => child.kill(sig);
     const onTerm = forward('SIGTERM');
@@ -152,15 +155,29 @@ export async function uiCommand(): Promise<number> {
   }
   await connect({ write: true }); // starts the daemon when needed, checks versions
   const paths = homePaths();
-  return spawnTui([
-    'dashboard',
-    '--socket',
-    paths.socket,
-    '--home',
-    paths.root,
-    '--version',
-    CLI_VERSION,
-    '--cwd',
-    process.cwd(),
-  ]);
+  return spawnTui(
+    [
+      'dashboard',
+      ...daemonArgs(paths),
+      '--home',
+      paths.root,
+      '--version',
+      CLI_VERSION,
+      '--cwd',
+      process.cwd(),
+    ],
+    daemonEnv(),
+  );
+}
+
+/** How the dashboard reaches the daemon: `--remote <url>` (token in the env) or `--socket <path>`. */
+export function daemonArgs(paths: HomePaths, env: NodeJS.ProcessEnv = process.env): string[] {
+  const remote = remoteTarget(env);
+  return remote ? ['--remote', remote.baseUrl] : ['--socket', paths.socket];
+}
+
+/** The token for a remote daemon, passed in the environment (never on the command line). */
+export function daemonEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const remote = remoteTarget(env);
+  return remote?.token ? { SHIBAOX_REMOTE_TOKEN: remote.token } : {};
 }
