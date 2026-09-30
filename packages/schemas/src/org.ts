@@ -16,5 +16,7 @@ export const OrgFileSchema = z.object({
   max_concurrent_runs: z.number().int().positive().optional(),
   /** Obsidian vault path (relative to the org root, or absolute) for run notes. */
   vault: z.string().optional(),
+  /** The dependency install of worktree runs: detected by default, or off for every run of the org. */
+  setup: z.enum(['auto', 'off']).default('auto'),
 });
 export type OrgFile = z.infer<typeof OrgFileSchema>;

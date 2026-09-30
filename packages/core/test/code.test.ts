@@ -77,3 +77,11 @@ describe('runArgv', () => {
     expect(r.stderr).toContain('ENOENT');
   });
 });
+
+describe('stdin of a command', () => {
+  it('is closed: a program that waits for input ends at once instead of hanging', async () => {
+    const r = await runCommand({ command: 'cat', cwd: process.cwd(), timeoutMs: 5000 });
+    expect(r.timedOut).toBe(false);
+    expect(r.exitCode).toBe(0);
+  });
+});

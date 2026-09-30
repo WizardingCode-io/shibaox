@@ -31,9 +31,7 @@ Start with `shibaox doctor`: it checks Node, git, Bun, the install, the daemon (
 - **"cannot use a worktree: project has no commits"** — commit first, or `--workspace inplace`.
 - **`paused_budget`** — `shibaox resume <runId> --budget <higher>`.
 - **The merge failed with "rebase … failed (conflicts)"** — the base moved with conflicting changes; the branch is intact in its worktree, the base untouched. Resolve by hand or rerun.
-- **Tests or lint fail in a worktree with "command not found"** — the tool is not installed there; the `tests` and `lint` checks treat that as a skipped pass, the `merge` node's tests too. Installing dependencies in worktrees is on the roadmap.
-
-## Telegram
+- **Tests or lint fail in a worktree with "command not found"** — the tool is not installed there; the `tests` and `lint` checks treat that as a skipped pass, the `merge` node's tests too.## Telegram
 
 - **The bot does not answer** — `shibaox doctor` runs `getMe`; the token must be in the vault (`shibaox keys set SHIBAOX_TELEGRAM_TOKEN …`) and `chat_id` must be your private chat. Groups are ignored.
 - **A message sent while the daemon was down was skipped** — by design: only the last of the backlog is answered, and the chat is told.

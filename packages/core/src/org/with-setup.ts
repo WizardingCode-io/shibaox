@@ -11,7 +11,13 @@ export function withSetup(workflow: Workflow, command: string, timeoutMs: number
     ...workflow,
     start: 'setup',
     nodes: {
-      setup: { type: 'code', command, timeout_ms: timeoutMs, next: workflow.start },
+      setup: {
+        type: 'code',
+        command,
+        timeout_ms: timeoutMs,
+        skip_if_missing: true,
+        next: workflow.start,
+      },
       ...workflow.nodes,
     },
   };

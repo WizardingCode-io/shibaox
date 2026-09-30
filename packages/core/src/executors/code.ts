@@ -45,16 +45,18 @@ function spawnAndCollect(
       shell,
       env: opts.inheritEnv === false ? { ...opts.env } : { ...process.env, ...opts.env },
       detached: process.platform !== 'win32',
+      // no stdin: a program that asks a question ends instead of waiting the whole timeout
+      stdio: ['ignore', 'pipe', 'pipe'] as ['ignore', 'pipe', 'pipe'],
     };
     // never pass an args array together with shell: true (Node DEP0190)
     const child = shell ? spawn(program, options) : spawn(program, args, options);
     let stdout = '';
     let stderr = '';
     let timedOut = false;
-    child.stdout.on('data', (d) => {
+    child.stdout?.on('data', (d: Buffer) => {
       stdout += d.toString();
     });
-    child.stderr.on('data', (d) => {
+    child.stderr?.on('data', (d: Buffer) => {
       stderr += d.toString();
     });
     const timer = setTimeout(() => {

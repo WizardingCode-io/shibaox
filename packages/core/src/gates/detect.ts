@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { loadProjectFile, type ProjectFile } from '@wizardingcode/shibaox-schemas';
 
 const has = (dir: string, file: string) => existsSync(join(dir, file));
@@ -16,27 +16,58 @@ function projectFile(dir: string): ProjectFile | undefined {
 /** Default time for a dependency install (10 min). */
 export const SETUP_TIMEOUT_MS = 600_000;
 
-/**
- * The command that installs the project's dependencies in a fresh checkout: `shibaox.yaml
- * setup` first (`false` means none), else what the lockfile or manifest says; undefined when
- * nothing recognisable is there.
- */
-export function detectSetupCommand(dir: string): string | undefined {
-  const pf = projectFile(dir);
-  if (pf?.setup !== undefined) return pf.setup === false ? undefined : pf.setup;
+/** A dependency install: the command, and where to run it relative to the workspace. */
+export interface SetupPlan {
+  command: string;
+  /** `.` for the workspace itself, else a relative path to the directory holding the lockfile. */
+  cwd: string;
+}
+
+/** The frozen install a lockfile in `dir` calls for; only a manifest without one for npm (no lockfile written). */
+function lockfileInstall(dir: string, manifestOnly: boolean): string | undefined {
   if (has(dir, 'package.json')) {
     if (has(dir, 'pnpm-lock.yaml')) return 'pnpm install --frozen-lockfile';
     if (has(dir, 'yarn.lock')) return 'yarn install --frozen-lockfile';
     if (has(dir, 'bun.lock') || has(dir, 'bun.lockb')) return 'bun install --frozen-lockfile';
     if (has(dir, 'package-lock.json')) return 'npm ci';
-    return 'npm install';
+    if (manifestOnly) return 'npm install --no-package-lock';
   }
-  if (has(dir, 'pyproject.toml') || has(dir, 'uv.lock')) return 'uv sync';
-  if (has(dir, 'requirements.txt')) return 'pip install -r requirements.txt';
-  if (has(dir, 'composer.json')) return 'composer install --no-interaction';
+  if (has(dir, 'uv.lock')) return 'uv sync --frozen';
+  if (has(dir, 'composer.lock')) return 'composer install --no-interaction';
   if (has(dir, 'go.mod')) return 'go mod download';
-  if (has(dir, 'Cargo.toml')) return 'cargo fetch';
-  if (has(dir, 'Gemfile')) return 'bundle install';
+  if (has(dir, 'Cargo.lock')) return 'cargo fetch --locked';
+  if (has(dir, 'Gemfile.lock')) return 'bundle install';
+  return undefined;
+}
+
+/**
+ * The install a fresh checkout of `dir` needs before tests and linters run for real:
+ * `shibaox.yaml setup` in `dir` first (`false` means none), else the lockfile of `dir` or of
+ * a directory above it up to `root` (a monorepo package installs where the lockfile is),
+ * always frozen so nothing a later commit would pick up is written; a Node manifest with no
+ * lockfile anywhere installs without writing one. Python without `uv.lock`, PHP without
+ * `composer.lock`, `requirements.txt`: nothing (the right tool is not ours to guess).
+ */
+export function detectSetupCommand(dir: string, root: string = dir): SetupPlan | undefined {
+  const pf = projectFile(dir);
+  if (pf?.setup !== undefined)
+    return pf.setup === false ? undefined : { command: pf.setup, cwd: '.' };
+  const levels: string[] = [];
+  let at = resolve(dir);
+  const top = resolve(root);
+  for (;;) {
+    levels.push(at);
+    if (at === top || dirname(at) === at || !at.startsWith(top)) break;
+    at = dirname(at);
+  }
+  for (const level of levels) {
+    const command = lockfileInstall(level, false);
+    if (command) return { command, cwd: relative(dir, level) || '.' };
+  }
+  for (const level of levels) {
+    const command = lockfileInstall(level, true);
+    if (command) return { command, cwd: relative(dir, level) || '.' };
+  }
   return undefined;
 }
 

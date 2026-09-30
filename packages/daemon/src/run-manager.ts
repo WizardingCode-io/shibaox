@@ -232,7 +232,14 @@ export class RunManager {
     });
     const compacted = messages !== raw;
     if (compacted) warnings.push('conversation compacted: the oldest turns are summarised');
-    const setup = ws.mode === 'worktree' ? setupFor(workspace, req.setup) : undefined;
+    const setup = setupFor({
+      workspace,
+      root: ws.path,
+      mode: ws.mode,
+      choice: req.setup,
+      org: org.org.setup,
+      warn: (w) => warnings.push(w),
+    });
     await engine.create({
       workflow: req.workflow,
       input: {
@@ -779,20 +786,37 @@ export class RunManager {
 }
 
 /**
- * What a fresh worktree needs before anything runs: `off` for nothing, a command as given,
- * else `shibaox.yaml setup` or the lockfile's install (none when nothing is recognised).
+ * What a fresh worktree needs before anything runs: `off` (the request or `org.yaml setup`)
+ * for nothing, a command as given, else `shibaox.yaml setup` or the lockfile's install, run
+ * where the lockfile is (a monorepo package). In place there is nothing to install.
  */
-function setupFor(
-  workspace: string,
-  choice: string | undefined,
-): { command: string; timeoutMs?: number } | undefined {
-  if (choice === 'off') return undefined;
+function setupFor(o: {
+  workspace: string;
+  root: string;
+  mode: WorkspaceMode;
+  choice: string | undefined;
+  org: 'auto' | 'off';
+  warn: (w: string) => void;
+}): { command: string; timeoutMs?: number } | undefined {
+  const choice = o.choice?.trim() || undefined;
+  const explicit = choice !== undefined && choice !== 'auto' && choice !== 'off';
+  if (o.mode !== 'worktree') {
+    if (explicit) o.warn('setup: the run is in place, nothing to install: the command was not run');
+    return undefined;
+  }
+  if (choice === 'off' || (!explicit && o.org === 'off')) return undefined;
   let timeoutMs: number | undefined;
   try {
-    timeoutMs = loadProjectFile(workspace)?.setup_timeout_ms;
-  } catch {
-    // an invalid shibaox.yaml: detection ignores it too
+    timeoutMs = loadProjectFile(o.workspace)?.setup_timeout_ms;
+  } catch (e) {
+    o.warn(
+      `${e instanceof Error ? e.message : String(e)} (ignored: the lockfile decides the setup)`,
+    );
   }
-  const command = choice && choice !== 'auto' ? choice : detectSetupCommand(workspace);
-  return command ? { command, timeoutMs } : undefined;
+  const plan = explicit
+    ? { command: choice as string, cwd: '.' }
+    : detectSetupCommand(o.workspace, o.root);
+  if (!plan) return undefined;
+  const command = plan.cwd === '.' ? plan.command : `cd '${plan.cwd}' && ${plan.command}`;
+  return { command, timeoutMs };
 }

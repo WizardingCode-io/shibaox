@@ -674,6 +674,15 @@ describe('the fix pass of the remote daemon', () => {
     await expect(
       client.submitRun({ orgRoot: '', project: s.project, workflow: 'hello-feature', input: 'x' }),
     ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      client.submitRun({
+        orgRoot: s.orgRoot,
+        project: s.project,
+        workflow: 'hello-feature',
+        input: 'x',
+        setup: ' ',
+      }),
+    ).rejects.toMatchObject({ status: 400 });
   });
 
   it('the event stream carries a heartbeat comment while a run waits, so proxies keep it open', async () => {

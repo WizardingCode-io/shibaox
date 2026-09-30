@@ -216,39 +216,66 @@ describe('the lint check', () => {
 });
 
 describe('detectSetupCommand', () => {
-  it('installs the dependencies of a project the way its lockfile says', () => {
-    const pkg = JSON.stringify({ name: 'p' });
-    expect(detectSetupCommand(dir({ 'package.json': pkg, 'pnpm-lock.yaml': '' }))).toBe(
-      'pnpm install --frozen-lockfile',
-    );
-    expect(detectSetupCommand(dir({ 'package.json': pkg, 'yarn.lock': '' }))).toBe(
+  const pkg = JSON.stringify({ name: 'p' });
+  it('installs from a lockfile, frozen, so nothing a later commit would pick up is written', () => {
+    expect(detectSetupCommand(dir({ 'package.json': pkg, 'pnpm-lock.yaml': '' }))).toEqual({
+      command: 'pnpm install --frozen-lockfile',
+      cwd: '.',
+    });
+    expect(detectSetupCommand(dir({ 'package.json': pkg, 'yarn.lock': '' }))?.command).toBe(
       'yarn install --frozen-lockfile',
     );
-    expect(detectSetupCommand(dir({ 'package.json': pkg, 'bun.lock': '' }))).toBe(
+    expect(detectSetupCommand(dir({ 'package.json': pkg, 'bun.lock': '' }))?.command).toBe(
       'bun install --frozen-lockfile',
     );
-    expect(detectSetupCommand(dir({ 'package.json': pkg, 'package-lock.json': '' }))).toBe(
+    expect(detectSetupCommand(dir({ 'package.json': pkg, 'package-lock.json': '' }))?.command).toBe(
       'npm ci',
     );
-    expect(detectSetupCommand(dir({ 'package.json': pkg }))).toBe('npm install');
-    expect(detectSetupCommand(dir({ 'pyproject.toml': '', 'uv.lock': '' }))).toBe('uv sync');
-    expect(detectSetupCommand(dir({ 'pyproject.toml': '' }))).toBe('uv sync');
-    expect(detectSetupCommand(dir({ 'requirements.txt': 'x' }))).toBe(
-      'pip install -r requirements.txt',
+    expect(detectSetupCommand(dir({ 'package.json': pkg }))?.command).toBe(
+      'npm install --no-package-lock',
     );
-    expect(detectSetupCommand(dir({ 'composer.json': '{}' }))).toBe(
+    expect(detectSetupCommand(dir({ 'pyproject.toml': '', 'uv.lock': '' }))?.command).toBe(
+      'uv sync --frozen',
+    );
+    expect(detectSetupCommand(dir({ 'pyproject.toml': '' }))).toBeUndefined(); // no lockfile: uv would write one
+    expect(detectSetupCommand(dir({ 'requirements.txt': 'x' }))).toBeUndefined(); // pip needs a venv: not ours to guess
+    expect(detectSetupCommand(dir({ 'composer.json': '{}', 'composer.lock': '{}' }))?.command).toBe(
       'composer install --no-interaction',
     );
-    expect(detectSetupCommand(dir({ 'go.mod': 'module x' }))).toBe('go mod download');
-    expect(detectSetupCommand(dir({ 'Cargo.toml': '' }))).toBe('cargo fetch');
-    expect(detectSetupCommand(dir({ Gemfile: '' }))).toBe('bundle install');
+    expect(detectSetupCommand(dir({ 'composer.json': '{}' }))).toBeUndefined();
+    expect(detectSetupCommand(dir({ 'go.mod': 'module x', 'go.sum': '' }))?.command).toBe(
+      'go mod download',
+    );
+    expect(detectSetupCommand(dir({ 'Cargo.toml': '', 'Cargo.lock': '' }))?.command).toBe(
+      'cargo fetch --locked',
+    );
+    expect(detectSetupCommand(dir({ Gemfile: '', 'Gemfile.lock': '' }))?.command).toBe(
+      'bundle install',
+    );
     expect(detectSetupCommand(dir({ 'README.md': '' }))).toBeUndefined();
   });
+  it('a project in a subdirectory of a monorepo installs where the lockfile is', () => {
+    const root = dir({ 'pnpm-lock.yaml': '', 'package.json': pkg, 'apps/web/package.json': pkg });
+    expect(detectSetupCommand(join(root, 'apps', 'web'), root)).toEqual({
+      command: 'pnpm install --frozen-lockfile',
+      cwd: '../..',
+    });
+    const npm = dir({ 'package-lock.json': '', 'package.json': pkg, 'apps/web/package.json': pkg });
+    expect(detectSetupCommand(join(npm, 'apps', 'web'), npm)).toEqual({
+      command: 'npm ci',
+      cwd: '../..',
+    });
+    // nothing above the project: the project's own manifest decides
+    const own = dir({ 'apps/web/package.json': pkg, 'apps/web/yarn.lock': '' });
+    expect(detectSetupCommand(join(own, 'apps', 'web'), own)).toEqual({
+      command: 'yarn install --frozen-lockfile',
+      cwd: '.',
+    });
+  });
   it('the project file wins: its setup, or none when it says false', () => {
-    const pkg = JSON.stringify({ name: 'p' });
     expect(
       detectSetupCommand(dir({ 'package.json': pkg, 'shibaox.yaml': 'setup: make deps\n' })),
-    ).toBe('make deps');
+    ).toEqual({ command: 'make deps', cwd: '.' });
     expect(
       detectSetupCommand(dir({ 'package.json': pkg, 'shibaox.yaml': 'setup: false\n' })),
     ).toBeUndefined();

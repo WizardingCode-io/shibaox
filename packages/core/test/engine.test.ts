@@ -806,6 +806,7 @@ describe('a setup step before the first node', () => {
       type: 'code',
       command: 'pnpm install --frozen-lockfile',
       timeout_ms: 120_000,
+      skip_if_missing: true,
       next: 'analyse',
     });
     expect(Object.keys(out.nodes)).toHaveLength(Object.keys(wf.nodes).length + 1);
@@ -836,5 +837,54 @@ describe('a setup step before the first node', () => {
     expect(types[0]).toBe('setup');
     expect(types[1]).toBe('analyse');
     expect(existsSync(join(workspace, 'deps-installed'))).toBe(true);
+  });
+});
+
+describe('a code node whose program is missing', () => {
+  const org = () =>
+    scaffold({
+      ...orgFiles('true'),
+      'workflows/probe.yaml': [
+        'workflow: probe',
+        'team: eng',
+        'start: run',
+        'nodes:',
+        '  run: { type: code, command: "definitely-not-a-program-xyz --version", skip_if_missing: true, next: done }',
+        '  done: { type: task, role: backend, instruction: done }',
+        '',
+      ].join('\n'),
+    });
+  it('is skipped with a note when skip_if_missing is set (a setup without its tool), instead of failing the run', async () => {
+    const { engine } = engineFor(org());
+    const state = await engine.start({ workflow: 'probe', input: {}, workspace: process.cwd() });
+    expect(state.status).toBe('completed');
+    expect(state.nodes.run?.summary).toMatch(/skipped.*not installed/);
+  });
+  it('a setup that fails for another reason still fails the run, naming the command', async () => {
+    const dir = scaffold(orgFiles('true'));
+    const { engine } = engineFor(dir);
+    const state = await engine.start({
+      workflow: 'hello',
+      input: { spec: 'x' },
+      workspace: process.cwd(),
+      setup: { command: 'sh -c "echo boom >&2; exit 3"' },
+    });
+    expect(state.status).toBe('failed');
+    expect(state.nodes.setup?.error).toMatch(/exit 3/);
+    expect(state.nodes.setup?.error).toContain('boom');
+  });
+  it('keeps only the tail of a long stdout so later prompts are not flooded', async () => {
+    const dir = scaffold(orgFiles('true'));
+    const { engine } = engineFor(dir);
+    const state = await engine.start({
+      workflow: 'hello',
+      input: { spec: 'x' },
+      workspace: process.cwd(),
+      setup: { command: "node -e \"process.stdout.write('a'.repeat(50000) + 'END')\"" },
+    });
+    expect(state.status).toBe('completed');
+    const out = state.nodes.setup?.output as { stdout: string };
+    expect(out.stdout.length).toBeLessThan(5000);
+    expect(out.stdout.endsWith('END')).toBe(true);
   });
 });

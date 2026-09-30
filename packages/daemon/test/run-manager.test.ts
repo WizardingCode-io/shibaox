@@ -393,6 +393,56 @@ describe('RunManager', () => {
     });
     await vi.waitFor(async () => expect((await m.state(d.runId)).status).toBe('waiting_human'));
     expect(existsSync(join((await m.state(d.runId)).workspace, 'custom.txt'))).toBe(true);
+    // an explicit command on an in-place run is not run: said, not silently dropped
+    const e = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'x',
+      adapter: 'mock',
+      workspace: 'inplace',
+      setup: 'cp package.json never.txt',
+    });
+    expect(e.warnings.join('\n')).toMatch(/setup.*in place/);
+    // an unreadable shibaox.yaml is said, and the lockfile detection takes over
+    writeFileSync(join(s.project, 'shibaox.yaml'), 'setup_timeout_ms: 10m\n');
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qam', 'bad'], {
+      cwd: s.project,
+    });
+    const f = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'x',
+      adapter: 'mock',
+      workspace: 'worktree',
+      setup: 'auto ',
+    });
+    expect(f.warnings.join('\n')).toMatch(/shibaox\.yaml/);
+    await vi.waitFor(async () => expect((await m.state(f.runId)).status).toBe('waiting_human'));
+    expect((await m.state(f.runId)).workflowSnapshot?.nodes.setup).toMatchObject({
+      command: 'npm install --no-package-lock',
+    });
+  });
+
+  it('org.yaml setup: off turns the step off for every run of the org (the dashboard and routines have no flag)', async () => {
+    const s = setup({ git: true });
+    writeFileSync(
+      join(s.orgRoot, 'org.yaml'),
+      'organization: my-org\nbudgets: { per_run_usd: 5 }\nteams: [engineering]\nvault: ../vault\nsetup: off\n',
+    );
+    const store = new MemoryEventStore();
+    const { manager: m } = manager(store, { vault: s.vault });
+    const { runId } = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'x',
+      adapter: 'mock',
+      workspace: 'worktree',
+    });
+    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('waiting_human'));
+    expect((await m.state(runId)).workflowSnapshot?.nodes.setup).toBeUndefined();
   });
 
   it('code nodes and gates get GitHub keys from the vault, never the provider keys', async () => {

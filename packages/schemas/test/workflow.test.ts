@@ -94,3 +94,14 @@ describe('WorkflowSchema', () => {
     expect(transitionsOf(wf.nodes.h!)).toEqual([]);
   });
 });
+
+describe('code nodes', () => {
+  it('skip_if_missing defaults to false', () => {
+    const wf = WorkflowSchema.parse({
+      workflow: 'w',
+      start: 'c',
+      nodes: { c: { type: 'code', command: 'make' } },
+    });
+    expect(wf.nodes.c).toMatchObject({ skip_if_missing: false, timeout_ms: 300_000 });
+  });
+});

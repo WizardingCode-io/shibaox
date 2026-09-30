@@ -491,16 +491,35 @@ export class RunEngine {
             timeoutMs: node.timeout_ms,
             env: this.deps.env,
           });
+          const missing =
+            node.skip_if_missing &&
+            !r.timedOut &&
+            (r.exitCode === 127 ||
+              /command not found|not found|ENOENT|No such file/i.test(r.stderr));
+          if (missing) {
+            const program = node.command.trim().split(/\s+/)[0] ?? node.command;
+            this.log(`[${runId}] ${nodeId}: skipped, ${program} is not installed`);
+            await this.emit({
+              type: 'NodeCompleted',
+              runId,
+              nodeId,
+              at: at(),
+              output: { exitCode: r.exitCode, skipped: true, stderr: r.stderr.slice(-500) },
+              summary: `skipped: ${program} is not installed here`,
+            });
+            return;
+          }
           if (r.exitCode !== 0 || r.timedOut)
             throw new Error(
-              `command failed (exit ${r.exitCode}${r.timedOut ? ', timed out' : ''}): ${r.stderr.slice(-500)}`,
+              `\`${node.command}\` failed (exit ${r.exitCode}${r.timedOut ? ', timed out' : ''}): ${(r.stderr || r.stdout).slice(-500)}`,
             );
           await this.emit({
             type: 'NodeCompleted',
             runId,
             nodeId,
             at: at(),
-            output: { exitCode: r.exitCode, stdout: r.stdout },
+            // the tail only: a verbose install would otherwise flood every later prompt
+            output: { exitCode: r.exitCode, stdout: r.stdout.slice(-4000) },
             summary: `ran ${node.command}`,
           });
           return;

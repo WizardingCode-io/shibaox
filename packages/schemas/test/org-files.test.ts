@@ -36,3 +36,11 @@ describe('org file schemas', () => {
     ).toBe(false);
   });
 });
+
+describe('org.yaml setup', () => {
+  it('is auto by default and can be off for every run of the org', () => {
+    expect(OrgFileSchema.parse({ organization: 'o' }).setup).toBe('auto');
+    expect(OrgFileSchema.parse({ organization: 'o', setup: 'off' }).setup).toBe('off');
+    expect(() => OrgFileSchema.parse({ organization: 'o', setup: 'maybe' })).toThrow();
+  });
+});

@@ -11,6 +11,8 @@ export const CodeNodeSchema = z.object({
   type: z.literal('code'),
   command: z.string().min(1),
   timeout_ms: z.number().int().positive().default(300_000),
+  /** When the program is not installed (exit 127), complete with a note instead of failing the run. */
+  skip_if_missing: z.boolean().default(false),
   next: Id.optional(),
 });
 export const HumanNodeSchema = z.object({

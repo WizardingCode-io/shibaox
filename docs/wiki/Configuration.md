@@ -9,6 +9,7 @@ budgets: { per_run_usd: 5 }     # default run budget; --budget overrides
 max_concurrent_runs: 2          # runs of this org at once
 adapter: direct                 # mock | direct | claude-code; a chosen model overrides it
 vault: ../vault                 # Obsidian vault, relative to the org directory
+setup: auto                     # auto | off: the dependency install of worktree runs
 ```
 
 ## `org/models.yaml`
@@ -80,14 +81,14 @@ nodes:
 Optional, at the root of a project: what a run needs to know about it that cannot be guessed, or is guessed wrong.
 
 ```yaml
-setup: pnpm install --frozen-lockfile   # what a fresh worktree runs first; false for nothing
+setup: pnpm install --frozen-lockfile   # what a fresh worktree runs first; false for nothing (quote words like "no")
 setup_timeout_ms: 600000
 tests: pnpm test                        # the `tests` check (detected when absent)
 lint: pnpm lint                         # the `lint` check (detected when absent)
 protected: ['.github/**']               # reserved: enforced by a later version
 ```
 
-Without `setup`, the install is detected from the lockfile or manifest: `pnpm install --frozen-lockfile`, `yarn install --frozen-lockfile`, `bun install --frozen-lockfile`, `npm ci` (with a `package-lock.json`) or `npm install`, `uv sync`, `pip install -r requirements.txt`, `composer install --no-interaction`, `go mod download`, `cargo fetch`, `bundle install`. See [Worktrees](Worktrees).
+The file is read from the run's worktree, so it must be committed to count in worktree mode. Without `setup`, the install is detected from the lockfile (of the project, or of the monorepo above it), frozen: `pnpm install --frozen-lockfile`, `yarn install --frozen-lockfile`, `bun install --frozen-lockfile`, `npm ci` (or `npm install --no-package-lock` without any lockfile), `uv sync --frozen`, `composer install --no-interaction`, `go mod download`, `cargo fetch --locked`, `bundle install`. A tool that is not installed skips the step; see [Worktrees](Worktrees) for what the step runs and how to turn it off.
 
 ## `~/.shibaox/daemon.yaml`
 
