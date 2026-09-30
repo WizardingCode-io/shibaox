@@ -84,6 +84,9 @@ importers:
       '@wizardingcode/shibaox-schemas':
         specifier: workspace:*
         version: link:../../packages/schemas
+      '@wizardingcode/shibaox-view':
+        specifier: workspace:*
+        version: link:../../packages/view
       fuzzysort:
         specifier: ^4.0.2
         version: 4.0.2
@@ -357,6 +360,22 @@ importers:
       zod:
         specifier: ^4.6.5
         version: 4.6.5
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.2
+        version: 26.6.2
+
+  packages/view:
+    dependencies:
+      '@wizardingcode/shibaox-core':
+        specifier: workspace:*
+        version: link:../core
+      '@wizardingcode/shibaox-daemon':
+        specifier: workspace:*
+        version: link:../daemon
+      '@wizardingcode/shibaox-schemas':
+        specifier: workspace:*
+        version: link:../schemas
     devDependencies:
       '@types/node':
         specifier: ^26.6.2

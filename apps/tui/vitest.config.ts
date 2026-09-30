@@ -11,6 +11,7 @@ export default defineConfig({
       '@wizardingcode/shibaox-daemon': src('daemon/src/index.ts'),
       '@wizardingcode/shibaox-persistence-sqlite': src('persistence-sqlite/src/index.ts'),
       '@wizardingcode/shibaox-schemas': src('schemas/src/index.ts'),
+      '@wizardingcode/shibaox-view': src('view/src/index.ts'),
       '@wizardingcode/shibaox-providers/testing': src('providers/src/testing/fake-openai.ts'),
       '@wizardingcode/shibaox-providers': src('providers/src/index.ts'),
       '@wizardingcode/shibaox-jev/testing': src('jev/src/testing/fake-jev.ts'),
