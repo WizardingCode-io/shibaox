@@ -26,7 +26,7 @@
   "build": {
     "appId": "io.wizardingcode.shibaox",
     "productName": "Shibaox",
-    "copyright": "Copyright © 2026 WizardingCode",
+    "copyright": "Copyright \u00a9 2026 WizardingCode",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -48,7 +48,9 @@
       ],
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.png",
-      "artifactName": "Shibaox-${version}-${arch}.${ext}"
+      "artifactName": "Shibaox-${version}-${arch}.${ext}",
+      "identity": "-",
+      "hardenedRuntime": false
     },
     "dmg": {
       "artifactName": "Shibaox-${version}-${arch}.${ext}"

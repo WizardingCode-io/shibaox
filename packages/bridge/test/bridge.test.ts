@@ -10,11 +10,23 @@ afterEach(async () => {
   for (const c of cleanups.splice(0)) await c();
 });
 
-/** A stand-in daemon on a Unix socket: /health, an echo of headers, and an SSE stream. */
-async function fakeDaemon(): Promise<{ socketPath: string; server: Server; seen: string[] }> {
+/**
+ * A stand-in daemon on a Unix socket: /health, an echo of headers, and an SSE stream whose
+ * second event waits for the test's `release()` (no timing in the assertions).
+ */
+async function fakeDaemon(): Promise<{
+  socketPath: string;
+  server: Server;
+  seen: string[];
+  release: () => void;
+}> {
   const dir = mkdtempSync(join(tmpdir(), 'shx-br-'));
   const socketPath = join(dir, 'd.sock');
   const seen: string[] = [];
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
   const server = createServer((req, res) => {
     seen.push(
       `${req.method} ${req.url} auth=${req.headers.authorization ?? '-'} host=${req.headers.host ?? '-'}`,
@@ -26,10 +38,10 @@ async function fakeDaemon(): Promise<{ socketPath: string; server: Server; seen:
     if (req.url?.startsWith('/runs/r1/events')) {
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       res.write('data: {"n":1}\n\n');
-      setTimeout(() => {
+      void gate.then(() => {
         res.write('data: {"n":2}\n\n');
         res.end();
-      }, 50);
+      });
       return;
     }
     if (req.method === 'POST') {
@@ -48,7 +60,7 @@ async function fakeDaemon(): Promise<{ socketPath: string; server: Server; seen:
   });
   await new Promise<void>((r) => server.listen(socketPath, r));
   cleanups.push(() => new Promise((r) => server.close(r)));
-  return { socketPath, server, seen };
+  return { socketPath, server, seen, release: () => release() };
 }
 
 async function bridgeFor(socketPath: string, dist?: string): Promise<Bridge> {
@@ -81,7 +93,7 @@ describe('startBridge', () => {
   });
 
   it('forwards request bodies and streams server-sent events as they arrive', async () => {
-    const { socketPath } = await fakeDaemon();
+    const { socketPath, release } = await fakeDaemon();
     const b = await bridgeFor(socketPath);
     const base = baseOf(b);
     const headers = { authorization: `Bearer ${b.token}`, 'content-type': 'application/json' };
@@ -92,14 +104,14 @@ describe('startBridge', () => {
     });
     expect(posted.status).toBe(201);
     expect(await posted.json()).toEqual({ got: { a: 1 } });
-    const t0 = Date.now();
     const r = await fetch(`${base}/runs/r1/events`, { headers });
     expect(r.headers.get('content-type')).toBe('text/event-stream');
     const reader = (r.body as ReadableStream<Uint8Array>).getReader();
-    const first = await reader.read();
-    const firstAt = Date.now() - t0;
-    expect(new TextDecoder().decode(first.value)).toContain('{"n":1}');
-    expect(firstAt).toBeLessThan(45);
+    // the first event arrives while the daemon still holds the stream open
+    const first = new TextDecoder().decode((await reader.read()).value);
+    expect(first).toContain('{"n":1}');
+    expect(first).not.toContain('{"n":2}');
+    release();
     let rest = '';
     for (;;) {
       const { value, done } = await reader.read();
@@ -109,14 +121,33 @@ describe('startBridge', () => {
     expect(rest).toContain('{"n":2}');
   });
 
-  it('answers 502 when nothing listens on the socket, and close() drops open connections', async () => {
+  it('answers 502 when nothing listens on the socket', async () => {
     const b = await bridgeFor(join(mkdtempSync(join(tmpdir(), 'shx-dead-')), 'none.sock'));
     const r = await fetch(`${baseOf(b)}/health`, {
       headers: { authorization: `Bearer ${b.token}` },
     });
     expect(r.status).toBe(502);
     expect((await r.json()).error.code).toBe('daemon_unavailable');
+  });
+
+  it('close() ends a stream that is still open and stops listening', async () => {
+    const { socketPath } = await fakeDaemon();
+    const b = await bridgeFor(socketPath);
+    const r = await fetch(`${baseOf(b)}/runs/r1/events`, {
+      headers: { authorization: `Bearer ${b.token}` },
+    });
+    const reader = (r.body as ReadableStream<Uint8Array>).getReader();
+    await reader.read(); // the first event: the connection is open and held by the daemon
     await b.close();
+    // the connection is cut, not ended politely: the reader sees the socket go away
+    await expect(
+      (async () => {
+        for (;;) {
+          const { done } = await reader.read();
+          if (done) return 'ended';
+        }
+      })(),
+    ).rejects.toThrow(/terminated|closed/);
     await expect(fetch(`${baseOf(b)}/app/`)).rejects.toThrow();
   });
 

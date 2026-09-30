@@ -1,14 +1,32 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { createServer, type Server } from 'node:http';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer, request, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { APP_MISSING, serveAppFile } from '../src/app-static.js';
 
 const servers: Server[] = [];
+const dirs: string[] = [];
 afterEach(async () => {
   for (const s of servers.splice(0)) await new Promise((r) => s.close(r));
+  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
+
+/** A request with the path sent as is: `fetch` would normalise `..` away before sending. */
+function rawGet(base: string, path: string): Promise<{ status: number; body: string }> {
+  const { hostname, port } = new URL(base);
+  return new Promise((resolve, reject) => {
+    const req = request({ hostname, port, path, method: 'GET' }, (res) => {
+      let body = '';
+      res.on('data', (c) => {
+        body += c;
+      });
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
 
 async function serve(dist: string | undefined): Promise<string> {
   const server = createServer((req, res) => serveAppFile(dist, req.url ?? '/', res));
@@ -19,7 +37,10 @@ async function serve(dist: string | undefined): Promise<string> {
 }
 
 function fakeDist(): string {
-  const dist = mkdtempSync(join(tmpdir(), 'shx-dist-'));
+  const parent = mkdtempSync(join(tmpdir(), 'shx-dist-'));
+  dirs.push(parent);
+  const dist = join(parent, 'dist');
+  mkdirSync(dist);
   writeFileSync(join(dist, 'index.html'), '<!doctype html><title>Shibaox</title>');
   mkdirSync(join(dist, 'assets'));
   writeFileSync(join(dist, 'assets', 'app-abc123.js'), 'console.log(1)');
@@ -61,11 +82,12 @@ describe('serveAppFile', () => {
     for (const p of [
       '/app/../secret.txt',
       '/app/%2e%2e/secret.txt',
+      '/app/..%2fsecret.txt',
       '/app/assets/../../secret.txt',
     ]) {
-      const r = await fetch(`${base}${p}`);
-      expect(r.status, p).not.toBe(200);
-      expect(await r.text()).not.toContain('nope');
+      const r = await rawGet(base, p);
+      expect(r.status, p).toBe(404);
+      expect(r.body, p).not.toContain('nope');
     }
   });
 

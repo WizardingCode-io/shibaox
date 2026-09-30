@@ -78,12 +78,18 @@ export async function upgradeCommand(d: UpgradeDeps): Promise<number> {
   const steps: string[][] = [
     ['git', 'pull', '--ff-only'],
     ['pnpm', 'install', '--frozen-lockfile'],
-    ['pnpm', 'build'],
+    // the desktop app (Electron) is not built here: no binary download, no electron-builder
+    ['pnpm', 'build', '--filter=!@wizardingcode/shibaox-desktop'],
   ];
   out.line(`Upgrading ${app} (a few minutes: dependencies and build)…`);
   for (const argv of steps) {
     out.line(`> ${argv.join(' ')}`);
-    const r = await exec({ argv, cwd: app, timeoutMs: 15 * 60_000 });
+    const r = await exec({
+      argv,
+      cwd: app,
+      timeoutMs: 15 * 60_000,
+      env: { ...process.env, ELECTRON_SKIP_BINARY_DOWNLOAD: '1' },
+    });
     if (r.exitCode !== 0 || r.timedOut) {
       out.line(
         `${argv.join(' ')} failed${r.timedOut ? ' (timed out)' : ''}:\n${(r.stderr || r.stdout).slice(-2000)}`,

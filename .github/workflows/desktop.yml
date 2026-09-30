@@ -24,11 +24,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+      # only the desktop app and what it needs (the terminal dashboard's build wants Bun)
+      - run: pnpm turbo run build --filter=@wizardingcode/shibaox-desktop...
       - run: pnpm --filter @wizardingcode/shibaox-desktop test
-      - name: package the dmg (unsigned)
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: package the dmg (ad-hoc signed, not notarized)
         run: pnpm --filter @wizardingcode/shibaox-desktop exec electron-builder --mac --publish never
       - name: attach to a draft release of the tag
         env:
@@ -39,6 +38,6 @@ jobs:
             gh release upload "$TAG" apps/desktop/release/Shibaox-*.dmg --clobber
           else
             gh release create "$TAG" --draft --title "shibaox ${TAG#v}" \
-              --notes "Shibaox desktop app for macOS (unsigned: control-click Open the first time). The CLI and daemon: npm i -g shibaox@${TAG#v}" \
+              --notes "Shibaox desktop app for macOS (not notarized: allow it once under System Settings, Privacy and Security, Open Anyway). The CLI and daemon: npm i -g shibaox@${TAG#v}" \
               apps/desktop/release/Shibaox-*.dmg
           fi

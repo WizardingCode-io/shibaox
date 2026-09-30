@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { type LaunchDeps, planLaunch } from '../src/launch.js';
+import { type LaunchDeps, planLaunch, single } from '../src/launch.js';
 
-function deps(over: Partial<LaunchDeps> & { alive?: boolean[] } = {}): LaunchDeps & {
+type TestDeps = LaunchDeps & {
   lines: string[];
+  clock: number;
   started: number;
   ports: number[];
   closed: number;
-} {
+};
+
+function deps(over: Partial<LaunchDeps> & { alive?: boolean[] } = {}): TestDeps {
   const alive = over.alive ?? [true];
   let i = 0;
-  const d = {
+  const d: TestDeps = {
     lines: [] as string[],
     started: 0,
     ports: [] as number[],
@@ -18,6 +21,7 @@ function deps(over: Partial<LaunchDeps> & { alive?: boolean[] } = {}): LaunchDep
     probe: async () => alive[Math.min(i++, alive.length - 1)] as boolean,
     startDaemon: async () => {
       d.started++;
+      return { ok: true };
     },
     startBridge: async (port: number) => {
       d.ports.push(port);
@@ -30,6 +34,8 @@ function deps(over: Partial<LaunchDeps> & { alive?: boolean[] } = {}): LaunchDep
       };
     },
     sleep: async () => {},
+    now: () => (d.clock += 100),
+    clock: 0,
     log: (line: string) => d.lines.push(line),
     candidatePorts: [7434, 7435],
     waitMs: 1000,
@@ -99,5 +105,68 @@ describe('planLaunch', () => {
     const plan = await planLaunch(d);
     expect(plan.url).toContain(':50000/');
     expect(d.ports).toEqual([7435, 0]);
+  });
+
+  it('a daemon start that fails at once is explained at once, without the wait', async () => {
+    const d = deps({
+      alive: [false],
+      startDaemon: async () => ({ ok: false, reason: 'shibaox is not in the PATH of /bin/zsh' }),
+    });
+    let slept = 0;
+    d.sleep = async () => {
+      slept++;
+    };
+    const plan = await planLaunch(d);
+    expect(plan).toMatchObject({
+      kind: 'offline',
+      reason: 'shibaox is not in the PATH of /bin/zsh',
+    });
+    expect(slept).toBe(0);
+  });
+
+  it('the wait for a started daemon is bounded by the clock, not by a count of steps', async () => {
+    let probes = 0;
+    const d = deps({ waitMs: 15_000, stepMs: 500 });
+    d.probe = async () => {
+      probes++;
+      return false;
+    };
+    d.now = () => (d.clock += 5000); // each probe takes 5 s (a slow socket)
+    const plan = await planLaunch(d);
+    expect(plan.kind).toBe('offline');
+    expect(probes).toBeLessThanOrEqual(5);
+  });
+
+  it('a bridge error other than a taken port is explained, not thrown', async () => {
+    const d = deps({
+      startBridge: async () => {
+        throw Object.assign(new Error('listen EACCES 127.0.0.1:7434'), { code: 'EACCES' });
+      },
+    });
+    const plan = await planLaunch(d);
+    expect(plan).toMatchObject({ kind: 'offline', reason: expect.stringContaining('EACCES') });
+  });
+});
+
+describe('single', () => {
+  it('runs one launch at a time: callers during a launch share it, later callers get a new one', async () => {
+    let runs = 0;
+    let release: () => void = () => {};
+    const fn = single(async () => {
+      runs++;
+      await new Promise<void>((r) => {
+        release = r;
+      });
+      return runs;
+    });
+    const a = fn();
+    const b = fn();
+    expect(b).toBe(a);
+    release();
+    expect(await a).toBe(1);
+    const c = fn();
+    expect(c).not.toBe(a);
+    release();
+    expect(await c).toBe(2);
   });
 });

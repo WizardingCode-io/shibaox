@@ -56,7 +56,8 @@ main() {
 
   say "installing dependencies and building (a few minutes the first time; log: $LOG)"
   : > "$LOG"
-  if ! (cd "$APP" && pnpm install --frozen-lockfile </dev/null && pnpm build </dev/null) >>"$LOG" 2>&1; then
+  # the desktop app (Electron) is not built here: no binary download, no electron-builder
+  if ! (cd "$APP" && ELECTRON_SKIP_BINARY_DOWNLOAD=1 pnpm install --frozen-lockfile </dev/null && pnpm build --filter='!@wizardingcode/shibaox-desktop' </dev/null) >>"$LOG" 2>&1; then
     tail -40 "$LOG" >&2
     say "" >&2
     fail "install or build failed (full log: $LOG). If better-sqlite3 is the problem: xcode-select --install, then npm i -g node-gyp && (cd $APP && pnpm rebuild better-sqlite3)"

@@ -43,9 +43,9 @@ When a dispatched run ends while its conversation is open, the app tells the orc
 
 ## The desktop app (macOS)
 
-`Shibaox.app` is the same app in its own window, without a browser or a terminal. It is a dmg for Apple silicon and Intel, attached to each [release](https://github.com/WizardingCode-io/shibaox/releases) (`Shibaox-<version>-arm64.dmg`, `Shibaox-<version>-x64.dmg`). It is not signed yet: the first time, control-click it and choose Open (or `xattr -d com.apple.quarantine /Applications/Shibaox.app`).
+`Shibaox.app` is the same app in its own window, without a browser or a terminal. It is a dmg for Apple silicon and Intel, attached to each [release](https://github.com/WizardingCode-io/shibaox/releases) (`Shibaox-<version>-arm64.dmg`, `Shibaox-<version>-x64.dmg`). It is signed ad hoc, not notarized: the first launch is refused, then allowed once under System Settings, Privacy and Security, "Open Anyway" (or `xattr -dr com.apple.quarantine /Applications/Shibaox.app`).
 
-It needs the CLI installed (`npm i -g shibaox`): on launch it talks to the local daemon through its own bridge on a loopback port (7434 or the next free one) and starts the daemon (`shibaox daemon start`, through your login shell) when it is not running. With `shibaox remote set <url> <token>` done, it opens that remote daemon's app instead. When no daemon can be reached, it says why and offers "Try again".
+It needs the CLI installed (`npm i -g shibaox`): on launch it talks to the local daemon through its own bridge on a loopback port (7434 or the next free one) and starts the daemon when it is not running (the launchd service when `shibaox daemon install` set one up, else the installer's launcher, else `shibaox daemon start --detach` through your login shell; the daemon logs to `~/.shibaox/daemon.log`). With `shibaox remote set <url> <token>` done, it opens that remote daemon's app instead. When no daemon can be reached, it says why and offers "Try again".
 
 Links out of the app (a PR, the wiki) open in your browser. The window has no Node access; the bridge's token is random per launch and never leaves the machine.
 
@@ -64,4 +64,4 @@ Light ("warm paper") and dark ("night") follow the system by default. Everything
 - `The daemon listens on the network but its token is not here`: run `shibaox app` where the token is (`SHIBAOX_DAEMON_TOKEN`, or `shibaox keys set SHIBAOX_DAEMON_TOKEN …` on the daemon's machine), or open `http://<host>:<port>/app/` and paste the token on the Connect screen.
 - `the browser app is not installed next to this daemon`: `npm i -g shibaox@latest` (the app ships with it, as `@wizardingcode/shibaox-app`); a daemon started from a development checkout needs `pnpm build`.
 - A blank page: the daemon must be 0.2.1 or later (`shibaox daemon stop` restarts it on the new build).
-- The desktop app says `could not be started from here`: your login shell has no `shibaox` in its PATH (`npm i -g shibaox`, or start the daemon in a terminal and press Try again).
+- The desktop app says `shibaox is not in the PATH`: your login shell (`.zprofile`, `.zshrc`) does not find `shibaox` (`npm i -g shibaox`, or start the daemon in a terminal and press Try again). `exited with …`: the daemon refused to start, `~/.shibaox/daemon.log` says why.

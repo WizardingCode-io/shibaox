@@ -1,14 +1,15 @@
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startBridge } from '@wizardingcode/shibaox-bridge';
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, session, shell } from 'electron';
 import { probeDaemon, startDaemonViaShell } from './daemon.js';
-import { type BridgeHandle, type Launch, planLaunch } from './launch.js';
+import { type BridgeHandle, type Launch, planLaunch, single } from './launch.js';
 import { homeRoot, readRemote, socketPath } from './paths.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const APP_DIST = join(here, 'app');
 const OFFLINE = join(here, 'offline.html');
+const OFFLINE_URL = pathToFileURL(OFFLINE).href;
 /** The offline page's "Try again" link: caught before it navigates anywhere. */
 const RETRY = 'shibaox-desktop://retry';
 const SMOKE = process.env.SHIBAOX_DESKTOP_SMOKE === '1';
@@ -17,12 +18,11 @@ let win: BrowserWindow | undefined;
 let bridge: BridgeHandle | undefined;
 let current: Launch | undefined;
 
+/** Never the token: URL fragments stay out of the logs. */
+const shown = (text: string) => text.replace(/#token=[^\s'"]+/g, '#token=…');
 const log = (line: string) => {
-  if (SMOKE || process.env.SHIBAOX_DESKTOP_DEBUG) console.log(`[shibaox] ${line}`);
+  if (SMOKE || process.env.SHIBAOX_DESKTOP_DEBUG) console.log(`[shibaox] ${shown(line)}`);
 };
-
-/** Never the token: the URL fragment stays out of the logs. */
-const shown = (url: string) => url.replace(/#.*$/, '');
 
 async function launch(): Promise<Launch> {
   const root = homeRoot();
@@ -31,7 +31,7 @@ async function launch(): Promise<Launch> {
   const plan = await planLaunch({
     remote: () => readRemote(root),
     probe: () => probeDaemon(socketPath(root)),
-    startDaemon: async () => startDaemonViaShell(),
+    startDaemon: () => startDaemonViaShell(process.env, root),
     startBridge: (port) => startBridge({ socketPath: socketPath(root), dist: APP_DIST, port }),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     log,
@@ -41,15 +41,36 @@ async function launch(): Promise<Launch> {
   return plan;
 }
 
-async function show(w: BrowserWindow): Promise<void> {
-  const plan = await launch();
-  log(plan.kind === 'offline' ? `offline: ${plan.reason}` : `${plan.kind} ${shown(plan.url)}`);
-  if (plan.kind === 'offline') await w.loadFile(OFFLINE, { query: { reason: plan.reason } });
-  else await w.loadURL(plan.url);
-}
+const offline = (w: BrowserWindow, query: Record<string, string>) =>
+  w.loadFile(OFFLINE, { query }).catch(() => {});
+
+/** One launch at a time: "Try again" during a launch joins it instead of starting another. */
+const show = single(async (): Promise<void> => {
+  const w = win;
+  if (!w) return;
+  await offline(w, { state: 'starting' });
+  let plan: Launch;
+  try {
+    plan = await launch();
+  } catch (e) {
+    plan = { kind: 'offline', reason: e instanceof Error ? e.message : String(e) };
+    current = plan;
+  }
+  log(plan.kind === 'offline' ? `offline: ${plan.reason}` : `${plan.kind} ${plan.url}`);
+  if (plan.kind === 'offline') return offline(w, { reason: plan.reason });
+  try {
+    await w.loadURL(plan.url);
+  } catch (e) {
+    // a remote daemon that is down, a bridge that died: the reason without the address's token
+    const reason = shown(e instanceof Error ? e.message : String(e));
+    current = { kind: 'offline', reason };
+    await offline(w, { reason: `The app could not be loaded: ${reason}` });
+  }
+});
 
 const isApp = (url: string) =>
   current?.url !== undefined && new URL(url).origin === new URL(current.url).origin;
+const isOffline = (url: string) => url.split('?')[0] === OFFLINE_URL;
 
 function createWindow(): BrowserWindow {
   const w = new BrowserWindow({
@@ -67,46 +88,76 @@ function createWindow(): BrowserWindow {
     if (/^https?:/.test(url) && !isApp(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
-  w.webContents.on('will-navigate', (event, url) => {
+  const guard = (event: { preventDefault(): void }, url: string) => {
     if (url === RETRY) {
       event.preventDefault();
-      void show(w);
+      if (current?.kind === 'offline') void show();
       return;
     }
-    if (url.startsWith('file:') || isApp(url)) return;
+    if (isOffline(url) || isApp(url)) return;
     event.preventDefault();
     if (/^https?:/.test(url)) void shell.openExternal(url);
+  };
+  w.webContents.on('will-navigate', guard);
+  w.webContents.on('will-redirect', guard);
+  w.webContents.on('did-fail-load', (_e, code, description, url, isMainFrame) => {
+    if (!isMainFrame || code === -3 || isOffline(url)) return; // -3: aborted by a newer navigation
+    current = { kind: 'offline', reason: description };
+    void offline(w, { reason: `The app could not be loaded: ${description} (${code})` });
   });
   w.on('closed', () => {
     if (win === w) win = undefined;
   });
   if (SMOKE)
-    w.webContents.once('did-finish-load', () => {
+    w.webContents.on('did-finish-load', () => {
+      if (current === undefined || w.webContents.getURL().includes('state=starting')) return;
       setTimeout(async () => {
-        const shell = await w.webContents
+        const marker = await w.webContents
           .executeJavaScript('document.querySelector("aside") ? "shell" : "no-shell"')
           .catch(() => 'error');
-        console.log(`[shibaox] smoke: ${current?.kind} title=${w.getTitle()} ${shell}`);
+        console.log(`[shibaox] smoke: ${current?.kind} title=${w.getTitle()} ${marker}`);
         app.quit();
       }, 2500);
     });
   return w;
 }
 
+// Electron reports a failed load as a process warning that carries the whole address, token
+// included: the default printer goes, one that strips fragments takes its place.
+process.removeAllListeners('warning');
+process.on('warning', (w) => {
+  console.error(`${w.name}: ${shown(w.message)}`);
+});
+
 app.setName('Shibaox');
-app.whenReady().then(() => {
-  win = createWindow();
-  void show(win);
-  app.on('activate', () => {
-    if (!win) {
-      win = createWindow();
-      void show(win);
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
     }
   });
-});
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin' || SMOKE) app.quit();
-});
-app.on('before-quit', () => {
-  void bridge?.close();
-});
+  app.whenReady().then(() => {
+    // no page here (local or remote) gets notifications, media, location... by default
+    session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) =>
+      callback(false),
+    );
+    session.defaultSession.setPermissionCheckHandler(() => false);
+    win = createWindow();
+    void show();
+    app.on('activate', () => {
+      if (!win) {
+        win = createWindow();
+        void show();
+      }
+    });
+  });
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin' || SMOKE) app.quit();
+  });
+  app.on('before-quit', () => {
+    void bridge?.close();
+  });
+}

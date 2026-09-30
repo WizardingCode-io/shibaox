@@ -66,7 +66,11 @@ describe('shibaox upgrade', () => {
     const steps = calls
       .map((c) => c.argv.join(' '))
       .filter((c) => !c.startsWith('git rev-parse') && !c.startsWith('git symbolic-ref'));
-    expect(steps).toEqual(['git pull --ff-only', 'pnpm install --frozen-lockfile', 'pnpm build']);
+    expect(steps).toEqual([
+      'git pull --ff-only',
+      'pnpm install --frozen-lockfile',
+      'pnpm build --filter=!@wizardingcode/shibaox-desktop',
+    ]);
     expect(calls.every((c) => c.cwd === app)).toBe(true);
     expect(restarted).toEqual(['yes']);
     expect(o.lines.join('\n')).toMatch(/Upgraded .*aaaaaaa → bbbbbbb.*restarted/);
@@ -93,7 +97,10 @@ describe('shibaox upgrade', () => {
   });
   it('a failed build says where the checkout is, that the daemon keeps the old build, and how to go back', async () => {
     const { app, cli } = appCheckout();
-    const { exec } = fakeExec({ heads: ['aaaaaaa1', 'bbbbbbb2'], fail: 'pnpm build' });
+    const { exec } = fakeExec({
+      heads: ['aaaaaaa1', 'bbbbbbb2'],
+      fail: 'pnpm build --filter=!@wizardingcode/shibaox-desktop',
+    });
     const restarted: string[] = [];
     const o = out();
     const code = await upgradeCommand({
@@ -109,7 +116,7 @@ describe('shibaox upgrade', () => {
     expect(code).toBe(1);
     expect(restarted).toEqual([]);
     const text = o.lines.join('\n');
-    expect(text).toContain('pnpm build broke');
+    expect(text).toContain('pnpm build --filter=!@wizardingcode/shibaox-desktop broke');
     expect(text).toMatch(/keeps the old build/);
     expect(text).toContain(`git -C ${app} reset --hard aaaaaaa`);
   });
