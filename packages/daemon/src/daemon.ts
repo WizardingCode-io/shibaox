@@ -24,6 +24,7 @@ import { type DaemonConfig, loadDaemonConfig } from './config.js';
 import { ensureDefaultOrg } from './default-org.js';
 import { type HomePaths, homePaths } from './home.js';
 import { type InboxId, InboxService } from './inbox.js';
+import { mcpList, mcpTest } from './mcp.js';
 import { Routines } from './routines.js';
 import { RunManager } from './run-manager.js';
 import { vaultDir } from './runs/notes.js';
@@ -244,6 +245,8 @@ export class Daemon {
       projects: () => this.projects(),
       heartbeatMs: opts.heartbeatMs,
       keys: () => this.secrets.list(opts.env ?? process.env),
+      mcpList: (org) => mcpList(org, this.env),
+      mcpTest: (id, org) => mcpTest(id, org, this.env, opts.log ?? (() => undefined)),
       setKey: (name, value) => {
         this.secrets.set(name, value);
         this.refreshEnv(opts.env ?? process.env);

@@ -7,14 +7,16 @@ import {
   type Capability,
   conversationOf,
   type ExecutionContext,
+  type McpServerSpec,
   type RuntimeAdapter,
   type RuntimeEvent,
+  skillsPrompt,
   splitConversation,
   type TaskJob,
 } from '@wizardingcode/shibaox-core';
 import { describeError } from '@wizardingcode/shibaox-providers';
 import type { ApprovalCategory } from './bash-command.js';
-import { sdkMcpServer } from './mcp.js';
+import { mcpAllowRules, mcpServerConfigs, sdkMcpServer } from './mcp.js';
 import { buildCanUseTool } from './permissions.js';
 import { mapRoleTools } from './tools-map.js';
 
@@ -34,6 +36,8 @@ export interface ClaudeCodeAdapterOptions {
    */
   modelRef?: (job: TaskJob) => string | undefined;
   mcpServers?: (job: TaskJob) => McpServers;
+  /** The role's catalog MCP servers (resolved specs): started by Claude Code, tools allowlisted. */
+  mcpSpecs?: (job: TaskJob) => McpServerSpec[];
   /** Default 60. */
   maxTurns?: number;
   /** Injectable for tests; defaults to the SDK's `query`. */
@@ -107,10 +111,11 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
       if (existsSync(p)) prompt = readFileSync(p, 'utf8');
     }
     const preamble = this.opts.preamble?.(job);
+    const skills = this.opts.orgRoot ? skillsPrompt(this.opts.orgRoot, job.role.skills) : undefined;
     const chat = job.conversation
       ? '\n\nThis is a conversation turn: answer the user directly in your reply, in their language; use tools only when the request needs them.'
       : '';
-    return `${prompt}\n\n${RULES}${chat}${preamble ? `\n\n${preamble}` : ''}`;
+    return `${prompt}\n\n${RULES}${chat}${skills ? `\n\n${skills}` : ''}${preamble ? `\n\n${preamble}` : ''}`;
   }
 
   async *run(job: TaskJob, ctx: ExecutionContext): AsyncIterable<RuntimeEvent> {
@@ -132,10 +137,12 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
 
     const { allowedTools, disallowedTools } = mapRoleTools(job.role);
     const extra = this.opts.extraTools?.(job) ?? [];
-    const mcpServers: McpServers = {
+    const specs = this.opts.mcpSpecs?.(job) ?? [];
+    const own: McpServers = {
       ...this.opts.mcpServers?.(job),
       ...(extra.length > 0 ? { shibaox: sdkMcpServer('shibaox', extra) } : {}),
     };
+    const mcpServers: McpServers = { ...own, ...mcpServerConfigs(specs) };
     const roleBudget = job.role.budget_usd;
     const maxBudgetUsd =
       roleBudget === undefined
@@ -147,7 +154,11 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
       systemPrompt: { type: 'preset', preset: 'claude_code', append: this.rolePrompt(job) },
       cwd: job.workspace,
       model: this.opts.model?.(job),
-      allowedTools: [...allowedTools, ...Object.keys(mcpServers).map((n) => `mcp__${n}__*`)],
+      allowedTools: [
+        ...allowedTools,
+        ...Object.keys(own).map((n) => `mcp__${n}__*`),
+        ...mcpAllowRules(specs),
+      ],
       disallowedTools,
       permissionMode: 'default',
       canUseTool: buildCanUseTool({

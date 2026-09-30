@@ -16,6 +16,7 @@ import type { RoutineRow, ScheduleRow } from '@wizardingcode/shibaox-persistence
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import { RoutineTriggerSchema } from '@wizardingcode/shibaox-schemas';
 import { AlreadyResolvedError, type InboxService, NotFoundError } from './inbox.js';
+import type { McpServerRow, McpTestResult } from './mcp.js';
 import { type OrgConfigPatch, orgInfo, readOrgConfig, writeOrgConfig } from './org-config.js';
 import { allowedUrl, MIN_INTERVAL_S, type RoutineInput } from './routines.js';
 
@@ -109,6 +110,9 @@ export interface ServerDeps {
   projects: () => Promise<ProjectEntry[]>;
   /** The key vault, masked; set/unset take effect at once. */
   keys: () => KeyRow[];
+  /** The org's catalog MCP servers, and a health check of one. */
+  mcpList: (org: string) => McpServerRow[];
+  mcpTest: (id: string, org: string) => Promise<McpTestResult>;
   setKey: (name: string, value: string) => void;
   unsetKey: (name: string) => boolean;
   onShutdown: (o: { force?: boolean }) => void;
@@ -382,6 +386,18 @@ export class DaemonServer {
       }
     }
     if (method === 'GET' && path === '/projects') return send(res, 200, await this.deps.projects());
+    if (path === '/mcp' || /^\/mcp\/[^/]+\/test$/.test(path)) {
+      const org = url.searchParams.get('org') ?? '';
+      if (!org) throw new HttpError(400, 'bad_request', '"org" is required');
+      try {
+        if (method === 'GET' && path === '/mcp') return send(res, 200, this.deps.mcpList(org));
+        const id = decodeURIComponent(path.split('/')[2] ?? '');
+        if (method === 'POST') return send(res, 200, await this.deps.mcpTest(id, org));
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        throw new HttpError(/not found/i.test(m) ? 404 : 400, 'bad_request', m);
+      }
+    }
     if (method === 'GET' && path === '/keys') return send(res, 200, this.deps.keys());
     const keyName = param(/^\/keys\/([^/]+)$/);
     if (keyName !== undefined && method === 'PUT') {

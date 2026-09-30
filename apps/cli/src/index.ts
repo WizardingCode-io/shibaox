@@ -15,6 +15,7 @@ import { graphBuild, graphQuery, graphUpdate } from './commands/graph.js';
 import { answerCommand, inboxCommand } from './commands/inbox.js';
 import { initCommand } from './commands/init.js';
 import { keysList, keysSet, keysUnset } from './commands/keys.js';
+import { mcpList, mcpTest } from './commands/mcp.js';
 import { modelsCommand } from './commands/models.js';
 import { providersListCommand, providersTestCommand } from './commands/providers.js';
 import { remoteClear, remoteSet, remoteShow } from './commands/remote.js';
@@ -268,6 +269,26 @@ keys
   .argument('<name>')
   .action(async function (this: Command, name: string) {
     exitWith(await keysUnset(name, out(this)));
+  });
+
+const mcp = program
+  .command('mcp')
+  .description('the MCP servers of the org catalog (type: mcp): who uses them, are they reachable');
+mcp
+  .command('list')
+  .option(
+    '--org <dir>',
+    'org directory (default: ./org when it exists, else the org under ~/.shibaox)',
+  )
+  .action(async function (this: Command, o: { org?: string }) {
+    exitWith(await mcpList(o, out(this)));
+  });
+mcp
+  .command('test')
+  .argument('<id>', 'the catalog entry id')
+  .option('--org <dir>', 'org directory')
+  .action(async function (this: Command, id: string, o: { org?: string }) {
+    exitWith(await mcpTest(id, o, out(this)));
   });
 
 const tiers = program

@@ -29,6 +29,7 @@ Shibaox runs on your machine, or on a server you reach with a token. A daemon ke
 - **Steerable.** A task going the wrong way gets a note and starts again with it, session kept; the orchestrator sees, steers and cancels the runs it dispatched, and can ask for a typed answer.
 - **Closes the loop on GitHub.** `shibaox run fix-issue --issue 12`: the fix, the pull request, the CI checks, your approval, the merge, and the report as a comment on the issue.
 - **Watches your repos.** Routines fire on a cron, on labelled issues, on pull requests, on a red CI, on a URL, a file or a command, remember what they found last time, and report back.
+- **Any tool, any model.** MCP servers from the org catalog (Playwright ships with `shibaox init`) and skills per role, in the direct adapter and in Claude Code alike.
 - **Runs anywhere.** `shibaox serve` on a VPS or a Mac mini, `shibaox remote set` on your laptop: the same dashboard, the same commands, runs that land while the laptop is closed.
 
 ## Install

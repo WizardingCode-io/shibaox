@@ -11,6 +11,7 @@ export * from './default-org.js';
 export * from './home.js';
 export * from './inbox.js';
 export * from './inline.js';
+export * from './mcp.js';
 export * from './org-config.js';
 export * from './routines.js';
 export * from './run-manager.js';

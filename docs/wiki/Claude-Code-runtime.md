@@ -6,6 +6,10 @@
 
 `anthropic-subscription/...` uses the login of the `claude` CLI (`claude` must be installed and signed in): for these roles Shibaox removes `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` from the Claude Code process, so an API key in your shell is not billed. With `anthropic/...` the process gets `ANTHROPIC_API_KEY`. Each task prints `claude-code ready: model=<model> apiKeySource=<source> ...`. The Claude Code process only inherits `PATH`, `HOME`, locale and terminal variables, `SSH_AUTH_SOCK` and `ANTHROPIC_*` / `CLAUDE_CODE_*`; other secrets stay in Shibaox.
 
+## MCP servers
+
+A role's `mcp:` list (catalog entries with a `server:`) is passed to Claude Code as MCP servers, stdio or http, with the vault keys of `env_keys`; their tools are allowed as `mcp__<id>__*` (or the allowlisted names). The knowledge graph's own server (`graphify-mcp`) is attached by autorouting as before. See [MCP and skills](MCP-and-skills).
+
 ## Tools
 
 A role's `tools:` map to Claude Code permissions: `read` → Read/Glob/Grep, `write` → Edit/Write/MultiEdit/NotebookEdit, any other name → `Bash(<name> *)`. File tools get no blanket allow: each call is allowed only when its path resolves, through symlinks, inside the task's working directory; `~`, `..` and absolute paths elsewhere are denied, and writes under `.git` are denied. `WebFetch` and `WebSearch` are allowed only for the hosts in `permissions.network`. Compound shell commands (`;`, `&&`, pipes, substitutions) are refused. `rm -rf` is always denied.

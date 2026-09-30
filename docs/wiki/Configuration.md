@@ -52,10 +52,20 @@ permissions:
   network: [github.com]             # hosts it may fetch; '*' = any
   approval_required: [push, deploy]
 capabilities: [orchestrate, memory] # start_workflow; remember/recall
+mcp: [playwright]                   # catalog MCP servers whose tools it gets, in every runtime
+skills: [e2e-checklist]             # org/skills/<id>/SKILL.md appended to its prompt
 max_steps: 12                       # direct adapter tool-loop steps
 max_turns: 60                       # Claude Code agent turns
 budget_usd: 1                       # cap per task within the run budget
 ```
+
+## `org/catalog/<id>.yaml`
+
+Capabilities the org knows about: `id`, `type` (`team | workflow | skill | plugin | mcp | tool`), `description`, `tags`. An `mcp` entry with a `server:` block (`transport: stdio|http`, `command`/`args` or `url`, `env`, `env_keys` from the vault, `headers`, `tools` allowlist, `timeout_ms`) can be listed under a role's `mcp:`; see [MCP and skills](MCP-and-skills). Entries without a server are markers for autorouting ([Memory](Memory)).
+
+## `org/skills/<id>/SKILL.md`
+
+A skill: Markdown with optional frontmatter, appended to the prompt of every role that lists it under `skills:`.
 
 ## `org/workflows/<workflow>.yaml`
 

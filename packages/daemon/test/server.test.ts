@@ -1,4 +1,12 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { connect, createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -1036,5 +1044,42 @@ describe('steering through the API', () => {
       parentRunId: runId,
     });
     expect((await client.listRuns({ parent: runId })).map((r) => r.runId)).toEqual([child.runId]);
+  });
+});
+
+describe('MCP servers through the API', () => {
+  const fixture = fileURLToPath(
+    new URL('../../adapter-direct/test/fixtures/mcp-echo.mjs', import.meta.url),
+  );
+  it('GET /mcp lists the catalog servers with the roles using them and their keys; POST /mcp/:id/test connects', async () => {
+    const s = setup();
+    writeFileSync(
+      join(s.orgRoot, 'catalog', 'echo.yaml'),
+      `id: echo\ntype: mcp\ndescription: echo server\nserver:\n  transport: stdio\n  command: ${process.execPath}\n  args: ['${fixture}']\n  env_keys: [ECHO_TOKEN]\n  tools: [echo, secret]\n`,
+    );
+    appendFileSync(join(s.orgRoot, 'roles', 'backend.yaml'), 'mcp: [echo]\n');
+    const { client } = await started(s);
+    const before = await client.mcpList(s.orgRoot);
+    expect(before.map((r) => r.id)).toEqual(['echo', 'playwright']); // the scaffold ships a browser
+    expect(before[0]).toEqual({
+      id: 'echo',
+      description: 'echo server',
+      transport: 'stdio',
+      target: `${process.execPath} ${fixture}`,
+      tools: ['echo', 'secret'],
+      roles: ['backend'],
+      keys: [{ name: 'ECHO_TOKEN', present: false }],
+    });
+    const missing = await client.mcpTest('echo', s.orgRoot);
+    expect(missing.ok).toBe(false);
+    expect(missing.error).toContain('ECHO_TOKEN');
+    await client.setKey('ECHO_TOKEN', 'tok');
+    expect((await client.mcpList(s.orgRoot))[0]?.keys).toEqual([
+      { name: 'ECHO_TOKEN', present: true },
+    ]);
+    const test = await client.mcpTest('echo', s.orgRoot);
+    expect(test.ok).toBe(true);
+    expect(test.tools?.map((t) => t.name)).toEqual(['echo', 'secret']);
+    await expect(client.mcpTest('nope', s.orgRoot)).rejects.toMatchObject({ status: 404 });
   });
 });

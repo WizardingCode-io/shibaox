@@ -57,8 +57,9 @@ function matchesRole(tags: string[], roleTags: Set<string>): boolean {
  */
 export async function selectCapabilities(args: AutorouteArgs): Promise<AutorouteResult> {
   const roleTags = roleTagSet(args.role, args.team);
+  // an entry with a `server` is attached by the roles that list it (`mcp:`), never by tags
   const pool: CapabilityCandidate[] = args.catalog
-    .filter((e) => isCandidateType(e.type))
+    .filter((e) => isCandidateType(e.type) && !e.server)
     .map((e) => ({
       id: e.id,
       type: e.type as CapabilityCandidate['type'],

@@ -30,6 +30,7 @@
 | `shibaox init [dir]` | scaffolds `org/` and `vault/` |
 | `shibaox tiers [--org <dir>]`, `shibaox tiers set <strong\|cheap\|decision\|judge\|adapter\|budget> <value>` | the org's tiers, judge, adapter and budget (`none` clears judge/adapter) |
 | `shibaox keys list\|set <NAME> [value]\|unset <NAME>` | the key vault (value from stdin when omitted) |
+| `shibaox mcp list [--org <dir>]`, `shibaox mcp test <id> [--org <dir>]` | the catalog's MCP servers (roles, keys), and a start-and-list check of one on the daemon |
 | `shibaox providers list [--configured]`, `shibaox providers test <provider> [--model <m>]` | the catalog and a real test call |
 | `shibaox models --org <dir>` | how each role of the org resolves to a model |
 

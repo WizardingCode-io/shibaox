@@ -1,5 +1,6 @@
 import { execFile, execFileSync } from 'node:child_process';
 import {
+  appendFileSync,
   chmodSync,
   cpSync,
   mkdirSync,
@@ -636,5 +637,29 @@ esac
     });
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('No shibaox daemon is running');
+  });
+});
+
+describe('shibaox mcp', () => {
+  it('list shows the catalog servers and who uses them; test connects and lists the tools', async () => {
+    const s = await setup();
+    const fixture = fileURLToPath(
+      new URL('../../../packages/adapter-direct/test/fixtures/mcp-echo.mjs', import.meta.url),
+    );
+    writeFileSync(
+      join(s.org, 'catalog', 'echo.yaml'),
+      `id: echo\ntype: mcp\ndescription: echo server\nserver:\n  transport: stdio\n  command: ${process.execPath}\n  args: ['${fixture}']\n`,
+    );
+    appendFileSync(join(s.org, 'roles', 'backend.yaml'), 'mcp: [echo]\n');
+    const list = await s.cli('mcp', 'list', '--org', s.org);
+    expect(list.code, list.stderr).toBe(0);
+    expect(list.stdout).toContain('echo');
+    expect(list.stdout).toContain('backend');
+    const test = await s.cli('mcp', 'test', 'echo', '--org', s.org);
+    expect(test.code, test.stderr).toBe(0);
+    expect(test.stdout).toMatch(/4 tools/);
+    expect(test.stdout).toContain('shout');
+    const nope = await s.cli('mcp', 'test', 'nope', '--org', s.org);
+    expect(nope.code).not.toBe(0);
   });
 });

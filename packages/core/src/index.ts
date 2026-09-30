@@ -9,6 +9,7 @@ export * from './executors/types.js';
 export * from './gates/ci.js';
 export * from './gates/detect.js';
 export * from './gates/engine.js';
+export * from './mcp.js';
 export * from './org/inject-gates.js';
 export * from './org/with-setup.js';
 export * from './project/profile.js';

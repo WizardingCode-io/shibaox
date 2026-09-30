@@ -187,6 +187,17 @@ nodes:
     '# Analyst\nYou read the request and the codebase and list what must change, with risks.\n',
   'org/prompts/backend.md':
     '# Backend\nYou implement changes with tests. Never push without approval.\n',
+  'org/catalog/playwright.yaml': `id: playwright
+type: mcp
+description: "A browser (Playwright MCP): open pages, click, fill forms, read the page, screenshots."
+tags: [browser, e2e]
+# Add \`mcp: [playwright]\` to a role to give it these tools, in every runtime.
+# The role then browses wherever the model decides: keep it on roles you trust with that.
+server:
+  transport: stdio
+  command: npx
+  args: ['-y', '@playwright/mcp@latest', '--headless']
+`,
   'vault/00-org/.gitkeep': '',
   'vault/10-projects/.gitkeep': '',
   'vault/20-clients/.gitkeep': '',

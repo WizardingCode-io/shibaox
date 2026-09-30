@@ -19,6 +19,8 @@ Shibaox runs agents on your machine with your user's permissions. These are the 
 
 **A daemon token is shell access** on the machine that runs the daemon, as that user: the API takes any org and any project path, and tasks run programs. Keep it like an SSH key, send it over TLS, an SSH tunnel or a VPN only, and rotate it by changing the vault key and restarting `serve`. See [Remote daemon](Remote-daemon).
 
+**MCP tools are not approval-gated.** A role that lists a catalog server under `mcp:` gets every tool of that server (or the `tools:` allowlist) without the push/deploy/network categories: Shibaox cannot tell what a foreign tool does. The Playwright server browses wherever the model decides. Give servers to roles you would trust with that, use `tools:` allowlists for servers that can act, and keep their secrets in `env_keys` (the vault), never in `env`.
+
 An allowlist is **not a sandbox**. An allowed program such as `node`, `pnpm` or `make` can run arbitrary code: a `package.json` script, `node -e`, a script the task wrote. Claude Code's Bash tool snapshots your shell rc files, so anything they export can reach the task's shell. Cancelling a run does not kill a command that is already running. Only list programs you would let the model run unattended, and run Shibaox on projects and machines where that is acceptable.
 
 Model outputs (summaries, review verdicts, commit messages) are quoted as data in later prompts, but a model can be steered by what it reads in your repository or on the web. Keep `permissions.network` narrow and review what lands.

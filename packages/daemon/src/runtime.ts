@@ -12,9 +12,11 @@ import {
   defaultCheckRunners,
   type EventStore,
   type HumanHandler,
+  type McpServerSpec,
   MockAdapter,
   type MockScript,
   type ModelResolution,
+  mcpServerSpec,
   RunEngine,
   type RuntimeEvent,
   resolveModel,
@@ -327,6 +329,13 @@ export function buildRuntime(o: RuntimeOptions) {
 
   const orgRoot = o.orgRoot ?? o.org.root;
   const approvals: ApprovalHandler = o.approvals ?? humanApprovals(o.human);
+  // the role's catalog MCP servers, with their vault keys (a missing key fails the task clearly)
+  const mcpFor = (job: TaskJob): McpServerSpec[] =>
+    job.role.mcp.map((id) => {
+      const entry = o.org.catalog[id];
+      if (!entry) throw new Error(`mcp server "${id}" is not in the catalog`);
+      return mcpServerSpec(entry, o.env ?? process.env);
+    });
   const engine = new RunEngine({
     store: o.store,
     org: o.org,
@@ -341,6 +350,7 @@ export function buildRuntime(o: RuntimeOptions) {
         approvals,
         extraTools: o.tools?.extra,
         preamble: o.tools?.preamble,
+        mcpServers: mcpFor,
       }),
       'claude-code': new ClaudeCodeAdapter({
         approvals,
@@ -355,6 +365,7 @@ export function buildRuntime(o: RuntimeOptions) {
           return r.kind === 'runtime' ? r.ref : undefined;
         },
         mcpServers: () => ({ ...o.graph?.mcpServers }),
+        mcpSpecs: mcpFor,
         queryFn: o.queryFn,
         extraTools: o.tools?.extra,
         preamble: o.tools?.preamble,

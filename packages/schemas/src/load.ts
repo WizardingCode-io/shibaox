@@ -88,7 +88,7 @@ export function loadOrg(root: string): Org {
     ? readYamlFile(root, 'models.yaml', ModelsSchema)
     : ModelsSchema.parse({});
   const { items: teams, files: teamFiles } = readDir(root, 'teams', TeamSchema, 'team', 'team');
-  const { items: roles } = readDir(root, 'roles', RoleSchema, 'role', 'role');
+  const { items: roles, files: roleFiles } = readDir(root, 'roles', RoleSchema, 'role', 'role');
   const { items: workflows, files: workflowFiles } = readDir(
     root,
     'workflows',
@@ -101,6 +101,20 @@ export function loadOrg(root: string): Org {
 
   for (const t of org.teams) {
     if (!teams[t]) throw new OrgLoadError('org.yaml', `team "${t}" has no file in teams/`);
+  }
+  for (const [name, role] of Object.entries(roles)) {
+    const file = roleFiles[name] ?? `roles/${name}.yaml`;
+    for (const id of role.mcp) {
+      const entry = catalog[id];
+      if (!entry) throw new OrgLoadError(file, `mcp server "${id}" is not in catalog/`);
+      if (entry.type !== 'mcp')
+        throw new OrgLoadError(file, `catalog entry "${id}" is not an mcp entry`);
+      if (!entry.server)
+        throw new OrgLoadError(file, `catalog entry "${id}" has no server: nothing to start`);
+    }
+    for (const id of role.skills)
+      if (!existsSync(join(root, 'skills', id, 'SKILL.md')))
+        throw new OrgLoadError(file, `skill "${id}" has no skills/${id}/SKILL.md`);
   }
   for (const [name, team] of Object.entries(teams)) {
     const file = teamFiles[name] ?? `teams/${name}.yaml`;

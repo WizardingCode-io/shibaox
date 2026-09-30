@@ -4,6 +4,7 @@ import type { ProjectProfile, RunState } from '@wizardingcode/shibaox-core';
 import type { RoutineRow, ScheduleRow } from '@wizardingcode/shibaox-persistence-sqlite';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import type { InboxItem } from './inbox.js';
+import type { McpServerRow, McpTestResult } from './mcp.js';
 import type { OrgConfig, OrgConfigPatch, OrgInfo } from './org-config.js';
 import type { RoutineInput } from './routines.js';
 import type { RunSummaryPlus, SubmitRequest } from './run-manager.js';
@@ -181,6 +182,14 @@ export class DaemonClient {
   /** The org's workflows and runtime hints (404 when `root` is not an org). */
   orgInfo(root: string): Promise<OrgInfo> {
     return this.json('GET', `/orgs/info?org=${encodeURIComponent(root)}`);
+  }
+  /** The org's catalog MCP servers: who uses them, which keys they miss. */
+  mcpList(org: string): Promise<McpServerRow[]> {
+    return this.json('GET', `/mcp?org=${encodeURIComponent(org)}`);
+  }
+  /** Starts one catalog server on the daemon and lists its tools. */
+  mcpTest(id: string, org: string): Promise<McpTestResult> {
+    return this.json('POST', `/mcp/${encodeURIComponent(id)}/test?org=${encodeURIComponent(org)}`);
   }
   /** Projects a dashboard may pick, the daemon's home workspace last. */
   projects(): Promise<ProjectEntry[]> {

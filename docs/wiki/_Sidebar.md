@@ -18,6 +18,7 @@
 - [Claude Code runtime](Claude-Code-runtime)
 - [Worktrees](Worktrees)
 - [Memory](Memory)
+- [MCP and skills](MCP-and-skills)
 
 **Reference**
 - [Configuration](Configuration)

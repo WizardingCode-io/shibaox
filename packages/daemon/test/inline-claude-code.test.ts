@@ -297,7 +297,7 @@ describe('shibaox run --adapter claude-code (fake SDK)', () => {
 
   it('does not attach the graph when the catalog lists graphify-mcp but autorouting does not pick it', async () => {
     const { org, project, db, vault } = setup();
-    mkdirSync(join(org, 'catalog'));
+    mkdirSync(join(org, 'catalog'), { recursive: true });
     writeFileSync(
       join(org, 'catalog', 'graphify-mcp.yaml'),
       'id: graphify-mcp\ntype: mcp\ndescription: code knowledge graph\ntags: [frontend]\n',

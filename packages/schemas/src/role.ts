@@ -9,6 +9,10 @@ export const RoleSchema = z.object({
   model_tier: ModelTierSchema.default('strong'),
   system_prompt: z.string().optional(),
   tools: z.array(z.string()).default([]),
+  /** MCP servers from the catalog (`type: mcp`) whose tools this role gets, in every runtime. */
+  mcp: z.array(Id).default([]),
+  /** Skills (`skills/<id>/SKILL.md` in the org) appended to this role's prompt. */
+  skills: z.array(Id).default([]),
   /** Tool-loop steps for the direct adapter (default 12). */
   max_steps: z.number().int().positive().optional(),
   /** Agent turns for the Claude Code adapter (default 60). */

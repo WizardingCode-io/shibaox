@@ -12,10 +12,18 @@ import {
   validateJson,
 } from '@wizardingcode/shibaox-core';
 import type { Role } from '@wizardingcode/shibaox-schemas';
-import { type ToolSet, tool } from 'ai';
+import { jsonSchema, type ToolSet, tool } from 'ai';
 import { z } from 'zod';
 import { safePath } from './safe-path.js';
 import { fetchText } from './web.js';
+
+/** An MCP tool as the model sees it: a JSON Schema input and a call into the live server. */
+export interface McpAgentTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  execute: (input: Record<string, unknown>) => Promise<unknown>;
+}
 
 export interface ToolArgs {
   workspace: string;
@@ -40,6 +48,8 @@ export interface ToolArgs {
   graphQuery?: (question: string) => Promise<string>;
   /** Tools added by the daemon (orchestration, memory), exposed under their own names. */
   extraTools?: AgentTool[];
+  /** Tools of the role's MCP servers (names already prefixed `mcp__<server>__`). */
+  mcpTools?: McpAgentTool[];
   /** `web_fetch` timeout and size (defaults 15 s, 200 kB). */
   webTimeoutMs?: number;
   webMaxBytes?: number;
@@ -220,6 +230,12 @@ export function buildTools(a: ToolArgs): ToolSet {
       description: t.description,
       inputSchema: t.input,
       execute: guarded(t.name, (input: Record<string, unknown>) => t.execute(input)),
+    });
+  for (const t of a.mcpTools ?? [])
+    extra[t.name] = tool({
+      description: t.description,
+      inputSchema: jsonSchema<Record<string, unknown>>(t.inputSchema as never),
+      execute: guarded(t.name, (input: Record<string, unknown>) => t.execute(input ?? {})),
     });
   return {
     list_files: tool({

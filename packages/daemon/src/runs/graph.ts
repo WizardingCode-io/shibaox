@@ -35,7 +35,8 @@ async function autoroute(
   request: string,
   opts: { adapter: AdapterId; env: NodeJS.ProcessEnv; log: (l: string) => void },
 ) {
-  const catalog = Object.values(org.catalog);
+  // catalog servers (`server:`) are the roles' business: autorouting only weighs the rest
+  const catalog = Object.values(org.catalog).filter((e) => !e.server);
   const roleName = firstTaskRole(workflow);
   const role = roleName ? org.roles[roleName] : undefined;
   if (catalog.length === 0 || !role) return undefined;

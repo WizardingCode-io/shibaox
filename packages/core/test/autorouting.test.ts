@@ -87,3 +87,29 @@ describe('selectCapabilities with a team', () => {
     expect(r.ambiguous).toEqual([]);
   });
 });
+
+describe('catalog servers and autorouting', () => {
+  it('an entry with a server is never a candidate: roles attach it by name', async () => {
+    const r = await selectCapabilities({
+      request: 'test the checkout page in a browser',
+      role: RoleSchema.parse({ role: 'qa', tools: ['browser'] }),
+      catalog: [
+        CatalogEntrySchema.parse({
+          id: 'playwright',
+          type: 'mcp',
+          description: 'browser',
+          tags: ['browser'],
+          server: { transport: 'stdio', command: 'npx' },
+        }),
+        CatalogEntrySchema.parse({
+          id: 'graphify-mcp',
+          type: 'mcp',
+          description: 'graph',
+          tags: ['browser'],
+        }),
+      ],
+    });
+    expect(r.attach).toEqual(['graphify-mcp']);
+    expect(r.ambiguous).toEqual([]);
+  });
+});
