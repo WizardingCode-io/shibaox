@@ -1,5 +1,5 @@
 import { type RunEvent, RunEventSchema } from '@wizardingcode/shibaox-schemas';
-import { replay } from '../run/reducer.js';
+import { isTerminal, replay } from '../run/reducer.js';
 import type { EventStore, RunSummary, StoredEvent } from './store.js';
 
 /** A listener that throws must not break the append that triggered it. */
@@ -33,6 +33,14 @@ export class MemoryEventStore implements EventStore {
 
   async read(runId: string): Promise<StoredEvent[]> {
     return this.events.filter((e) => e.runId === runId);
+  }
+
+  async prune(before: string): Promise<string[]> {
+    const removed: string[] = [];
+    for (const r of await this.listRuns())
+      if (r.updatedAt < before && isTerminal(r.status)) removed.push(r.runId);
+    this.events = this.events.filter((e) => !removed.includes(e.runId));
+    return removed;
   }
 
   async listRuns(): Promise<RunSummary[]> {

@@ -1,5 +1,6 @@
 import {
   type EventStore,
+  isTerminal,
   notify,
   type RunSummary,
   replay,
@@ -67,9 +68,38 @@ export class SqliteEventStore implements EventStore {
     return out;
   }
 
+  /**
+   * Removes finished runs whose last event is older than `before` (an ISO date), with their
+   * runtime events; returns their ids. A run that is not in a terminal status stays whatever
+   * its age.
+   */
+  async prune(before: string): Promise<string[]> {
+    const rows = this.db
+      .prepare('SELECT run_id, MAX(at) AS last FROM events GROUP BY run_id HAVING last < ?')
+      .all(before) as { run_id: string; last: string }[];
+    const removed: string[] = [];
+    const hasRuntime =
+      this.db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'runtime_events'")
+        .get() !== undefined;
+    const delEvents = this.db.prepare('DELETE FROM events WHERE run_id = ?');
+    const delRuntime = hasRuntime
+      ? this.db.prepare('DELETE FROM runtime_events WHERE run_id = ?')
+      : undefined;
+    for (const { run_id } of rows) {
+      const state = replay(await this.read(run_id));
+      if (!isTerminal(state.status)) continue;
+      delEvents.run(run_id);
+      delRuntime?.run(run_id);
+      removed.push(run_id);
+    }
+    return removed;
+  }
+
   close(): void {
     this.db.close();
   }
 }
 export * from './outbox.js';
+export * from './runtime-events.js';
 export * from './schedules.js';

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { OutboxRepo, SchedulesRepo, SqliteEventStore } from '../src/index.js';
+import { OutboxRepo, RuntimeEventsRepo, SchedulesRepo, SqliteEventStore } from '../src/index.js';
 
 let dir: string;
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
@@ -72,5 +72,65 @@ describe('sqlite repos', () => {
     outbox.remove(r2.id);
     expect(outbox.due('2100-01-01T00:00:00.000Z')).toHaveLength(0);
     store.close();
+  });
+});
+
+describe('runtime events on disk', () => {
+  it("keeps every run's tool calls across instances, numbered per run, trimmed", async () => {
+    dir = mkdtempSync(join(tmpdir(), 'shx-sql-'));
+    const store = new SqliteEventStore(join(dir, 'e.db'));
+    const repo = new RuntimeEventsRepo(store.db);
+    expect(repo.nextSeq('r1')).toBe(1);
+    repo.append({ runId: 'r1', nodeId: 'a', seq: 1, at: 't1', event: { type: 'started' } });
+    repo.append({
+      runId: 'r1',
+      nodeId: 'a',
+      seq: 2,
+      at: 't2',
+      event: { type: 'tool_use', name: 'read_file', input: { path: 'x' } },
+    });
+    repo.append({
+      runId: 'r1',
+      nodeId: 'a',
+      seq: 3,
+      at: 't3',
+      event: { type: 'tool_result', name: 'read_file', output: 'y'.repeat(10_000), durationMs: 7 },
+    });
+    repo.append({ runId: 'r2', nodeId: 'b', seq: 1, at: 't1', event: { type: 'started' } });
+    store.close();
+    const again = new RuntimeEventsRepo(new SqliteEventStore(join(dir, 'e.db')).db);
+    const r1 = again.read('r1');
+    expect(r1.map((e) => [e.seq, e.event.type])).toEqual([
+      [1, 'started'],
+      [2, 'tool_use'],
+      [3, 'tool_result'],
+    ]);
+    expect(r1[2]?.event).toMatchObject({ durationMs: 7 });
+    const out = (r1[2]?.event as { output: string }).output;
+    expect(out.length).toBeLessThan(5000); // clipped for storage, like the buffer
+    expect(again.read('r1', 2).map((e) => e.seq)).toEqual([3]);
+    expect(again.nextSeq('r1')).toBe(4);
+    expect(again.read('r2')).toHaveLength(1);
+  });
+
+  it('prune removes finished runs older than a date, with their runtime events; live and newer runs stay', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'shx-sql-'));
+    const store = new SqliteEventStore(join(dir, 'e.db'));
+    const repo = new RuntimeEventsRepo(store.db);
+    const created = (runId: string, at: string) =>
+      store.append({ type: 'RunCreated', runId, at, workflow: 'w', input: {}, workspace: '/w' });
+    await created('old-done', '2026-01-01T00:00:00.000Z');
+    await store.append({ type: 'RunStarted', runId: 'old-done', at: '2026-01-01T00:00:01.000Z' });
+    await store.append({ type: 'RunCompleted', runId: 'old-done', at: '2026-01-02T00:00:00.000Z' });
+    repo.append({ runId: 'old-done', nodeId: 'a', seq: 1, at: 'x', event: { type: 'started' } });
+    await created('old-live', '2026-01-01T00:00:00.000Z');
+    await store.append({ type: 'RunStarted', runId: 'old-live', at: '2026-01-01T00:00:01.000Z' });
+    await created('new-done', '2026-09-01T00:00:00.000Z');
+    await store.append({ type: 'RunCompleted', runId: 'new-done', at: '2026-09-02T00:00:00.000Z' });
+    const removed = await store.prune('2026-06-01T00:00:00.000Z');
+    expect(removed).toEqual(['old-done']);
+    expect((await store.listRuns()).map((r) => r.runId).sort()).toEqual(['new-done', 'old-live']);
+    expect(repo.read('old-done')).toEqual([]);
+    expect(await store.read('old-done')).toEqual([]);
   });
 });

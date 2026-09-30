@@ -10,6 +10,7 @@ import { removeRunWorkspace } from '@wizardingcode/shibaox-workspace';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InboxService } from '../src/inbox.js';
 import { RunManager } from '../src/run-manager.js';
+import type { RuntimeEnvelope } from '../src/runtime-buffer.js';
 import { scaffoldOrg } from '../src/templates.js';
 
 const sample = fileURLToPath(new URL('../../../examples/sample-repo', import.meta.url));
@@ -270,6 +271,66 @@ describe('RunManager', () => {
     await vi.waitFor(async () => expect((await m.state(runId)).status).not.toBe('queued'), {
       timeout: 10_000,
     });
+  });
+
+  it('runtime events survive a restart: a new manager reads them from the runtime store', async () => {
+    const s = setup();
+    const store = new MemoryEventStore();
+    // an in-memory stand-in for the SQLite table
+    const rows: RuntimeEnvelope[] = [];
+    const runtimeStore = {
+      append: (e: RuntimeEnvelope) => {
+        rows.push(e);
+      },
+      read: (runId: string, since = 0) => rows.filter((e) => e.runId === runId && e.seq > since),
+      nextSeq: (runId: string) => rows.filter((e) => e.runId === runId).length + 1,
+      forget: (runIds: string[]) => {
+        for (let i = rows.length - 1; i >= 0; i--)
+          if (runIds.includes(rows[i]!.runId)) rows.splice(i, 1);
+      },
+    };
+    const { manager: first } = manager(store, { vault: s.vault, runtimeStore });
+    const { runId } = await submitMock(first, s, 'inplace');
+    await vi.waitFor(async () => expect((await first.state(runId)).status).toBe('waiting_human'));
+    expect(first.runtimeEvents(runId).map((e) => e.event.type)).toContain('result');
+    expect(rows.filter((e) => e.runId === runId).map((e) => e.seq)).toEqual(
+      first.runtimeEvents(runId).map((e) => e.seq),
+    );
+    // "restart": a manager with an empty buffer over the same stores
+    const { manager: second } = manager(store, { vault: s.vault, runtimeStore });
+    const cold = second.runtimeEvents(runId);
+    expect(cold.map((e) => e.event.type)).toEqual(
+      first.runtimeEvents(runId).map((e) => e.event.type),
+    );
+    expect(second.runtimeEvents(runId, cold[0]?.seq ?? 0)).toHaveLength(cold.length - 1);
+  });
+
+  it('prune removes finished runs older than a date from both stores and never a live one', async () => {
+    const s = setup();
+    const store = new MemoryEventStore();
+    const rows: RuntimeEnvelope[] = [];
+    const runtimeStore = {
+      append: (e: RuntimeEnvelope) => {
+        rows.push(e);
+      },
+      read: (runId: string, since = 0) => rows.filter((e) => e.runId === runId && e.seq > since),
+      nextSeq: (runId: string) => rows.filter((e) => e.runId === runId).length + 1,
+      forget: (runIds: string[]) => {
+        for (let i = rows.length - 1; i >= 0; i--)
+          if (runIds.includes(rows[i]!.runId)) rows.splice(i, 1);
+      },
+    };
+    const { manager: m, inbox } = manager(store, { vault: s.vault, runtimeStore });
+    const { runId } = await submitMock(m, s, 'inplace');
+    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('waiting_human'));
+    expect(await m.prune('9999-01-01T00:00:00.000Z')).toEqual([]); // waiting: live, never pruned
+    await inbox.answer(`human:${runId}:ship`, { approved: true });
+    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('completed'));
+    expect(await m.prune('2000-01-01T00:00:00.000Z')).toEqual([]); // newer than the date
+    expect(await m.prune('9999-01-01T00:00:00.000Z')).toEqual([runId]);
+    expect(await m.list()).toEqual([]);
+    expect(m.runtimeEvents(runId)).toEqual([]);
+    expect(rows).toEqual([]);
   });
 
   it('submit queues a run, executes it and writes the vault note when it ends', async () => {

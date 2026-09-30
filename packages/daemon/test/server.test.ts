@@ -685,3 +685,21 @@ describe('the fix pass of the remote daemon', () => {
     expect(daemon.listenAddress()).toBeUndefined();
   });
 });
+
+describe('pruning old runs', () => {
+  it('POST /runs/prune removes finished runs older than `before` and needs a date', async () => {
+    const s = setup();
+    const { client } = await started(s);
+    const { runId } = await submit(client, s);
+    await collect(
+      client.events(runId),
+      (e) => e.kind === 'run' && e.event.type === 'HumanRequested',
+    );
+    await client.answer(`human:${runId}:ship`, { approved: true });
+    await collect(client.events(runId), (e) => e.kind === 'end');
+    expect(await client.pruneRuns('2000-01-01T00:00:00.000Z')).toEqual({ removed: [] });
+    expect(await client.pruneRuns('9999-01-01T00:00:00.000Z')).toEqual({ removed: [runId] });
+    expect(await client.listRuns()).toEqual([]);
+    await expect(client.pruneRuns('not a date')).rejects.toMatchObject({ status: 400 });
+  });
+});

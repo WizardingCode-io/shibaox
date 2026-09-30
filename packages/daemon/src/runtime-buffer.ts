@@ -35,7 +35,27 @@ export class RuntimeBuffer {
   constructor(
     private readonly capacity = 2000,
     private readonly keepFinished = 50,
+    /** The number the first event of a run not seen here gets (a store that kept earlier ones). */
+    private readonly seed: (runId: string) => number = () => 1,
   ) {}
+
+  /** Whether this run has events here (the store is asked otherwise). */
+  has(runId: string): boolean {
+    return this.runs.has(runId);
+  }
+
+  /** The oldest sequence kept for the run (older ones were evicted, or are in the store). */
+  firstSeq(runId: string): number | undefined {
+    return this.runs.get(runId)?.events[0]?.seq;
+  }
+
+  drop(runIds: string[]): void {
+    for (const id of runIds) {
+      this.runs.delete(id);
+      const i = this.finished.indexOf(id);
+      if (i >= 0) this.finished.splice(i, 1);
+    }
+  }
 
   /** The run ended: keep its stream for `follow`/the dashboard, dropping the oldest finished ones. */
   retire(runId: string): void {
@@ -53,7 +73,7 @@ export class RuntimeBuffer {
     if (idx >= 0) this.finished.splice(idx, 1);
     let entry = this.runs.get(runId);
     if (!entry) {
-      entry = { seq: 0, events: [] };
+      entry = { seq: this.seed(runId) - 1, events: [] };
       this.runs.set(runId, entry);
     }
     const envelope: RuntimeEnvelope = {

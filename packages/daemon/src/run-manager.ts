@@ -71,8 +71,19 @@ export interface SubmitRequest {
 /** A conversation carried into a run is compacted beyond this (estimated tokens). */
 export const CONVERSATION_TOKENS = 32_000;
 
+/** Where runtime events (tool calls, texts) live beyond the in-memory buffer: the SQLite table. */
+export interface RuntimeStore {
+  append(e: RuntimeEnvelope): void;
+  read(runId: string, since?: number): RuntimeEnvelope[];
+  /** The number the next event of the run gets. */
+  nextSeq(runId: string): number;
+  forget(runIds: string[]): void;
+}
+
 export interface RunManagerOptions {
   store: EventStore;
+  /** Runtime events on disk; without it they live in the buffer only (tests). */
+  runtimeStore?: RuntimeStore;
   inbox: InboxService;
   config: Pick<DaemonConfig, 'max_concurrent_runs'>;
   log: (line: string) => void;
@@ -139,7 +150,7 @@ export class RunManager {
   private readonly live = new Map<string, { orgRoot: string; engine: RunEngine; token: object }>();
   private readonly queue: Pending[] = [];
   private readonly prepared = new Map<string, Prepared>();
-  private readonly buffer = new RuntimeBuffer();
+  private readonly buffer: RuntimeBuffer;
   private readonly listeners = new Set<(e: RuntimeEnvelope) => void>();
   private readonly starting = new Set<string>();
   private readonly now: () => string;
@@ -148,6 +159,8 @@ export class RunManager {
 
   constructor(private readonly opts: RunManagerOptions) {
     this.now = opts.now ?? (() => new Date().toISOString());
+    const rs = opts.runtimeStore;
+    this.buffer = new RuntimeBuffer(2000, 50, rs ? (id) => rs.nextSeq(id) : undefined);
   }
 
   /** Validates, creates the workspace, emits `RunCreated` (queued) and schedules the run. */
@@ -349,8 +362,22 @@ export class RunManager {
     return out;
   }
 
+  /** From the buffer when it holds everything after `since`; else from the runtime store. */
   runtimeEvents(runId: string, since = 0): RuntimeEnvelope[] {
-    return this.buffer.read(runId, since);
+    const store = this.opts.runtimeStore;
+    if (!store) return this.buffer.read(runId, since);
+    const first = this.buffer.firstSeq(runId);
+    if (first !== undefined && first <= since + 1) return this.buffer.read(runId, since);
+    return store.read(runId, since);
+  }
+
+  /** Removes finished runs older than `before` (ISO date) from every store; returns their ids. */
+  async prune(before: string): Promise<string[]> {
+    const removed = (await this.opts.store.prune?.(before)) ?? [];
+    if (removed.length === 0) return removed;
+    this.opts.runtimeStore?.forget(removed);
+    this.buffer.drop(removed);
+    return removed;
   }
 
   onRuntimeEvent(cb: (e: RuntimeEnvelope) => void): () => void {
@@ -605,6 +632,13 @@ export class RunManager {
       mockScript: this.opts.mockScript,
       onRuntimeEvent: (runId, nodeId, e) => {
         const env = this.buffer.push(runId, nodeId, e, this.now());
+        try {
+          this.opts.runtimeStore?.append(env);
+        } catch (err) {
+          this.opts.log(
+            `warn: runtime event not stored: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
         for (const l of this.listeners)
           try {
             l(env);

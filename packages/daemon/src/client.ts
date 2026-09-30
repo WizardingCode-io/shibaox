@@ -145,6 +145,10 @@ export class DaemonClient {
     const qs = p.toString();
     return this.json('GET', `/runs${qs ? `?${qs}` : ''}`);
   }
+  /** Removes finished runs whose last event is older than `before` (ISO date). */
+  pruneRuns(before: string): Promise<{ removed: string[] }> {
+    return this.json('POST', '/runs/prune', { before });
+  }
   getRun(id: string): Promise<RunState> {
     return this.json('GET', `/runs/${encodeURIComponent(id)}`);
   }

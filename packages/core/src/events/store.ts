@@ -17,4 +17,9 @@ export interface EventStore {
   listRuns(): Promise<RunSummary[]>;
   /** Called after every successful append; returns the unsubscribe function. */
   subscribe(listener: (e: StoredEvent) => void): () => void;
+  /**
+   * Removes finished runs whose last event is older than `before` (ISO date) and returns their
+   * ids; a run that is not in a terminal status stays. Stores that cannot prune leave it out.
+   */
+  prune?(before: string): Promise<string[]>;
 }

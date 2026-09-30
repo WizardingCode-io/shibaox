@@ -386,6 +386,13 @@ export class DaemonServer {
           throw new HttpError(400, 'bad_request', `"${k}" must be a directory path`);
       return send(res, 200, await this.deps.runs.submit(body as unknown as SubmitRequest));
     }
+    if (method === 'POST' && path === '/runs/prune') {
+      const body = asRecord(await readBody(req));
+      const before = body.before;
+      if (typeof before !== 'string' || Number.isNaN(Date.parse(before)))
+        throw new HttpError(400, 'bad_request', '"before" must be an ISO date');
+      return send(res, 200, { removed: await this.deps.runs.prune(before) });
+    }
     if (method === 'GET' && path === '/runs') {
       const status = url.searchParams.get('status') ?? undefined;
       const orgRoot = url.searchParams.get('org') ?? undefined;

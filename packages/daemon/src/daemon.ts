@@ -5,6 +5,7 @@ import { type EventStore, type MockScript, runArgv } from '@wizardingcode/shibao
 import type { Graphify } from '@wizardingcode/shibaox-memory';
 import {
   OutboxRepo,
+  RuntimeEventsRepo,
   SchedulesRepo,
   SqliteEventStore,
 } from '@wizardingcode/shibaox-persistence-sqlite';
@@ -157,6 +158,8 @@ export class Daemon {
     });
     this.runs = new RunManager({
       store: this.store,
+      runtimeStore:
+        this.store instanceof SqliteEventStore ? new RuntimeEventsRepo(this.store.db) : undefined,
       inbox: this.inbox,
       config: this.config,
       log,
