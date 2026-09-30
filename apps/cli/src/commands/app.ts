@@ -73,7 +73,7 @@ export async function appCommand(
   }
   const bridge = await startBridge({
     socketPath: paths.socket,
-    dist: resolveAppDist(),
+    dist: resolveAppDist(import.meta.url),
     port: o.port,
   });
   out.line(`The app: ${bridge.url}`);
