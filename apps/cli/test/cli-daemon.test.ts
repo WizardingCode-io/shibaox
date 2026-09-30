@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -217,6 +217,44 @@ describe('shibaox CLI against a daemon', () => {
     expect((await cli('runs')).stdout).toContain('No runs yet.');
     const bad = await cli('runs', 'prune', '--before', 'yesterday');
     expect(bad.code).toBe(1);
+  });
+
+  it('run --setup off skips the dependency install a worktree run gets by default', async () => {
+    const { org, project, cli, dir } = await setup();
+    const git = (...a: string[]) => execFileSync('git', a, { cwd: project, stdio: 'ignore' });
+    git('init', '-q', '-b', 'main');
+    git('add', '-A');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--no-gpg-sign', '-m', 'i');
+    const common = [
+      '--org',
+      org,
+      '--project',
+      project,
+      '--input',
+      'x',
+      '--adapter',
+      'mock',
+      '--workspace',
+      'worktree',
+      '--detach',
+      '--json',
+    ];
+    const [{ runId: withSetup }] = json<{ runId: string }>(
+      await cli('run', 'hello-feature', ...common),
+    );
+    const [{ runId: without }] = json<{ runId: string }>(
+      await cli('run', 'hello-feature', ...common, '--setup', 'off'),
+    );
+    await vi.waitFor(async () => {
+      const runs = json<{ runId: string; status: string }>(await cli('runs', '--json'));
+      expect(runs.filter((r) => r.status === 'waiting_human')).toHaveLength(2);
+    });
+    // the sample has no lockfile: `npm install` runs in the worktree before the first task
+    expect((await cli('replay', withSetup)).stdout).toMatch(
+      /NodeStarted setup[\s\S]*NodeCompleted setup[\s\S]*NodeStarted analyse/,
+    );
+    expect((await cli('replay', without)).stdout).not.toContain('setup');
+    void dir;
   });
 
   it('daemon status reports the version and an empty inbox prints a sentence', async () => {

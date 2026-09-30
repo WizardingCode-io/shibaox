@@ -75,6 +75,20 @@ nodes:
 
 `conversation: true` marks a chat workflow (one task, in place, the thread carried between turns). See [Concepts](Concepts) for every node type and [Gates](Gates) for `org/gates/*.yaml`.
 
+## `<project>/shibaox.yaml`
+
+Optional, at the root of a project: what a run needs to know about it that cannot be guessed, or is guessed wrong.
+
+```yaml
+setup: pnpm install --frozen-lockfile   # what a fresh worktree runs first; false for nothing
+setup_timeout_ms: 600000
+tests: pnpm test                        # the `tests` check (detected when absent)
+lint: pnpm lint                         # the `lint` check (detected when absent)
+protected: ['.github/**']               # reserved: enforced by a later version
+```
+
+Without `setup`, the install is detected from the lockfile or manifest: `pnpm install --frozen-lockfile`, `yarn install --frozen-lockfile`, `bun install --frozen-lockfile`, `npm ci` (with a `package-lock.json`) or `npm install`, `uv sync`, `pip install -r requirements.txt`, `composer install --no-interaction`, `go mod download`, `cargo fetch`, `bundle install`. See [Worktrees](Worktrees).
+
 ## `~/.shibaox/daemon.yaml`
 
 Every key optional:

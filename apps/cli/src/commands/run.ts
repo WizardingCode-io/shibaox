@@ -20,6 +20,8 @@ export interface RunCommandOptions {
   budget?: number;
   /** A model ref (`provider/model`) for every task of the run. */
   model?: string;
+  /** Worktree dependency install: auto (default), off, or a command. */
+  setup?: string;
   detach?: boolean;
 }
 
@@ -52,6 +54,7 @@ export async function runCommand(
     budgetUsd: o.budget,
     graph: o.graph,
     model: o.model,
+    setup: o.setup,
   });
   for (const w of warnings) out.line(`warn: ${w}`);
   out.line(`run ${runId} queued`);

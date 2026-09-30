@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadOrg } from '@wizardingcode/shibaox-schemas';
@@ -11,6 +11,7 @@ import {
   RunEngine,
   type RuntimeAdapter,
   ScriptedDecider,
+  withSetup,
 } from '../src/index.js';
 
 function scaffold(files: Record<string, string>): string {
@@ -791,5 +792,49 @@ describe('the engine environment reaches commands, gates and git nodes', () => {
     const { engine } = engineFor(dir, { env: {} });
     const state = await engine.start({ workflow: 'probe', input: {}, workspace: process.cwd() });
     expect(state.status).toBe('failed');
+  });
+});
+
+describe('a setup step before the first node', () => {
+  it('withSetup prepends a code node and points it at the old start; a workflow with its own setup is left alone', () => {
+    const wf = loadOrg(scaffold(orgFiles('true'))).workflows.hello as Parameters<
+      typeof withSetup
+    >[0];
+    const out = withSetup(wf, 'pnpm install --frozen-lockfile', 120_000);
+    expect(out.start).toBe('setup');
+    expect(out.nodes.setup).toEqual({
+      type: 'code',
+      command: 'pnpm install --frozen-lockfile',
+      timeout_ms: 120_000,
+      next: 'analyse',
+    });
+    expect(Object.keys(out.nodes)).toHaveLength(Object.keys(wf.nodes).length + 1);
+    const own = {
+      ...wf,
+      start: 'setup',
+      nodes: {
+        setup: { type: 'code', command: 'make deps', timeout_ms: 1000, next: 'analyse' },
+        ...wf.nodes,
+      },
+    } as typeof wf;
+    expect(withSetup(own, 'npm ci', 1)).toBe(own);
+  });
+  it('StartOptions.setup runs the command in the workspace before anything else, and is in the snapshot', async () => {
+    const { engine, store } = engineFor(scaffold(orgFiles('true')));
+    const workspace = mkdtempSync(join(tmpdir(), 'ws-'));
+    const state = await engine.start({
+      workflow: 'hello',
+      input: { spec: 'x' },
+      workspace,
+      setup: { command: 'touch deps-installed', timeoutMs: 10_000 },
+    });
+    expect(state.status).toBe('completed');
+    expect(state.workflowSnapshot?.start).toBe('setup');
+    const types = (await store.read(state.runId))
+      .filter((e) => e.type === 'NodeStarted')
+      .map((e) => (e as { nodeId: string }).nodeId);
+    expect(types[0]).toBe('setup');
+    expect(types[1]).toBe('analyse');
+    expect(existsSync(join(workspace, 'deps-installed'))).toBe(true);
   });
 });

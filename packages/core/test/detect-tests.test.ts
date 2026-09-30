@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { detectLintCommand, detectTestCommand } from '../src/gates/detect.js';
+import { detectLintCommand, detectSetupCommand, detectTestCommand } from '../src/gates/detect.js';
 import { defaultCheckRunners, runGate } from '../src/gates/engine.js';
 
 const dirs: string[] = [];
@@ -212,5 +212,56 @@ describe('the lint check', () => {
     });
     expect(report.checks[0]).toMatchObject({ type: 'lint', passed: true, skipped: true });
     expect(report.checks[0]?.evidence).toContain('no linter');
+  });
+});
+
+describe('detectSetupCommand', () => {
+  it('installs the dependencies of a project the way its lockfile says', () => {
+    const pkg = JSON.stringify({ name: 'p' });
+    expect(detectSetupCommand(dir({ 'package.json': pkg, 'pnpm-lock.yaml': '' }))).toBe(
+      'pnpm install --frozen-lockfile',
+    );
+    expect(detectSetupCommand(dir({ 'package.json': pkg, 'yarn.lock': '' }))).toBe(
+      'yarn install --frozen-lockfile',
+    );
+    expect(detectSetupCommand(dir({ 'package.json': pkg, 'bun.lock': '' }))).toBe(
+      'bun install --frozen-lockfile',
+    );
+    expect(detectSetupCommand(dir({ 'package.json': pkg, 'package-lock.json': '' }))).toBe(
+      'npm ci',
+    );
+    expect(detectSetupCommand(dir({ 'package.json': pkg }))).toBe('npm install');
+    expect(detectSetupCommand(dir({ 'pyproject.toml': '', 'uv.lock': '' }))).toBe('uv sync');
+    expect(detectSetupCommand(dir({ 'pyproject.toml': '' }))).toBe('uv sync');
+    expect(detectSetupCommand(dir({ 'requirements.txt': 'x' }))).toBe(
+      'pip install -r requirements.txt',
+    );
+    expect(detectSetupCommand(dir({ 'composer.json': '{}' }))).toBe(
+      'composer install --no-interaction',
+    );
+    expect(detectSetupCommand(dir({ 'go.mod': 'module x' }))).toBe('go mod download');
+    expect(detectSetupCommand(dir({ 'Cargo.toml': '' }))).toBe('cargo fetch');
+    expect(detectSetupCommand(dir({ Gemfile: '' }))).toBe('bundle install');
+    expect(detectSetupCommand(dir({ 'README.md': '' }))).toBeUndefined();
+  });
+  it('the project file wins: its setup, or none when it says false', () => {
+    const pkg = JSON.stringify({ name: 'p' });
+    expect(
+      detectSetupCommand(dir({ 'package.json': pkg, 'shibaox.yaml': 'setup: make deps\n' })),
+    ).toBe('make deps');
+    expect(
+      detectSetupCommand(dir({ 'package.json': pkg, 'shibaox.yaml': 'setup: false\n' })),
+    ).toBeUndefined();
+  });
+});
+
+describe('the project file and the checks', () => {
+  it('tests and lint from shibaox.yaml come before detection', () => {
+    const d = dir({
+      'package.json': JSON.stringify({ scripts: { test: 'x', lint: 'y' } }),
+      'shibaox.yaml': 'tests: make check\nlint: make style\n',
+    });
+    expect(detectTestCommand(d)).toBe('make check');
+    expect(detectLintCommand(d)).toBe('make style');
   });
 });

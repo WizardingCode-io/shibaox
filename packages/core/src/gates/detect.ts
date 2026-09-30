@@ -1,13 +1,52 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { loadProjectFile, type ProjectFile } from '@wizardingcode/shibaox-schemas';
 
 const has = (dir: string, file: string) => existsSync(join(dir, file));
+
+/** The project's own answers (`shibaox.yaml`); an unreadable file counts as none here. */
+function projectFile(dir: string): ProjectFile | undefined {
+  try {
+    return loadProjectFile(dir);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Default time for a dependency install (10 min). */
+export const SETUP_TIMEOUT_MS = 600_000;
+
+/**
+ * The command that installs the project's dependencies in a fresh checkout: `shibaox.yaml
+ * setup` first (`false` means none), else what the lockfile or manifest says; undefined when
+ * nothing recognisable is there.
+ */
+export function detectSetupCommand(dir: string): string | undefined {
+  const pf = projectFile(dir);
+  if (pf?.setup !== undefined) return pf.setup === false ? undefined : pf.setup;
+  if (has(dir, 'package.json')) {
+    if (has(dir, 'pnpm-lock.yaml')) return 'pnpm install --frozen-lockfile';
+    if (has(dir, 'yarn.lock')) return 'yarn install --frozen-lockfile';
+    if (has(dir, 'bun.lock') || has(dir, 'bun.lockb')) return 'bun install --frozen-lockfile';
+    if (has(dir, 'package-lock.json')) return 'npm ci';
+    return 'npm install';
+  }
+  if (has(dir, 'pyproject.toml') || has(dir, 'uv.lock')) return 'uv sync';
+  if (has(dir, 'requirements.txt')) return 'pip install -r requirements.txt';
+  if (has(dir, 'composer.json')) return 'composer install --no-interaction';
+  if (has(dir, 'go.mod')) return 'go mod download';
+  if (has(dir, 'Cargo.toml')) return 'cargo fetch';
+  if (has(dir, 'Gemfile')) return 'bundle install';
+  return undefined;
+}
 
 /**
  * The command that runs the project's own tests, from what the workspace contains; undefined
  * when nothing recognisable is there (the `tests` check then passes with a note).
  */
 export function detectTestCommand(dir: string): string | undefined {
+  const own = projectFile(dir)?.tests;
+  if (own) return own;
   if (has(dir, 'package.json')) {
     try {
       const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
@@ -71,6 +110,8 @@ const ESLINT_CONFIGS = [
  * is installed, never a download (npm's "biome" is not Biome).
  */
 export function detectLintCommand(dir: string): string | undefined {
+  const own = projectFile(dir)?.lint;
+  if (own) return own;
   if (has(dir, 'package.json')) {
     try {
       const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {

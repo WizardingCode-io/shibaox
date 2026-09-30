@@ -333,6 +333,68 @@ describe('RunManager', () => {
     expect(rows).toEqual([]);
   });
 
+  it('a worktree run installs its dependencies first (shibaox.yaml setup); in place and --setup off do not', async () => {
+    const s = setup({ git: true });
+    writeFileSync(join(s.project, 'shibaox.yaml'), 'setup: cp package.json deps-installed.txt\n');
+    execFileSync('git', ['add', '-A'], { cwd: s.project });
+    execFileSync(
+      'git',
+      ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'cfg'],
+      { cwd: s.project },
+    );
+    const store = new MemoryEventStore();
+    const { manager: m } = manager(store, { vault: s.vault });
+    const started = async (runId: string) =>
+      (await store.read(runId))
+        .filter((e) => e.type === 'NodeStarted')
+        .map((e) => (e as { nodeId: string }).nodeId);
+    const a = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'x',
+      adapter: 'mock',
+      workspace: 'worktree',
+    });
+    await vi.waitFor(async () => expect((await m.state(a.runId)).status).toBe('waiting_human'));
+    expect((await started(a.runId))[0]).toBe('setup');
+    expect((await m.state(a.runId)).nodes.setup?.status).toBe('completed');
+    expect(existsSync(join((await m.state(a.runId)).workspace, 'deps-installed.txt'))).toBe(true);
+    expect(existsSync(join(s.project, 'deps-installed.txt'))).toBe(false); // the worktree, not the checkout
+    const b = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'x',
+      adapter: 'mock',
+      workspace: 'inplace',
+    });
+    await vi.waitFor(async () => expect((await m.state(b.runId)).status).toBe('waiting_human'));
+    expect(await started(b.runId)).not.toContain('setup');
+    const c = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'x',
+      adapter: 'mock',
+      workspace: 'worktree',
+      setup: 'off',
+    });
+    await vi.waitFor(async () => expect((await m.state(c.runId)).status).toBe('waiting_human'));
+    expect(await started(c.runId)).not.toContain('setup');
+    const d = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'x',
+      adapter: 'mock',
+      workspace: 'worktree',
+      setup: 'cp package.json custom.txt',
+    });
+    await vi.waitFor(async () => expect((await m.state(d.runId)).status).toBe('waiting_human'));
+    expect(existsSync(join((await m.state(d.runId)).workspace, 'custom.txt'))).toBe(true);
+  });
+
   it('code nodes and gates get GitHub keys from the vault, never the provider keys', async () => {
     const s = setup();
     const wf = (name: string, cmd: string) =>

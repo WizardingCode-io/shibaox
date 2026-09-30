@@ -117,6 +117,10 @@ program
     'model for every task (provider/model, e.g. anthropic-subscription/claude-sonnet-5)',
   )
   .option('--budget <usd>', 'budget in USD (default: org budgets.per_run_usd)', parseBudget)
+  .option(
+    '--setup <what>',
+    'dependency install in a worktree: auto (shibaox.yaml setup, else the lockfile), off, or a command',
+  )
   .option('--detach', 'submit and return without following')
   .action(async function (this: Command, workflow: string, o: Record<string, unknown>) {
     exitWith(

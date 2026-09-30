@@ -6,7 +6,7 @@
 
 | Command | |
 | --- | --- |
-| `shibaox run <workflow> [--org <dir>] [--project <dir>] [--input <text>] [--model <ref>] [--adapter mock\|direct\|claude-code] [--workspace worktree\|inplace] [--budget <usd>] [--graph auto\|off] [--detach]` | submits a run and follows it (`--detach` returns at once). The org is `./org` when it exists, else the daemon's default org; the project is the current directory. Exit 0 when the run completes, 2 otherwise. |
+| `shibaox run <workflow> [--org <dir>] [--project <dir>] [--input <text>] [--model <ref>] [--adapter mock\|direct\|claude-code] [--workspace worktree\|inplace] [--budget <usd>] [--graph auto\|off] [--setup auto\|off\|<command>] [--detach]` | submits a run and follows it (`--detach` returns at once). A worktree run installs the project's dependencies first (`--setup`: `shibaox.yaml setup` or the lockfile's install by default, `off`, or a command). The org is `./org` when it exists, else the daemon's default org; the project is the current directory. Exit 0 when the run completes, 2 otherwise. |
 | `shibaox runs` | every run the daemon knows |
 | `shibaox follow <runId>` | the run view (or plain lines) of a run |
 | `shibaox replay <runId> [--db <path>]` | the event log and the derived state |

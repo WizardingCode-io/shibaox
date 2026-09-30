@@ -36,3 +36,5 @@ qa: { type: gate, gates: [tests, lint, review], on_pass: judge, on_fail: impleme
 ## What the agent gets back
 
 A failing check's evidence (the test output, the linter's lines, the review's `✗ criterion: reason` lines) and its suggestion go to the next attempt of the rework node, and show as a card in the dashboard. Nothing the gate saw (files, diffs, output) is sent to notification channels; only the command, run, node and role.
+
+`tests` and `lint` in the project's `shibaox.yaml` take precedence over detection (see [Configuration](Configuration)).

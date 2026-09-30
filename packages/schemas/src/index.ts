@@ -7,6 +7,7 @@ export * from './gate.js';
 export * from './load.js';
 export * from './models.js';
 export * from './org.js';
+export * from './project.js';
 export * from './role.js';
 export * from './team.js';
 export * from './workflow.js';

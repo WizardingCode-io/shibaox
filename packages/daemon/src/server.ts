@@ -386,6 +386,8 @@ export class DaemonServer {
       for (const k of ['orgRoot', 'project'])
         if (!(body[k] as string).trim())
           throw new HttpError(400, 'bad_request', `"${k}" must be a directory path`);
+      if (body.setup !== undefined && (typeof body.setup !== 'string' || !body.setup.trim()))
+        throw new HttpError(400, 'bad_request', '"setup" is auto, off, or a command');
       return send(res, 200, await this.deps.runs.submit(body as unknown as SubmitRequest));
     }
     if (method === 'POST' && path === '/runs/prune') {

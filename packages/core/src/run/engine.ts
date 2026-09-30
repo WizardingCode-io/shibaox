@@ -10,8 +10,10 @@ import {
   type RuntimeEvent,
   type TaskJob,
 } from '../executors/types.js';
+import { SETUP_TIMEOUT_MS } from '../gates/detect.js';
 import { type CheckRunners, defaultCheckRunners, runGate } from '../gates/engine.js';
 import { injectTeamGates } from '../org/inject-gates.js';
+import { withSetup } from '../org/with-setup.js';
 import type { ApprovalHandler } from './approvals.js';
 import type { Decider, HumanHandler } from './deciders.js';
 import type { MergeQueue } from './merge-queue.js';
@@ -76,6 +78,8 @@ export interface StartOptions {
   parentRunId?: string;
   origin?: string;
   model?: string;
+  /** A dependency install to run first (a fresh worktree): becomes a `setup` node in the snapshot. */
+  setup?: { command: string; timeoutMs?: number };
 }
 
 export class RunEngine {
@@ -96,7 +100,10 @@ export class RunEngine {
 
   /** Emits `RunCreated`; the run is `queued` until `run()`. */
   async create(opts: StartOptions): Promise<string> {
-    const workflowSnapshot = this.resolveFromOrg(opts.workflow);
+    const resolved = this.resolveFromOrg(opts.workflow);
+    const workflowSnapshot = opts.setup
+      ? withSetup(resolved, opts.setup.command, opts.setup.timeoutMs ?? SETUP_TIMEOUT_MS)
+      : resolved;
     const runId = (this.deps.newRunId ?? randomUUID)();
     await this.emit({
       type: 'RunCreated',

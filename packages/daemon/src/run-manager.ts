@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import type { QueryFn } from '@wizardingcode/shibaox-adapter-claude-code';
 import {
   compactConversation,
+  detectSetupCommand,
   type EventStore,
   isTerminal,
   type MockScript,
@@ -17,7 +18,13 @@ import {
 } from '@wizardingcode/shibaox-core';
 import { type Graphify, MemoryNotes } from '@wizardingcode/shibaox-memory';
 import type { ProviderEntry } from '@wizardingcode/shibaox-providers';
-import { type ChatMessage, loadOrg, type Org, type Workflow } from '@wizardingcode/shibaox-schemas';
+import {
+  type ChatMessage,
+  loadOrg,
+  loadProjectFile,
+  type Org,
+  type Workflow,
+} from '@wizardingcode/shibaox-schemas';
 import { createRunWorkspace, type WorkspaceMode } from '@wizardingcode/shibaox-workspace';
 import type { DaemonConfig } from './config.js';
 import type { InboxAnswer, InboxItem, InboxService } from './inbox.js';
@@ -66,6 +73,11 @@ export interface SubmitRequest {
   origin?: string;
   /** A model ref (`provider/model`) for every task of the run; the adapter follows from it. */
   model?: string;
+  /**
+   * The dependency install of a worktree run: `auto` (default: `shibaox.yaml setup`, else
+   * detected from the lockfile), `off`, or a command.
+   */
+  setup?: string;
 }
 
 /** A conversation carried into a run is compacted beyond this (estimated tokens). */
@@ -220,6 +232,7 @@ export class RunManager {
     });
     const compacted = messages !== raw;
     if (compacted) warnings.push('conversation compacted: the oldest turns are summarised');
+    const setup = ws.mode === 'worktree' ? setupFor(workspace, req.setup) : undefined;
     await engine.create({
       workflow: req.workflow,
       input: {
@@ -238,6 +251,7 @@ export class RunManager {
       parentRunId: req.parentRunId,
       origin: req.origin,
       model,
+      setup,
     });
     this.prepared.set(runId, { engine, org, adapter });
     this.enqueue({ runId, action: 'run', settle: [] });
@@ -762,4 +776,23 @@ export class RunManager {
       log: this.opts.log,
     });
   }
+}
+
+/**
+ * What a fresh worktree needs before anything runs: `off` for nothing, a command as given,
+ * else `shibaox.yaml setup` or the lockfile's install (none when nothing is recognised).
+ */
+function setupFor(
+  workspace: string,
+  choice: string | undefined,
+): { command: string; timeoutMs?: number } | undefined {
+  if (choice === 'off') return undefined;
+  let timeoutMs: number | undefined;
+  try {
+    timeoutMs = loadProjectFile(workspace)?.setup_timeout_ms;
+  } catch {
+    // an invalid shibaox.yaml: detection ignores it too
+  }
+  const command = choice && choice !== 'auto' ? choice : detectSetupCommand(workspace);
+  return command ? { command, timeoutMs } : undefined;
 }
