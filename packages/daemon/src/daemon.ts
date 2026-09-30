@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { QueryFn } from '@wizardingcode/shibaox-adapter-claude-code';
+import { resolveAppDist } from '@wizardingcode/shibaox-bridge';
 import { type EventStore, type MockScript, runArgv } from '@wizardingcode/shibaox-core';
 import type { Graphify } from '@wizardingcode/shibaox-memory';
 import {
@@ -15,7 +16,6 @@ import {
   type ProviderEntry,
 } from '@wizardingcode/shibaox-providers';
 import { type ChatMessage, loadOrg, type Org } from '@wizardingcode/shibaox-schemas';
-import { resolveAppDist } from './app-static.js';
 import { githubChannel } from './channels/github.js';
 import { macosChannel } from './channels/macos.js';
 import { OutboxWorker } from './channels/outbox.js';

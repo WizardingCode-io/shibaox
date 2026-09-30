@@ -3,10 +3,10 @@ import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { startBridge } from '@wizardingcode/shibaox-bridge';
 import { MemoryEventStore } from '@wizardingcode/shibaox-core';
 import { Daemon, homePaths } from '@wizardingcode/shibaox-daemon';
 import { afterEach, describe, expect, it } from 'vitest';
-import { startBridge } from '../src/bridge.js';
 
 const sample = fileURLToPath(new URL('../../../examples/sample-repo', import.meta.url));
 const bin = fileURLToPath(new URL('../dist/index.js', import.meta.url));

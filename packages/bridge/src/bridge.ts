@@ -6,7 +6,7 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
-import { serveAppFile } from '@wizardingcode/shibaox-daemon';
+import { serveAppFile } from './app-static.js';
 
 export interface BridgeOptions {
   /** The daemon's Unix socket. */

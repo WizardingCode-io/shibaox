@@ -81,6 +81,9 @@ importers:
       '@wizardingcode/shibaox-app':
         specifier: workspace:*
         version: link:../app
+      '@wizardingcode/shibaox-bridge':
+        specifier: workspace:*
+        version: link:../../packages/bridge
       '@wizardingcode/shibaox-core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -200,6 +203,12 @@ importers:
         specifier: ^26.6.2
         version: 26.6.2
 
+  packages/bridge:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.2
+        version: 26.6.2
+
   packages/core:
     dependencies:
       '@wizardingcode/shibaox-schemas':
@@ -227,6 +236,9 @@ importers:
       '@wizardingcode/shibaox-adapter-direct':
         specifier: workspace:*
         version: link:../adapter-direct
+      '@wizardingcode/shibaox-bridge':
+        specifier: workspace:*
+        version: link:../bridge
       '@wizardingcode/shibaox-core':
         specifier: workspace:*
         version: link:../core

@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createServer as createTlsServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { connect } from 'node:net';
+import { serveAppFile } from '@wizardingcode/shibaox-bridge';
 import {
   type EventStore,
   isTerminal,
@@ -15,7 +16,6 @@ import {
 import type { RoutineRow, ScheduleRow } from '@wizardingcode/shibaox-persistence-sqlite';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import { RoutineTriggerSchema } from '@wizardingcode/shibaox-schemas';
-import { serveAppFile } from './app-static.js';
 import { AlreadyResolvedError, type InboxService, NotFoundError } from './inbox.js';
 import type { McpServerRow, McpTestResult } from './mcp.js';
 import { type OrgConfigPatch, orgInfo, readOrgConfig, writeOrgConfig } from './org-config.js';

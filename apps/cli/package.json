@@ -21,6 +21,7 @@
     "@wizardingcode/shibaox-adapter-claude-code": "workspace:*",
     "@wizardingcode/shibaox-adapter-direct": "workspace:*",
     "@wizardingcode/shibaox-app": "workspace:*",
+    "@wizardingcode/shibaox-bridge": "workspace:*",
     "@wizardingcode/shibaox-core": "workspace:*",
     "@wizardingcode/shibaox-daemon": "workspace:*",
     "@wizardingcode/shibaox-jev": "workspace:*",

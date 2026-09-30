@@ -1,0 +1,32 @@
+{
+  "name": "@wizardingcode/shibaox-bridge",
+  "version": "0.2.2",
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "The loopback bridge and static server for the Shibaox browser app (no dependencies: shared by the daemon, the CLI and the desktop app)",
+  "files": [
+    "LICENSE",
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WizardingCode-io/shibaox.git"
+  }
+}

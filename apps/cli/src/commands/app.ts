@@ -1,11 +1,11 @@
 import { spawn } from 'node:child_process';
+import { startBridge } from '@wizardingcode/shibaox-bridge';
 import {
   type DaemonClient,
   homePaths,
   resolveAppDist,
   SecretsStore,
 } from '@wizardingcode/shibaox-daemon';
-import { startBridge } from '../bridge.js';
 import { connect } from '../client.js';
 import type { Out } from '../output.js';
 import { remoteTarget } from '../remote.js';
