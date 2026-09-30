@@ -48,3 +48,18 @@ pnpm -r publish --access public --no-git-checks
 ```
 
 pnpm rewrites `workspace:*` to the version. The installer (`scripts/install.sh`) installs from GitHub `main` (or `SHIBAOX_REF`).
+
+## Signing and notarizing the macOS app
+
+The desktop workflow (`.github/workflows/desktop.yml`) signs the app with a Developer ID and notarizes it when five repository secrets exist; without them it signs ad hoc, and macOS asks for "Open Anyway" once. To set them up (once, an [Apple Developer](https://developer.apple.com/programs/) membership is required):
+
+1. **Certificate.** In Xcode (Settings → Accounts → Manage Certificates) or at developer.apple.com/account/resources/certificates, create a **Developer ID Application** certificate. In Keychain Access, export it (with its private key) as a `.p12` with a password, then `base64 -i cert.p12 | pbcopy`.
+   - `APPLE_CERTIFICATE_P12`: the base64 of the `.p12`.
+   - `APPLE_CERTIFICATE_PASSWORD`: its password.
+2. **Notarization key.** At [App Store Connect → Users and Access → Integrations → App Store Connect API](https://appstoreconnect.apple.com/access/integrations/api), create a **Team key** with the **Developer** role and download the `.p8` (it downloads once).
+   - `APPLE_API_KEY_ID`: the key's ID.
+   - `APPLE_API_ISSUER`: the issuer ID shown on that page.
+   - `APPLE_API_KEY_P8`: the contents of the `.p8` file.
+3. Add the five secrets at Settings → Secrets and variables → Actions of the repository, then re-run the desktop workflow for the tag (`gh workflow run desktop.yml -f tag=v0.2.3`): it replaces the dmg on the release with the notarized one.
+
+`spctl --assess --type execute Shibaox.app` says `accepted` on a notarized build. Locally, `pnpm --filter @wizardingcode/shibaox-desktop dist` keeps signing ad hoc (no certificate needed).

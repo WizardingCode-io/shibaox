@@ -43,7 +43,7 @@ When a dispatched run ends while its conversation is open, the app tells the orc
 
 ## The desktop app (macOS)
 
-`Shibaox.app` is the same app in its own window, without a browser or a terminal. It is a dmg for Apple silicon and Intel, attached to each [release](https://github.com/WizardingCode-io/shibaox/releases) (`Shibaox-<version>-arm64.dmg`, `Shibaox-<version>-x64.dmg`). It is signed ad hoc, not notarized: the first launch is refused, then allowed once under System Settings, Privacy and Security, "Open Anyway" (or `xattr -dr com.apple.quarantine /Applications/Shibaox.app`).
+`Shibaox.app` is the same app in its own window, without a browser or a terminal. It is a dmg for Apple silicon and Intel, attached to each [release](https://github.com/WizardingCode-io/shibaox/releases) (`Shibaox-<version>-arm64.dmg`, `Shibaox-<version>-x64.dmg`). Releases built with the Apple secrets in place are signed with a Developer ID and notarized, and open like any app. A build without them is signed ad hoc: the first launch is refused, then allowed once under System Settings, Privacy and Security, "Open Anyway" (or `xattr -dr com.apple.quarantine /Applications/Shibaox.app`).
 
 It needs the CLI installed (`npm i -g shibaox`): on launch it talks to the local daemon through its own bridge on a loopback port (7434 or the next free one) and starts the daemon when it is not running (the launchd service when `shibaox daemon install` set one up, else the installer's launcher, else `shibaox daemon start --detach` through your login shell; the daemon logs to `~/.shibaox/daemon.log`). With `shibaox remote set <url> <token>` done, it opens that remote daemon's app instead. When no daemon can be reached, it says why and offers "Try again".
 

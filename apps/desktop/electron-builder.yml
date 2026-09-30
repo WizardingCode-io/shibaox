@@ -1,0 +1,28 @@
+# The macOS app. Signing is decided by the caller:
+# - `pnpm dist` (local, no certificate): ad hoc, no hardened runtime (flags in package.json).
+# - the desktop workflow with the Apple secrets: Developer ID from CSC_LINK, hardened runtime,
+#   notarized with the App Store Connect API key (APPLE_API_KEY / _ID / _ISSUER).
+appId: io.wizardingcode.shibaox
+productName: Shibaox
+copyright: Copyright © 2026 WizardingCode
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - package.json
+npmRebuild: false
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  artifactName: Shibaox-${version}-${arch}.${ext}
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
+dmg:
+  artifactName: Shibaox-${version}-${arch}.${ext}
