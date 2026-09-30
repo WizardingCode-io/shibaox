@@ -9,7 +9,7 @@ shibaox keys set SHIBAOX_DAEMON_TOKEN $(openssl rand -hex 32)   # the token clie
 shibaox serve                                                     # 0.0.0.0:7433, in the foreground
 ```
 
-`shibaox serve` is `daemon start` with a network listener: the same API as the local socket, on TCP, and every request must carry `Authorization: Bearer <token>`. The token is read from the vault or from the environment (`SHIBAOX_DAEMON_TOKEN`); without one `serve` refuses to start. `--host` and `--port` override the defaults; `daemon.yaml listen` makes them permanent, so a `daemon start` or the launchd service listens too:
+`shibaox serve` is `daemon start` with a network listener: the same API as the local socket, on TCP, and every request must carry `Authorization: Bearer <token>`. The token is read from the vault or from the environment (`SHIBAOX_DAEMON_TOKEN`); without one `serve` refuses to start. `keys set` starts the local daemon to store the key: stop it (`shibaox daemon stop`) before `serve`, or export the token instead (`SHIBAOX_DAEMON_TOKEN=… shibaox serve`). `--host` and `--port` override the defaults; `daemon.yaml listen` makes them permanent, so a `daemon start` or the launchd service listens too:
 
 ```yaml
 listen:

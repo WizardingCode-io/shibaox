@@ -171,6 +171,32 @@ describe('shibaox serve', () => {
     expect(code).toBe(0);
   }, 40_000);
 
+  it('refuses to serve while a daemon owns the socket (keys set started one), and says what to do', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-serve-'));
+    tmpDirs.push(dir);
+    const home = homePaths({ SHIBAOX_HOME: join(dir, 'home') });
+    const running = new Daemon({
+      home,
+      store: new MemoryEventStore(),
+      channels: [],
+      env: {},
+      log: () => {},
+      version: '0.1.7',
+      discovery: false,
+    });
+    daemons.push(running);
+    await running.start();
+    const r = await cliIn({ SHIBAOX_HOME: home.root, HOME: dir, SHIBAOX_DAEMON_TOKEN: 'tok' })(
+      'serve',
+      '--port',
+      '0',
+    );
+    expect(r.code).toBe(1);
+    expect(r.stdout + r.stderr).toContain('already running');
+    expect(r.stdout + r.stderr).toContain('shibaox daemon stop');
+    expect(r.stdout + r.stderr).toContain('daemon.yaml');
+  });
+
   it('refuses to serve without a token and says how to create one', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cli-serve-'));
     tmpDirs.push(dir);

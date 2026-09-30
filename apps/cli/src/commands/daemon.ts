@@ -95,6 +95,15 @@ export async function serveCommand(
     await daemon.start();
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    if (/already running/.test(msg)) {
+      // `keys set` (or any command) started the local daemon a moment ago
+      out.line(msg);
+      out.line(
+        'Stop it first (shibaox daemon stop), then serve again. To keep a service listening, put `listen` in daemon.yaml and restart it (shibaox daemon stop; the service starts it again).',
+      );
+      out.obj({ serving: false, error: msg });
+      return 1;
+    }
     if (new RegExp(`${listen.token_env} is not set`).test(msg)) {
       out.line(`No token: ${listen.token_env} is not in the vault nor in the environment.`);
       out.line(
