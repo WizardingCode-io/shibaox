@@ -75,3 +75,27 @@ describe('injectTeamGates', () => {
     );
   });
 });
+
+describe('team gates can be declined by a workflow', () => {
+  it('team_gates: false leaves a workflow as written (a review publishes text, tests would be beside the point)', async () => {
+    const { injectTeamGates } = await import('../src/index.js');
+    const wf = {
+      workflow: 'review-pr',
+      team: 'eng',
+      team_gates: false,
+      start: 'review',
+      nodes: {
+        review: { type: 'task', role: 'r', next: 'publish' },
+        publish: { type: 'git', action: 'review', from: 'review', timeout_ms: 1000 },
+      },
+    } as never;
+    const team = {
+      team: 'eng',
+      lead: 'r',
+      roles: ['r'],
+      gates: ['tests'],
+      workflows: ['review-pr'],
+    } as never;
+    expect(injectTeamGates(wf, team)).toBe(wf);
+  });
+});

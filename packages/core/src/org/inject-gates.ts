@@ -31,7 +31,7 @@ function redirect(node: WorkflowNode, from: string, to: string): WorkflowNode {
 }
 
 export function injectTeamGates(workflow: Workflow, team: Team): Workflow {
-  if (team.gates.length === 0) return workflow;
+  if (team.gates.length === 0 || workflow.team_gates === false) return workflow;
   const covered = Object.values(workflow.nodes).some(
     (n) => n.type === 'gate' && team.gates.every((g) => n.gates.includes(g)),
   );

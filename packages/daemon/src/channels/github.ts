@@ -40,7 +40,7 @@ export function githubReportText(r: RunReport): string {
     );
   if (r.error) parts.push('', `**Error:** ${r.error.split('\n')[0]?.slice(0, 300)}`);
   parts.push('', `<sub>shibaox · run ${r.runId}</sub>`);
-  return parts.join('\n');
+  return parts.join('\n').slice(0, 60_000);
 }
 
 /**

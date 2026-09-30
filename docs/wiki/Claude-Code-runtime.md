@@ -28,7 +28,7 @@ A role's `tools:` map to Claude Code permissions: `read` → Read/Glob/Grep, `wr
 | `npm`, `pnpm`, `yarn` | `publish`, `unpublish`, `dist-tag`, `dist-tags`, `deprecate` |
 | `docker` | `push`, and any invocation with `--push` |
 
-git pushes are `git push`, `git send-pack`, `git subtree push` and `git lfs push`. The git classifier fails closed: unknown global options, `-c`, `--config-env`, `git config` writes, options that run programs (`--exec`, `--upload-pack`, `rebase -x`, `submodule foreach`, `bisect run`, …), unknown subcommands and aliases, and `GIT_*` environment prefixes (other than author/committer) are refused. `gh pr merge`, `gh release …`, `gh repo delete|edit|…`, `gh secret|variable set|delete`, `gh workflow run` and writing `gh api` calls are deploys too; `gh pr view|diff|checks|review|comment` and `gh issue …` are not gated.
+git pushes are `git push`, `git send-pack`, `git subtree push` and `git lfs push`. The git classifier fails closed: unknown global options, `-c`, `--config-env`, `git config` writes, options that run programs (`--exec`, `--upload-pack`, `rebase -x`, `submodule foreach`, `bisect run`, …), unknown subcommands and aliases, and `GIT_*` environment prefixes (other than author/committer) are refused. `gh` runs under an allowlist: `pr view|diff|checks|list`, `issue view|list`, `repo view`, `run list|view`, `release view|list|download`, `search`, GET `gh api` calls read freely; everything else (merge, review, comment, release, repo, secret, workflow run, writing API calls) is a deploy; `extension`, `alias`, `auth`, `config`, keys, `gist create`, `codespace` and `browse` are refused ([GitHub loop](GitHub-loop)).
 
 ## Sessions and approvals
 

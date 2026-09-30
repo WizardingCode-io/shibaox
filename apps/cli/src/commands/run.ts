@@ -37,10 +37,16 @@ export async function issueRequest(
   const number = url ? (url[2] as string) : issue.replace(/^#/, '');
   if (!/^\d+$/.test(number))
     throw new Error(`--issue takes a number or an issue URL, got ${issue}`);
+  // a URL names the repository: read it from here; a bare number needs the project checkout,
+  // which on a remote daemon is not on this machine
+  if (!url && !existsSync(project))
+    throw new Error(
+      `--issue ${number}: the project ${project} is not on this machine (a remote daemon?): give the issue URL instead`,
+    );
   const repoArgs = url ? ['--repo', url[1] as string] : [];
   const r = await exec({
     argv: ['gh', 'issue', 'view', number, ...repoArgs, '--json', 'number,title,body,url,labels'],
-    cwd: project,
+    cwd: url ? process.cwd() : project,
     timeoutMs: 60_000,
   });
   if (r.exitCode !== 0)

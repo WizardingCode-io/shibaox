@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { approvalCategory } from '../src/tools.js';
+import { approvalCategory, ghRefusal } from '../src/tools.js';
 
 describe('gh in the direct adapter', () => {
   it('merging, releasing, repo changes, secrets and writing API calls need a deploy approval', () => {
@@ -15,8 +15,18 @@ describe('gh in the direct adapter', () => {
   });
   it('reading, reviewing and commenting do not', () => {
     expect(approvalCategory(['gh', 'pr', 'view', '42'])).toBeUndefined();
-    expect(approvalCategory(['gh', 'pr', 'review', '42', '--approve'])).toBeUndefined();
-    expect(approvalCategory(['gh', 'issue', 'comment', '12', '--body', 'x'])).toBeUndefined();
+    expect(approvalCategory(['gh', 'pr', 'review', '42', '--approve'])).toBe('deploy');
+    expect(approvalCategory(['gh', 'issue', 'comment', '12', '--body', 'x'])).toBe('deploy');
+    expect(approvalCategory(['gh', '-R', 'acme/app', 'pr', 'merge', '1'])).toBe('deploy');
+    expect(approvalCategory(['gh', 'api', '-XDELETE', 'repos/acme/app'])).toBe('deploy');
     expect(approvalCategory(['gh', 'api', 'repos/acme/app'])).toBeUndefined();
+  });
+});
+
+describe('gh refusals in the direct adapter', () => {
+  it('names why extension, alias, auth, keys, gists and codespaces are never run', () => {
+    expect(ghRefusal(['gh', 'extension', 'install', 'evil/x'])).toMatch(/extension/);
+    expect(ghRefusal(['gh', 'auth', 'token'])).toMatch(/auth/);
+    expect(ghRefusal(['gh', 'pr', 'view', '1'])).toBeUndefined();
   });
 });

@@ -426,6 +426,9 @@ async function gh(ctx: GitContext, args: string[], timeoutMs: number): Promise<s
   return r.stdout.trim();
 }
 
+/** The URL when known (it carries the repository), else the number in the workspace's repository. */
+const prRef = (pr: { number: number; url?: string }) => pr.url ?? String(pr.number);
+
 function needPr(node: GitNode, ctx: GitContext): { number: number; url?: string } {
   if (!ctx.pr)
     throw new Error(
@@ -451,11 +454,7 @@ async function review(node: GitNode, ctx: GitContext): Promise<GitOutcome> {
     };
   const event = node.event ?? 'comment';
   checkCancelled(ctx);
-  await gh(
-    ctx,
-    ['pr', 'review', String(target.number), `--${event}`, '--body', body],
-    node.timeout_ms,
-  );
+  await gh(ctx, ['pr', 'review', prRef(target), `--${event}`, '--body', body], node.timeout_ms);
   return {
     output: { reviewed: true, number: target.number, url: target.url, event },
     summary: `review published on PR #${target.number} (${event})`,
@@ -472,7 +471,7 @@ async function comment(node: GitNode, ctx: GitContext): Promise<GitOutcome> {
       summary: 'no comment: the node wrote nothing',
     };
   checkCancelled(ctx);
-  await gh(ctx, ['pr', 'comment', String(target.number), '--body', body], node.timeout_ms);
+  await gh(ctx, ['pr', 'comment', prRef(target), '--body', body], node.timeout_ms);
   return {
     output: { commented: true, number: target.number, url: target.url },
     summary: `comment posted on PR #${target.number}`,
@@ -484,11 +483,8 @@ async function mergePr(node: GitNode, ctx: GitContext): Promise<GitOutcome> {
   const target = needPr(node, ctx);
   const method = node.method ?? 'squash';
   checkCancelled(ctx);
-  await gh(
-    ctx,
-    ['pr', 'merge', String(target.number), `--${method}`, '--delete-branch'],
-    node.timeout_ms,
-  );
+  // no --delete-branch: gh would also switch and delete the local checkout, wrong in a worktree
+  await gh(ctx, ['pr', 'merge', prRef(target), `--${method}`], node.timeout_ms);
   return {
     output: { merged: true, number: target.number, url: target.url, method },
     summary: `PR #${target.number} merged (${method})`,

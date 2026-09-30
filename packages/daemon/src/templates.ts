@@ -104,9 +104,10 @@ system_prompt: prompts/reviewer.md
 `,
   'org/prompts/reviewer.md': `# Reviewer
 You review pull requests. Read the diff (\`gh pr diff <n>\`, \`gh pr view <n>\`) and the files it
-touches. Write the review as Markdown: what is wrong first (with file and line), then what is
-risky, then what is fine. Say whether it can merge. You never merge, push or comment yourself:
-the workflow publishes your text after a person approves it.
+touches. Write the whole review as Markdown in your final text (not a one-line summary): what
+is wrong first (with file and line), then what is risky, then what is fine. Say whether it can
+merge. You never merge, push or comment yourself: the workflow publishes your text after a
+person approves it (gh pr review and gh pr comment ask for an approval you will not get).
 `,
   'org/gates/ci.yaml': `gate: ci
 checks:
@@ -130,6 +131,7 @@ nodes:
 `,
   'org/workflows/review-pr.yaml': `workflow: review-pr
 team: engineering
+team_gates: false   # a review publishes text: the team's test gate would be beside the point
 description: Review a pull request (shibaox run review-pr --input "#13") and publish the review once you approve it.
 start: review
 nodes:

@@ -16,6 +16,7 @@ export * from './run/approvals.js';
 export * from './run/autorouting.js';
 export * from './run/deciders.js';
 export * from './run/engine.js';
+export * from './run/gh-policy.js';
 export * from './run/merge-queue.js';
 export * from './run/reducer.js';
 export * from './run/router.js';

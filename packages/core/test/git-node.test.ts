@@ -375,7 +375,13 @@ describe('git node: review, comment, merge_pr', () => {
     );
     expect(out.output).toMatchObject({ reviewed: true, number: 42, event: 'request-changes' });
     const call = gh.calls().find((c) => c[0] === 'pr' && c[1] === 'review');
-    expect(call).toEqual(expect.arrayContaining(['42', '--request-changes', '--body']));
+    expect(call).toEqual(
+      expect.arrayContaining([
+        'https://github.com/acme/proj/pull/42',
+        '--request-changes',
+        '--body',
+      ]),
+    );
     expect(call?.join(' ')).toContain('Two problems');
   });
   it('comment posts a node text (or the message) on the pull request; without a text nothing is posted', async () => {
@@ -387,7 +393,7 @@ describe('git node: review, comment, merge_pr', () => {
     );
     expect(out.output).toMatchObject({ commented: true, number: 7 });
     const posted = gh.calls().find((c) => c[1] === 'comment');
-    expect(posted).toEqual(expect.arrayContaining(['7', '--body']));
+    expect(posted).toEqual(expect.arrayContaining(['u', '--body'])); // the URL names the repository
     expect(posted?.join(' ')).toContain('Landed by shibaox.');
     const empty = await runGitNode(
       { type: 'git', action: 'comment', from: 'nothing', timeout_ms: 60_000 },
@@ -403,9 +409,11 @@ describe('git node: review, comment, merge_pr', () => {
       ctx(r, { env, pr: { number: 42, url: 'https://github.com/acme/proj/pull/42' } }),
     );
     expect(out.output).toMatchObject({ merged: true, number: 42, method: 'squash' });
-    expect(gh.calls().find((c) => c[1] === 'merge')).toEqual(
-      expect.arrayContaining(['42', '--squash', '--delete-branch']),
+    const merge = gh.calls().find((c) => c[1] === 'merge');
+    expect(merge).toEqual(
+      expect.arrayContaining(['https://github.com/acme/proj/pull/42', '--squash']),
     );
+    expect(merge).not.toContain('--delete-branch'); // gh would also touch the local checkout of a worktree
     await expect(
       runGitNode({ type: 'git', action: 'merge_pr', timeout_ms: 60_000 }, ctx(r, { env })),
     ).rejects.toThrow(/pull request/);

@@ -42,6 +42,8 @@ export const CheckSchema = z.discriminatedUnion('type', [
     timeout_ms: z.number().int().positive().default(1_800_000),
     /** How often the checks are asked about while some are pending. */
     interval_ms: z.number().int().positive().default(30_000),
+    /** How long to wait for checks to appear after a push before passing with a note. */
+    grace_ms: z.number().int().nonnegative().default(120_000),
   }),
   z.object({ ...base, type: z.literal('judge'), role: Id, rubric: z.string().min(1) }),
   z.object({ ...base, type: z.literal('human'), prompt: z.string().min(1) }),

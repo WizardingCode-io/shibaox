@@ -2,7 +2,7 @@ import type { RunState } from '@wizardingcode/shibaox-core';
 import { DaemonHttpError } from '@wizardingcode/shibaox-daemon';
 import { describe, expect, it } from 'vitest';
 import { followRun } from '../src/commands/follow.js';
-import { followAny } from '../src/commands/run.js';
+import { followAny, issueRequest } from '../src/commands/run.js';
 import { makeOut } from '../src/output.js';
 
 const state = (status: string): RunState =>
@@ -107,5 +107,36 @@ describe('followRun over a connection that drops', () => {
     const code = await followRun(client, 'r1', { reconnectMs: 1 }, out);
     expect(code).toBe(0);
     expect(calls).toEqual([undefined, '1:0']);
+  });
+});
+
+describe('run --issue', () => {
+  it('a URL is read from wherever the CLI runs (the project may live on a remote daemon); a bare number needs the project checkout', async () => {
+    const calls: { argv: string[]; cwd: string }[] = [];
+    const exec = async ({ argv, cwd }: { argv: string[]; cwd: string }) => {
+      calls.push({ argv, cwd });
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          number: 12,
+          title: 'T',
+          body: 'B',
+          url: 'https://github.com/acme/app/issues/12',
+          labels: [],
+        }),
+        stderr: '',
+        timedOut: false,
+      };
+    };
+    const r = await issueRequest(
+      'https://github.com/acme/app/issues/12',
+      '/srv/on/the/server',
+      exec as never,
+    );
+    expect(r.origin).toBe('github:acme/app#12');
+    expect(r.input).toContain('Issue #12: T');
+    expect(calls[0]?.cwd).toBe(process.cwd());
+    expect(calls[0]?.argv).toEqual(expect.arrayContaining(['--repo', 'acme/app']));
+    await expect(issueRequest('12', '/srv/on/the/server', exec as never)).rejects.toThrow(/URL/);
   });
 });

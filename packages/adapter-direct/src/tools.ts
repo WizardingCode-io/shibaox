@@ -6,6 +6,7 @@ import {
   type ApprovalHandler,
   argvHash,
   type ExecutionContext,
+  ghPolicy,
   type RuntimeEvent,
   runArgv,
 } from '@wizardingcode/shibaox-core';
@@ -150,32 +151,12 @@ const DEPLOY_PROGRAMS = [
   'helm',
 ];
 
-/** `gh` invocations that change GitHub for good (the same table as the Claude Code adapter). */
-const GH_DEPLOY: Record<string, string[]> = {
-  pr: ['merge', 'close', 'lock'],
-  release: ['create', 'delete', 'upload', 'edit', 'delete-asset'],
-  repo: ['delete', 'edit', 'create', 'archive', 'rename', 'unarchive', 'sync', 'set-default'],
-  secret: ['set', 'delete', 'remove'],
-  variable: ['set', 'delete', 'remove'],
-  workflow: ['run', 'enable', 'disable'],
-  ruleset: ['create', 'delete', 'edit'],
-  label: ['create', 'delete', 'edit', 'clone'],
-};
-function ghDeploys(words: string[]): boolean {
-  const positional = words.filter((w) => !w.startsWith('-'));
-  const [group = '', verb = ''] = positional;
-  if (group === 'api') {
-    const i = words.findIndex((w) => w === '-X' || w === '--method' || w.startsWith('--method='));
-    const method = i < 0 ? 'GET' : (words[i]?.split('=')[1] ?? words[i + 1] ?? 'GET').toUpperCase();
-    if (method !== 'GET') return true;
-    return words.some(
-      (w) =>
-        ['-f', '-F', '--field', '--raw-field', '--input'].includes(w) ||
-        w.startsWith('--field=') ||
-        w.startsWith('--raw-field='),
-    );
-  }
-  return GH_DEPLOY[group]?.includes(verb) ?? false;
+/** Why a `gh` invocation is never run (extensions, aliases, auth, keys, gists, codespaces); undefined when it may run. */
+export function ghRefusal(argv: string[]): string | undefined {
+  const [program = '', ...rest] = argv;
+  if (program !== 'gh') return undefined;
+  const p = ghPolicy(rest);
+  return p.kind === 'refused' ? p.reason : undefined;
 }
 
 /** `push` for git pushes, `deploy` for publishing/deploy programs (and `gh` writes), else `undefined`. */
@@ -183,7 +164,7 @@ export function approvalCategory(argv: string[]): 'push' | 'deploy' | undefined 
   const [program = '', ...rest] = argv;
   if (program === 'git')
     return rest.includes('push') || rest.includes('send-pack') ? 'push' : undefined;
-  if (program === 'gh') return ghDeploys(rest) ? 'deploy' : undefined;
+  if (program === 'gh') return ghPolicy(rest).kind === 'deploy' ? 'deploy' : undefined;
   if (DEPLOY_PROGRAMS.includes(program)) return 'deploy';
   const verbs = DEPLOY_VERBS[program];
   if (verbs && rest.some((w) => verbs.includes(w) || (program === 'docker' && w === '--push')))
@@ -294,6 +275,8 @@ export function buildTools(a: ToolArgs): ToolSet {
                 if (leavesWorkspace(arg)) throw new Error(`argument "${arg}" leaves the workspace`);
                 if (touchesGit(arg)) throw new Error(`argument "${arg}" targets .git`);
               }
+              const refused = ghRefusal(argv);
+              if (refused) throw new Error(`refused: ${refused}`);
               const category = approvalCategory(argv);
               if (category) {
                 if (!a.role.permissions.approval_required.includes(category))

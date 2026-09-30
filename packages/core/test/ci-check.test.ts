@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeCiCheckRunner, type RunState } from '../src/index.js';
+import { makeCiCheckRunner, pullRequestRef, type RunState } from '../src/index.js';
 
 const base: RunState = {
   runId: 'r',
@@ -19,7 +19,7 @@ const ctx = (state: RunState) => ({
   state,
   log: () => {},
 });
-const check = { name: 'ci', type: 'ci' as const, timeout_ms: 5000, interval_ms: 1 };
+const check = { name: 'ci', type: 'ci' as const, timeout_ms: 5000, interval_ms: 1, grace_ms: 3000 };
 
 /** A `gh` that answers `pr checks` with the given pages, one per call. */
 function fakeGh(pages: unknown[][]) {
@@ -60,7 +60,9 @@ describe('the ci check', () => {
     expect(r).toMatchObject({ name: 'ci', type: 'ci', passed: true, skipped: false });
     expect(r.evidence).toContain('build');
     expect(r.evidence).toContain('https://ci/1');
-    expect(gh.calls[0]).toEqual(expect.arrayContaining(['gh', 'pr', 'checks', '42']));
+    expect(gh.calls[0]).toEqual(
+      expect.arrayContaining(['gh', 'pr', 'checks', 'https://github.com/a/b/pull/42']),
+    );
     expect(gh.calls).toHaveLength(2);
   });
   it('fails when a check failed, naming it; the PR number comes from the request when no pr node ran', async () => {
@@ -96,5 +98,73 @@ describe('the ci check', () => {
     expect(r2.passed).toBe(false);
     expect(r2.evidence).toMatch(/still pending/i);
     expect(forever.calls[0]).toEqual(expect.arrayContaining(['shibaox/r']));
+  });
+});
+
+describe('the ci check fails closed', () => {
+  it('waits a grace period for checks to appear before passing with a note; a 404 or an unreadable answer fails', async () => {
+    let t = 0;
+    const calls: number[] = [];
+    const noChecks = {
+      exec: async () => {
+        calls.push(t);
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr: "no checks reported on the 'shibaox/r' branch",
+          timedOut: false,
+        };
+      },
+    };
+    const run = makeCiCheckRunner({
+      exec: noChecks.exec as never,
+      sleep: async () => {},
+      now: () => (t += 1000),
+    });
+    const r = await run(check, ctx({ ...base, input: {} }));
+    expect(r).toMatchObject({ passed: true, skipped: true });
+    expect(r.evidence).toMatch(/no checks/i);
+    expect(calls.length).toBeGreaterThan(2); // it kept asking during the grace period
+    const notFound = {
+      exec: async () => ({
+        exitCode: 1,
+        stdout: '',
+        stderr: 'HTTP 404: Not Found (https://api.github.com/repos/x/y)',
+        timedOut: false,
+      }),
+    };
+    const r2 = await makeCiCheckRunner({ exec: notFound.exec as never, sleep: async () => {} })(
+      check,
+      ctx({ ...base, input: {} }),
+    );
+    expect(r2.passed).toBe(false);
+    expect(r2.evidence).toContain('404');
+    const garbage = {
+      exec: async () => ({ exitCode: 0, stdout: 'not json', stderr: '', timedOut: false }),
+    };
+    const r3 = await makeCiCheckRunner({ exec: garbage.exec as never, sleep: async () => {} })(
+      check,
+      ctx({ ...base, input: {} }),
+    );
+    expect(r3.passed).toBe(false);
+  });
+  it('an issue number in the request is not a pull request number', () => {
+    expect(
+      pullRequestRef({
+        ...base,
+        branch: undefined,
+        input: { spec: 'Issue #12: Login broken\nhttps://github.com/a/b/issues/12' },
+      }),
+    ).toBeUndefined();
+    expect(
+      pullRequestRef({ ...base, branch: undefined, input: { spec: 'Review PR #13' } }),
+    ).toMatchObject({ number: 13 });
+    expect(
+      pullRequestRef({
+        ...base,
+        branch: undefined,
+        input: { spec: 'https://github.com/a/b/pull/7' },
+      }),
+    ).toMatchObject({ number: 7, ref: 'https://github.com/a/b/pull/7' });
   });
 });

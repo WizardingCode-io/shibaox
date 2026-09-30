@@ -102,6 +102,8 @@ export const WorkflowSchema = z
     description: z.string().optional(),
     /** A conversation with the orchestrator: runs in place and reads as messages in the dashboard. */
     conversation: z.boolean().optional(),
+    /** `false`: the team's gates are not injected before this workflow's terminal nodes. */
+    team_gates: z.boolean().optional(),
     start: Id,
     nodes: z.record(z.string(), WorkflowNodeSchema),
   })
