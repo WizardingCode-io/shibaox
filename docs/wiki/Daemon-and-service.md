@@ -37,18 +37,13 @@ While a Claude Code task waits for an approval its session stays open. After `ap
 
 `max_concurrent_runs` in `daemon.yaml` (default 4) and in `org.yaml` (default 2); runs above the limits wait as `queued`. Merges go one at a time per project.
 
-## Schedules
+## Routines
 
-```sh
-shibaox schedule add "0 9 * * 1-5" hello-feature --org ./org --project ./project --input "daily check"
-shibaox schedule list | rm <id> | run <id>
-```
-
-A schedule whose previous run is still active is skipped (logged).
+Cron schedules, GitHub issues, pull requests and checks, a URL, a file or a command wake the daemon up and submit runs: see [Routines](Routines). `shibaox schedule …` is the cron subset under its older name.
 
 ## Reports
 
-A run asked for by a schedule or from Telegram carries an `origin` (runs it dispatches inherit it). When it ends, a report goes through the outbox to every channel that shows reports: Telegram gets `✓ hello-feature done · 5 nodes · $0.12 · 8m 42s · branch …` plus one line per node, what still needs you, the error and the vault note path; macOS gets a notification. A conversation run reports its reply only.
+A run asked for by a routine or from Telegram carries an `origin` (runs it dispatches inherit it). When it ends, a report goes through the outbox to every channel that shows reports: Telegram gets `✓ hello-feature done · 5 nodes · $0.12 · 8m 42s · branch …` plus one line per node, what still needs you, the error and the vault note path; macOS gets a notification. A conversation run reports its reply only.
 
 ## Model discovery
 

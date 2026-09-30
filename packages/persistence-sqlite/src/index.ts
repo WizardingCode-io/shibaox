@@ -103,5 +103,6 @@ export class SqliteEventStore implements EventStore {
   }
 }
 export * from './outbox.js';
+export * from './routines.js';
 export * from './runtime-events.js';
 export * from './schedules.js';

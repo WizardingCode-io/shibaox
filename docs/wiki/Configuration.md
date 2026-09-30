@@ -76,6 +76,10 @@ nodes:
 
 `conversation: true` marks a chat workflow (one task, in place, the thread carried between turns). See [Concepts](Concepts) for every node type and [Gates](Gates) for `org/gates/*.yaml`.
 
+## `org/routines/<id>.yaml`
+
+Routines as code (loaded with `shibaox routine sync --org`): `routine`, `on` (`cron`, `github` + `label`/`repo`/`branch`, `url`, `file`, `command`), `workflow`, `input`, `project` (relative to the org), `every`, `mode`, `max_daily_usd`, `adapter`, `budget_usd`, `enabled`. See [Routines](Routines).
+
 ## `<project>/shibaox.yaml`
 
 Optional, at the root of a project: what a run needs to know about it that cannot be guessed, or is guessed wrong.

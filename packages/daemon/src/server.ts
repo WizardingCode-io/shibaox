@@ -12,10 +12,12 @@ import {
   replay,
   type StoredEvent,
 } from '@wizardingcode/shibaox-core';
-import type { ScheduleRow } from '@wizardingcode/shibaox-persistence-sqlite';
+import type { RoutineRow, ScheduleRow } from '@wizardingcode/shibaox-persistence-sqlite';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
+import { RoutineTriggerSchema } from '@wizardingcode/shibaox-schemas';
 import { AlreadyResolvedError, type InboxService, NotFoundError } from './inbox.js';
 import { type OrgConfigPatch, orgInfo, readOrgConfig, writeOrgConfig } from './org-config.js';
+import type { RoutineInput } from './routines.js';
 import type { RunManager, SubmitRequest } from './run-manager.js';
 import { AUDIT_RUNTIME_TYPES, buildAudit, renderAuditMarkdown } from './runs/audit.js';
 import type { RuntimeEnvelope } from './runtime-buffer.js';
@@ -49,11 +51,35 @@ export function parseCursor(raw: string | undefined | null): { run: number; runt
   return { run: Math.max(0, run), runtime: Math.max(0, runtime) };
 }
 
-export interface SchedulesApi {
-  list(): ScheduleRow[];
-  add(s: Omit<ScheduleRow, 'id' | 'createdAt' | 'enabled'> & { enabled?: boolean }): ScheduleRow;
+/** What the daemon does on its own (cron, GitHub, a URL, a file, a command): see `Routines`. */
+export interface RoutinesApi {
+  list(): RoutineRow[];
+  get(id: string): RoutineRow | undefined;
+  add(r: RoutineInput): RoutineRow;
   remove(id: string): void;
+  setEnabled(id: string, enabled: boolean): RoutineRow;
   runNow(id: string): Promise<{ runId: string }>;
+  sync(orgRoot: string): { added: string[]; updated: string[]; removed: string[] };
+}
+/** The old name: cron routines read as schedules. */
+export type SchedulesApi = RoutinesApi;
+
+/** A cron routine in the shape the `schedule` commands and older clients expect. */
+export function asSchedule(r: RoutineRow): ScheduleRow | undefined {
+  if (r.trigger.type !== 'cron') return undefined;
+  return {
+    id: r.id,
+    cron: r.trigger.cron,
+    orgRoot: r.orgRoot,
+    project: r.project,
+    workflow: r.workflow,
+    input: r.input,
+    adapter: r.adapter,
+    budgetUsd: r.budgetUsd,
+    enabled: r.enabled,
+    lastRunId: r.lastRunId,
+    createdAt: r.createdAt,
+  };
 }
 
 /** A project a dashboard may pick: configured in daemon.yaml, seen in a recent run, or the home workspace. */
@@ -477,6 +503,8 @@ export class DaemonServer {
     }
     if (path === '/schedules' || path.startsWith('/schedules/'))
       return this.schedules(req, res, method, path);
+    if (path === '/routines' || path.startsWith('/routines/'))
+      return this.routines(req, res, method, path);
     if (method === 'POST' && path === '/shutdown') {
       const body = asRecord(await readBody(req));
       send(res, 200, { ok: true });
@@ -494,26 +522,24 @@ export class DaemonServer {
   ): Promise<void> {
     const api = this.deps.schedules();
     if (!api) throw new HttpError(404, 'not_found', 'schedules are not available');
-    if (method === 'GET' && path === '/schedules') return send(res, 200, api.list());
+    if (method === 'GET' && path === '/schedules')
+      return send(res, 200, api.list().map(asSchedule).filter(Boolean));
     if (method === 'POST' && path === '/schedules') {
       const body = asRecord(await readBody(req));
       for (const k of ['cron', 'orgRoot', 'project', 'workflow'])
         if (typeof body[k] !== 'string')
           throw new HttpError(400, 'bad_request', `"${k}" is required`);
-      return send(
-        res,
-        200,
-        api.add({
-          cron: body.cron as string,
-          orgRoot: body.orgRoot as string,
-          project: body.project as string,
-          workflow: body.workflow as string,
-          input: typeof body.input === 'string' ? body.input : '',
-          adapter: typeof body.adapter === 'string' ? body.adapter : undefined,
-          budgetUsd: typeof body.budgetUsd === 'number' ? body.budgetUsd : undefined,
-          enabled: body.enabled !== false,
-        }),
-      );
+      const row = api.add({
+        trigger: { type: 'cron', cron: body.cron as string },
+        orgRoot: body.orgRoot as string,
+        project: body.project as string,
+        workflow: body.workflow as string,
+        input: typeof body.input === 'string' ? body.input : '',
+        adapter: typeof body.adapter === 'string' ? body.adapter : undefined,
+        budgetUsd: typeof body.budgetUsd === 'number' ? body.budgetUsd : undefined,
+        enabled: body.enabled !== false,
+      });
+      return send(res, 200, asSchedule(row));
     }
     const run = /^\/schedules\/([^/]+)\/run$/.exec(path);
     if (run && method === 'POST')
@@ -522,6 +548,76 @@ export class DaemonServer {
     if (one && method === 'DELETE') {
       api.remove(decodeURIComponent(one[1] as string));
       return send(res, 200, { ok: true });
+    }
+    throw new HttpError(404, 'not_found', `no route for ${method} ${path}`);
+  }
+
+  private async routines(
+    req: IncomingMessage,
+    res: ServerResponse,
+    method: string,
+    path: string,
+  ): Promise<void> {
+    const api = this.deps.schedules();
+    if (!api) throw new HttpError(404, 'not_found', 'routines are not available');
+    if (method === 'GET' && path === '/routines') return send(res, 200, api.list());
+    if (method === 'POST' && path === '/routines') {
+      const body = asRecord(await readBody(req));
+      for (const k of ['orgRoot', 'project', 'workflow'])
+        if (typeof body[k] !== 'string' || !(body[k] as string).trim())
+          throw new HttpError(400, 'bad_request', `"${k}" is required`);
+      const trigger = RoutineTriggerSchema.safeParse(body.trigger);
+      if (!trigger.success)
+        throw new HttpError(
+          400,
+          'bad_request',
+          `"trigger": ${trigger.error.issues.map((i) => i.message).join('; ')}`,
+        );
+      const num = (k: string) => (typeof body[k] === 'number' ? (body[k] as number) : undefined);
+      const str = (k: string) => (typeof body[k] === 'string' ? (body[k] as string) : undefined);
+      return send(
+        res,
+        200,
+        api.add({
+          trigger: trigger.data,
+          orgRoot: body.orgRoot as string,
+          project: body.project as string,
+          workflow: body.workflow as string,
+          input: str('input') ?? '',
+          name: str('name'),
+          adapter: str('adapter'),
+          budgetUsd: num('budgetUsd'),
+          maxDailyUsd: num('maxDailyUsd'),
+          mode: body.mode === 'always' || body.mode === 'on_change' ? body.mode : undefined,
+          intervalS: num('intervalS'),
+          enabled: body.enabled !== false,
+        }),
+      );
+    }
+    if (method === 'POST' && path === '/routines/sync') {
+      const body = asRecord(await readBody(req));
+      if (typeof body.orgRoot !== 'string')
+        throw new HttpError(400, 'bad_request', '"orgRoot" is required');
+      return send(res, 200, api.sync(body.orgRoot));
+    }
+    const action = /^\/routines\/([^/]+)\/(run|pause|resume)$/.exec(path);
+    if (action && method === 'POST') {
+      const id = decodeURIComponent(action[1] as string);
+      if (action[2] === 'run') return send(res, 200, await api.runNow(id));
+      return send(res, 200, api.setEnabled(id, action[2] === 'resume'));
+    }
+    const one = /^\/routines\/([^/]+)$/.exec(path);
+    if (one) {
+      const id = decodeURIComponent(one[1] as string);
+      if (method === 'GET') {
+        const r = api.get(id);
+        if (!r) throw new HttpError(404, 'not_found', `routine ${id} not found`);
+        return send(res, 200, r);
+      }
+      if (method === 'DELETE') {
+        api.remove(id);
+        return send(res, 200, { ok: true });
+      }
     }
     throw new HttpError(404, 'not_found', `no route for ${method} ${path}`);
   }

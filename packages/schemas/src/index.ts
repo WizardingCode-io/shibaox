@@ -9,5 +9,6 @@ export * from './models.js';
 export * from './org.js';
 export * from './project.js';
 export * from './role.js';
+export * from './routine.js';
 export * from './team.js';
 export * from './workflow.js';

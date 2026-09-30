@@ -15,6 +15,7 @@ import {
 } from 'solid-js';
 import { HelpDialog } from '../component/dialogs/help.js';
 import { KeysDialog } from '../component/dialogs/keys.js';
+import { RoutinesDialog } from '../component/dialogs/routines.js';
 import { RunsDialog } from '../component/dialogs/runs.js';
 import { TiersDialog } from '../component/dialogs/tiers.js';
 import { KeyHints } from '../component/footer.js';
@@ -215,6 +216,7 @@ export function Home(): JSX.Element {
     setHint(undefined);
     if (cmd.command === 'help') return dialog.open(() => <HelpDialog />);
     if (cmd.command === 'runs') return dialog.open(() => <RunsDialog />);
+    if (cmd.command === 'routines') return dialog.open(() => <RoutinesDialog />);
     if (cmd.command === 'keys') return dialog.open(() => <KeysDialog />);
     if (cmd.command === 'tiers')
       return dialog.open(() => (

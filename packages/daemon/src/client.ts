@@ -1,10 +1,11 @@
 import { type ClientRequest, request as httpRequest, type IncomingMessage } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import type { ProjectProfile, RunState } from '@wizardingcode/shibaox-core';
-import type { ScheduleRow } from '@wizardingcode/shibaox-persistence-sqlite';
+import type { RoutineRow, ScheduleRow } from '@wizardingcode/shibaox-persistence-sqlite';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import type { InboxItem } from './inbox.js';
 import type { OrgConfig, OrgConfigPatch, OrgInfo } from './org-config.js';
+import type { RoutineInput } from './routines.js';
 import type { RunSummaryPlus, SubmitRequest } from './run-manager.js';
 import type { AuditDoc } from './runs/audit.js';
 import type { DiffResult } from './runs/diff.js';
@@ -237,6 +238,33 @@ export class DaemonClient {
   }
   runSchedule(id: string): Promise<{ runId: string }> {
     return this.json('POST', `/schedules/${encodeURIComponent(id)}/run`);
+  }
+  routines(): Promise<RoutineRow[]> {
+    return this.json('GET', '/routines');
+  }
+  routine(id: string): Promise<RoutineRow> {
+    return this.json('GET', `/routines/${encodeURIComponent(id)}`);
+  }
+  addRoutine(r: RoutineInput): Promise<RoutineRow> {
+    return this.json('POST', '/routines', r);
+  }
+  removeRoutine(id: string): Promise<void> {
+    return this.json('DELETE', `/routines/${encodeURIComponent(id)}`);
+  }
+  runRoutine(id: string): Promise<{ runId: string }> {
+    return this.json('POST', `/routines/${encodeURIComponent(id)}/run`);
+  }
+  pauseRoutine(id: string): Promise<RoutineRow> {
+    return this.json('POST', `/routines/${encodeURIComponent(id)}/pause`);
+  }
+  resumeRoutine(id: string): Promise<RoutineRow> {
+    return this.json('POST', `/routines/${encodeURIComponent(id)}/resume`);
+  }
+  /** Loads `org/routines/*.yaml` of an org into the daemon. */
+  syncRoutines(
+    orgRoot: string,
+  ): Promise<{ added: string[]; updated: string[]; removed: string[] }> {
+    return this.json('POST', '/routines/sync', { orgRoot });
   }
   shutdown(o: { force?: boolean } = {}): Promise<void> {
     return this.json('POST', '/shutdown', o);

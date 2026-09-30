@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MemoryEventStore, type TaskJob } from '@wizardingcode/shibaox-core';
-import { SqliteEventStore } from '@wizardingcode/shibaox-persistence-sqlite';
+import { SchedulesRepo, SqliteEventStore } from '@wizardingcode/shibaox-persistence-sqlite';
 import { forgetModels } from '@wizardingcode/shibaox-providers';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DaemonClient, DaemonHttpError, type Envelope } from '../src/client.js';
@@ -827,5 +827,95 @@ describe('history after a restart', () => {
       .filter((e) => e.kind === 'runtime')
       .map((e) => e.event.seq);
     expect(rest).toEqual(before.slice(2));
+  });
+});
+
+describe('routines through the API', () => {
+  it('add, list, get, pause/resume, run now, remove; the schedules alias keeps working on the same rows', async () => {
+    const s = setup();
+    const { client } = await started(s, { store: undefined });
+    const r = await client.addRoutine({
+      trigger: { type: 'cron', cron: '0 9 * * 1-5' },
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'daily',
+      adapter: 'mock',
+      name: 'Daily',
+    });
+    expect(r).toMatchObject({
+      trigger: { type: 'cron', cron: '0 9 * * 1-5' },
+      enabled: true,
+      mode: 'always',
+      intervalS: 120,
+      source: 'api',
+    });
+    expect((await client.routines()).map((x) => x.id)).toEqual([r.id]);
+    expect((await client.routine(r.id)).name).toBe('Daily');
+    expect((await client.pauseRoutine(r.id)).enabled).toBe(false);
+    expect((await client.resumeRoutine(r.id)).enabled).toBe(true);
+    const { runId } = await client.runRoutine(r.id);
+    expect((await client.getRun(runId)).workflow).toBe('hello-feature');
+    expect((await client.getRun(runId)).origin).toBe(`routine:${r.id}`);
+    // the old shape: a cron routine reads as a schedule
+    expect((await client.schedules()).map((x) => [x.id, x.cron])).toEqual([[r.id, '0 9 * * 1-5']]);
+    const w = await client.addRoutine({
+      trigger: { type: 'github', watch: 'issues', repo: 'acme/app', label: 'bug' },
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'fix',
+    });
+    expect(w.mode).toBe('on_change');
+    expect((await client.schedules()).map((x) => x.id)).toEqual([r.id]); // watchers are not schedules
+    await client.removeRoutine(r.id);
+    await client.removeRoutine(w.id);
+    expect(await client.routines()).toEqual([]);
+    await expect(client.routine('nope')).rejects.toMatchObject({ status: 404 });
+    await expect(
+      client.addRoutine({
+        trigger: { type: 'cron', cron: 'nope' },
+        orgRoot: s.orgRoot,
+        project: s.project,
+        workflow: 'hello-feature',
+        input: '',
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      client.addRoutine({
+        trigger: { type: 'nope' } as never,
+        orgRoot: s.orgRoot,
+        project: s.project,
+        workflow: 'hello-feature',
+        input: '',
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+  it('sync reads org/routines/*.yaml and the daemon migrates an old schedules table at start', async () => {
+    const s = setup();
+    mkdirSync(join(s.orgRoot, 'routines'), { recursive: true });
+    writeFileSync(
+      join(s.orgRoot, 'routines', 'nightly.yaml'),
+      'routine: nightly\non: { cron: "0 2 * * *" }\nworkflow: hello-feature\ninput: nightly\nproject: ../proj\n',
+    );
+    const db = join(s.dir, 'events.db');
+    const old = new SchedulesRepo(new SqliteEventStore(db).db);
+    old.add({
+      id: 'legacy',
+      cron: '0 8 * * *',
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'old',
+      enabled: true,
+    });
+    const { client } = await started(s, { store: new SqliteEventStore(db) });
+    expect((await client.routines()).map((x) => x.id)).toEqual(['legacy']);
+    expect(await client.syncRoutines(s.orgRoot)).toEqual({
+      added: ['nightly'],
+      updated: [],
+      removed: [],
+    });
+    expect((await client.routine('nightly')).project).toBe(s.project);
   });
 });

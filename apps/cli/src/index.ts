@@ -19,6 +19,16 @@ import { modelsCommand } from './commands/models.js';
 import { providersListCommand, providersTestCommand } from './commands/providers.js';
 import { remoteClear, remoteSet, remoteShow } from './commands/remote.js';
 import {
+  ON_HELP,
+  routineAdd,
+  routineList,
+  routinePause,
+  routineRemove,
+  routineRun,
+  routineShow,
+  routineSync,
+} from './commands/routine.js';
+import {
   auditCommand,
   cancelCommand,
   followAny,
@@ -264,7 +274,9 @@ tiers
     exitWith(await tiersSet(name, value, this.optsWithGlobals<{ org?: string }>(), out(this)));
   });
 
-const schedule = program.command('schedule').description('cron schedules that submit runs');
+const schedule = program
+  .command('schedule')
+  .description('cron routines (the older name: see `shibaox routine`)');
 schedule
   .command('add')
   .argument('<cron>', 'cron expression, e.g. "0 9 * * 1-5"')
@@ -347,6 +359,94 @@ remote
   .description('back to the local daemon')
   .action(function (this: Command) {
     exitWith(remoteClear(out(this)));
+  });
+
+const routine = program
+  .command('routine')
+  .description(
+    'what the daemon does on its own: cron, GitHub issues/PRs/checks, a URL, a file, a command',
+  );
+routine
+  .command('add')
+  .argument('<workflow>')
+  .requiredOption('--on <trigger>', ON_HELP)
+  .requiredOption('--org <dir>')
+  .requiredOption('--project <path>')
+  .option('--input <text>', 'what to ask; what the trigger saw is appended as data')
+  .option('--name <text>')
+  .option('--label <label>', 'github:issues|prs: only with this label')
+  .option('--repo <owner/name>', 'github: the repository (default: the project origin)')
+  .option('--branch <name>', 'github:checks: the branch to watch')
+  .option('--every <seconds>', 'watchers: seconds between looks (default 120)', (v: string) =>
+    Number(v),
+  )
+  .option('--mode <mode>', 'always | on_change (default: on_change for watchers, always for cron)')
+  .option('--max-daily <usd>', 'stop for the day past this spend', parseBudget)
+  .addOption(new Option('--adapter <id>').choices(ADAPTER_IDS))
+  .option('--budget <usd>', 'budget in USD per run', parseBudget)
+  .action(async function (this: Command, workflow: string, o: Record<string, unknown>) {
+    exitWith(
+      await routineAdd(
+        workflow,
+        {
+          on: o.on as string,
+          org: o.org as string,
+          project: o.project as string,
+          input: o.input as string | undefined,
+          name: o.name as string | undefined,
+          label: o.label as string | undefined,
+          repo: o.repo as string | undefined,
+          branch: o.branch as string | undefined,
+          every: o.every as number | undefined,
+          mode: o.mode as string | undefined,
+          maxDaily: o.maxDaily as number | undefined,
+          adapter: o.adapter as string | undefined,
+          budget: o.budget as number | undefined,
+        },
+        out(this),
+      ),
+    );
+  });
+routine.command('list').action(async function (this: Command) {
+  exitWith(await routineList(out(this)));
+});
+routine
+  .command('show')
+  .argument('<id>')
+  .action(async function (this: Command, id: string) {
+    exitWith(await routineShow(id, out(this)));
+  });
+routine
+  .command('rm')
+  .argument('<id>')
+  .action(async function (this: Command, id: string) {
+    exitWith(await routineRemove(id, out(this)));
+  });
+routine
+  .command('run')
+  .argument('<id>')
+  .description('fire the routine now')
+  .action(async function (this: Command, id: string) {
+    exitWith(await routineRun(id, out(this)));
+  });
+routine
+  .command('pause')
+  .argument('<id>')
+  .action(async function (this: Command, id: string) {
+    exitWith(await routinePause(id, false, out(this)));
+  });
+routine
+  .command('resume')
+  .argument('<id>')
+  .action(async function (this: Command, id: string) {
+    exitWith(await routinePause(id, true, out(this)));
+  });
+routine
+  .command('sync')
+  .requiredOption('--org <dir>')
+  .description('load org/routines/*.yaml into the daemon (routines as code)')
+  .action(async function (this: Command, o: { org: string }) {
+    exitWith(await routineSync(o, out(this)));
   });
 
 const daemon = program.command('daemon').description('the local daemon that executes runs');

@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -255,6 +255,91 @@ describe('shibaox CLI against a daemon', () => {
     );
     expect((await cli('replay', without)).stdout).not.toContain('setup');
     void dir;
+  });
+
+  it('routine add/list/show/pause/resume/run/rm and sync from org/routines; schedule stays an alias', async () => {
+    const { org, project, cli } = await setup({ store: undefined });
+    const added = await cli(
+      'routine',
+      'add',
+      'hello-feature',
+      '--on',
+      'cron:0 9 * * 1-5',
+      '--org',
+      org,
+      '--project',
+      project,
+      '--input',
+      'daily',
+      '--adapter',
+      'mock',
+      '--name',
+      'Daily',
+      '--json',
+    );
+    expect(added.code, added.stderr).toBe(0);
+    const [r] = json<{ id: string; trigger: { type: string } }>(added);
+    expect(r?.trigger).toEqual({ type: 'cron', cron: '0 9 * * 1-5' });
+    const gh = await cli(
+      'routine',
+      'add',
+      'hello-feature',
+      '--on',
+      'github:issues',
+      '--label',
+      'bug',
+      '--repo',
+      'acme/app',
+      '--every',
+      '300',
+      '--max-daily',
+      '2',
+      '--org',
+      org,
+      '--project',
+      project,
+      '--json',
+    );
+    expect(gh.code, gh.stderr).toBe(0);
+    expect(json<{ trigger: unknown; intervalS: number; maxDailyUsd: number }>(gh)[0]).toMatchObject(
+      {
+        trigger: { type: 'github', watch: 'issues', label: 'bug', repo: 'acme/app' },
+        intervalS: 300,
+        maxDailyUsd: 2,
+      },
+    );
+    const list = await cli('routine', 'list');
+    expect(list.stdout).toContain('Daily');
+    expect(list.stdout).toContain('github:issues');
+    expect((await cli('routine', 'show', r?.id ?? '')).stdout).toContain('0 9 * * 1-5');
+    expect((await cli('routine', 'pause', r?.id ?? '')).stdout).toContain('paused');
+    expect((await cli('routine', 'list')).stdout).toMatch(/Daily.*off/);
+    expect((await cli('routine', 'resume', r?.id ?? '')).stdout).toContain('resumed');
+    const ran = await cli('routine', 'run', r?.id ?? '', '--json');
+    expect(json<{ runId: string }>(ran)[0]?.runId).toMatch(/[0-9a-f-]{36}/);
+    expect((await cli('schedule', 'list')).stdout).toContain('0 9 * * 1-5'); // the alias
+    expect((await cli('routine', 'rm', r?.id ?? '')).stdout).toContain('Removed');
+    const bad = await cli(
+      'routine',
+      'add',
+      'hello-feature',
+      '--on',
+      'moon:full',
+      '--org',
+      org,
+      '--project',
+      project,
+    );
+    expect(bad.code).toBe(1);
+    expect(bad.stdout + bad.stderr).toMatch(/cron:|github:|url:|file:|command:/);
+    mkdirSync(join(org, 'routines'), { recursive: true });
+    writeFileSync(
+      join(org, 'routines', 'nightly.yaml'),
+      'routine: nightly\non: { cron: "0 2 * * *" }\nworkflow: hello-feature\ninput: nightly\nproject: ../proj\n',
+    );
+    const synced = await cli('routine', 'sync', '--org', org);
+    expect(synced.code, synced.stderr).toBe(0);
+    expect(synced.stdout).toContain('added nightly');
   });
 
   it('daemon status reports the version and an empty inbox prints a sentence', async () => {

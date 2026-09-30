@@ -10,6 +10,7 @@ import type {
   OrgConfigPatch,
   OrgInfo,
   ProjectEntry,
+  RoutineRow,
   RunSummaryPlus,
   SubmitRequest,
 } from '@wizardingcode/shibaox-daemon';
@@ -60,6 +61,8 @@ export class FakeDaemonClient implements DaemonClientLike {
   orgInfos = new Map<string, OrgInfo>();
   /** What `GET /projects` answers. */
   projectList: ProjectEntry[] = [];
+  /** What `GET /routines` answers. */
+  routineList: RoutineRow[] = [];
   private readonly streams = new Map<string, Stream>();
 
   private record(method: string, args: unknown[]): void {
@@ -154,6 +157,32 @@ export class FakeDaemonClient implements DaemonClientLike {
   async projects(): Promise<ProjectEntry[]> {
     this.record('projects', []);
     return this.projectList;
+  }
+
+  async routines(): Promise<RoutineRow[]> {
+    this.record('routines', []);
+    return this.routineList;
+  }
+
+  async runRoutine(id: string): Promise<{ runId: string }> {
+    this.record('runRoutine', [id]);
+    return { runId: 'routine-run' };
+  }
+
+  async pauseRoutine(id: string): Promise<RoutineRow> {
+    this.record('pauseRoutine', [id]);
+    const r = this.routineList.find((x) => x.id === id);
+    if (!r) throw new DaemonHttpError(404, 'not_found', `routine ${id} not found`);
+    r.enabled = false;
+    return r;
+  }
+
+  async resumeRoutine(id: string): Promise<RoutineRow> {
+    this.record('resumeRoutine', [id]);
+    const r = this.routineList.find((x) => x.id === id);
+    if (!r) throw new DaemonHttpError(404, 'not_found', `routine ${id} not found`);
+    r.enabled = true;
+    return r;
   }
 
   async keys(): Promise<KeyRow[]> {

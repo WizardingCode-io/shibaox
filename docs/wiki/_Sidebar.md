@@ -12,6 +12,7 @@
 - [Git cycle](Git-cycle)
 - [Daemon and service](Daemon-and-service)
 - [Remote daemon](Remote-daemon)
+- [Routines](Routines)
 - [Channels and Telegram](Channels-and-Telegram)
 - [Claude Code runtime](Claude-Code-runtime)
 - [Worktrees](Worktrees)

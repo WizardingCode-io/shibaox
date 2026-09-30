@@ -147,3 +147,59 @@ test('? opens help in a session but types into the home prompt', async () => {
     m.done();
   }
 });
+
+test('/routines lists the routines with their trigger and last run; r runs one now, p pauses it', async () => {
+  const m = await mount();
+  try {
+    m.client.routineList = [
+      {
+        id: 'ab12cd34',
+        name: 'Daily check',
+        trigger: { type: 'cron', cron: '0 9 * * 1-5' },
+        orgRoot: '/o',
+        project: '/p',
+        workflow: 'chat',
+        input: 'what changed?',
+        mode: 'always',
+        intervalS: 120,
+        enabled: true,
+        source: 'org',
+        lastRunId: 'bbbb2222-x',
+        lastFiredAt: '2026-09-30T08:00:00.000Z',
+        createdAt: '2026-09-01T00:00:00.000Z',
+      },
+      {
+        id: 'ef56ab78',
+        trigger: { type: 'github', watch: 'issues', label: 'bug' },
+        orgRoot: '/o',
+        project: '/p',
+        workflow: 'fix-issue',
+        input: 'fix',
+        mode: 'on_change',
+        intervalS: 120,
+        enabled: false,
+        source: 'api',
+        createdAt: '2026-09-02T00:00:00.000Z',
+      },
+    ];
+    await m.type('/routines');
+    let f = await m.key('return');
+    expect(f).toContain('Daily check');
+    expect(f).toContain('0 9 * * 1-5');
+    expect(f).toContain('github:issues');
+    expect(f).toContain('paused');
+    f = await m.key('r');
+    expect(m.client.calls.some((c) => c.method === 'runRoutine' && c.args[0] === 'ab12cd34')).toBe(
+      true,
+    );
+    await m.setup.mockInput.pressArrow('down');
+    f = await m.key('p');
+    expect(
+      m.client.calls.some((c) => c.method === 'resumeRoutine' && c.args[0] === 'ef56ab78'),
+    ).toBe(true);
+    f = await m.key('escape');
+    expect(f).not.toContain('r run now'); // the dialog is gone (a toast may still name the routine)
+  } finally {
+    m.done();
+  }
+});

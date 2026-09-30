@@ -5,8 +5,8 @@ import { type EventStore, type MockScript, runArgv } from '@wizardingcode/shibao
 import type { Graphify } from '@wizardingcode/shibaox-memory';
 import {
   OutboxRepo,
+  RoutinesRepo,
   RuntimeEventsRepo,
-  SchedulesRepo,
   SqliteEventStore,
 } from '@wizardingcode/shibaox-persistence-sqlite';
 import {
@@ -23,13 +23,13 @@ import { type DaemonConfig, loadDaemonConfig } from './config.js';
 import { ensureDefaultOrg } from './default-org.js';
 import { type HomePaths, homePaths } from './home.js';
 import { type InboxId, InboxService } from './inbox.js';
+import { Routines } from './routines.js';
 import { RunManager } from './run-manager.js';
 import { vaultDir } from './runs/notes.js';
 import { profileFor } from './runs/profile.js';
 import { buildRunReport } from './runs/report.js';
 import { orgSummarizer } from './runs/summarize.js';
 import { registryFor } from './runtime.js';
-import { Scheduler } from './scheduler.js';
 import { SecretsStore } from './secrets.js';
 import {
   DaemonServer,
@@ -56,7 +56,7 @@ export interface DaemonOptions {
   version?: string;
   vault?: string;
   mockScript?: MockScript;
-  /** Schedules; by default a cron Scheduler over the SQLite store (none with an injected store). */
+  /** Routines; by default over the SQLite store (none with an injected memory store). */
   schedules?: (d: Daemon) => SchedulesApi & { start(): void; stop(): void };
   /** Whether the `claude` CLI is installed (tests inject it; probed with `which` by default). */
   claudeInstalled?: boolean;
@@ -177,6 +177,7 @@ export class Daemon {
       now: opts.now,
       onFinished: (state, events, workflow, notePath) => {
         const report = buildRunReport(state, events, workflow, { notePath });
+        if (this.schedules instanceof Routines) this.schedules.onFinished(state);
         log(`report: ${state.runId} ${state.status} → ${state.origin}`);
         // a conversation turn asked from a chat: its reply joins the thread, then the next
         // queued text goes out (dispatched children report, but are not turns)
@@ -440,6 +441,28 @@ export class Daemon {
     };
   }
 
+  /** Routines over the SQLite store: the old `schedules` table is moved in once. */
+  private buildRoutines(): (SchedulesApi & { start(): void; stop(): void }) | undefined {
+    if (!(this.store instanceof SqliteEventStore)) return undefined;
+    const log = this.opts.log ?? ((l: string) => console.log(l));
+    const repo = new RoutinesRepo(this.store.db);
+    const moved = repo.migrateSchedules();
+    if (moved > 0) log(`routines: ${moved} schedule(s) moved to the routines table`);
+    return new Routines({
+      repo,
+      runs: this.runs,
+      log,
+      now: this.opts.now ? () => new Date(this.opts.now?.() ?? Date.now()) : undefined,
+      vaultFor: (orgRoot) => {
+        try {
+          return vaultDir(loadOrg(orgRoot), { vault: this.opts.vault });
+        } catch {
+          return undefined;
+        }
+      },
+    });
+  }
+
   /** The home workspace: where the orchestrator works when no project is chosen. */
   get workspace(): string {
     return join(this.paths.root, 'workspace');
@@ -480,16 +503,7 @@ export class Daemon {
   async start(): Promise<void> {
     await this.defaultOrg();
     mkdirSync(this.workspace, { recursive: true });
-    this.schedules = this.opts.schedules
-      ? this.opts.schedules(this)
-      : this.store instanceof SqliteEventStore
-        ? new Scheduler({
-            repo: new SchedulesRepo(this.store.db),
-            runs: this.runs,
-            log: this.opts.log ?? ((l: string) => console.log(l)),
-            now: this.opts.now ? () => new Date(this.opts.now?.() ?? Date.now()) : undefined,
-          })
-        : undefined;
+    this.schedules = this.opts.schedules ? this.opts.schedules(this) : this.buildRoutines();
     this.server.listenOn = this.listenOptions();
     await this.server.listen();
     this.warmModels();
