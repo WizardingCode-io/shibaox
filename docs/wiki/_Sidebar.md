@@ -10,6 +10,7 @@
 - [Providers and models](Providers-and-models)
 - [Gates](Gates)
 - [Git cycle](Git-cycle)
+- [GitHub loop](GitHub-loop)
 - [Daemon and service](Daemon-and-service)
 - [Remote daemon](Remote-daemon)
 - [Routines](Routines)

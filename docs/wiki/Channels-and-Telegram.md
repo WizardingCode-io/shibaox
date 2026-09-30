@@ -4,6 +4,7 @@ Channels announce what needs you and, for some, let you answer. They get the com
 
 - **macOS notifications** (`osascript`, or `terminal-notifier` when installed). On by default on macOS.
 - **Telegram** with Approve / Deny buttons, reports, and a conversation with the orchestrator.
+- **GitHub**: a run asked from an issue (`shibaox run --issue N`) reports back as a comment on it; never asks approvals there (`channels.github.enabled: false` in `daemon.yaml` turns it off).
 
 ## Setting up Telegram
 

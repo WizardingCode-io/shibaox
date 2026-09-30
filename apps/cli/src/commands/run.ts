@@ -1,6 +1,6 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { isTerminal, type RunStatus } from '@wizardingcode/shibaox-core';
+import { isTerminal, type RunStatus, runArgv } from '@wizardingcode/shibaox-core';
 import type { AdapterId, GraphMode } from '@wizardingcode/shibaox-daemon';
 import { homePaths } from '@wizardingcode/shibaox-daemon';
 import type { WorkspaceMode } from '@wizardingcode/shibaox-workspace';
@@ -13,7 +13,7 @@ export interface RunCommandOptions {
   /** Absent: `./org` when it exists, else the daemon's default org. */
   org?: string;
   project: string;
-  input: string;
+  input?: string;
   adapter?: AdapterId;
   workspace?: WorkspaceMode;
   graph?: GraphMode;
@@ -22,7 +22,49 @@ export interface RunCommandOptions {
   model?: string;
   /** Worktree dependency install: auto (default), off, or a command. */
   setup?: string;
+  /** A GitHub issue number (or URL): its title and body become the request, its repo the origin. */
+  issue?: string;
   detach?: boolean;
+}
+
+/** `gh issue view` of the project's repository: the request text and the origin of the run. */
+export async function issueRequest(
+  issue: string,
+  project: string,
+  exec: typeof runArgv = runArgv,
+): Promise<{ input: string; origin: string }> {
+  const url = /github\.com\/([^/\s]+\/[^/\s]+)\/issues\/(\d+)/.exec(issue);
+  const number = url ? (url[2] as string) : issue.replace(/^#/, '');
+  if (!/^\d+$/.test(number))
+    throw new Error(`--issue takes a number or an issue URL, got ${issue}`);
+  const repoArgs = url ? ['--repo', url[1] as string] : [];
+  const r = await exec({
+    argv: ['gh', 'issue', 'view', number, ...repoArgs, '--json', 'number,title,body,url,labels'],
+    cwd: project,
+    timeoutMs: 60_000,
+  });
+  if (r.exitCode !== 0)
+    throw new Error(
+      `gh issue view ${number} failed: ${(r.stderr || r.stdout).trim().slice(0, 300)}`,
+    );
+  const v = JSON.parse(r.stdout) as {
+    number: number;
+    title: string;
+    body?: string;
+    url: string;
+    labels?: { name: string }[];
+  };
+  const repo = /github\.com\/([^/]+\/[^/]+)\/issues\//.exec(v.url)?.[1];
+  if (!repo) throw new Error(`could not tell the repository from ${v.url}`);
+  const labels = v.labels?.map((l) => l.name).filter(Boolean) ?? [];
+  const input = [
+    `Issue #${v.number}: ${v.title}`,
+    v.url,
+    ...(labels.length ? [`Labels: ${labels.join(', ')}`] : []),
+    '',
+    (v.body ?? '').trim() || '(no description)',
+  ].join('\n');
+  return { input, origin: `github:${repo}#${v.number}` };
 }
 
 /** `--org`, else `./org` when it holds an org, else the daemon's default org. */
@@ -44,17 +86,26 @@ export async function runCommand(
 ): Promise<number> {
   const client = await connect({ write: true });
   const orgRoot = await resolveOrg(client, o.org);
+  const project = resolve(o.project);
+  let input = o.input;
+  let origin: string | undefined;
+  if (o.issue) {
+    const fromIssue = await issueRequest(o.issue, project);
+    input = o.input ? `${fromIssue.input}\n\n${o.input}` : fromIssue.input;
+    origin = fromIssue.origin;
+  }
   const { runId, warnings } = await client.submitRun({
     orgRoot,
-    project: resolve(o.project),
+    project,
     workflow,
-    input: o.input,
+    input: input ?? '',
     adapter: o.adapter,
     workspace: o.workspace,
     budgetUsd: o.budget,
     graph: o.graph,
     model: o.model,
     setup: o.setup,
+    origin,
   });
   for (const w of warnings) out.line(`warn: ${w}`);
   out.line(`run ${runId} queued`);

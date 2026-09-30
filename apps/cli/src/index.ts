@@ -108,7 +108,11 @@ program
     'org directory (default: ./org when it exists, else the org under ~/.shibaox)',
   )
   .requiredOption('--project <path>', 'project workspace')
-  .requiredOption('--input <text>', 'request / spec text')
+  .option('--input <text>', 'request / spec text (required unless --issue)')
+  .option(
+    '--issue <n|url>',
+    'a GitHub issue: its title and body become the request, it gets the report as a comment',
+  )
   .addOption(
     new Option(
       '--adapter <id>',
@@ -133,6 +137,7 @@ program
   )
   .option('--detach', 'submit and return without following')
   .action(async function (this: Command, workflow: string, o: Record<string, unknown>) {
+    if (!o.input && !o.issue) this.error('--input <text> or --issue <n> is required');
     exitWith(
       await runCommand(
         workflow,
@@ -146,6 +151,7 @@ program
           budget: o.budget as number | undefined,
           model: o.model as string | undefined,
           setup: o.setup as string | undefined,
+          issue: o.issue as string | undefined,
           detach: Boolean(o.detach),
         },
         out(this),

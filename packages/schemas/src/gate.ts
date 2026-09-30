@@ -35,6 +35,14 @@ export const CheckSchema = z.discriminatedUnion('type', [
     kind: z.enum(['noul', 'score']).default('noul'),
     threshold: z.number().min(0).max(1).default(0.8),
   }),
+  /** Waits for the pull request's checks (`gh pr checks`) and passes when they all passed. */
+  z.object({
+    ...base,
+    type: z.literal('ci'),
+    timeout_ms: z.number().int().positive().default(1_800_000),
+    /** How often the checks are asked about while some are pending. */
+    interval_ms: z.number().int().positive().default(30_000),
+  }),
   z.object({ ...base, type: z.literal('judge'), role: Id, rubric: z.string().min(1) }),
   z.object({ ...base, type: z.literal('human'), prompt: z.string().min(1) }),
   z.object({

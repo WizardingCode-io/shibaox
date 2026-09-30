@@ -153,7 +153,8 @@ test('a command chosen from the list applies on enter; free-text commands ask fo
     await m.type('/workflow');
     await m.setup.mockInput.pressTab();
     await m.frame();
-    await m.setup.mockInput.pressArrow('down'); // chat is first; hello-feature second
+    await m.setup.mockInput.pressArrow('down'); // chat is first; fix-issue second, hello-feature third
+    await m.setup.mockInput.pressArrow('down');
     await m.frame();
     await m.setup.mockInput.pressEnter();
     let f = await m.frame();

@@ -15,6 +15,7 @@ import {
   type ProviderEntry,
 } from '@wizardingcode/shibaox-providers';
 import { type ChatMessage, loadOrg, type Org } from '@wizardingcode/shibaox-schemas';
+import { githubChannel } from './channels/github.js';
 import { macosChannel } from './channels/macos.js';
 import { OutboxWorker } from './channels/outbox.js';
 import { inboxToken, telegramChannel } from './channels/telegram.js';
@@ -554,6 +555,9 @@ export function defaultChannels(
 ): Channel[] {
   const out: Channel[] = [];
   if (process.platform === 'darwin' && config.channels.macos.enabled) out.push(macosChannel());
+  // GitHub answers only runs that came from an issue (`shibaox run --issue`): always on
+  if (config.channels.github?.enabled !== false)
+    out.push(githubChannel({ env: () => commandEnv(env), log }));
   const tg = config.channels.telegram;
   if (tg) {
     const token = env[tg.bot_token_env];

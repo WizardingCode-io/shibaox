@@ -27,6 +27,10 @@ Lands the run branch on the base through the project's **merge queue**: one merg
 
 A failing test or a conflict leaves the base untouched. A cancelled run never lands. A workspace with uncommitted changes is refused (put a `commit` before `merge`). Nothing to land is an outcome (`merged: false`).
 
+## review, comment, merge_pr
+
+`review` (`from: <node>`, `event: comment|approve|request-changes`) publishes a node's text as a review of the run's pull request, `comment` posts a comment (`from` or `message`), `merge_pr` (`method: squash|merge|rebase`) merges it on GitHub and deletes the branch. The pull request is the one a `pr` node opened, else `#N` or a PR URL in the request. See [GitHub loop](GitHub-loop).
+
 ## Approvals
 
 Git nodes push without asking: the workflow's `human` node before them is the approval. Agents themselves never push or deploy without an approval in the inbox (see [Security](Security)).

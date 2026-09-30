@@ -103,6 +103,7 @@ max_concurrent_runs: 4
 approval_timeout_minutes: 120
 channels:
   macos: { enabled: true }
+  github: { enabled: true }   # reports of `run --issue` runs as comments on the issue
   telegram:
     bot_token_env: SHIBAOX_TELEGRAM_TOKEN
     chat_id: 123456789

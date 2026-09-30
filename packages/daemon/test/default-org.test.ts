@@ -54,3 +54,38 @@ describe('ensureDefaultOrg', () => {
     expect(readFileSync(join(p.org, 'models.yaml'), 'utf8')).toContain('mine/x');
   });
 });
+
+describe('the GitHub loop in the template', () => {
+  it('ships a reviewer role, a ci gate and the fix-issue / review-pr workflows, all loadable', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { loadOrg } = await import('@wizardingcode/shibaox-schemas');
+    const { scaffoldOrg } = await import('../src/templates.js');
+    const dir = mkdtempSync(join(tmpdir(), 'tpl-'));
+    try {
+      scaffoldOrg(dir);
+      const org = loadOrg(join(dir, 'org'));
+      expect(org.roles.reviewer).toMatchObject({ tools: expect.arrayContaining(['read', 'gh']) });
+      expect(org.roles.reviewer?.tools).not.toContain('write');
+      expect(org.gates.ci?.checks[0]).toMatchObject({ type: 'ci' });
+      const fix = org.workflows['fix-issue'];
+      expect(fix?.nodes.pr).toMatchObject({ type: 'git', action: 'pr' });
+      expect(fix?.nodes.checks).toMatchObject({ type: 'gate', gates: ['ci'] });
+      expect(fix?.nodes.land).toMatchObject({ type: 'git', action: 'merge_pr' });
+      expect(Object.values(fix?.nodes ?? {}).some((n) => n.type === 'human')).toBe(true);
+      const review = org.workflows['review-pr'];
+      expect(review?.nodes.publish).toMatchObject({
+        type: 'git',
+        action: 'review',
+        from: 'review',
+      });
+      expect(Object.values(review?.nodes ?? {}).some((n) => n.type === 'human')).toBe(true);
+      expect(org.teams.engineering?.workflows).toEqual(
+        expect.arrayContaining(['fix-issue', 'review-pr']),
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

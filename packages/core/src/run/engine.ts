@@ -10,6 +10,7 @@ import {
   type RuntimeEvent,
   type TaskJob,
 } from '../executors/types.js';
+import { pullRequestRef } from '../gates/ci.js';
 import { SETUP_TIMEOUT_MS } from '../gates/detect.js';
 import { type CheckRunners, defaultCheckRunners, runGate } from '../gates/engine.js';
 import { injectTeamGates } from '../org/inject-gates.js';
@@ -528,6 +529,13 @@ export class RunEngine {
           const summaries = Object.entries(state.nodes)
             .filter(([id, n]) => id !== nodeId && n.summary)
             .map(([id, n]) => ({ nodeId: id, summary: n.summary as string }));
+          const ref = pullRequestRef(state);
+          const texts: Record<string, string> = {};
+          for (const [id, n] of Object.entries(state.nodes)) {
+            const out = n.output as { text?: unknown } | undefined;
+            const text = out && typeof out.text === 'string' ? out.text : n.summary;
+            if (text) texts[id] = text;
+          }
           const r = await runGitNode(node, {
             runId,
             workspace: state.workspace,
@@ -535,6 +543,8 @@ export class RunEngine {
             branch: state.branch,
             base: state.baseBranch,
             env: this.deps.env,
+            pr: ref?.number !== undefined ? { number: ref.number, url: ref.url } : undefined,
+            texts,
             signal: this.controllerFor(runId).signal,
             spec:
               typeof state.input.spec === 'string' ? state.input.spec : JSON.stringify(state.input),

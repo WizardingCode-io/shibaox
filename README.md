@@ -26,6 +26,7 @@ Shibaox runs on your machine, or on a server you reach with a token. A daemon ke
 - **Gates before anything ships.** The project's own tests, its linter, a model review with a rubric, and a human approval where it matters.
 - **A git cycle that lands.** Worktree per run, a commit with a written message, a pull request or a merge through a per-project queue.
 - **Nothing off-screen.** Event-sourced runs you can replay, a cost line per turn, approvals in an inbox, reports on Telegram.
+- **Closes the loop on GitHub.** `shibaox run fix-issue --issue 12`: the fix, the pull request, the CI checks, your approval, the merge, and the report as a comment on the issue.
 - **Watches your repos.** Routines fire on a cron, on labelled issues, on pull requests, on a red CI, on a URL, a file or a command, remember what they found last time, and report back.
 - **Runs anywhere.** `shibaox serve` on a VPS or a Mac mini, `shibaox remote set` on your laptop: the same dashboard, the same commands, runs that land while the laptop is closed.
 
@@ -90,6 +91,7 @@ The [wiki](https://github.com/WizardingCode-io/shibaox/wiki) has everything, org
 | [Providers and models](https://github.com/WizardingCode-io/shibaox/wiki/Providers-and-models) | catalog, tiers, keys, costs, local models |
 | [Gates](https://github.com/WizardingCode-io/shibaox/wiki/Gates) | tests, lint, review, judge, jev, human |
 | [Git cycle](https://github.com/WizardingCode-io/shibaox/wiki/Git-cycle) | commit, pull request, merge queue |
+| [GitHub loop](https://github.com/WizardingCode-io/shibaox/wiki/GitHub-loop) | issue → PR → CI → approval → merge, reports on the issue |
 | [Daemon and service](https://github.com/WizardingCode-io/shibaox/wiki/Daemon-and-service) | 24h service, inbox, reports |
 | [Routines](https://github.com/WizardingCode-io/shibaox/wiki/Routines) | cron, GitHub issues/PRs/checks, URL, file, command |
 | [Remote daemon](https://github.com/WizardingCode-io/shibaox/wiki/Remote-daemon) | `shibaox serve` on a server, a token on your machine |

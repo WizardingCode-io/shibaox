@@ -35,6 +35,10 @@ export interface GitContext {
   describe?: (r: DescribeRequest) => Promise<string>;
   queue?: MergeQueue;
   env?: Record<string, string>;
+  /** The pull request the run works on (a `pr` node, or the request): `review`, `comment`, `merge_pr` need it. */
+  pr?: { number: number; url?: string };
+  /** What each node wrote (`output.text`, else its summary): what `review` and `comment` publish. */
+  texts?: Record<string, string>;
   log: (line: string) => void;
 }
 
@@ -413,6 +417,84 @@ async function merge(node: GitNode, ctx: GitContext): Promise<GitOutcome> {
   });
 }
 
+async function gh(ctx: GitContext, args: string[], timeoutMs: number): Promise<string> {
+  const r = await runArgv({ argv: ['gh', ...args], cwd: ctx.workspace, timeoutMs, env: ctx.env });
+  if (r.exitCode !== 0)
+    throw new Error(
+      `gh ${args.slice(0, 2).join(' ')} failed: ${(r.stderr.trim() || r.stdout.trim()).slice(-800)}`,
+    );
+  return r.stdout.trim();
+}
+
+function needPr(node: GitNode, ctx: GitContext): { number: number; url?: string } {
+  if (!ctx.pr)
+    throw new Error(
+      `${node.action}: no pull request in this run (add a pr node before it, or name the PR as #N in the request)`,
+    );
+  return ctx.pr;
+}
+
+/** The text a node wrote, or the node's `message`. */
+function textFor(node: GitNode, ctx: GitContext): string | undefined {
+  const fromNode = node.from ? ctx.texts?.[node.from]?.trim() : undefined;
+  return fromNode || node.message?.trim() || undefined;
+}
+
+/** `gh pr review`: a node's text as a review of the pull request (comment, approve, request changes). */
+async function review(node: GitNode, ctx: GitContext): Promise<GitOutcome> {
+  const target = needPr(node, ctx);
+  const body = textFor(node, ctx);
+  if (!body)
+    return {
+      output: { reviewed: false, number: target.number, reason: 'nothing to say' },
+      summary: 'no review: the node wrote nothing',
+    };
+  const event = node.event ?? 'comment';
+  checkCancelled(ctx);
+  await gh(
+    ctx,
+    ['pr', 'review', String(target.number), `--${event}`, '--body', body],
+    node.timeout_ms,
+  );
+  return {
+    output: { reviewed: true, number: target.number, url: target.url, event },
+    summary: `review published on PR #${target.number} (${event})`,
+  };
+}
+
+/** `gh pr comment`: a node's text (or the message) as a comment on the pull request. */
+async function comment(node: GitNode, ctx: GitContext): Promise<GitOutcome> {
+  const target = needPr(node, ctx);
+  const body = textFor(node, ctx);
+  if (!body)
+    return {
+      output: { commented: false, number: target.number, reason: 'nothing to say' },
+      summary: 'no comment: the node wrote nothing',
+    };
+  checkCancelled(ctx);
+  await gh(ctx, ['pr', 'comment', String(target.number), '--body', body], node.timeout_ms);
+  return {
+    output: { commented: true, number: target.number, url: target.url },
+    summary: `comment posted on PR #${target.number}`,
+  };
+}
+
+/** `gh pr merge`: the pull request merged on GitHub (squash by default), its branch deleted. */
+async function mergePr(node: GitNode, ctx: GitContext): Promise<GitOutcome> {
+  const target = needPr(node, ctx);
+  const method = node.method ?? 'squash';
+  checkCancelled(ctx);
+  await gh(
+    ctx,
+    ['pr', 'merge', String(target.number), `--${method}`, '--delete-branch'],
+    node.timeout_ms,
+  );
+  return {
+    output: { merged: true, number: target.number, url: target.url, method },
+    summary: `PR #${target.number} merged (${method})`,
+  };
+}
+
 /** Runs one `git` node; throws on failure like a `code` node. */
 export async function runGitNode(node: GitNode, ctx: GitContext): Promise<GitOutcome> {
   switch (node.action) {
@@ -422,5 +504,11 @@ export async function runGitNode(node: GitNode, ctx: GitContext): Promise<GitOut
       return pr(node, ctx);
     case 'merge':
       return merge(node, ctx);
+    case 'review':
+      return review(node, ctx);
+    case 'comment':
+      return comment(node, ctx);
+    case 'merge_pr':
+      return mergePr(node, ctx);
   }
 }

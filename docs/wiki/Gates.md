@@ -25,6 +25,8 @@ checks:
 
 The judge model is `gates.judge` in `models.yaml`, else the `decision` tier when it is a model ref, else `strong`. `judge` and `review` need a real adapter; with `mock` they fail and the run says so at submit.
 
+`ci` waits for the pull request's checks on GitHub (`gh pr checks`) and passes when they all passed; see [GitHub loop](GitHub-loop).
+
 ## The template's gates
 
 `tests.yaml`, `lint.yaml` and `review.yaml`. `hello-feature` and `land-feature` gate on `[tests]`. Add `lint` once the base branch is lint-clean (otherwise the agent is asked to fix the whole repository), and `review` for a model review before the human approval:

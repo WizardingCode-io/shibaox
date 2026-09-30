@@ -27,6 +27,8 @@ export const DaemonConfigSchema = z.object({
   channels: z
     .object({
       macos: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
+      /** Reports of runs asked from an issue (`run --issue`) as comments on it. */
+      github: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
       telegram: z
         .object({
           bot_token_env: z.string().default('SHIBAOX_TELEGRAM_TOKEN'),
@@ -39,7 +41,7 @@ export const DaemonConfigSchema = z.object({
         })
         .optional(),
     })
-    .default({ macos: { enabled: true } }),
+    .default({ macos: { enabled: true }, github: { enabled: true } }),
 });
 export type DaemonConfig = z.infer<typeof DaemonConfigSchema>;
 

@@ -1,6 +1,7 @@
 import type { Check, CheckResult, Cost, Gate, GateReport } from '@wizardingcode/shibaox-schemas';
 import { runCommand } from '../executors/code.js';
 import type { RunState } from '../run/state.js';
+import { ciCheckRunner } from './ci.js';
 import { detectLintCommand, detectTestCommand } from './detect.js';
 
 export interface CheckContext {
@@ -136,6 +137,7 @@ export function defaultCheckRunners(): CheckRunners {
     code: codeCheckRunner,
     tests: testsCheckRunner,
     lint: lintCheckRunner,
+    ci: ciCheckRunner,
     mock: mockCheckRunner,
   };
 }

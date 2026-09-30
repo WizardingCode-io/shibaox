@@ -3,7 +3,7 @@ import type { RunReport } from '../runs/report.js';
 
 /** Where inbox items are announced and, for some channels, answered. */
 export interface Channel {
-  id: 'macos' | 'telegram';
+  id: 'macos' | 'telegram' | 'github';
   /** May throw; the outbox retries with backoff. */
   notify(item: InboxItem): Promise<void>;
   /** The item was answered (from any channel). */

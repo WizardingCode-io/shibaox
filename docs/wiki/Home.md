@@ -19,6 +19,7 @@ An agentic OS for software teams. You describe your organisation in YAML, talk t
 - [Providers and models](Providers-and-models) — catalog, keys vault, tiers, `/model`, costs, local models
 - [Gates](Gates) — tests, lint, review, judge, jev, human
 - [Git cycle](Git-cycle) — commit, pull request, merge queue
+- [GitHub loop](GitHub-loop) — `run --issue`, the `ci` check, reviews and merges through `gh`, reports on the issue
 - [Daemon and service](Daemon-and-service) — 24h service, inbox, schedules, reports
 - [Remote daemon](Remote-daemon) — `shibaox serve` on a server, `shibaox remote set` on your machine
 - [Routines](Routines) — cron, GitHub issues/PRs/checks, a URL, a file, a command: what the daemon does on its own

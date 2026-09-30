@@ -42,9 +42,19 @@ export const GateNodeSchema = z.object({
  */
 export const GitNodeSchema = z.object({
   type: z.literal('git'),
-  action: z.enum(['commit', 'pr', 'merge']),
-  /** Commit message / PR body; generated from the request and the run when absent. */
+  /**
+   * `commit`, `pr`, `merge` (the run branch on the base, locally); `review` and `comment`
+   * publish a node's text on the pull request; `merge_pr` merges it through GitHub.
+   */
+  action: z.enum(['commit', 'pr', 'merge', 'review', 'comment', 'merge_pr']),
+  /** Commit message / PR body / comment text; generated or taken from `from` when absent. */
   message: z.string().optional(),
+  /** review, comment: the node whose text is published. */
+  from: Id.optional(),
+  /** review: the review event (default `comment`). */
+  event: z.enum(['approve', 'request-changes', 'comment']).optional(),
+  /** merge_pr: how GitHub merges (default `squash`). */
+  method: z.enum(['squash', 'merge', 'rebase']).optional(),
   /** Base branch for `pr` and `merge` (default: the repository's default branch, else main). */
   base: z.string().optional(),
   /** Test command run before a merge (default: detected from the workspace; none skips). */

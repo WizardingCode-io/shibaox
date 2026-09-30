@@ -34,7 +34,7 @@ gates: {}
 lead: team-leader
 roles: [team-leader, analyst, backend]
 gates: [tests]
-workflows: [hello-feature, land-feature]
+workflows: [hello-feature, land-feature, fix-issue, review-pr]
 `,
   'org/roles/team-leader.yaml': `role: team-leader
 description: Judges readiness, approves or sends back.
@@ -93,6 +93,49 @@ tools: [read, write, git, node, npm, pnpm]
 permissions:
   approval_required: [push, deploy]
 system_prompt: prompts/backend.md
+`,
+  'org/roles/reviewer.yaml': `role: reviewer
+description: Reads a pull request and writes a review; publishes nothing itself.
+model_tier: strong
+tools: [read, gh]
+permissions:
+  approval_required: [push, deploy]
+system_prompt: prompts/reviewer.md
+`,
+  'org/prompts/reviewer.md': `# Reviewer
+You review pull requests. Read the diff (\`gh pr diff <n>\`, \`gh pr view <n>\`) and the files it
+touches. Write the review as Markdown: what is wrong first (with file and line), then what is
+risky, then what is fine. Say whether it can merge. You never merge, push or comment yourself:
+the workflow publishes your text after a person approves it.
+`,
+  'org/gates/ci.yaml': `gate: ci
+checks:
+  # waits for the pull request's checks on GitHub (gh pr checks) and passes when they all passed;
+  # a run without a pull request passes with a note
+  - { name: github-checks, type: ci, timeout_ms: 1800000, interval_ms: 30000 }
+`,
+  'org/workflows/fix-issue.yaml': `workflow: fix-issue
+team: engineering
+description: From an issue (shibaox run fix-issue --issue N) to a merged pull request, with CI and your approval in between.
+start: analyse
+nodes:
+  analyse:   { type: task, role: analyst, instruction: "Analyse the issue and list the files to touch.", next: implement }
+  implement: { type: task, role: backend, instruction: "Fix the issue. Keep tests green. Reference the issue in the commit.", next: qa }
+  qa:        { type: gate, gates: [tests], on_pass: commit, on_fail: implement, max_retries: 2 }
+  commit:    { type: git, action: commit, next: pr }
+  pr:        { type: git, action: pr, next: checks }
+  checks:    { type: gate, gates: [ci], on_pass: approve, on_fail: implement, max_retries: 1 }
+  approve:   { type: human, action: approve-merge, prompt: "The checks passed. Merge the pull request?", next: land }
+  land:      { type: git, action: merge_pr, method: squash }
+`,
+  'org/workflows/review-pr.yaml': `workflow: review-pr
+team: engineering
+description: Review a pull request (shibaox run review-pr --input "#13") and publish the review once you approve it.
+start: review
+nodes:
+  review:  { type: task, role: reviewer, instruction: "Review the pull request named in the request (#N). Read its diff and the touched files; write the review.", next: approve }
+  approve: { type: human, action: approve-review, prompt: "Publish this review on the pull request?", next: publish }
+  publish: { type: git, action: review, from: review, event: comment }
 `,
   'org/gates/tests.yaml': `gate: tests
 checks:

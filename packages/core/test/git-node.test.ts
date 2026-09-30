@@ -350,3 +350,64 @@ describe('git node: merge', () => {
     expect(order.some((l) => /queue/.test(l))).toBe(true);
   });
 });
+
+describe('git node: review, comment, merge_pr', () => {
+  const withGh = (dir: string) => {
+    const gh = fakeGh(dir);
+    return { gh, env: { PATH: `${gh.bin}:${process.env.PATH ?? ''}` } };
+  };
+  it('review publishes the text of a node as a pull request review of the given event', async () => {
+    const r = repo({ origin: true });
+    const { gh, env } = withGh(r.dir);
+    const out = await runGitNode(
+      {
+        type: 'git',
+        action: 'review',
+        from: 'review',
+        event: 'request-changes',
+        timeout_ms: 60_000,
+      },
+      ctx(r, {
+        env,
+        pr: { number: 42, url: 'https://github.com/acme/proj/pull/42' },
+        texts: { review: 'Two problems:\n- a\n- b' },
+      }),
+    );
+    expect(out.output).toMatchObject({ reviewed: true, number: 42, event: 'request-changes' });
+    const call = gh.calls().find((c) => c[0] === 'pr' && c[1] === 'review');
+    expect(call).toEqual(expect.arrayContaining(['42', '--request-changes', '--body']));
+    expect(call?.join(' ')).toContain('Two problems');
+  });
+  it('comment posts a node text (or the message) on the pull request; without a text nothing is posted', async () => {
+    const r = repo({ origin: true });
+    const { gh, env } = withGh(r.dir);
+    const out = await runGitNode(
+      { type: 'git', action: 'comment', message: 'Landed by shibaox.', timeout_ms: 60_000 },
+      ctx(r, { env, pr: { number: 7, url: 'u' } }),
+    );
+    expect(out.output).toMatchObject({ commented: true, number: 7 });
+    const posted = gh.calls().find((c) => c[1] === 'comment');
+    expect(posted).toEqual(expect.arrayContaining(['7', '--body']));
+    expect(posted?.join(' ')).toContain('Landed by shibaox.');
+    const empty = await runGitNode(
+      { type: 'git', action: 'comment', from: 'nothing', timeout_ms: 60_000 },
+      ctx(r, { env, pr: { number: 7, url: 'u' }, texts: {} }),
+    );
+    expect(empty.output).toMatchObject({ commented: false });
+  });
+  it('merge_pr merges the pull request through gh with the method, deleting the branch; no PR is an error', async () => {
+    const r = repo({ origin: true });
+    const { gh, env } = withGh(r.dir);
+    const out = await runGitNode(
+      { type: 'git', action: 'merge_pr', method: 'squash', timeout_ms: 60_000 },
+      ctx(r, { env, pr: { number: 42, url: 'https://github.com/acme/proj/pull/42' } }),
+    );
+    expect(out.output).toMatchObject({ merged: true, number: 42, method: 'squash' });
+    expect(gh.calls().find((c) => c[1] === 'merge')).toEqual(
+      expect.arrayContaining(['42', '--squash', '--delete-branch']),
+    );
+    await expect(
+      runGitNode({ type: 'git', action: 'merge_pr', timeout_ms: 60_000 }, ctx(r, { env })),
+    ).rejects.toThrow(/pull request/);
+  });
+});

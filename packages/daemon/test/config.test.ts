@@ -15,7 +15,7 @@ describe('daemon config and home', () => {
       max_concurrent_runs: 4,
       approval_timeout_minutes: 120,
       projects: [],
-      channels: { macos: { enabled: true } },
+      channels: { macos: { enabled: true }, github: { enabled: true } },
     });
   });
 
@@ -32,6 +32,7 @@ describe('daemon config and home', () => {
       projects: [],
       channels: {
         macos: { enabled: false },
+        github: { enabled: true },
         telegram: { bot_token_env: 'SHIBAOX_TELEGRAM_TOKEN', chat_id: 5, workflow: 'chat' },
       },
     });

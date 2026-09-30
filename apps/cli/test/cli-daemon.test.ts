@@ -1,5 +1,13 @@
 import { execFile, execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -340,6 +348,74 @@ describe('shibaox CLI against a daemon', () => {
     const synced = await cli('routine', 'sync', '--org', org);
     expect(synced.code, synced.stderr).toBe(0);
     expect(synced.stdout).toContain('added nightly');
+  });
+
+  it('run --issue reads the issue with gh and sets the github origin', async () => {
+    const { org, project, dir, home, cli } = await setup();
+    const bin = join(dir, 'bin');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(
+      join(bin, 'gh'),
+      `#!/bin/sh
+printf '%s\n' "$*" >> "${join(dir, 'gh.log')}"
+case "$1 $2" in
+  "issue view") echo '{"number":12,"title":"Login broken","body":"Steps: open /login. Expected: form","url":"https://github.com/acme/app/issues/12","labels":[{"name":"bug"}]}' ;;
+  "repo view") echo 'acme/app' ;;
+esac
+`,
+    );
+    chmodSync(join(bin, 'gh'), 0o755);
+    const r = await new Promise<Result>((resolve) => {
+      execFile(
+        process.execPath,
+        [
+          bin.replace(/\/bin$/, ''),
+          'run',
+          'hello-feature',
+          '--org',
+          org,
+          '--project',
+          project,
+          '--issue',
+          '12',
+          '--adapter',
+          'mock',
+          '--workspace',
+          'inplace',
+          '--detach',
+          '--json',
+        ].map((a, i) =>
+          i === 0 ? fileURLToPath(new URL('../dist/index.js', import.meta.url)) : a,
+        ),
+        {
+          env: {
+            PATH: `${bin}:${process.env.PATH ?? ''}`,
+            SHIBAOX_HOME: home.root,
+            HOME: dir,
+            SHIBAOX_NO_AUTOSTART: '1',
+          },
+        },
+        (err, stdout, stderr) =>
+          resolve({
+            code: (err as { code?: number } | null)?.code ?? 0,
+            stdout: String(stdout),
+            stderr: String(stderr),
+          }),
+      );
+    });
+    expect(r.code, r.stderr).toBe(0);
+    const [{ runId }] = json<{ runId: string }>(r);
+    const state = json<{ input: { spec: string }; origin?: string }>(
+      await cli('replay', runId, '--json'),
+    ).find((x) => x.origin !== undefined || x.input);
+    void state;
+    const runs = json<{ runId: string; origin?: string }>(await cli('runs', '--json'));
+    expect(runs.find((x) => x.runId === runId)?.origin).toBe('github:acme/app#12');
+    const md = await cli('audit', runId);
+    expect(md.stdout).toContain('Issue #12: Login broken');
+    expect(md.stdout).toContain('Steps: open /login');
+    expect(md.stdout).toContain('https://github.com/acme/app/issues/12');
+    expect(readFileSync(join(dir, 'gh.log'), 'utf8')).toContain('issue view 12');
   });
 
   it('daemon status reports the version and an empty inbox prints a sentence', async () => {

@@ -50,8 +50,41 @@ const VERCEL_READ_ONLY = [
   'teams',
   'switch',
 ];
+/**
+ * `gh` invocations that change something on GitHub for good: a merge, a release, the
+ * repository itself, secrets, a workflow dispatch, a writing API call. Reading, reviewing and
+ * commenting are not gated.
+ */
+export const GH_DEPLOY: Record<string, string[]> = {
+  pr: ['merge', 'close', 'lock'],
+  release: ['create', 'delete', 'upload', 'edit', 'delete-asset'],
+  repo: ['delete', 'edit', 'create', 'archive', 'rename', 'unarchive', 'sync', 'set-default'],
+  secret: ['set', 'delete', 'remove'],
+  variable: ['set', 'delete', 'remove'],
+  workflow: ['run', 'enable', 'disable'],
+  ruleset: ['create', 'delete', 'edit'],
+  label: ['create', 'delete', 'edit', 'clone'],
+};
+const GH_API_WRITE_FLAGS = ['-f', '-F', '--field', '--raw-field', '--input'];
+
+/** Whether a `gh` argv (without the program) deploys. */
+export function ghDeploys(words: string[]): boolean {
+  const positional = words.filter((w) => !w.startsWith('-'));
+  const [group = '', verb = ''] = positional;
+  if (group === 'api') {
+    const i = words.findIndex((w) => w === '-X' || w === '--method' || w.startsWith('--method='));
+    const method = i < 0 ? 'GET' : (words[i]?.split('=')[1] ?? words[i + 1] ?? 'GET').toUpperCase();
+    if (method !== 'GET') return true;
+    return words.some(
+      (w) =>
+        GH_API_WRITE_FLAGS.includes(w) || w.startsWith('--field=') || w.startsWith('--raw-field='),
+    );
+  }
+  return GH_DEPLOY[group]?.includes(verb) ?? false;
+}
+
 /** Programs that never get a blanket allow rule: every call goes through `canUseTool`. */
-export const GATED_PROGRAMS = ['git', ...Object.keys(DEPLOY_VERBS)];
+export const GATED_PROGRAMS = ['git', 'gh', ...Object.keys(DEPLOY_VERBS)];
 
 // Command separators, pipes, substitutions and backgrounding (`&` but not `2>&1` / `&>`).
 const COMPOUND = /;|&&|\||`|\$\(|[<>]\(|\n|\r|(?<![<>])&(?!>)/;
@@ -243,6 +276,13 @@ export function analyseBashCommand(command: string): BashAnalysis {
   if (gated && (head.expands || args.some((t) => t.expands)))
     return { ok: false, reason: `shell expansion is not allowed in ${program} commands` };
   if (program === 'git') return analyseGit(args, assignments);
+  if (program === 'gh')
+    return {
+      ok: true,
+      program,
+      category: ghDeploys(args.map((t) => t.text)) ? 'deploy' : 'other',
+      argv,
+    };
   const verbs = DEPLOY_VERBS[program];
   if (verbs) {
     const words = args.map((t) => t.text);
