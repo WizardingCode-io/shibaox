@@ -55,9 +55,10 @@ export async function appCommand(
     const token =
       env.SHIBAOX_DAEMON_TOKEN || new SecretsStore(paths.secrets).get('SHIBAOX_DAEMON_TOKEN');
     if (!token) {
-      console.error(
-        'The daemon listens on the network but its token is not here: set SHIBAOX_DAEMON_TOKEN in the environment or shibaox keys set SHIBAOX_DAEMON_TOKEN <token>',
-      );
+      const why =
+        'The daemon listens on the network but its token is not here: set SHIBAOX_DAEMON_TOKEN in the environment or shibaox keys set SHIBAOX_DAEMON_TOKEN <token>';
+      console.error(why);
+      out.obj({ error: why });
       return 1;
     }
     const scheme = health.listen.tls ? 'https' : 'http';

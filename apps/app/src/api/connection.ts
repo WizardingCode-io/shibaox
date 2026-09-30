@@ -30,7 +30,12 @@ export function readConnection(o: {
   const hash = o.location.hash.replace(/^#/, '');
   const m = /(?:^|&)token=([^&]+)/.exec(hash);
   if (m?.[1]) {
-    const token = decodeURIComponent(m[1]);
+    let token: string;
+    try {
+      token = decodeURIComponent(m[1]);
+    } catch {
+      token = m[1];
+    }
     const conn = { base: o.location.origin, token };
     saveConnection(o.storage, conn);
     const rest = hash.replace(/(?:^|&)token=[^&]+/, '');

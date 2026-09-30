@@ -11,7 +11,13 @@ export type Route =
 export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#/, '').split('&')[0] ?? '';
   const m = /^\/t\/([^/]+)$/.exec(path);
-  if (m?.[1]) return { name: 'thread', id: decodeURIComponent(m[1]) };
+  if (m?.[1]) {
+    try {
+      return { name: 'thread', id: decodeURIComponent(m[1]) };
+    } catch {
+      return { name: 'home' };
+    }
+  }
   if (path === '/chats') return { name: 'chats' };
   if (path === '/settings') return { name: 'settings' };
   const soon = /^\/soon\/([a-z]+)$/.exec(path);

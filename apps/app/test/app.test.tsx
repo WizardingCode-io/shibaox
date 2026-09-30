@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { RunState } from '@wizardingcode/shibaox-core';
 import type { Envelope, InboxItem, RunSummaryPlus } from '@wizardingcode/shibaox-daemon';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { App } from '../src/App.js';
 import { loadDesignSystem } from '../src/ds.js';
 import { AppStore, type StoreClient } from '../src/store/store.js';
@@ -111,6 +111,10 @@ function client(
     async steer(id, s) {
       rec('steer', id, s);
       return o.states?.[id] as RunState;
+    },
+    async auditMarkdown(id) {
+      rec('auditMarkdown', id);
+      return `# Audit ${id}`;
     },
     async cancel(id) {
       rec('cancel', id);
@@ -304,9 +308,109 @@ describe('the app', () => {
     const { store } = mount(c, { hash: '#/settings' });
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy());
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Dark' }));
+      fireEvent.click(screen.getByRole('tab', { name: 'Dark' }));
     });
     expect(document.documentElement.dataset.theme).toBe('dark');
     expect(store.get().settings.theme).toBe('dark');
+  });
+});
+
+describe('the app: the review fixes', () => {
+  it('an approval raised inside a dispatched run shows in the chat and on its task card', async () => {
+    const child = state('child', {
+      status: 'running',
+      thread: 'root',
+      parentRunId: 'root',
+      workflow: 'hello-feature',
+      input: { spec: 'build' },
+    } as never);
+    const inbox: InboxItem[] = [
+      {
+        id: 'approval:c1',
+        kind: 'approval',
+        runId: 'child',
+        nodeId: 'implement',
+        at: 't',
+        prompt: 'git push origin main',
+        detail: { role: 'backend', program: 'git', category: 'push', tool: 'Bash' },
+      },
+    ];
+    const { client: c, calls } = client({
+      runs: [
+        summary('root'),
+        summary('child', {
+          thread: 'root',
+          parentRunId: 'root',
+          workflow: 'hello-feature',
+          status: 'running',
+        }),
+      ],
+      states: { root: state('root', { input: { spec: 'Ship it' } }), child },
+      frames: {
+        root: [
+          runFrame(1, 'NodeStarted', { nodeId: 'reply' }),
+          rtFrame(1, 'reply', { type: 'text', text: 'Dispatching.' }),
+        ],
+      },
+      inbox,
+    });
+    mount(c, { hash: '#/t/root' });
+    await waitFor(() => expect(screen.getByText('git push origin main')).toBeTruthy());
+    expect(screen.getByText('Needs you')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() =>
+      expect(calls.find((x) => x.name === 'answer')?.args[0]).toBe('approval:c1'),
+    );
+    fireEvent.click(screen.getByRole('tab', { name: /^Tasks/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Steer' })).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'Open' })).toBeTruthy();
+  });
+  it('a paused turn offers Resume with a budget', async () => {
+    const { client: c, calls } = client({
+      runs: [summary('root', { status: 'paused_budget' })],
+      states: { root: state('root', { status: 'paused_budget' }) },
+    });
+    mount(c, { hash: '#/t/root' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Resume' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    await waitFor(() => expect(calls.find((x) => x.name === 'resume')?.args[0]).toBe('root'));
+  });
+  it('Open audit fetches the document with the token instead of navigating to a URL', async () => {
+    const { client: c, calls } = client({
+      runs: [summary('root')],
+      states: { root: state('root') },
+    });
+    const opened: string[] = [];
+    window.open = ((u: string) => {
+      opened.push(String(u));
+      return null;
+    }) as never;
+    (globalThis.URL as unknown as { createObjectURL?: unknown }).createObjectURL ??= () =>
+      'blob:audit';
+    mount(c, { hash: '#/t/root' });
+    await waitFor(() => expect(screen.getByRole('tab', { name: /^Logs/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('tab', { name: /^Logs/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open audit' }));
+    await waitFor(() =>
+      expect(calls.find((x) => x.name === 'auditMarkdown')?.args[0]).toBe('root'),
+    );
+    await waitFor(() => expect(opened[0]).toMatch(/^blob:/));
+  });
+  it('a wrong token brings the Connect screen back with a word about it', async () => {
+    const { client: c } = client();
+    const bad = {
+      ...c,
+      listRuns: async () => {
+        throw Object.assign(new Error('the bearer token is wrong'), {
+          status: 401,
+          name: 'AppHttpError',
+        });
+      },
+    };
+    mount(bad);
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Connect to your daemon' })).toBeTruthy(),
+    );
+    expect(screen.getByText(/refused the token/)).toBeTruthy();
   });
 });

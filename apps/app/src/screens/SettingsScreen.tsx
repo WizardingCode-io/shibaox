@@ -13,18 +13,15 @@ export function SettingsScreen(props: { base: string; onDisconnect: () => void }
       </div>
       <div className="page">
         <h3>Theme</h3>
-        <div className="row">
-          {(['light', 'dark', 'system'] as const).map((t) => (
-            <S.Button
-              key={t}
-              variant={s.theme === t ? 'primary' : 'secondary'}
-              size="sm"
-              onClick={() => store.setSettings({ theme: t })}
-            >
-              {t === 'light' ? 'Light' : t === 'dark' ? 'Dark' : 'System'}
-            </S.Button>
-          ))}
-        </div>
+        <S.Tabs
+          items={[
+            { id: 'light', label: 'Light' },
+            { id: 'dark', label: 'Dark' },
+            { id: 'system', label: 'System' },
+          ]}
+          value={s.theme}
+          onChange={(id) => store.setSettings({ theme: id as 'light' | 'dark' | 'system' })}
+        />
         <h3>You</h3>
         <S.Input
           label="Your name"

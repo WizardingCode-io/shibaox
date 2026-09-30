@@ -193,9 +193,12 @@ program
     'the browser app (the dashboard as a web page): opens it against this daemon, or a remote one',
   )
   .option('--no-open', 'print the address, do not open the browser')
-  .option('--port <n>', 'the bridge port (socket-only daemons; default: any free port)', (v) =>
-    Number.parseInt(v, 10),
-  )
+  .option('--port <n>', 'the bridge port (socket-only daemons; default: any free port)', (v) => {
+    const n = Number.parseInt(v, 10);
+    if (!Number.isInteger(n) || n < 0 || n > 65535)
+      throw new InvalidArgumentError('the port must be a number between 0 and 65535');
+    return n;
+  })
   .action(async function (this: Command, o: { open?: boolean; port?: number }) {
     exitWith(await appCommand(o, out(this)));
   });

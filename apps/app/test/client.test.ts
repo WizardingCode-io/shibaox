@@ -64,6 +64,15 @@ describe('AppClient', () => {
     });
     expect(new Headers(f.calls[0]?.init.headers).has('authorization')).toBe(false);
   });
+  it('fetches the audit document as text with the token', async () => {
+    const f = fakeFetch(
+      () => new Response('# Audit', { status: 200, headers: { 'content-type': 'text/markdown' } }),
+    );
+    const c = new AppClient('http://d', 'tok', { fetch: f.fetch });
+    expect(await c.auditMarkdown('r1')).toBe('# Audit');
+    expect(f.calls[0]?.url).toBe('http://d/runs/r1/audit?format=md');
+    expect(new Headers(f.calls[0]?.init.headers).get('authorization')).toBe('Bearer tok');
+  });
   it('streams the run events as SSE frames over fetch, with the cursor, until the end frame', async () => {
     const frames = [
       'data: {"kind":"run","seq":1,"cursor":"1:0","event":{"type":"RunStarted"}}\n\n',

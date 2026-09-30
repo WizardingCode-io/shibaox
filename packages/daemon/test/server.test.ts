@@ -1180,7 +1180,7 @@ describe('the app served by the daemon', () => {
     await started(s, { appDist: null });
     const r = await rawGet(s.home.socket, '/app/');
     expect(r.status).toBe(404);
-    expect(r.body).toContain('@wizardingcode/shibaox-app');
+    expect(r.body).toContain('shibaox@latest');
     expect((await new DaemonClient(s.home.socket).health()).listen).toBeUndefined();
   });
 });

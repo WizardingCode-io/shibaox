@@ -238,7 +238,7 @@ export class Daemon {
       inbox: this.inbox,
       schedules: () => this.schedules,
       health: () => this.health(),
-      appDist: () => (opts.appDist === null ? undefined : (opts.appDist ?? resolveAppDist())),
+      appDist: () => this.appDist(),
       profile: (path, orgRoot) =>
         profileFor(path, {
           vault: opts.vault ?? (orgRoot ? vaultDir(loadOrg(orgRoot), {}) : undefined),
@@ -441,6 +441,16 @@ export class Daemon {
       if (next === undefined) this.inFlight.delete(origin);
       else void this.submitTurn(origin, next, say);
     }
+  }
+
+  private appDistCache?: { value: string | undefined };
+  /** The browser app's dist, resolved once (a path from the CLI, `null` for none, else the installed package). */
+  private appDist(): string | undefined {
+    if (!this.appDistCache)
+      this.appDistCache = {
+        value: this.opts.appDist === null ? undefined : (this.opts.appDist ?? resolveAppDist()),
+      };
+    return this.appDistCache.value;
   }
 
   health(): Health {

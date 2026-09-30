@@ -8,7 +8,7 @@ const WORDS: Record<string, string> = {
 };
 
 export function SoonScreen(props: { section: string }): JSX.Element {
-  const S = ds();
+  const _S = ds();
   return (
     <main className="main">
       <div className="top">
@@ -18,7 +18,6 @@ export function SoonScreen(props: { section: string }): JSX.Element {
         </h2>
       </div>
       <div className="empty">
-        <S.Mascot mood="sleeping" size={96} />
         <h2>Coming soon</h2>
         <p>{WORDS[props.section] ?? 'On its way.'} Until then: the shibaox CLI.</p>
       </div>

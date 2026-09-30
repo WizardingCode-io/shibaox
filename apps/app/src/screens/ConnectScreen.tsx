@@ -5,6 +5,7 @@ import { ds } from '../ds.js';
 /** Asks where the daemon is when the app was opened without a token in its URL. */
 export function ConnectScreen(props: {
   initialBase: string;
+  notice?: string;
   onConnect: (c: Connection) => void;
 }): JSX.Element {
   const S = ds();
@@ -19,11 +20,11 @@ export function ConnectScreen(props: {
             props.onConnect({ base: base.trim().replace(/\/+$/, ''), token: token.trim() });
         }}
       >
-        <S.Mascot size={56} />
         <h1>Connect to your daemon</h1>
+        {props.notice ? <S.Badge tone="warning">{props.notice}</S.Badge> : null}
         <p className="muted" style={{ margin: 0 }}>
-          The URL of a shibaox daemon (shibaox serve) and its token. On your own machine, shibaox
-          app opens this page already connected.
+          The daemon that served this page and its token. On your own machine, shibaox app opens
+          this page already connected.
         </p>
         <S.Input
           label="Daemon URL"

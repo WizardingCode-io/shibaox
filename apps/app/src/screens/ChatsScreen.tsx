@@ -17,7 +17,6 @@ export function ChatsScreen(): JSX.Element {
       <div className="page">
         {threads.length === 0 ? (
           <div className="empty">
-            <S.Mascot mood="default" size={96} />
             <h2>No conversations yet</h2>
             <p>Start one with New chat.</p>
           </div>

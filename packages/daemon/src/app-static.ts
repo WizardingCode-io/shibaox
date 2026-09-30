@@ -31,7 +31,7 @@ const TYPES: Record<string, string> = {
 };
 
 export const APP_MISSING =
-  'the browser app is not installed next to this daemon: npm install -g @wizardingcode/shibaox-app (it ships with shibaox 0.2.1+)';
+  'the browser app is not installed next to this daemon: npm i -g shibaox@latest (it ships with shibaox 0.2.1+), then shibaox daemon stop so the daemon restarts on it';
 
 /**
  * Serves one request under `/app`: a file of the dist by its path (hashed assets cached for a

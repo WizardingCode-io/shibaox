@@ -90,9 +90,16 @@ export class AppClient {
   audit(id: string): Promise<AuditDoc> {
     return this.json('GET', `/runs/${encodeURIComponent(id)}/audit`);
   }
-  /** Where the audit reads as a document (opened in a new tab). */
-  auditUrl(id: string): string {
-    return `${this.base}/runs/${encodeURIComponent(id)}/audit?format=md`;
+  /** The audit as a Markdown document (the token travels with the request). */
+  async auditMarkdown(id: string): Promise<string> {
+    const r = await this.fetchImpl(`${this.base}/runs/${encodeURIComponent(id)}/audit?format=md`, {
+      method: 'GET',
+      headers: this.headers(),
+    });
+    const text = await r.text();
+    if (r.status >= 400)
+      throw new AppHttpError(r.status, 'error', text.slice(0, 200) || `HTTP ${r.status}`);
+    return text;
   }
   steer(id: string, o: { nodeId?: string; note: string }): Promise<RunState> {
     return this.json('POST', `/runs/${encodeURIComponent(id)}/steer`, { ...o, via: 'api' });
@@ -165,9 +172,16 @@ export class AppClient {
             .find((l) => l.startsWith('data: '))
             ?.slice(6);
           if (data) {
-            const e = JSON.parse(data) as Envelope;
-            yield e;
-            if (e.kind === 'end') return;
+            let e: Envelope | undefined;
+            try {
+              e = JSON.parse(data) as Envelope;
+            } catch {
+              e = undefined; // a torn frame is skipped, never fatal
+            }
+            if (e) {
+              yield e;
+              if (e.kind === 'end') return;
+            }
           }
           idx = buffer.indexOf('\n\n');
         }

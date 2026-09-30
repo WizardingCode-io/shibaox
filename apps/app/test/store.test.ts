@@ -14,6 +14,7 @@ function fakeClient() {
   const calls: { name: string; args: unknown[] }[] = [];
   let seq = 0;
   const rec = (name: string, ...args: unknown[]) => calls.push({ name, args });
+  let unauthorized = false;
   const add = (
     id: string,
     o: Partial<RunSummaryPlus> & {
@@ -75,6 +76,11 @@ function fakeClient() {
     },
     async listRuns(q: { thread?: string } = {}) {
       rec('listRuns', q);
+      if (unauthorized)
+        throw Object.assign(new Error('the bearer token is wrong'), {
+          status: 401,
+          name: 'AppHttpError',
+        });
       return [...runs.values()]
         .map((t) => t.summary)
         .filter((r) => !q.thread || r.thread === q.thread);
@@ -105,7 +111,12 @@ function fakeClient() {
     },
     async steer(id: string, o: unknown) {
       rec('steer', id, o);
+      if (id === 'boom') throw new Error('nothing to steer');
       return runs.get(id)?.state as RunState;
+    },
+    async auditMarkdown(id: string) {
+      rec('auditMarkdown', id);
+      return `# Audit of ${id}`;
     },
     async cancel(id: string) {
       rec('cancel', id);
@@ -141,7 +152,15 @@ function fakeClient() {
         yield { kind: 'end', seq: 99, cursor: '99:0', status: t.state.status } as Envelope;
     },
   };
-  return { client, calls, add, runs };
+  return {
+    client,
+    calls,
+    add,
+    runs,
+    setUnauthorized: (v: boolean) => {
+      unauthorized = v;
+    },
+  };
 }
 
 const frame = (seq: number, type: string, extra: Record<string, unknown>): Envelope =>
@@ -300,5 +319,96 @@ describe('AppStore', () => {
       name: 'André',
     });
     expect(store.get().settings.theme).toBe('dark');
+  });
+});
+
+describe('AppStore: the review fixes', () => {
+  it('a turn waits for the previous one to settle, and turns of one thread go one at a time', async () => {
+    const f = fakeClient();
+    f.add('root', { input: { spec: 'Ship it' }, status: 'running' });
+    const store = new AppStore({
+      client: f.client,
+      intervals: { fast: 20, slow: 20 },
+      settleEvery: 10,
+    });
+    store.start();
+    store.openThread('root');
+    await vi.waitFor(() => expect(store.thread('root')).toBeDefined());
+    const sent = store.send('root', 'And then?');
+    await new Promise((r) => setTimeout(r, 60));
+    expect(f.calls.filter((c) => c.name === 'submitRun')).toHaveLength(0); // still waiting for root to end
+    const root = f.runs.get('root') as Turn;
+    root.state = { ...root.state, status: 'completed' } as RunState;
+    root.summary = { ...root.summary, status: 'completed' };
+    await sent;
+    expect(f.calls.filter((c) => c.name === 'submitRun')).toHaveLength(1);
+    store.stop();
+  });
+  it('an event turn never marks the thread busy; a user turn does', async () => {
+    const f = fakeClient();
+    f.add('root', { input: { spec: 'Ship it' } });
+    const store = new AppStore({ client: f.client, intervals: { fast: 20, slow: 20 } });
+    store.start();
+    store.openThread('root');
+    await vi.waitFor(() => expect(store.thread('root')).toBeDefined());
+    let sawBusy = false;
+    const off = store.subscribe(() => {
+      if (store.get().busy.root) sawBusy = true;
+    });
+    await store.send('root', 'workflow x finished', { event: true });
+    expect(sawBusy).toBe(false);
+    // the event turn ends; the user's turn then goes through and shows busy
+    const ev = f.runs.get('new-2') as Turn;
+    ev.state = { ...ev.state, status: 'completed' } as RunState;
+    ev.summary = { ...ev.summary, status: 'completed' };
+    await store.send('root', 'and now?');
+    expect(sawBusy).toBe(true);
+    off();
+    store.stop();
+  });
+  it('errors of answer, steer, cancel and newChat surface as the state error', async () => {
+    const f = fakeClient();
+    const store = new AppStore({ client: f.client });
+    await store.steer('boom', 'x');
+    expect(store.get().error).toContain('nothing to steer');
+    store.clearError();
+    const noProject = { ...f.client, projects: async () => [] };
+    const s2 = new AppStore({ client: noProject });
+    await expect(s2.newChat('hi')).resolves.toBeUndefined();
+    expect(s2.get().error).toMatch(/no project/);
+  });
+  it('a 401 from the daemon marks the connection unauthorized instead of "not reachable"', async () => {
+    const f = fakeClient();
+    f.setUnauthorized(true);
+    const store = new AppStore({ client: f.client, intervals: { fast: 20, slow: 20 } });
+    store.start();
+    await vi.waitFor(() => expect(store.get().unauthorized).toBe(true));
+    expect(store.get().reachable).toBe(true);
+    store.stop();
+  });
+  it('the audit comes through the client with the token, as text', async () => {
+    const f = fakeClient();
+    const store = new AppStore({ client: f.client });
+    expect(await store.audit('r1')).toBe('# Audit of r1');
+  });
+  it('threads are the root runs, with the newest activity of any member', async () => {
+    const f = fakeClient();
+    f.add('child', {
+      thread: 'root',
+      parentRunId: 'root',
+      workflow: 'hello-feature',
+      status: 'running',
+    });
+    f.add('root', { input: { spec: 'Ship it' }, status: 'completed' });
+    const store = new AppStore({ client: f.client, intervals: { fast: 20, slow: 20 } });
+    store.start();
+    await vi.waitFor(() => expect(store.threads()).toHaveLength(1));
+    expect(store.threads()[0]).toMatchObject({
+      runId: 'root',
+      workflow: 'chat',
+      status: 'completed',
+    });
+    expect(store.threads()[0]?.updatedAt).toBe(f.runs.get('root')?.summary.updatedAt);
+    store.stop();
   });
 });

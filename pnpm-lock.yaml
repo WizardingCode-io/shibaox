@@ -60,6 +60,9 @@ importers:
       happy-dom:
         specifier: ^20.14.5
         version: 20.14.5
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
       vite:
         specifier: ^8.3.1
         version: 8.3.1(@types/node@26.6.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)
@@ -412,7 +415,10 @@ importers:
         version: 26.6.2
 
   packages/view:
-    dependencies:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.2
+        version: 26.6.2
       '@wizardingcode/shibaox-core':
         specifier: workspace:*
         version: link:../core
@@ -422,10 +428,6 @@ importers:
       '@wizardingcode/shibaox-schemas':
         specifier: workspace:*
         version: link:../schemas
-    devDependencies:
-      '@types/node':
-        specifier: ^26.6.2
-        version: 26.6.2
 
   packages/workspace:
     dependencies:

@@ -91,6 +91,21 @@ describe('the app bridge', () => {
       headers: { authorization: 'Bearer bridge-tok' },
     });
     expect(sse.status).toBe(404);
+    // a POST body reaches the daemon (a bad request is the daemon's own answer, not the bridge's)
+    const post = await fetch(`${base}/runs`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer bridge-tok', 'content-type': 'application/json' },
+      body: JSON.stringify({ workflow: 'chat' }),
+    });
+    expect(post.status).toBe(400);
+    // HEAD on the app is public too
+    expect((await fetch(`${base}/app/`, { method: 'HEAD' })).status).toBe(200);
+  });
+  it('a bad --port is refused with a clear message', async () => {
+    const { dir, home } = await daemonAt();
+    const r = await cli({ SHIBAOX_HOME: home.root, HOME: dir }, 'app', '--no-open', '--port', 'x');
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toMatch(/port/);
   });
 });
 

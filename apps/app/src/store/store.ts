@@ -35,6 +35,7 @@ export type StoreClient = Pick<
   | 'defaultOrg'
   | 'orgInfo'
   | 'stream'
+  | 'auditMarkdown'
 >;
 
 interface StorageLike {
@@ -48,6 +49,8 @@ export interface StoreOptions {
   storage?: StorageLike;
   /** Poll intervals in ms: `fast` while the open thread is live, `slow` otherwise. */
   intervals?: { fast?: number; slow?: number };
+  /** How often a turn waiting for the previous one looks again (ms). */
+  settleEvery?: number;
   log?: (line: string) => void;
 }
 
@@ -55,14 +58,22 @@ interface Sub {
   controller: AbortController;
   frames: Envelope[];
   cursor?: string;
+  pending: Envelope[];
+  flush?: ReturnType<typeof setTimeout>;
 }
 
 const SETTINGS_KEY = 'shibaox.settings';
 const DEFAULT_SETTINGS: Settings = { theme: 'system' };
+const FLUSH_MS = 50;
+const SETTLE_LIMIT_MS = 20 * 60_000;
+const isUnauthorized = (e: unknown): boolean =>
+  typeof e === 'object' && e !== null && (e as { status?: number }).status === 401;
+const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 /**
  * The app's state and the loop that feeds it: runs and the inbox by polling, the open
- * thread's runs by streaming, and the user's actions. Screens subscribe with
+ * thread's runs by streaming (frames batched), and the user's actions. Turns of one thread
+ * go one at a time, each after the previous one settled. Screens subscribe with
  * `useSyncExternalStore`.
  */
 export class AppStore {
@@ -71,11 +82,16 @@ export class AppStore {
   private readonly client: StoreClient;
   private readonly storage?: StorageLike;
   private readonly intervals: { fast: number; slow: number };
+  private readonly settleEvery: number;
   private readonly log: (line: string) => void;
   private readonly subs = new Map<string, Sub>();
+  /** The last cursor seen per run, to resume a stream where it stopped. */
+  private readonly cursors = new Map<string, string>();
   /** Dispatched runs whose end was already reported to their thread (or ended before we looked). */
   private readonly reported = new Set<string>();
   private readonly seenThreads = new Set<string>();
+  /** Turns of a thread go one after the other. */
+  private readonly chains = new Map<string, Promise<unknown>>();
   private timer?: ReturnType<typeof setTimeout>;
   private running = false;
   private ticking?: Promise<void>;
@@ -85,6 +101,7 @@ export class AppStore {
     this.client = o.client;
     this.storage = o.storage;
     this.intervals = { fast: o.intervals?.fast ?? 2000, slow: o.intervals?.slow ?? 5000 };
+    this.settleEvery = o.settleEvery ?? 1000;
     this.log = o.log ?? (() => undefined);
     this.state = initialState(this.loadSettings());
   }
@@ -118,18 +135,14 @@ export class AppStore {
       .filter((r) => (r.thread ?? r.runId) === rootId && r.parentRunId)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
-  /** Every thread (root runs), newest activity first. */
+  /** Every thread: its root run (status and title of the root), newest activity of any member first. */
   threads(): RunSummaryPlus[] {
     const roots = new Map<string, RunSummaryPlus>();
+    for (const r of this.state.runs)
+      if (!r.parentRunId && (r.thread ?? r.runId) === r.runId) roots.set(r.runId, { ...r });
     for (const r of this.state.runs) {
-      const root = r.thread ?? r.runId;
-      const cur = roots.get(root);
-      if (!cur || r.updatedAt > cur.updatedAt)
-        roots.set(root, {
-          ...(this.state.runs.find((x) => x.runId === root) ?? r),
-          updatedAt: r.updatedAt,
-          status: cur && r.parentRunId ? cur.status : r.status,
-        });
+      const root = roots.get(r.thread ?? r.runId);
+      if (root && r.updatedAt > root.updatedAt) root.updatedAt = r.updatedAt;
     }
     return [...roots.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
@@ -159,7 +172,7 @@ export class AppStore {
       spentUsd: t.spentUsd,
     } as unknown as RunState;
   }
-  /** The live turn of a thread (running or waiting), if any. */
+  /** The live turn of a thread (running, waiting or paused), if any. */
   liveTurn(rootId: string): RunSummaryPlus | undefined {
     return this.turnsOf(rootId)
       .reverse()
@@ -176,11 +189,14 @@ export class AppStore {
   stop(): void {
     this.running = false;
     if (this.timer) clearTimeout(this.timer);
+    for (const t of this.refreshTimers.values()) clearTimeout(t);
+    this.refreshTimers.clear();
     for (const [id] of this.subs) this.unfollow(id);
   }
-  /** One round now (after an action), then the timer as usual. */
-  refresh(): Promise<void> {
+  /** A round after whatever is in flight (so it sees the change), then the timer as usual. */
+  async refresh(): Promise<void> {
     if (this.timer) clearTimeout(this.timer);
+    if (this.ticking) await this.ticking.catch(() => undefined);
     return this.tick();
   }
 
@@ -189,14 +205,15 @@ export class AppStore {
     this.ticking = (async () => {
       try {
         const [runs, inbox] = await Promise.all([this.client.listRuns(), this.client.inbox()]);
-        this.set({ runs, inbox, reachable: true });
+        this.set({ runs, inbox, reachable: true, unauthorized: false });
         if (this.state.open) await this.syncThread(this.state.open);
         // the sidebar names the recent threads by their request: fetch those states once
         for (const t of this.threads().slice(0, 8))
           if (!this.state.states[t.runId]) await this.refreshState(t.runId);
       } catch (e) {
-        this.set({ reachable: false });
-        this.log(`poll failed: ${e instanceof Error ? e.message : String(e)}`);
+        if (isUnauthorized(e)) this.set({ unauthorized: true, reachable: true });
+        else this.set({ reachable: false });
+        this.log(`poll failed: ${message(e)}`);
       }
     })();
     try {
@@ -220,7 +237,7 @@ export class AppStore {
     if (rootId) void this.refresh();
   }
 
-  /** Streams every run of the open thread once, refreshes their states, reports ended children. */
+  /** Streams every run of the open thread, refreshes their states, reports ended children once. */
   private async syncThread(rootId: string): Promise<void> {
     const members = [...this.turnsOf(rootId), ...this.tasksOf(rootId)];
     const first = !this.seenThreads.has(rootId);
@@ -232,8 +249,9 @@ export class AppStore {
         await this.refreshState(m.runId);
       if (!this.subs.has(m.runId) && !this.state.ended[m.runId]) this.follow(m.runId);
     }
+    // a child is reported when its stream ended, so the event carries its whole timeline
     for (const t of this.tasksOf(rootId)) {
-      const status = this.state.ended[t.runId] ?? (TERMINAL.has(t.status) ? t.status : undefined);
+      const status = this.state.ended[t.runId];
       if (!status || this.reported.has(t.runId)) continue;
       this.reported.add(t.runId);
       const st = this.state.states[t.runId];
@@ -249,7 +267,7 @@ export class AppStore {
       const st = await this.client.getRun(runId);
       this.set((s) => ({ states: { ...s.states, [runId]: st } }));
     } catch (e) {
-      this.log(`state ${runId}: ${e instanceof Error ? e.message : String(e)}`);
+      this.log(`state ${runId}: ${message(e)}`);
     }
   }
   private refreshSoon(runId: string): void {
@@ -264,98 +282,147 @@ export class AppStore {
   }
 
   private follow(runId: string): void {
-    const sub: Sub = { controller: new AbortController(), frames: [] };
+    const sub: Sub = {
+      controller: new AbortController(),
+      frames: [],
+      pending: [],
+      cursor: this.cursors.get(runId),
+    };
     this.subs.set(runId, sub);
+    const flush = () => {
+      sub.flush = undefined;
+      if (sub.pending.length === 0) return;
+      sub.frames.push(...sub.pending);
+      sub.pending = [];
+      this.set((s) => ({
+        cards: { ...s.cards, [runId]: reduceTimeline(s.states[runId], sub.frames) },
+      }));
+    };
     void (async () => {
       try {
-        for await (const env of this.client.stream(runId, { signal: sub.controller.signal })) {
-          sub.frames.push(env);
+        for await (const env of this.client.stream(runId, {
+          since: sub.cursor,
+          signal: sub.controller.signal,
+        })) {
           sub.cursor = env.cursor;
+          this.cursors.set(runId, env.cursor);
+          sub.pending.push(env);
           if (env.kind === 'run' && RUN_EVENT_REFRESH.has(env.event.type)) this.refreshSoon(runId);
-          this.set((s) => ({
-            cards: { ...s.cards, [runId]: reduceTimeline(s.states[runId], sub.frames) },
-            ...(env.kind === 'end' ? { ended: { ...s.ended, [runId]: env.status } } : {}),
-          }));
           if (env.kind === 'end') {
+            if (sub.flush) clearTimeout(sub.flush);
+            flush();
+            this.set((s) => ({ ended: { ...s.ended, [runId]: env.status } }));
             await this.refreshState(runId);
             if (this.running) void this.refresh();
-          }
+          } else if (!sub.flush) sub.flush = setTimeout(flush, FLUSH_MS);
         }
       } catch (e) {
-        if (!sub.controller.signal.aborted)
-          this.log(`stream ${runId}: ${e instanceof Error ? e.message : String(e)}`);
+        if (!sub.controller.signal.aborted) this.log(`stream ${runId}: ${message(e)}`);
       } finally {
+        if (sub.flush) clearTimeout(sub.flush);
+        flush();
         if (this.subs.get(runId) === sub) this.subs.delete(runId);
       }
     })();
   }
   private unfollow(runId: string): void {
-    this.subs.get(runId)?.controller.abort();
+    const sub = this.subs.get(runId);
+    if (sub?.flush) clearTimeout(sub.flush);
+    sub?.controller.abort();
     this.subs.delete(runId);
   }
 
   // ---- actions
 
-  /** A new conversation on the default project and org; returns the thread id and opens it. */
-  async newChat(text: string): Promise<string> {
-    const project = this.state.settings.project ?? (await this.client.projects())[0]?.path;
-    if (!project) throw new Error('no project to start in: pick one in Settings');
-    const orgRoot = this.state.settings.org ?? (await this.client.defaultOrg()).root;
-    const info = await this.client.orgInfo(orgRoot);
-    const workflow = info.single[0] ?? 'chat';
-    const { runId } = await this.client.submitRun({
-      orgRoot,
-      project,
-      workflow,
-      input: text,
-      adapter: info.adapter && info.adapter !== 'mock' ? info.adapter : 'direct',
-      workspace: 'inplace',
-      ...(this.state.settings.model ? { model: this.state.settings.model } : {}),
-    } as SubmitRequest);
-    await this.refresh();
-    this.openThread(runId);
-    return runId;
-  }
-
-  /** The next turn of a thread: the conversation so far travels as messages, the text is the new turn. */
-  async send(
-    rootId: string,
-    text: string,
-    o: { event?: boolean } = {},
-  ): Promise<string | undefined> {
-    const turns = this.turnsOf(rootId);
-    const previous = turns[turns.length - 1];
-    if (!previous) return undefined;
-    const prev = this.state.states[previous.runId] ?? (await this.client.getRun(previous.runId));
-    const reply = replyText(this.state.cards[previous.runId] ?? []);
-    const messages = [
-      ...conversationOf(prev.input),
-      { role: 'user' as const, content: requestText(prev.input) },
-      ...(reply ? [{ role: 'assistant' as const, content: reply }] : []),
-    ];
-    this.set((s) => ({ busy: { ...s.busy, [rootId]: true } }));
+  /** A new conversation on the default project and org; opens it. Undefined (and an error) when it could not start. */
+  async newChat(text: string): Promise<string | undefined> {
     try {
+      const project = this.state.settings.project ?? (await this.client.projects())[0]?.path;
+      if (!project) throw new Error('no project to start in: pick one in Settings');
+      const orgRoot = this.state.settings.org ?? (await this.client.defaultOrg()).root;
+      const info = await this.client.orgInfo(orgRoot);
+      const workflow = info.single[0] ?? 'chat';
       const { runId } = await this.client.submitRun({
-        orgRoot: prev.orgRoot ?? previous.orgRoot ?? '',
-        project: prev.project ?? previous.project ?? prev.workspace,
-        workflow: previous.workflow,
+        orgRoot,
+        project,
+        workflow,
         input: text,
-        messages,
-        thread: rootId,
-        ...(o.event ? { event: true } : {}),
-        ...(prev.model ? { model: prev.model } : {}),
-        adapter: prev.adapter as SubmitRequest['adapter'],
-        workspace: prev.workspaceMode,
-        budgetUsd: prev.budgetUsd,
+        adapter: info.adapter && info.adapter !== 'mock' ? info.adapter : 'direct',
+        workspace: 'inplace',
+        ...(this.state.settings.model ? { model: this.state.settings.model } : {}),
       } as SubmitRequest);
       await this.refresh();
+      this.openThread(runId);
       return runId;
     } catch (e) {
-      this.set({ error: e instanceof Error ? e.message : String(e) });
-      throw e;
-    } finally {
-      this.set((s) => ({ busy: { ...s.busy, [rootId]: false } }));
+      this.set({ error: message(e) });
+      return undefined;
     }
+  }
+
+  /** Waits until a run is over (bounded), so the next turn builds on its whole reply. */
+  private async settled(runId: string): Promise<void> {
+    const until = Date.now() + SETTLE_LIMIT_MS;
+    while (Date.now() < until) {
+      const known =
+        this.state.runs.find((r) => r.runId === runId)?.status ?? this.state.states[runId]?.status;
+      if (known && TERMINAL.has(known)) return;
+      try {
+        const st = await this.client.getRun(runId);
+        this.set((s) => ({ states: { ...s.states, [runId]: st } }));
+        if (TERMINAL.has(st.status)) return;
+      } catch (e) {
+        this.log(`settle ${runId}: ${message(e)}`);
+      }
+      await new Promise((r) => setTimeout(r, this.settleEvery));
+    }
+  }
+
+  /**
+   * The next turn of a thread: after the previous one settled, the conversation so far
+   * travels as messages and the text is the new turn. Turns of a thread go one at a time.
+   */
+  send(rootId: string, text: string, o: { event?: boolean } = {}): Promise<string | undefined> {
+    const run = async (): Promise<string | undefined> => {
+      const turns = this.turnsOf(rootId);
+      const previous = turns[turns.length - 1];
+      if (!previous) return undefined;
+      if (!o.event) this.set((s) => ({ busy: { ...s.busy, [rootId]: true } }));
+      try {
+        await this.settled(previous.runId);
+        const prev =
+          this.state.states[previous.runId] ?? (await this.client.getRun(previous.runId));
+        const reply = replyText(this.state.cards[previous.runId] ?? []);
+        const messages = [
+          ...conversationOf(prev.input),
+          { role: 'user' as const, content: requestText(prev.input) },
+          ...(reply ? [{ role: 'assistant' as const, content: reply }] : []),
+        ];
+        const { runId } = await this.client.submitRun({
+          orgRoot: prev.orgRoot ?? previous.orgRoot ?? '',
+          project: prev.project ?? previous.project ?? prev.workspace,
+          workflow: previous.workflow,
+          input: text,
+          messages,
+          thread: rootId,
+          ...(o.event ? { event: true } : {}),
+          ...(prev.model ? { model: prev.model } : {}),
+          adapter: prev.adapter as SubmitRequest['adapter'],
+          workspace: prev.workspaceMode,
+          budgetUsd: prev.budgetUsd,
+        } as SubmitRequest);
+        await this.refresh();
+        return runId;
+      } catch (e) {
+        this.set({ error: message(e) });
+        return undefined;
+      } finally {
+        if (!o.event) this.set((s) => ({ busy: { ...s.busy, [rootId]: false } }));
+      }
+    };
+    const chained = (this.chains.get(rootId) ?? Promise.resolve()).then(run, run);
+    this.chains.set(rootId, chained);
+    return chained;
   }
 
   /** Stops the live turn of a thread. */
@@ -363,21 +430,29 @@ export class AppStore {
     const live = this.liveTurn(rootId);
     if (live) await this.cancel(live.runId);
   }
-  async answer(inboxId: string, approved: boolean, note?: string): Promise<void> {
-    await this.client.answer(inboxId, { approved, ...(note ? { note } : {}) });
-    if (this.running) await this.refresh();
+  private async act(what: () => Promise<unknown>): Promise<void> {
+    try {
+      await what();
+      if (this.running) await this.refresh();
+    } catch (e) {
+      this.set({ error: message(e) });
+    }
   }
-  async steer(runId: string, note: string): Promise<void> {
-    await this.client.steer(runId, { note });
-    if (this.running) await this.refresh();
+  answer(inboxId: string, approved: boolean, note?: string): Promise<void> {
+    return this.act(() => this.client.answer(inboxId, { approved, ...(note ? { note } : {}) }));
   }
-  async cancel(runId: string): Promise<void> {
-    await this.client.cancel(runId);
-    if (this.running) await this.refresh();
+  steer(runId: string, note: string): Promise<void> {
+    return this.act(() => this.client.steer(runId, { note }));
   }
-  async resume(runId: string): Promise<void> {
-    await this.client.resume(runId);
-    if (this.running) await this.refresh();
+  cancel(runId: string): Promise<void> {
+    return this.act(() => this.client.cancel(runId));
+  }
+  resume(runId: string, budgetUsd?: number): Promise<void> {
+    return this.act(() => this.client.resume(runId, budgetUsd !== undefined ? { budgetUsd } : {}));
+  }
+  /** The audit of a run as Markdown, fetched with the token. */
+  audit(runId: string): Promise<string> {
+    return this.client.auditMarkdown(runId);
   }
   clearError(): void {
     this.set({ error: undefined });

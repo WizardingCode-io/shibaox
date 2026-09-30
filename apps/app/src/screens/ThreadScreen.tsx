@@ -2,12 +2,13 @@ import type { InboxItem } from '@wizardingcode/shibaox-daemon';
 import {
   type Block,
   type Card,
+  money,
   summarizeInput,
   type ThreadMessage,
 } from '@wizardingcode/shibaox-view';
 import { useEffect, useMemo, useState } from 'react';
 import { ds } from '../ds.js';
-import { clock, duration, money, RUN_STATUS_TONE, RUN_STATUS_WORD, shortModel } from '../format.js';
+import { clock, duration, RUN_STATUS_TONE, RUN_STATUS_WORD, shortModel } from '../format.js';
 import { navigate } from '../router.js';
 import { useAppState, useStore } from '../store/hooks.js';
 
@@ -135,15 +136,17 @@ function ChatTab(props: {
   rootId: string;
   messages: ThreadMessage[];
   inbox: InboxItem[];
-  running: string[];
 }): JSX.Element {
   const S = ds();
   const byRun = (runId: string) => props.inbox.filter((i) => i.runId === runId);
+  // what a dispatched run asks for belongs to the conversation too: it follows the last message
+  const turnRuns = new Set(props.messages.map((m) => m.runId));
+  const fromTasks = props.inbox.filter((i) => !turnRuns.has(i.runId));
   return (
     <div className="thread">
       {props.messages.map((m) =>
         m.from === 'user' ? (
-          <S.Message key={m.key} from="user" time={clock(m.time)}>
+          <S.Message key={m.key} from="user">
             <Paragraphs text={m.text} />
           </S.Message>
         ) : (
@@ -173,9 +176,20 @@ function ChatTab(props: {
           </div>
         ),
       )}
+      {fromTasks.length > 0 ? (
+        <div className="stack">
+          {fromTasks.map((i) =>
+            i.kind === 'approval' ? (
+              <ApprovalCall key={i.id} item={i} />
+            ) : (
+              <HumanAsk key={i.id} item={i} />
+            ),
+          )}
+          <S.ThinkingIndicator label="Waiting for your approval" />
+        </div>
+      ) : null}
       {props.messages.length === 0 ? (
         <div className="empty">
-          <S.Mascot mood="default" size={96} />
           <h2>Nothing here yet</h2>
           <p>Ask Shibaox to do something below.</p>
         </div>
@@ -184,11 +198,64 @@ function ChatTab(props: {
   );
 }
 
-function TasksTab(props: { rootId: string }): JSX.Element {
+/** A note for a running task (a turn or a dispatched run): it stops and starts again with it. */
+function SteerForm(props: { runId: string; onDone: () => void }): JSX.Element {
+  const S = ds();
+  const store = useStore();
+  const [note, setNote] = useState('');
+  return (
+    <form
+      className="steer"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (note.trim()) void store.steer(props.runId, note.trim());
+        props.onDone();
+      }}
+    >
+      <S.Input
+        placeholder="A note for the running task"
+        value={note}
+        onChange={(e) => setNote((e.target as HTMLInputElement).value)}
+      />
+      <S.Button size="sm" variant="primary" type="submit">
+        Send note
+      </S.Button>
+    </form>
+  );
+}
+
+/** A paused run (budget spent): a budget and Resume. */
+function ResumeForm(props: { runId: string }): JSX.Element {
+  const S = ds();
+  const store = useStore();
+  const [budget, setBudget] = useState('');
+  return (
+    <form
+      className="steer"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const n = Number.parseFloat(budget);
+        void store.resume(props.runId, Number.isFinite(n) && n > 0 ? n : undefined);
+      }}
+    >
+      <S.Input
+        placeholder="Budget (USD)"
+        value={budget}
+        onChange={(e) => setBudget((e.target as HTMLInputElement).value)}
+      />
+      <S.Button size="sm" variant="primary" type="submit">
+        Resume
+      </S.Button>
+    </form>
+  );
+}
+
+function TasksTab(props: { rootId: string; inbox: InboxItem[] }): JSX.Element {
   const S = ds();
   const store = useStore();
   const state = useAppState();
   const tasks = store.tasksOf(props.rootId);
+  const [steering, setSteering] = useState<string | undefined>(undefined);
   return (
     <div className="page">
       {tasks.length === 0 ? (
@@ -197,6 +264,7 @@ function TasksTab(props: { rootId: string }): JSX.Element {
       {tasks.map((t) => {
         const st = state.states[t.runId];
         const live = !['completed', 'failed', 'cancelled'].includes(t.status);
+        const asks = props.inbox.filter((i) => i.runId === t.runId);
         return (
           <S.Card
             key={t.runId}
@@ -209,17 +277,38 @@ function TasksTab(props: { rootId: string }): JSX.Element {
               </S.Badge>
             }
             footer={
-              <div className="row">
-                <span className="muted">{money(t.spentUsd)}</span>
-                <span className="grow" />
-                <S.Button size="sm" onClick={() => navigate(`#/t/${encodeURIComponent(t.runId)}`)}>
-                  Open
-                </S.Button>
-                {live ? (
-                  <S.Button size="sm" variant="danger" onClick={() => void store.cancel(t.runId)}>
-                    Cancel
-                  </S.Button>
+              <div className="stack">
+                {asks.map((i) =>
+                  i.kind === 'approval' ? (
+                    <ApprovalCall key={i.id} item={i} />
+                  ) : (
+                    <HumanAsk key={i.id} item={i} />
+                  ),
+                )}
+                {t.status === 'paused_budget' ? <ResumeForm runId={t.runId} /> : null}
+                {steering === t.runId ? (
+                  <SteerForm runId={t.runId} onDone={() => setSteering(undefined)} />
                 ) : null}
+                <div className="row">
+                  <span className="muted">{money(t.spentUsd)}</span>
+                  <span className="grow" />
+                  <S.Button
+                    size="sm"
+                    onClick={() => navigate(`#/t/${encodeURIComponent(t.runId)}`)}
+                  >
+                    Open
+                  </S.Button>
+                  {t.status === 'running' ? (
+                    <S.Button size="sm" onClick={() => setSteering(t.runId)}>
+                      Steer
+                    </S.Button>
+                  ) : null}
+                  {live ? (
+                    <S.Button size="sm" variant="danger" onClick={() => void store.cancel(t.runId)}>
+                      Cancel
+                    </S.Button>
+                  ) : null}
+                </div>
               </div>
             }
           />
@@ -229,7 +318,7 @@ function TasksTab(props: { rootId: string }): JSX.Element {
   );
 }
 
-function LogsTab(props: { rootId: string; auditUrl?: (id: string) => string }): JSX.Element {
+function LogsTab(props: { rootId: string }): JSX.Element {
   const S = ds();
   const store = useStore();
   const state = useAppState();
@@ -296,20 +385,23 @@ function LogsTab(props: { rootId: string; auditUrl?: (id: string) => string }): 
       <div className="row">
         <span className="muted">Every node, gate, decision and approval of this conversation.</span>
         <span className="grow" />
-        {props.auditUrl ? (
-          <S.Button
-            size="sm"
-            icon="file-text"
-            onClick={() =>
-              window.open(
-                props.auditUrl?.(turns[turns.length - 1]?.runId ?? props.rootId),
-                '_blank',
+        <S.Button
+          size="sm"
+          icon="file-text"
+          onClick={() =>
+            void store
+              .audit(turns[turns.length - 1]?.runId ?? props.rootId)
+              .then((md) =>
+                window.open(
+                  URL.createObjectURL(new Blob([md], { type: 'text/markdown' })),
+                  '_blank',
+                ),
               )
-            }
-          >
-            Audit
-          </S.Button>
-        ) : null}
+              .catch(() => undefined)
+          }
+        >
+          Open audit
+        </S.Button>
       </div>
       {cards.map(({ runId, card }) => {
         const l = line(card);
@@ -327,15 +419,12 @@ function LogsTab(props: { rootId: string; auditUrl?: (id: string) => string }): 
 }
 
 /** The mockup's main column for one conversation: top bar, tabs, thread, composer. */
-export function ThreadScreen(props: {
-  rootId: string;
-  auditUrl?: (id: string) => string;
-}): JSX.Element {
+export function ThreadScreen(props: { rootId: string }): JSX.Element {
   const S = ds();
   const store = useStore();
   const state = useAppState();
   const [tab, setTab] = useState<'chat' | 'tasks' | 'logs'>('chat');
-  const [steering, setSteering] = useState<string | undefined>(undefined);
+  const [steering, setSteering] = useState(false);
   useEffect(() => {
     store.openThread(props.rootId);
     return () => store.openThread(undefined);
@@ -360,34 +449,19 @@ export function ThreadScreen(props: {
     <main className="main">
       <div className="top">
         <h2>{view?.title || 'Conversation'}</h2>
-        <S.AgentStatus status={view?.status ?? 'idle'} />
+        <S.AgentStatus status={inbox.length > 0 ? 'waiting' : (view?.status ?? 'idle')} />
         <span className="grow" />
-        {live ? (
-          steering === undefined ? (
+        {live?.status === 'paused_budget' ? <ResumeForm runId={live.runId} /> : null}
+        {live && live.status === 'running' ? (
+          steering ? (
+            <SteerForm runId={live.runId} onDone={() => setSteering(false)} />
+          ) : (
             <S.IconButton
               icon="send-horizontal"
               label="Steer"
               size="sm"
-              onClick={() => setSteering('')}
+              onClick={() => setSteering(true)}
             />
-          ) : (
-            <form
-              className="steer"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (steering.trim()) void store.steer(live.runId, steering.trim());
-                setSteering(undefined);
-              }}
-            >
-              <S.Input
-                placeholder="A note for the running task"
-                value={steering}
-                onChange={(e) => setSteering((e.target as HTMLInputElement).value)}
-              />
-              <S.Button size="sm" variant="primary" type="submit">
-                Steer
-              </S.Button>
-            </form>
           )
         ) : null}
         <S.Tabs
@@ -401,15 +475,10 @@ export function ThreadScreen(props: {
         />
       </div>
       {tab === 'chat' ? (
-        <ChatTab
-          rootId={props.rootId}
-          messages={view?.messages ?? []}
-          inbox={inbox}
-          running={view?.running ?? []}
-        />
+        <ChatTab rootId={props.rootId} messages={view?.messages ?? []} inbox={inbox} />
       ) : null}
-      {tab === 'tasks' ? <TasksTab rootId={props.rootId} /> : null}
-      {tab === 'logs' ? <LogsTab rootId={props.rootId} auditUrl={props.auditUrl} /> : null}
+      {tab === 'tasks' ? <TasksTab rootId={props.rootId} inbox={inbox} /> : null}
+      {tab === 'logs' ? <LogsTab rootId={props.rootId} /> : null}
       {tab === 'chat' ? (
         <div className="compose">
           <S.Composer

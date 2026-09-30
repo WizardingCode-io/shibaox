@@ -19,13 +19,11 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "dependencies": {
+  "devDependencies": {
+    "@types/node": "^26.6.2",
     "@wizardingcode/shibaox-core": "workspace:*",
     "@wizardingcode/shibaox-daemon": "workspace:*",
     "@wizardingcode/shibaox-schemas": "workspace:*"
-  },
-  "devDependencies": {
-    "@types/node": "^26.6.2"
   },
   "publishConfig": {
     "access": "public"
@@ -33,5 +31,21 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/WizardingCode-io/shibaox.git"
+  },
+  "peerDependencies": {
+    "@wizardingcode/shibaox-core": ">=0.2.0",
+    "@wizardingcode/shibaox-daemon": ">=0.2.0",
+    "@wizardingcode/shibaox-schemas": ">=0.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@wizardingcode/shibaox-core": {
+      "optional": true
+    },
+    "@wizardingcode/shibaox-daemon": {
+      "optional": true
+    },
+    "@wizardingcode/shibaox-schemas": {
+      "optional": true
+    }
   }
 }

@@ -297,7 +297,10 @@ export class DaemonServer {
     const handler = (req: IncomingMessage, res: ServerResponse) => {
       const path = (req.url ?? '/').split('?')[0] ?? '/';
       // the app itself is public (HTML, scripts, styles); everything it calls needs the token
-      if (req.method === 'GET' && (path === '/app' || path.startsWith('/app/')))
+      if (
+        (req.method === 'GET' || req.method === 'HEAD') &&
+        (path === '/app' || path.startsWith('/app/'))
+      )
         return serveAppFile(this.deps.appDist(), path, res);
       if (req.method === 'GET' && path === '/') {
         res.writeHead(302, { location: '/app/' });
@@ -375,7 +378,7 @@ export class DaemonServer {
     };
 
     if (method === 'GET' && path === '/health') return send(res, 200, this.deps.health());
-    if (method === 'GET' && (path === '/app' || path.startsWith('/app/')))
+    if ((method === 'GET' || method === 'HEAD') && (path === '/app' || path.startsWith('/app/')))
       return serveAppFile(this.deps.appDist(), path, res);
     if (method === 'GET' && path === '/models') return send(res, 200, await this.deps.models());
     if (path === '/orgs/config' && (method === 'GET' || method === 'PUT')) {

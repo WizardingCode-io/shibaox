@@ -32,6 +32,8 @@ export interface AppState {
   settings: Settings;
   /** The last error worth a toast. */
   error?: string;
+  /** The daemon refused the token: back to Connect. */
+  unauthorized?: boolean;
 }
 
 export const initialState = (settings: Settings): AppState => ({

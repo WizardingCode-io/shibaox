@@ -70,7 +70,10 @@ export async function startBridge(o: BridgeOptions): Promise<Bridge> {
   };
   const server: Server = createServer((req, res) => {
     const path = (req.url ?? '/').split('?')[0] ?? '/';
-    if (req.method === 'GET' && (path === '/app' || path.startsWith('/app/')))
+    if (
+      (req.method === 'GET' || req.method === 'HEAD') &&
+      (path === '/app' || path.startsWith('/app/'))
+    )
       return serveAppFile(o.dist, path, res);
     if (req.method === 'GET' && path === '/') {
       res.writeHead(302, { location: '/app/' });

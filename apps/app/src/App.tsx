@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { AppClient } from './api/client.js';
 import {
   type Connection,
@@ -43,11 +43,7 @@ function applyTheme(theme: 'light' | 'dark' | 'system'): void {
   }
 }
 
-function Shell(props: {
-  base: string;
-  onDisconnect: () => void;
-  auditUrl: (id: string) => string;
-}): JSX.Element {
+function Shell(props: { base: string; onDisconnect: () => void }): JSX.Element {
   const S = ds();
   const store = useStore();
   const state = useAppState();
@@ -66,7 +62,7 @@ function Shell(props: {
     <div className="app">
       <Sidebar route={route} onNewChat={newChat} />
       {route.name === 'thread' ? (
-        <ThreadScreen rootId={route.id} auditUrl={props.auditUrl} />
+        <ThreadScreen rootId={route.id} />
       ) : route.name === 'chats' ? (
         <ChatsScreen />
       ) : route.name === 'settings' ? (
@@ -81,8 +77,7 @@ function Shell(props: {
           </div>
           <div className="thread">
             <div className="empty">
-              <S.Mascot mood={draft ? 'happy' : 'default'} size={120} />
-              <h2>What should Shibaox do?</h2>
+              <h2>{draft ? 'A fresh start' : 'What should Shibaox do?'}</h2>
               <p>
                 Describe the work in your own words. It plans, acts, and hands larger work to your
                 team.
@@ -94,12 +89,9 @@ function Shell(props: {
               placeholder="Ask Shibaox to do something…"
               model={state.settings.model?.split('/').pop()}
               onSend={(text) =>
-                void store
-                  .newChat(text)
-                  .then((id) => {
-                    window.location.hash = `#/t/${encodeURIComponent(id)}`;
-                  })
-                  .catch(() => undefined)
+                void store.newChat(text).then((id) => {
+                  if (id) window.location.hash = `#/t/${encodeURIComponent(id)}`;
+                })
               }
             />
           </div>
@@ -131,13 +123,24 @@ export function App(props: AppProps): JSX.Element {
     const client = props.connect ? props.connect(conn) : new AppClient(conn.base, conn.token);
     return new AppStore({ client, storage: props.storage });
   }, [conn, props.store, props.connect, props.storage]);
-  if (!conn || !store)
+  const unauthorized = useSyncExternalStore(
+    (l) => store?.subscribe(l) ?? (() => undefined),
+    () => store?.get().unauthorized === true,
+    () => false,
+  );
+  if (!conn || !store || unauthorized)
     return (
       <ConnectScreen
         initialBase={
-          window.location.origin.startsWith('http')
+          conn?.base ??
+          (window.location.origin.startsWith('http')
             ? window.location.origin
-            : 'http://127.0.0.1:7433'
+            : 'http://127.0.0.1:7433')
+        }
+        notice={
+          unauthorized
+            ? 'The daemon refused the token. Enter the current one (shibaox app prints an address with it).'
+            : undefined
         }
         onConnect={(c) => {
           saveConnection(props.storage, c);
@@ -145,12 +148,10 @@ export function App(props: AppProps): JSX.Element {
         }}
       />
     );
-  const auditUrl = (id: string) => `${conn.base}/runs/${encodeURIComponent(id)}/audit?format=md`;
   return (
     <StoreContext.Provider value={store}>
       <Shell
         base={conn.base}
-        auditUrl={auditUrl}
         onDisconnect={() => {
           clearConnection(props.storage);
           setConn(undefined);
