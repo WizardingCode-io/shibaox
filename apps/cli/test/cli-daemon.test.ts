@@ -3,6 +3,7 @@ import {
   appendFileSync,
   chmodSync,
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -661,5 +662,46 @@ describe('shibaox mcp', () => {
     expect(test.stdout).toContain('shout');
     const nope = await s.cli('mcp', 'test', 'nope', '--org', s.org);
     expect(nope.code).not.toBe(0);
+  });
+});
+
+describe('shibaox init --stack', () => {
+  it('auto detects the sample repo as node, writes shibaox.yaml and the stack files; a wrong stack is refused', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-stack-'));
+    tmpDirs.push(dir);
+    cpSync(sample, dir, { recursive: true });
+    const home = homePaths({ SHIBAOX_HOME: join(dir, 'home') });
+    const cli = (...args: string[]) =>
+      new Promise<Result>((resolve) => {
+        execFile(
+          process.execPath,
+          [bin, ...args],
+          {
+            env: {
+              PATH: process.env.PATH ?? '',
+              SHIBAOX_HOME: home.root,
+              HOME: dir,
+              SHIBAOX_NO_AUTOSTART: '1',
+            },
+          },
+          (err, stdout, stderr) =>
+            resolve({
+              code: (err as { code?: number } | null)?.code ?? 0,
+              stdout: String(stdout),
+              stderr: String(stderr),
+            }),
+        );
+      });
+    const r = await cli('init', dir, '--stack', 'auto');
+    expect(r.code, r.stderr).toBe(0);
+    expect(r.stdout).toMatch(/stack: node/);
+    expect(readFileSync(join(dir, 'shibaox.yaml'), 'utf8')).toContain('tests: "npm test"');
+    expect(existsSync(join(dir, 'org', 'workflows', 'security-scan.yaml'))).toBe(true);
+    expect(existsSync(join(dir, 'org', 'gates', 'typecheck.yaml'))).toBe(false); // no tsconfig in the sample
+    const bad = await cli('init', join(dir, 'other'), '--stack', 'cobol');
+    expect(bad.code).not.toBe(0);
+    const none = await cli('init', join(dir, 'empty'), '--stack', 'auto');
+    expect(none.code).toBe(0);
+    expect(none.stdout).toMatch(/no stack detected/i);
   });
 });

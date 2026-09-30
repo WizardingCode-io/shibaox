@@ -15,6 +15,8 @@ export const ProjectFileSchema = z.object({
   tests: z.string().min(1).optional(),
   /** The lint command of the `lint` check (detected when absent). */
   lint: z.string().min(1).optional(),
+  /** The type checker (`tsc --noEmit`, `mypy .`, `go vet ./...`), for a `typecheck` gate (detected when absent). */
+  typecheck: z.string().min(1).optional(),
   /** Globs (relative to the project root) a run may not write without a `protected` approval. */
   protected: z.array(z.string().min(1)).default([]),
 });

@@ -28,7 +28,7 @@ Every run of a routine leaves one line in `90-system/routines/<id>.md` in the or
 
 ## Routines as code
 
-`org/routines/<id>.yaml` in the org, loaded with `shibaox routine sync --org ./org`:
+`org/routines/<id>.yaml` in the org, loaded with `shibaox routine sync --org ./org` (`shibaox init --stack` writes `security-scan.yaml`: a weekly dependency audit on a cron):
 
 ```yaml
 routine: bugs                 # the id

@@ -181,3 +181,42 @@ export function detectLintCommand(dir: string): string | undefined {
   if (has(dir, 'Cargo.toml')) return 'cargo clippy --quiet -- -D warnings';
   return undefined;
 }
+
+export type Stack = 'node' | 'python' | 'php-laravel' | 'go';
+export const STACKS: readonly Stack[] = ['node', 'python', 'php-laravel', 'go'];
+
+/** The stack a project is written in, from its manifest; undefined when none is recognised. */
+export function detectStack(dir: string): Stack | undefined {
+  if (has(dir, 'package.json')) return 'node';
+  if (has(dir, 'pyproject.toml') || has(dir, 'requirements.txt') || has(dir, 'setup.py'))
+    return 'python';
+  if (has(dir, 'composer.json') && has(dir, 'artisan')) return 'php-laravel';
+  if (has(dir, 'go.mod')) return 'go';
+  return undefined;
+}
+
+/**
+ * The command that type-checks the project: `shibaox.yaml typecheck` first, then the checker
+ * it is configured for (tsconfig → tsc, mypy/pyright config, go vet, phpstan); undefined
+ * when there is none.
+ */
+export function detectTypecheckCommand(dir: string): string | undefined {
+  const own = projectFile(dir)?.typecheck;
+  if (own) return own;
+  if (has(dir, 'package.json') && has(dir, 'tsconfig.json'))
+    return has(dir, 'pnpm-lock.yaml') ? 'pnpm exec tsc --noEmit' : 'npx --no tsc --noEmit';
+  if (has(dir, 'mypy.ini')) return 'mypy .';
+  if (has(dir, 'pyproject.toml')) {
+    try {
+      if (/^\[tool\.mypy\]/m.test(readFileSync(join(dir, 'pyproject.toml'), 'utf8')))
+        return 'mypy .';
+    } catch {
+      // unreadable pyproject
+    }
+  }
+  if (has(dir, 'pyrightconfig.json')) return 'pyright';
+  if (has(dir, 'go.mod')) return 'go vet ./...';
+  if (has(dir, 'composer.json') && (has(dir, 'phpstan.neon') || has(dir, 'phpstan.neon.dist')))
+    return 'vendor/bin/phpstan analyse --no-progress';
+  return undefined;
+}

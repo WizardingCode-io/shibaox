@@ -29,7 +29,7 @@ The judge model is `gates.judge` in `models.yaml`, else the `decision` tier when
 
 ## The template's gates
 
-`tests.yaml`, `lint.yaml` and `review.yaml`. `hello-feature` and `land-feature` gate on `[tests]`. Add `lint` once the base branch is lint-clean (otherwise the agent is asked to fix the whole repository), and `review` for a model review before the human approval:
+`tests.yaml`, `lint.yaml`, `review.yaml` and `ci.yaml`; with `shibaox init --stack` also `typecheck.yaml` (a `code` check running the detected checker: `tsc --noEmit`, `mypy .`, `pyright`, `go vet ./...`, `phpstan`; listed in the team's `gates` so every workflow gets it) and a `review.yaml` whose `criteria` are the stack's checklist. `hello-feature` and `land-feature` gate on `[tests]`. Add `lint` once the base branch is lint-clean (otherwise the agent is asked to fix the whole repository), and `review` for a model review before the human approval:
 
 ```yaml
 qa: { type: gate, gates: [tests, lint, review], on_pass: judge, on_fail: implement, max_retries: 2 }

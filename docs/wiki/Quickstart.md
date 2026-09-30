@@ -20,7 +20,7 @@ Keys live in Shibaox's own vault (`~/.shibaox/secrets.json`), shared by the daem
 
 The first time the daemon starts it creates a default org in `~/.shibaox/org`: an `engineering` team with `team-leader`, `analyst` and `backend` roles, an `assistant` role for conversations, the gates `tests`, `lint` and `review`, and the workflows `chat`, `hello-feature` and `land-feature`. Its tiers point at what your keys allow (a Claude subscription when `claude` is installed, else OpenRouter, else the template).
 
-A project can carry its own org instead: `shibaox init .` scaffolds `org/` and `vault/` next to it, and the dashboard uses `./org` when it exists. See [Concepts](Concepts) and [Configuration](Configuration).
+A project can carry its own org instead: `shibaox init .` scaffolds `org/` and `vault/` next to it, and the dashboard uses `./org` when it exists. `shibaox init . --stack auto` reads the stack off the manifest (`package.json`, `pyproject.toml`/`requirements.txt`, `composer.json` + `artisan`, `go.mod`) and adds what a team of that stack needs on day one: a `shibaox.yaml` with the detected setup, test, lint and type-check commands and protected files, a `typecheck` gate (when a checker is configured), a `review` gate with the stack's checklist, a weekly `security-scan` (npm audit / pip-audit / composer audit / govulncheck) as a workflow and a routine file, and for Node a `frontend` role. See [Concepts](Concepts) and [Configuration](Configuration).
 
 ## 3. Talk
 

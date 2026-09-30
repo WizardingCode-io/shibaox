@@ -100,6 +100,7 @@ setup: pnpm install --frozen-lockfile   # what a fresh worktree runs first; fals
 setup_timeout_ms: 600000
 tests: pnpm test                        # the `tests` check (detected when absent)
 lint: pnpm lint                         # the `lint` check (detected when absent)
+typecheck: pnpm exec tsc --noEmit       # the checker of a `typecheck` gate (detected when absent: tsconfig, mypy/pyright config, go.mod, phpstan)
 protected: ['.github/**']               # files no run may write without a `protected` approval (see Security)
 ```
 

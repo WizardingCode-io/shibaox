@@ -42,3 +42,12 @@ describe('the project file (shibaox.yaml)', () => {
     expect(() => loadProjectFile(d)).toThrow(/shibaox\.yaml/);
   });
 });
+
+describe('shibaox.yaml typecheck', () => {
+  it('is an optional command', () => {
+    expect(ProjectFileSchema.parse({ typecheck: 'pnpm exec tsc --noEmit' }).typecheck).toBe(
+      'pnpm exec tsc --noEmit',
+    );
+    expect(ProjectFileSchema.parse({}).typecheck).toBeUndefined();
+  });
+});

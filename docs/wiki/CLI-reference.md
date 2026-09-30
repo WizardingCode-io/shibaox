@@ -27,7 +27,7 @@
 
 | Command | |
 | --- | --- |
-| `shibaox init [dir]` | scaffolds `org/` and `vault/` |
+| `shibaox init [dir] [--stack node\|python\|php-laravel\|go\|auto]` | scaffolds `org/` and `vault/`; with a stack also `shibaox.yaml` (setup, tests, lint, typecheck, protected), `typecheck` and stack `review` gates, a weekly `security-scan` workflow + routine, and (node) a `frontend` role; `auto` reads the stack off the project's manifest |
 | `shibaox tiers [--org <dir>]`, `shibaox tiers set <strong\|cheap\|decision\|judge\|adapter\|budget> <value>` | the org's tiers, judge, adapter and budget (`none` clears judge/adapter) |
 | `shibaox keys list\|set <NAME> [value]\|unset <NAME>` | the key vault (value from stdin when omitted) |
 | `shibaox mcp list [--org <dir>]`, `shibaox mcp test <id> [--org <dir>]` | the catalog's MCP servers (roles, keys), and a start-and-list check of one on the daemon |

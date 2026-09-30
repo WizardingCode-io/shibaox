@@ -1,5 +1,12 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import {
+  detectLintCommand,
+  detectSetupCommand,
+  detectTestCommand,
+  detectTypecheckCommand,
+  type Stack,
+} from '@wizardingcode/shibaox-core';
 
 export const ORG_TEMPLATE: Record<string, string> = {
   'org/.gitignore': '.shibaox/\n',
@@ -207,15 +214,154 @@ server:
   'vault/90-system/.gitkeep': '',
 };
 
-/** Writes the org/vault template files that do not exist yet; returns the created paths. */
-export function scaffoldOrg(dir: string): string[] {
+/** The stacks `shibaox init --stack` knows (`auto` detects one from the directory). */
+export { STACKS } from '@wizardingcode/shibaox-core';
+
+const STACK_DEFAULTS: Record<
+  Stack,
+  { tests: string; lint?: string; typecheck?: string; audit: string; criteria: string[] }
+> = {
+  node: {
+    tests: 'npm test',
+    audit: 'npm audit --audit-level=high',
+    criteria: [
+      'No new `any` or type assertions that hide a real type problem',
+      'Errors are handled or propagated, never swallowed; async code awaits what it starts',
+      'No stray console.log or commented-out code in the diff',
+      'New behaviour has tests next to it; existing tests were not weakened',
+    ],
+  },
+  python: {
+    tests: 'pytest',
+    lint: 'ruff check .',
+    audit: 'pip-audit',
+    criteria: [
+      'Public functions have type hints; no bare `except:`',
+      'No print debugging left; logging is used where output matters',
+      'Dependencies added to the project file, never installed ad hoc',
+      'New behaviour has tests next to it; existing tests were not weakened',
+    ],
+  },
+  'php-laravel': {
+    tests: 'php artisan test',
+    lint: 'vendor/bin/pint --test',
+    audit: 'composer audit',
+    criteria: [
+      'Validation lives in FormRequests, not in controllers',
+      'No queries or business logic in Blade views',
+      'Migrations are reversible (down) and never edit a migration that already ran',
+      'New behaviour has feature or unit tests; existing tests were not weakened',
+    ],
+  },
+  go: {
+    tests: 'go test ./...',
+    typecheck: 'go vet ./...',
+    audit: 'govulncheck ./...',
+    criteria: [
+      'Every error is handled or returned wrapped with context (%w); none discarded with _',
+      'context.Context is passed to everything that blocks or does I/O',
+      'No panic in library code; goroutines have a way to stop',
+      'New behaviour has tests next to it; existing tests were not weakened',
+    ],
+  },
+};
+
+const yamlList = (items: string[]) => `[${items.join(', ')}]`;
+const quote = (s: string) => JSON.stringify(s);
+
+/** The files a stack adds on top of the generic scaffold, computed from the project directory. */
+function stackFiles(dir: string, stack: Stack): Record<string, string> {
+  const d = STACK_DEFAULTS[stack];
+  const setup = detectSetupCommand(dir)?.command;
+  const tests = detectTestCommand(dir) ?? d.tests;
+  const lint = detectLintCommand(dir) ?? d.lint;
+  const typecheck = detectTypecheckCommand(dir) ?? d.typecheck;
+  const project = [
+    `# shibaox.yaml: what a run needs to know about this ${stack} project (every key optional)`,
+    ...(setup
+      ? [`setup: ${quote(setup)}                    # dependency install in a fresh worktree`]
+      : []),
+    `tests: ${quote(tests)}`,
+    ...(lint ? [`lint: ${quote(lint)}`] : []),
+    ...(typecheck ? [`typecheck: ${quote(typecheck)}`] : []),
+    `protected: ['.github/workflows/**', '.env', '.env.*']   # never written by a run without a protected approval`,
+    '',
+  ].join('\n');
+  const files: Record<string, string> = {
+    'shibaox.yaml': project,
+    'org/gates/review.yaml': `gate: review
+checks:
+  # a code review by the judge model, criterion by criterion (the ${stack} checklist; edit freely)
+  - name: review
+    type: review
+    criteria:
+${d.criteria.map((c) => `      - ${quote(c)}`).join('\n')}
+`,
+    'org/workflows/security-scan.yaml': `workflow: security-scan
+team: engineering
+description: Weekly dependency audit; a triage of what it found.
+start: audit
+nodes:
+  audit:  { type: code, command: ${quote(d.audit)}, skip_if_missing: true, next: triage }   # passes with a note when the tool is not installed
+  triage: { type: task, role: analyst, instruction: "Read the audit output in the previous outputs. List each vulnerability with its severity and the package; propose the smallest upgrade or workaround for each; say when nothing was found." }
+`,
+    'org/routines/security-scan.yaml': `routine: security-scan
+name: Weekly security scan
+on: { cron: "0 9 * * 1" }       # Mondays 09:00 (daemon local time)
+workflow: security-scan
+input: Weekly dependency audit.
+max_daily_usd: 2
+# load it with: shibaox routine sync --org ./org
+`,
+    'org/teams/engineering.yaml': `team: engineering
+lead: team-leader
+roles: ${yamlList(['team-leader', 'analyst', 'backend', ...(stack === 'node' ? ['frontend'] : [])])}
+gates: ${yamlList(['tests', ...(typecheck ? ['typecheck'] : [])])}
+workflows: [hello-feature, land-feature, fix-issue, review-pr, security-scan]
+`,
+  };
+  // no checker found: no gate (add `typecheck:` to shibaox.yaml and a gate file later)
+  if (typecheck)
+    files['org/gates/typecheck.yaml'] = `gate: typecheck
+checks:
+  - { name: typecheck, type: code, command: ${quote(typecheck)}, timeout_ms: 300000 }
+`;
+  if (stack === 'node') {
+    files['org/roles/frontend.yaml'] = `role: frontend
+description: Implements UI and client-side changes with tests.
+model_tier: strong
+tools: [read, write, git, node, npm, pnpm, npx]
+permissions:
+  approval_required: [push, deploy]
+system_prompt: prompts/frontend.md
+`;
+    files['org/prompts/frontend.md'] = `# Frontend
+
+You implement user-facing changes: components, styles, client state, accessibility. Keep the
+existing conventions of the project (framework, component structure, test runner). Every
+change ships with a test where the project has them. Do not touch build or CI config
+unless the task is about it.
+`;
+  }
+  return files;
+}
+
+/**
+ * Writes the org/vault template files that do not exist yet; returns the created paths. With
+ * a `stack`, the stack's files (shibaox.yaml, typecheck and review gates, security-scan
+ * workflow and routine, frontend role) come first and the generic scaffold fills the rest.
+ */
+export function scaffoldOrg(dir: string, o: { stack?: Stack } = {}): string[] {
   const created: string[] = [];
-  for (const [rel, content] of Object.entries(ORG_TEMPLATE)) {
+  const write = (rel: string, content: string) => {
     const file = join(dir, rel);
-    if (existsSync(file)) continue;
+    if (existsSync(file)) return;
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, content);
     created.push(rel);
-  }
+  };
+  if (o.stack)
+    for (const [rel, content] of Object.entries(stackFiles(dir, o.stack))) write(rel, content);
+  for (const [rel, content] of Object.entries(ORG_TEMPLATE)) write(rel, content);
   return created;
 }

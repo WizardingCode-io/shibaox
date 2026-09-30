@@ -87,8 +87,15 @@ program
 program
   .command('init')
   .argument('[dir]', 'target directory', '.')
-  .description('scaffold org/ and vault/')
-  .action((dir: string) => initCommand(dir));
+  .option(
+    '--stack <stack>',
+    'node | python | php-laravel | go | auto: also shibaox.yaml, typecheck and review gates, a weekly security scan',
+  )
+  .description('scaffold org/ and vault/ (and, with --stack, the files a team of that stack needs)')
+  .action((dir: string, o: { stack?: string }) => {
+    // no process.exit here: a piped stdout would lose the file list
+    process.exitCode = initCommand(dir, o);
+  });
 program
   .command('upgrade')
   .description('update the installer checkout (~/.shibaox/app), rebuild and restart the daemon')
