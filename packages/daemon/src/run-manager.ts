@@ -74,7 +74,7 @@ export const CONVERSATION_TOKENS = 32_000;
 /** Where runtime events (tool calls, texts) live beyond the in-memory buffer: the SQLite table. */
 export interface RuntimeStore {
   append(e: RuntimeEnvelope): void;
-  read(runId: string, since?: number): RuntimeEnvelope[];
+  read(runId: string, since?: number, types?: readonly string[]): RuntimeEnvelope[];
   /** The number the next event of the run gets. */
   nextSeq(runId: string): number;
   forget(runIds: string[]): void;
@@ -153,6 +153,8 @@ export class RunManager {
   private readonly buffer: RuntimeBuffer;
   private readonly listeners = new Set<(e: RuntimeEnvelope) => void>();
   private readonly starting = new Set<string>();
+  /** Runs whose engine promise is still out (a cancelled task may keep going for a while). */
+  private readonly inFlight = new Set<string>();
   private readonly now: () => string;
   private stopping = false;
   private pumping = false;
@@ -362,18 +364,26 @@ export class RunManager {
     return out;
   }
 
-  /** From the buffer when it holds everything after `since`; else from the runtime store. */
-  runtimeEvents(runId: string, since = 0): RuntimeEnvelope[] {
+  /**
+   * From the buffer when it holds everything after `since`; else from the runtime store.
+   * `types` narrows to some event types (the audit wants tool calls, not every text delta).
+   */
+  runtimeEvents(runId: string, since = 0, types?: readonly string[]): RuntimeEnvelope[] {
     const store = this.opts.runtimeStore;
-    if (!store) return this.buffer.read(runId, since);
     const first = this.buffer.firstSeq(runId);
-    if (first !== undefined && first <= since + 1) return this.buffer.read(runId, since);
-    return store.read(runId, since);
+    const fromBuffer = !store || (first !== undefined && first <= since + 1);
+    const all = fromBuffer ? this.buffer.read(runId, since) : store.read(runId, since, types);
+    return types && fromBuffer ? all.filter((e) => types.includes(e.event.type)) : all;
   }
 
-  /** Removes finished runs older than `before` (ISO date) from every store; returns their ids. */
+  /**
+   * Removes finished runs older than `before` (ISO date) from every store; returns their ids.
+   * A run whose task is still out there (cancelled, but its runtime has not returned) stays:
+   * a late event on an empty log would break the run list.
+   */
   async prune(before: string): Promise<string[]> {
-    const removed = (await this.opts.store.prune?.(before)) ?? [];
+    const keep = [...this.live.keys(), ...this.inFlight, ...this.starting, ...this.prepared.keys()];
+    const removed = (await this.opts.store.prune?.(before, keep)) ?? [];
     if (removed.length === 0) return removed;
     this.opts.runtimeStore?.forget(removed);
     this.buffer.drop(removed);
@@ -509,6 +519,7 @@ export class RunManager {
 
   private async execute(p: Pending, prepared: Prepared, token: object): Promise<void> {
     let result: RunState | undefined;
+    this.inFlight.add(p.runId);
     try {
       result =
         p.action === 'run'
@@ -521,6 +532,7 @@ export class RunManager {
       );
       for (const s of p.settle) s.reject(e);
     } finally {
+      this.inFlight.delete(p.runId);
       if (this.live.get(p.runId)?.token === token) this.live.delete(p.runId);
       if (result && isTerminal(result.status)) {
         const { notePath } = await finishRun(this.opts.store, prepared.org, result, {

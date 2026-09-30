@@ -131,6 +131,8 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     type: z.literal('HumanResponded'),
     approved: z.boolean(),
     note: z.string().optional(),
+    /** The channel the answer came through (recorded since 0.1.8). */
+    via: z.enum(['cli', 'telegram', 'api', 'auto']).optional(),
   }),
   z.object({
     ...base,

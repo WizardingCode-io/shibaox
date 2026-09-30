@@ -194,6 +194,7 @@ export class InboxService implements ApprovalHandler, HumanHandler {
         at: this.now(),
         approved: a.approved,
         note: a.note,
+        via: a.via,
       });
     } else {
       const approvalId = item.id.slice('approval:'.length);

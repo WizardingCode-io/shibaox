@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fakeQuery, msg } from '@wizardingcode/shibaox-adapter-claude-code/testing';
-import { MemoryEventStore, type TaskJob } from '@wizardingcode/shibaox-core';
+import { isTerminal, MemoryEventStore, type TaskJob } from '@wizardingcode/shibaox-core';
 import { MemoryNotes } from '@wizardingcode/shibaox-memory';
 import { removeRunWorkspace } from '@wizardingcode/shibaox-workspace';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -331,6 +331,69 @@ describe('RunManager', () => {
     expect(await m.list()).toEqual([]);
     expect(m.runtimeEvents(runId)).toEqual([]);
     expect(rows).toEqual([]);
+  });
+
+  it('code nodes and gates get GitHub keys from the vault, never the provider keys', async () => {
+    const s = setup();
+    const wf = (name: string, cmd: string) =>
+      writeFileSync(
+        join(s.orgRoot, 'workflows', `${name}.yaml`),
+        `workflow: ${name}\nteam: engineering\nstart: run\nnodes:\n  run: { type: code, command: "${cmd}" }\n`,
+      );
+    wf('sees-gh', 'printenv GH_TOKEN');
+    wf('sees-provider', 'printenv OPENAI_API_KEY');
+    const store = new MemoryEventStore();
+    const { manager: m } = manager(store, {
+      vault: s.vault,
+      env: { GH_TOKEN: 'ghp_x', OPENAI_API_KEY: 'sk-secret' },
+    });
+    const a = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'sees-gh',
+      input: 'x',
+      adapter: 'mock',
+      workspace: 'inplace',
+    });
+    await vi.waitFor(async () => expect(isTerminal((await m.state(a.runId)).status)).toBe(true));
+    expect((await m.state(a.runId)).status).toBe('completed');
+    const b = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'sees-provider',
+      input: 'x',
+      adapter: 'mock',
+      workspace: 'inplace',
+    });
+    await vi.waitFor(async () => expect(isTerminal((await m.state(b.runId)).status)).toBe(true));
+    expect((await m.state(b.runId)).status).toBe('failed');
+    expect(JSON.stringify(await store.read(b.runId))).not.toContain('sk-secret');
+  });
+
+  it('prune never removes a run whose task is still running, even after a cancel', async () => {
+    const s = setup();
+    const store = new MemoryEventStore();
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const { manager: m } = manager(store, {
+      vault: s.vault,
+      mockScript: async () => {
+        await gate; // a task that ignores the abort
+        return { output: {}, summary: 'late' };
+      },
+    });
+    const { runId } = await submitMock(m, s, 'inplace');
+    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('running'));
+    await m.cancel(runId);
+    expect((await m.state(runId)).status).toBe('cancelled');
+    expect(await m.prune('9999-01-01T00:00:00.000Z')).toEqual([]); // its task is still out there
+    release?.();
+    await vi.waitFor(async () => expect(m.active().running).toBe(0));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await m.prune('9999-01-01T00:00:00.000Z')).toEqual([runId]);
+    await expect(m.list()).resolves.toEqual([]); // no orphan events broke the list
   });
 
   it('submit queues a run, executes it and writes the vault note when it ends', async () => {

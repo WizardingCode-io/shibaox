@@ -699,6 +699,9 @@ describe('pruning old runs', () => {
     await client.answer(`human:${runId}:ship`, { approved: true });
     await collect(client.events(runId), (e) => e.kind === 'end');
     expect(await client.pruneRuns('2000-01-01T00:00:00.000Z')).toEqual({ removed: [] });
+    // a date in another notation is normalised, never compared as text
+    expect(await client.pruneRuns('Jan 1 2020')).toEqual({ removed: [] });
+    expect(await client.pruneRuns('2000-01-01T05:00:00+05:00')).toEqual({ removed: [] });
     expect(await client.pruneRuns('9999-01-01T00:00:00.000Z')).toEqual({ removed: [runId] });
     expect(await client.listRuns()).toEqual([]);
     await expect(client.pruneRuns('not a date')).rejects.toMatchObject({ status: 400 });
@@ -714,12 +717,12 @@ describe('GET /runs/:id/audit', () => {
       client.events(runId),
       (e) => e.kind === 'run' && e.event.type === 'HumanRequested',
     );
-    await client.answer(`human:${runId}:ship`, { approved: true, note: 'yes' });
+    await client.answer(`human:${runId}:ship`, { approved: true, note: 'yes', via: 'api' });
     await collect(client.events(runId), (e) => e.kind === 'end');
     const doc = await client.audit(runId);
     expect(doc).toMatchObject({ runId, workflow: 'hello-feature', status: 'completed' });
     expect(doc.approvals).toEqual([
-      expect.objectContaining({ kind: 'human', approved: true, note: 'yes' }),
+      expect.objectContaining({ kind: 'human', approved: true, note: 'yes', via: 'api' }),
     ]);
     expect(doc.nodes.some((n) => n.toolCalls.length > 0 || n.type === 'task')).toBe(true);
     const md = await client.auditMarkdown(runId);
@@ -778,5 +781,20 @@ describe('history after a restart', () => {
       .map((e) => e.event.seq);
     expect(after).toEqual(before);
     expect((await client.audit(runId)).nodes.some((n) => n.type === 'task')).toBe(true);
+    // a reconnect after a cursor gets only what follows it, from the store too
+    const frames = await collect(
+      client.events(runId, { historyOnly: true }),
+      (e) => e.kind === 'end',
+    );
+    const cursor = frames.filter((e) => e.kind === 'runtime')[1]?.cursor;
+    const rest = (
+      await collect(
+        client.events(runId, { historyOnly: true, since: cursor }),
+        (e) => e.kind === 'end',
+      )
+    )
+      .filter((e) => e.kind === 'runtime')
+      .map((e) => e.event.seq);
+    expect(rest).toEqual(before.slice(2));
   });
 });

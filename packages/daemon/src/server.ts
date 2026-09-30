@@ -17,7 +17,7 @@ import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import { AlreadyResolvedError, type InboxService, NotFoundError } from './inbox.js';
 import { type OrgConfigPatch, orgInfo, readOrgConfig, writeOrgConfig } from './org-config.js';
 import type { RunManager, SubmitRequest } from './run-manager.js';
-import { buildAudit, renderAuditMarkdown } from './runs/audit.js';
+import { AUDIT_RUNTIME_TYPES, buildAudit, renderAuditMarkdown } from './runs/audit.js';
 import type { RuntimeEnvelope } from './runtime-buffer.js';
 import type { KeyRow } from './secrets.js';
 
@@ -393,7 +393,10 @@ export class DaemonServer {
       const before = body.before;
       if (typeof before !== 'string' || Number.isNaN(Date.parse(before)))
         throw new HttpError(400, 'bad_request', '"before" must be an ISO date');
-      return send(res, 200, { removed: await this.deps.runs.prune(before) });
+      // normalised: the stores compare ISO strings
+      return send(res, 200, {
+        removed: await this.deps.runs.prune(new Date(before).toISOString()),
+      });
     }
     if (method === 'GET' && path === '/runs') {
       const status = url.searchParams.get('status') ?? undefined;
@@ -411,7 +414,11 @@ export class DaemonServer {
     if (method === 'GET' && runAudit) {
       const events = await this.deps.store.read(runAudit);
       if (events.length === 0) throw new HttpError(404, 'not_found', `run ${runAudit} not found`);
-      const doc = buildAudit(replay(events), events, this.deps.runs.runtimeEvents(runAudit));
+      const doc = buildAudit(
+        replay(events),
+        events,
+        this.deps.runs.runtimeEvents(runAudit, 0, AUDIT_RUNTIME_TYPES),
+      );
       if (url.searchParams.get('format') === 'md') {
         const md = renderAuditMarkdown(doc);
         res.writeHead(200, { 'content-type': 'text/markdown; charset=utf-8' });
@@ -614,7 +621,7 @@ export class DaemonServer {
       lastSeqSeen = e.seq;
       writeRun(e);
     }
-    for (const e of this.deps.runs.runtimeEvents(runId)) writeRuntime(e);
+    for (const e of this.deps.runs.runtimeEvents(runId, since.runtime)) writeRuntime(e);
     replaying = false;
     for (const deliver of pendingLive) deliver();
     if (url.searchParams.get('history') === '1') {

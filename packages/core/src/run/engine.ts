@@ -316,7 +316,7 @@ export class RunEngine {
   private async recordHuman(
     runId: string,
     nodeId: string,
-    answer: { approved: boolean; note?: string },
+    answer: { approved: boolean; note?: string; via?: 'cli' | 'telegram' | 'api' | 'auto' },
   ): Promise<void> {
     await this.emit({
       type: 'HumanResponded',
@@ -325,6 +325,7 @@ export class RunEngine {
       at: this.now(),
       approved: answer.approved,
       note: answer.note,
+      via: answer.via,
     });
     // A rejection needs no extra event: the reducer derives `cancelled`.
   }

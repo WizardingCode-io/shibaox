@@ -41,7 +41,9 @@ export interface HumanRequest {
   action: string;
   prompt: string;
 }
-export type HumanAnswer = { approved: boolean; note?: string } | { deferred: true };
+export type HumanAnswer =
+  | { approved: boolean; note?: string; via?: 'cli' | 'telegram' | 'api' | 'auto' }
+  | { deferred: true };
 export interface HumanHandler {
   ask(req: HumanRequest): Promise<HumanAnswer>;
 }

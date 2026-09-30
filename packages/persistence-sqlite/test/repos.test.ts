@@ -111,6 +111,18 @@ describe('runtime events on disk', () => {
     expect(third?.output.length ?? 0).toBeGreaterThan(4000);
     expect(again.read('r1', 2).map((e) => e.seq)).toEqual([3]);
     expect(again.nextSeq('r1')).toBe(4);
+    again.append({
+      runId: 'r1',
+      nodeId: 'a',
+      seq: 4,
+      at: 't4',
+      event: { type: 'tool_use', name: 'write_file', input: { content: 'z'.repeat(10_000) } },
+    });
+    const big = again.read('r1', 3)[0]?.event as { input: unknown } | undefined;
+    expect(JSON.stringify(big?.input).length).toBeLessThan(5000); // inputs are clipped too
+    expect(again.read('r1', 3, ['tool_use']).map((e) => e.seq)).toEqual([4]); // by type, in SQL
+    expect(again.read('r1', 0, ['text'])).toEqual([]);
+    expect(again.nextSeq('r1')).toBe(5);
     expect(again.read('r2')).toHaveLength(1);
   });
 

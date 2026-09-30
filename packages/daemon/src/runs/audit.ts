@@ -1,4 +1,4 @@
-import type { RunState, StoredEvent } from '@wizardingcode/shibaox-core';
+import { isTerminal, type RunState, type StoredEvent } from '@wizardingcode/shibaox-core';
 import type { CheckResult } from '@wizardingcode/shibaox-schemas';
 import type { RuntimeEnvelope } from '../runtime-buffer.js';
 
@@ -69,6 +69,9 @@ export interface AuditDoc {
   error?: string;
 }
 
+/** The runtime event types the audit uses (texts and usage are left in the store). */
+export const AUDIT_RUNTIME_TYPES = ['tool_use', 'tool_result'] as const;
+
 const INPUT_LIMIT = 400;
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
 const round = (n: number) => Math.round(n * 1e6) / 1e6;
@@ -85,11 +88,8 @@ export function buildAudit(
 ): AuditDoc {
   const created = events.find((e) => e.type === 'RunCreated');
   const last = events[events.length - 1];
-  const ended =
-    last &&
-    (last.type === 'RunCompleted' || last.type === 'RunCancelled' || state.status === 'failed')
-      ? last.at
-      : undefined;
+  // a run that is over ended with its last event (a rejection ends it without a RunCancelled)
+  const ended = last && isTerminal(state.status) ? last.at : undefined;
   const snapshotNodes = (state.workflowSnapshot?.nodes ?? {}) as Record<
     string,
     { type?: string; role?: string; action?: string }
@@ -132,7 +132,10 @@ export function buildAudit(
       (e) =>
         'nodeId' in e &&
         e.nodeId === nodeId &&
-        (e.type === 'NodeCompleted' || e.type === 'NodeFailed' || e.type === 'NodeSuspended'),
+        (e.type === 'NodeCompleted' ||
+          e.type === 'NodeFailed' ||
+          e.type === 'NodeSuspended' ||
+          e.type === 'HumanResponded'),
     );
     const snap = snapshotNodes[nodeId];
     return {
@@ -168,13 +171,14 @@ export function buildAudit(
       : [],
   );
   const approvals: AuditApproval[] = [];
+  const tools = new Map<string, AuditApproval>();
   for (const e of events) {
-    if (e.type === 'ToolApprovalRequested')
-      approvals.push({ kind: 'tool', nodeId: e.nodeId, askedAt: e.at, what: e.command });
-    else if (e.type === 'ToolApprovalResolved') {
-      const a = approvals.find(
-        (x) => x.kind === 'tool' && x.answeredAt === undefined && x.nodeId === e.nodeId,
-      );
+    if (e.type === 'ToolApprovalRequested') {
+      const a: AuditApproval = { kind: 'tool', nodeId: e.nodeId, askedAt: e.at, what: e.command };
+      approvals.push(a);
+      tools.set(e.approvalId, a);
+    } else if (e.type === 'ToolApprovalResolved') {
+      const a = tools.get(e.approvalId);
       if (a)
         Object.assign(a, {
           answeredAt: e.at,
@@ -192,6 +196,7 @@ export function buildAudit(
         Object.assign(a, {
           answeredAt: e.at,
           approved: e.approved,
+          ...(e.via ? { via: e.via } : {}),
           ...(e.note ? { note: e.note } : {}),
         });
     }
@@ -234,6 +239,19 @@ export function buildAudit(
 }
 
 const money = (n: number) => `$${n.toFixed(4)}`;
+/** One line, no table pipes: for cells and list items. */
+const inline = (s: string) =>
+  s
+    .replace(/\|/g, '\\|')
+    .replace(/\s*\n\s*/g, ' ')
+    .trim();
+/** A block of the run's own text: lines that would read as headings are escaped. */
+const block = (s: string) => s.replace(/^(\s*)(#)/gm, '$1\\$2');
+/** A fence longer than any backtick run inside the text. */
+const fence = (s: string) => {
+  const longest = Math.max(2, ...[...s.matchAll(/`+/g)].map((m) => m[0].length));
+  return '`'.repeat(longest + 1);
+};
 const duration = (ms: number) => {
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s}s`;
@@ -255,8 +273,8 @@ export function renderAuditMarkdown(doc: AuditDoc): string {
   out.push(
     `- Cost: ${money(doc.cost.totalUsd)}${doc.request.budgetUsd !== undefined ? ` of ${money(doc.request.budgetUsd)}` : ''}`,
   );
-  if (doc.error) out.push(`- Error: ${doc.error}`);
-  out.push('', '## Request', '', requestText(doc.request.input), '');
+  if (doc.error) out.push(`- Error: ${inline(doc.error)}`);
+  out.push('', '## Request', '', block(requestText(doc.request.input)), '');
   const r = doc.request;
   const facts: [string, string | undefined][] = [
     ['Org', r.orgRoot],
@@ -281,14 +299,14 @@ export function renderAuditMarkdown(doc: AuditDoc): string {
     if (n.endedAt) line.push(`ended ${n.endedAt}`);
     if (n.costUsd) line.push(money(n.costUsd));
     out.push(`- ${line.join(' · ')}`);
-    if (n.summary) out.push(`- Summary: ${n.summary}`);
-    if (n.choice) out.push(`- Choice: ${n.choice}`);
-    if (n.error) out.push(`- Error: ${n.error}`);
+    if (n.summary) out.push(`- Summary: ${inline(n.summary)}`);
+    if (n.choice) out.push(`- Choice: ${inline(n.choice)}`);
+    if (n.error) out.push(`- Error: ${inline(n.error)}`);
     if (n.toolCalls.length) {
       out.push('', '| Tool | Input | Duration |', '| --- | --- | --- |');
       for (const c of n.toolCalls)
         out.push(
-          `| ${c.name} | ${c.input.replace(/\|/g, '\\|').replace(/\n/g, ' ')} | ${c.durationMs !== undefined ? `${c.durationMs} ms` : ''} |`,
+          `| ${inline(c.name)} | ${inline(c.input)} | ${c.durationMs !== undefined ? `${c.durationMs} ms` : ''} |`,
         );
     }
     out.push('');
@@ -301,16 +319,18 @@ export function renderAuditMarkdown(doc: AuditDoc): string {
         out.push(
           `- ${c.name} (${c.type}): ${c.skipped ? 'skipped' : c.passed ? 'passed' : 'failed'}${c.confidence !== undefined ? ` (${c.confidence.toFixed(2)})` : ''}`,
         );
-        if (c.evidence)
+        if (c.evidence) {
+          const f = fence(c.evidence);
           out.push(
             '',
-            '  ```',
+            `  ${f}`,
             ...clip(c.evidence, 1500)
               .split('\n')
               .map((l) => `  ${l}`),
-            '  ```',
+            `  ${f}`,
             '',
           );
+        }
       }
     }
   }

@@ -73,7 +73,8 @@ export class SqliteEventStore implements EventStore {
    * runtime events; returns their ids. A run that is not in a terminal status stays whatever
    * its age.
    */
-  async prune(before: string): Promise<string[]> {
+  async prune(before: string, keep: Iterable<string> = []): Promise<string[]> {
+    const kept = new Set(keep);
     const rows = this.db
       .prepare('SELECT run_id, MAX(at) AS last FROM events GROUP BY run_id HAVING last < ?')
       .all(before) as { run_id: string; last: string }[];
@@ -87,6 +88,7 @@ export class SqliteEventStore implements EventStore {
       ? this.db.prepare('DELETE FROM runtime_events WHERE run_id = ?')
       : undefined;
     for (const { run_id } of rows) {
+      if (kept.has(run_id)) continue;
       const state = replay(await this.read(run_id));
       if (!isTerminal(state.status)) continue;
       delEvents.run(run_id);

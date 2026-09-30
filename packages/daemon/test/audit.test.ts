@@ -109,7 +109,15 @@ const events = stored([
     action: 'approve-push',
     prompt: 'Land it?',
   },
-  { type: 'HumanResponded', runId: 'r1', nodeId: 'ship', at: t(20), approved: true, note: 'go' },
+  {
+    type: 'HumanResponded',
+    runId: 'r1',
+    nodeId: 'ship',
+    at: t(20),
+    approved: true,
+    note: 'go',
+    via: 'telegram',
+  },
   {
     type: 'NodeCompleted',
     runId: 'r1',
@@ -215,9 +223,11 @@ describe('the audit of a run', () => {
         answeredAt: t(20),
         what: 'Land it?',
         approved: true,
+        via: 'telegram',
         note: 'go',
       },
     ]);
+    expect(doc.nodes.find((n) => n.nodeId === 'ship')?.endedAt).toBe(t(20));
     expect(doc.git).toEqual([
       {
         nodeId: 'commit',
@@ -236,7 +246,8 @@ describe('the audit of a run', () => {
     expect(md).toContain('read_file');
     expect(md).toContain('7 ms');
     expect(md).toContain('git push origin shibaox/r1');
-    expect(md).toContain('approved via telegram');
+    expect(md).toContain('git push origin shibaox/r1 → approved via telegram');
+    expect(md).toContain('Land it? → approved via telegram');
     expect(md).toContain('ship (0.90)');
     expect(md).toContain('abc1234def');
     expect(md).toContain('$0.5000');
@@ -258,5 +269,145 @@ describe('the audit of a run', () => {
     });
     expect(doc.endedAt).toBe(t(3)); // a failed run ended at its failure
     expect(renderAuditMarkdown(doc)).toContain('boom');
+  });
+});
+
+describe('audit edge cases', () => {
+  it('pairs tool approvals by approvalId, not by order; a rejected run has an end', () => {
+    const ev = stored([
+      { type: 'RunCreated', runId: 'r3', at: t(0), workflow: 'w', input: {}, workspace: '/w' },
+      { type: 'RunStarted', runId: 'r3', at: t(1) },
+      { type: 'NodeStarted', runId: 'r3', nodeId: 'a', at: t(2) },
+      {
+        type: 'ToolApprovalRequested',
+        runId: 'r3',
+        nodeId: 'a',
+        at: t(3),
+        approvalId: 'x1',
+        role: 'b',
+        tool: 'Bash',
+        program: 'git',
+        category: 'push',
+        command: 'git push one',
+        argvHash: 'h1',
+      },
+      {
+        type: 'ToolApprovalRequested',
+        runId: 'r3',
+        nodeId: 'a',
+        at: t(4),
+        approvalId: 'x2',
+        role: 'b',
+        tool: 'Bash',
+        program: 'git',
+        category: 'push',
+        command: 'git push two',
+        argvHash: 'h2',
+      },
+      {
+        type: 'ToolApprovalResolved',
+        runId: 'r3',
+        nodeId: 'a',
+        at: t(5),
+        approvalId: 'x2',
+        approved: false,
+        via: 'cli',
+        note: 'no',
+      },
+      {
+        type: 'ToolApprovalResolved',
+        runId: 'r3',
+        nodeId: 'a',
+        at: t(6),
+        approvalId: 'x1',
+        approved: true,
+        via: 'telegram',
+      },
+      { type: 'NodeCompleted', runId: 'r3', nodeId: 'a', at: t(7), output: {}, summary: '' },
+      { type: 'NodeStarted', runId: 'r3', nodeId: 'ship', at: t(8) },
+      {
+        type: 'HumanRequested',
+        runId: 'r3',
+        nodeId: 'ship',
+        at: t(8),
+        action: 'approve-push',
+        prompt: 'ok?',
+      },
+      {
+        type: 'HumanResponded',
+        runId: 'r3',
+        nodeId: 'ship',
+        at: t(9),
+        approved: false,
+        note: 'nope',
+      },
+    ]);
+    const doc = buildAudit(replay(ev), ev, []);
+    expect(doc.approvals.map((a) => [a.what, a.approved, a.via])).toEqual([
+      ['git push one', true, 'telegram'],
+      ['git push two', false, 'cli'],
+      ['ok?', false, undefined],
+    ]);
+    expect(doc.status).toBe('cancelled');
+    expect(doc.endedAt).toBe(t(9));
+  });
+
+  it('keeps the Markdown intact whatever the run wrote: table cells, fences and headings are escaped', () => {
+    const ev = stored([
+      {
+        type: 'RunCreated',
+        runId: 'r4',
+        at: t(0),
+        workflow: 'w',
+        input: { spec: '# not a heading\nline' },
+        workspace: '/w',
+      },
+      { type: 'RunStarted', runId: 'r4', at: t(1) },
+      { type: 'NodeStarted', runId: 'r4', nodeId: 'a', at: t(2) },
+      {
+        type: 'NodeCompleted',
+        runId: 'r4',
+        nodeId: 'a',
+        at: t(3),
+        output: {},
+        summary: 'done\n## fake section',
+      },
+      { type: 'NodeStarted', runId: 'r4', nodeId: 'qa', at: t(4) },
+      {
+        type: 'GateFailed',
+        runId: 'r4',
+        nodeId: 'qa',
+        at: t(5),
+        rework: 'a',
+        report: {
+          gates: ['g'],
+          passed: false,
+          checks: [
+            {
+              name: 'c|d',
+              type: 'code',
+              passed: false,
+              skipped: false,
+              evidence: 'out\n```\nstill evidence',
+            },
+          ],
+        },
+      },
+    ]);
+    const rt: RuntimeEnvelope[] = [
+      {
+        runId: 'r4',
+        nodeId: 'a',
+        seq: 1,
+        at: t(2),
+        event: { type: 'tool_use', id: '1', name: 'run|cmd', input: 'a|b\nc' },
+      },
+    ];
+    const md = renderAuditMarkdown(buildAudit(replay(ev), ev, rt));
+    expect(md).not.toMatch(/^## fake section$/m);
+    expect(md).not.toMatch(/^# not a heading$/m);
+    expect(md).toContain('| run\\|cmd | a\\|b c |');
+    expect(md).toContain('````'); // a longer fence around evidence that contains ```
+    expect(md).toContain('still evidence');
   });
 });

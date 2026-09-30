@@ -35,10 +35,11 @@ export class MemoryEventStore implements EventStore {
     return this.events.filter((e) => e.runId === runId);
   }
 
-  async prune(before: string): Promise<string[]> {
+  async prune(before: string, keep: Iterable<string> = []): Promise<string[]> {
+    const kept = new Set(keep);
     const removed: string[] = [];
     for (const r of await this.listRuns())
-      if (r.updatedAt < before && isTerminal(r.status)) removed.push(r.runId);
+      if (r.updatedAt < before && isTerminal(r.status) && !kept.has(r.runId)) removed.push(r.runId);
     this.events = this.events.filter((e) => !removed.includes(e.runId));
     return removed;
   }

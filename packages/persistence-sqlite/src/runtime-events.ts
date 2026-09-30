@@ -21,6 +21,10 @@ const trim = (event: RuntimeEvent): RuntimeEvent => {
       typeof event.output === 'string' ? event.output : (JSON.stringify(event.output) ?? '');
     return s.length > RUNTIME_TEXT_LIMIT ? { ...event, output: clip(s) } : event;
   }
+  if (event.type === 'tool_use') {
+    const s = typeof event.input === 'string' ? event.input : (JSON.stringify(event.input) ?? '');
+    return s.length > RUNTIME_TEXT_LIMIT ? { ...event, input: clip(s) } : event;
+  }
   return event;
 };
 
@@ -37,6 +41,10 @@ interface Raw {
  * a restart forgets nothing the dashboard or `shibaox audit` will ask for.
  */
 export class RuntimeEventsRepo {
+  private readonly insert: Database.Statement;
+  private readonly select: Database.Statement;
+  private readonly maxSeq: Database.Statement;
+
   constructor(private readonly db: Database.Database) {
     db.exec(`CREATE TABLE IF NOT EXISTS runtime_events (
       run_id TEXT NOT NULL,
@@ -47,24 +55,31 @@ export class RuntimeEventsRepo {
       payload TEXT NOT NULL,
       PRIMARY KEY (run_id, seq)
     );`);
+    this.insert = db.prepare(
+      'INSERT OR REPLACE INTO runtime_events (run_id, node_id, seq, at, type, payload) VALUES (?, ?, ?, ?, ?, ?)',
+    );
+    this.select = db.prepare(
+      'SELECT run_id, node_id, seq, at, payload FROM runtime_events WHERE run_id = ? AND seq > ? ORDER BY seq',
+    );
+    this.maxSeq = db.prepare('SELECT MAX(seq) AS m FROM runtime_events WHERE run_id = ?');
   }
 
   append(e: StoredRuntimeEvent): void {
     const event = trim(e.event);
-    this.db
-      .prepare(
-        'INSERT OR REPLACE INTO runtime_events (run_id, node_id, seq, at, type, payload) VALUES (?, ?, ?, ?, ?, ?)',
-      )
-      .run(e.runId, e.nodeId, e.seq, e.at, event.type, JSON.stringify(event));
+    this.insert.run(e.runId, e.nodeId, e.seq, e.at, event.type, JSON.stringify(event));
   }
 
-  /** Events with `seq > since`, in order. */
-  read(runId: string, since = 0): StoredRuntimeEvent[] {
-    const rows = this.db
-      .prepare(
-        'SELECT run_id, node_id, seq, at, payload FROM runtime_events WHERE run_id = ? AND seq > ? ORDER BY seq',
-      )
-      .all(runId, since) as Raw[];
+  /** Events with `seq > since`, in order; `types` narrows to those event types (in SQL). */
+  read(runId: string, since = 0, types?: readonly string[]): StoredRuntimeEvent[] {
+    const rows = (
+      types
+        ? this.db
+            .prepare(
+              `SELECT run_id, node_id, seq, at, payload FROM runtime_events WHERE run_id = ? AND seq > ? AND type IN (${types.map(() => '?').join(',')}) ORDER BY seq`,
+            )
+            .all(runId, since, ...types)
+        : this.select.all(runId, since)
+    ) as Raw[];
     return rows.map((r) => ({
       runId: r.run_id,
       nodeId: r.node_id,
@@ -76,9 +91,7 @@ export class RuntimeEventsRepo {
 
   /** The number the next event of the run gets (a resumed run keeps counting). */
   nextSeq(runId: string): number {
-    const row = this.db
-      .prepare('SELECT MAX(seq) AS m FROM runtime_events WHERE run_id = ?')
-      .get(runId) as { m: number | null };
+    const row = this.maxSeq.get(runId) as { m: number | null };
     return (row.m ?? 0) + 1;
   }
 

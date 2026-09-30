@@ -46,6 +46,27 @@ export const isAdapterId = (v: unknown): v is AdapterId =>
 export const effectiveAdapter = (explicit: AdapterId | undefined, org: Org): AdapterId =>
   explicit ?? org.org.adapter ?? 'mock';
 
+/**
+ * What `code` nodes, gate commands and `git` nodes get on top of the process environment: the
+ * GitHub token (for `gh`), git identity and the SSH agent. Never the provider keys: a test or
+ * a hook the model wrote runs there, and its output becomes evidence.
+ */
+export const COMMAND_ENV_KEYS = [
+  'GH_TOKEN',
+  'GITHUB_TOKEN',
+  'GH_HOST',
+  'GIT_AUTHOR_NAME',
+  'GIT_AUTHOR_EMAIL',
+  'GIT_COMMITTER_NAME',
+  'GIT_COMMITTER_EMAIL',
+  'SSH_AUTH_SOCK',
+] as const;
+export function commandEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const k of COMMAND_ENV_KEYS) if (typeof env[k] === 'string') out[k] = env[k] as string;
+  return out;
+}
+
 /** The registry of this environment (the built-in catalog plus extra entries). */
 export const registryFor = (env: NodeJS.ProcessEnv, extra?: ProviderEntry[]): ProviderRegistry =>
   new ProviderRegistry([...loadCatalog(), ...(extra ?? [])], env);
@@ -345,10 +366,7 @@ export function buildRuntime(o: RuntimeOptions) {
     newRunId: o.newRunId,
     approvals,
     onRuntimeEvent: o.onRuntimeEvent,
-    // code nodes, gate commands and git nodes run with the daemon's env (vault keys included)
-    env: Object.fromEntries(
-      Object.entries(env).filter((e): e is [string, string] => typeof e[1] === 'string'),
-    ),
+    env: commandEnv(env),
     decider,
     human: o.human,
     checkRunners,

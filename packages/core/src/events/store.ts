@@ -21,5 +21,5 @@ export interface EventStore {
    * Removes finished runs whose last event is older than `before` (ISO date) and returns their
    * ids; a run that is not in a terminal status stays. Stores that cannot prune leave it out.
    */
-  prune?(before: string): Promise<string[]>;
+  prune?(before: string, keep?: Iterable<string>): Promise<string[]>;
 }

@@ -19,7 +19,7 @@ The plist runs `~/.shibaox/daemon.sh`, a launcher that records the `node` and CL
 
 ## Files
 
-`daemon.sock` (0600, HTTP JSON + SSE, no authentication: only your user reaches it), `daemon.pid`, `daemon.log`, `daemon.yaml`, `events.db` (one SQLite database for every org and project you run: the run events and, since 0.1.8, every runtime event — tool calls, texts, usage — so the dashboard and `shibaox audit` show them after a restart; `shibaox runs prune --before 30d` trims it), `secrets.json` (the key vault), `org/` (the default org), `workspace/` (where the orchestrator works when no project is chosen), `ui.json` (dashboard preferences), `remote.json` (0600, the remote daemon and its token when one is set).
+`daemon.sock` (0600, HTTP JSON + SSE, no authentication: only your user reaches it), `daemon.pid`, `daemon.log`, `daemon.yaml`, `events.db` (one SQLite database for every org and project you run: the run events and, since 0.1.8, every runtime event — tool calls, texts, usage — so the dashboard and `shibaox audit` show them after a restart; `shibaox runs prune --before 30d` trims it; worktrees stay until `shibaox worktree rm`), `secrets.json` (the key vault), `org/` (the default org), `workspace/` (where the orchestrator works when no project is chosen), `ui.json` (dashboard preferences), `remote.json` (0600, the remote daemon and its token when one is set).
 
 ## Inbox
 
