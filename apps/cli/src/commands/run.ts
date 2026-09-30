@@ -236,6 +236,28 @@ export async function replayCommand(runId: string, o: { db?: string }, out: Out)
   return 0;
 }
 
+/** `shibaox steer <runId> <note…>`: the running task stops and starts again with the note. */
+export async function steerCommand(
+  runId: string,
+  words: string[],
+  o: { node?: string },
+  out: Out,
+): Promise<number> {
+  const note = words.join(' ').trim();
+  if (!note) {
+    out.line('Say what: shibaox steer <runId> "use pnpm, not npm"');
+    return 1;
+  }
+  const client = await connect({ write: true });
+  const state = await client.steer(runId, { nodeId: o.node, note, via: 'cli' });
+  const steered = Object.entries(state.nodes).find(([, n]) => n.steering?.at(-1)?.note === note);
+  out.line(
+    `Steered ${steered?.[0] ?? 'the task'} of run ${runId.slice(0, 8)}: it starts again with your note.`,
+  );
+  out.obj({ runId, nodeId: steered?.[0], note });
+  return 0;
+}
+
 /** `30d`, `12h`, `45m`, or an ISO date: the moment before which finished runs are removed. */
 export function parseBefore(v: string, now: Date = new Date()): string | undefined {
   const m = v.match(/^(\d+)([dhm])$/);

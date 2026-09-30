@@ -37,6 +37,7 @@ import {
   runCommand,
   runsCommand,
   runsPruneCommand,
+  steerCommand,
 } from './commands/run.js';
 import { scheduleAdd, scheduleList, scheduleRemove, scheduleRun } from './commands/schedule.js';
 import { tiersList, tiersSet } from './commands/tiers.js';
@@ -176,6 +177,15 @@ program
   .option('--budget <usd>', 'new budget in USD (required to resume a budget pause)', parseBudget)
   .action(async function (this: Command, runId: string, o: { budget?: number }) {
     exitWith(await resumeCommand(runId, o, out(this)));
+  });
+program
+  .command('steer')
+  .argument('<runId>')
+  .argument('<note...>', 'what to tell the running task')
+  .option('--node <id>', 'the node, when several tasks run at once')
+  .description('redirect the running task of a run: it stops and starts again with your note')
+  .action(async function (this: Command, runId: string, note: string[], o: { node?: string }) {
+    exitWith(await steerCommand(runId, note, o, out(this)));
   });
 program
   .command('cancel')

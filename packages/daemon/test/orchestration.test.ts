@@ -102,3 +102,102 @@ describe('profileFor', () => {
     expect(profileFor(sample, { vault, cacheMs: 0 })).not.toBe(p);
   });
 });
+
+describe('orchestration: seeing and steering the dispatched runs', () => {
+  const calls: string[] = [];
+  const tools = () =>
+    orchestrationTools({
+      runId: 'parent',
+      current: 'chat',
+      workflows: [{ name: 'hello-feature' }],
+      startWorkflow: async (_w, _r, o) => {
+        calls.push(`start:${JSON.stringify(o?.outputSchema ?? null)}`);
+        return { runId: 'child-1' };
+      },
+      listRuns: async () => [
+        {
+          runId: 'child-1',
+          workflow: 'hello-feature',
+          status: 'running',
+          spentUsd: 0.1,
+          createdAt: 't',
+          updatedAt: 't',
+          parentRunId: 'parent',
+        },
+        {
+          runId: 'other',
+          workflow: 'x',
+          status: 'running',
+          spentUsd: 0,
+          createdAt: 't',
+          updatedAt: 't',
+          parentRunId: 'someone-else',
+        },
+      ],
+      runStatus: async (id) =>
+        ({
+          runId: id,
+          status: 'running',
+          nodes: { implement: { status: 'running', attempts: 1, approvals: {} } },
+          pendingHumans: [],
+          pendingApprovals: [],
+          spentUsd: 0.1,
+          error: undefined,
+        }) as never,
+      steerRun: async (id, note) => {
+        calls.push(`steer:${id}:${note}`);
+        return { ok: true };
+      },
+      cancelRun: async (id) => {
+        calls.push(`cancel:${id}`);
+        return { ok: true };
+      },
+    });
+  it('list_runs shows only the runs this run dispatched; run_status tells where one is', async () => {
+    const list = tools().find((t) => t.name === 'list_runs');
+    const r = (await list?.execute({})) as { runs: { runId: string }[] };
+    expect(r.runs.map((x) => x.runId)).toEqual(['child-1']);
+    const status = tools().find((t) => t.name === 'run_status');
+    const st = (await status?.execute({ runId: 'child-1' })) as {
+      status: string;
+      nodes: unknown[];
+    };
+    expect(st.status).toBe('running');
+    expect(JSON.stringify(st.nodes)).toContain('implement');
+    expect(await status?.execute({ runId: 'other' })).toMatchObject({
+      error: expect.stringMatching(/not one of your runs/),
+    });
+  });
+  it('steer_run and cancel_run act on own children only; start_workflow carries an output schema', async () => {
+    const steer = tools().find((t) => t.name === 'steer_run');
+    expect(await steer?.execute({ runId: 'child-1', note: 'use pnpm' })).toMatchObject({
+      ok: true,
+    });
+    expect(await steer?.execute({ runId: 'other', note: 'x' })).toMatchObject({
+      error: expect.stringMatching(/not one of your runs/),
+    });
+    expect(await steer?.execute({ runId: 'child-1', note: '' })).toMatchObject({
+      error: expect.stringMatching(/note/),
+    });
+    const cancel = tools().find((t) => t.name === 'cancel_run');
+    expect(await cancel?.execute({ runId: 'child-1' })).toMatchObject({ ok: true });
+    const start = tools().find((t) => t.name === 'start_workflow');
+    await start?.execute({
+      workflow: 'hello-feature',
+      request: 'do it',
+      output_schema: {
+        type: 'object',
+        required: ['verdict'],
+        properties: { verdict: { type: 'string' } },
+      },
+    });
+    expect(
+      await start?.execute({ workflow: 'hello-feature', request: 'do it', output_schema: 'nope' }),
+    ).toMatchObject({ error: expect.stringMatching(/output_schema/) });
+    expect(calls).toEqual([
+      'steer:child-1:use pnpm',
+      'cancel:child-1',
+      'start:{"type":"object","required":["verdict"],"properties":{"verdict":{"type":"string"}}}',
+    ]);
+  });
+});

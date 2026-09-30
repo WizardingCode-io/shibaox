@@ -136,6 +136,7 @@ export class DirectAdapter implements RuntimeAdapter {
       `Input: ${JSON.stringify(input)}`,
       `Previous outputs: ${JSON.stringify(job.context.previousOutputs).slice(0, 60_000)}`,
       `Last gate report: ${JSON.stringify(job.context.lastGateReport ?? null).slice(0, 20_000)}`,
+      ...(job.resumeNote ? [job.resumeNote] : []),
     ].join('\n\n');
   }
 

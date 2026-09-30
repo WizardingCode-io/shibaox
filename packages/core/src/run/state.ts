@@ -42,6 +42,8 @@ export interface NodeState {
   sessionId?: string;
   /** Tool approvals asked during this node, by approvalId. */
   approvals: Record<string, NodeApproval>;
+  /** What people said to this task while it ran (each one stopped it and started it again). */
+  steering?: { note: string; via: string; at: string }[];
 }
 
 export interface PendingApproval {

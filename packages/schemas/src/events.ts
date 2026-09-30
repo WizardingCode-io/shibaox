@@ -92,6 +92,13 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     cost: CostSchema.optional(),
   }),
   z.object({ ...node, type: z.literal('NodeStarted') }),
+  /** A person (or the orchestrator) redirected a running task: it stops and re-runs with the note. */
+  z.object({
+    ...node,
+    type: z.literal('NodeSteered'),
+    note: z.string().min(1),
+    via: z.enum(['cli', 'telegram', 'api', 'orchestrator']),
+  }),
   z.object({
     ...node,
     type: z.literal('NodeCompleted'),

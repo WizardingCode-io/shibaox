@@ -418,6 +418,53 @@ esac
     expect(readFileSync(join(dir, 'gh.log'), 'utf8')).toContain('issue view 12');
   });
 
+  it('steer sends a note to the running task of a run', async () => {
+    let release: (() => void) | undefined;
+    const { org, project, cli } = await setup({
+      mockScript: async (job: TaskJob) => {
+        if (job.nodeId === 'implement' && !job.resumeNote)
+          await new Promise<void>((r) => {
+            release = r;
+          });
+        return { output: { heard: job.resumeNote ?? null }, summary: job.nodeId };
+      },
+    });
+    const started = await cli(
+      'run',
+      'hello-feature',
+      '--org',
+      org,
+      '--project',
+      project,
+      '--input',
+      'x',
+      '--adapter',
+      'mock',
+      '--workspace',
+      'inplace',
+      '--detach',
+      '--json',
+    );
+    const [{ runId }] = json<{ runId: string }>(started);
+    await vi.waitFor(async () => {
+      const runs = json<{ runId: string; status: string }>(await cli('runs', '--json'));
+      expect(runs.find((r) => r.runId === runId)?.status).toBe('running');
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    const steered = await cli('steer', runId, 'Try', 'the', 'other', 'way');
+    expect(steered.code, steered.stderr).toBe(0);
+    expect(steered.stdout).toContain('implement');
+    await vi.waitFor(async () => {
+      const runs = json<{ runId: string; status: string }>(await cli('runs', '--json'));
+      expect(runs.find((r) => r.runId === runId)?.status).toBe('waiting_human');
+    });
+    const audit = await cli('audit', runId);
+    expect(audit.stdout).toContain('Try the other way');
+    release?.();
+    const late = await cli('steer', runId, 'too late');
+    expect(late.code).toBe(1);
+  });
+
   it('daemon status reports the version and an empty inbox prints a sentence', async () => {
     const { cli } = await setup();
     const status = await cli('daemon', 'status');

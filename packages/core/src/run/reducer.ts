@@ -89,6 +89,24 @@ function applyEvent(s: RunState, event: NonCreatedEvent, idx: number): RunState 
               : 'running';
       return { ...next, pendingApprovals, status };
     }
+    case 'NodeSteered': {
+      // the task stops and is never-started again, keeping its session; the note travels with it
+      const { startedIdx: _startedIdx, ...rest } = nodeOf(s, event.nodeId);
+      return {
+        ...s,
+        nodes: {
+          ...s.nodes,
+          [event.nodeId]: {
+            ...rest,
+            status: 'pending',
+            steering: [
+              ...(rest.steering ?? []),
+              { note: event.note, via: event.via, at: event.at },
+            ],
+          },
+        },
+      };
+    }
     case 'NodeSuspended': {
       // the suspended task becomes never-started again, keeping its session for resume
       const { startedIdx: _startedIdx, ...rest } = nodeOf(s, event.nodeId);

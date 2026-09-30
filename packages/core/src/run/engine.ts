@@ -20,7 +20,8 @@ import type { Decider, HumanHandler } from './deciders.js';
 import type { MergeQueue } from './merge-queue.js';
 import { isTerminal, replay } from './reducer.js';
 import { isStalled, readyNodes } from './scheduler.js';
-import type { PendingApproval, RunState } from './state.js';
+import type { NodeState, PendingApproval, RunState } from './state.js';
+import { validateJson } from './validate-json.js';
 
 export interface EngineDeps {
   store: EventStore;
@@ -90,6 +91,10 @@ export class RunEngine {
   private readonly checkRunners: CheckRunners;
   private readonly scheduler: { readyNodes: typeof readyNodes; isStalled: typeof isStalled };
   private readonly controllers = new Map<string, AbortController>();
+  /** One controller per running task, so a steer stops that task and nothing else. */
+  private readonly nodeControllers = new Map<string, AbortController>();
+  /** Tasks stopped by a steer: whatever their adapter throws on abort is not a failure. */
+  private readonly steered = new Set<string>();
 
   constructor(private readonly deps: EngineDeps) {
     this.log = deps.log ?? (() => {});
@@ -248,6 +253,44 @@ export class RunEngine {
     return this.state(runId);
   }
 
+  /**
+   * Redirects a running task: records `NodeSteered`, stops that task alone, and the run
+   * re-runs it with the note (and its runtime session when it has one). Without a nodeId the
+   * one running task is steered; with several running, the node must be named.
+   */
+  async steer(
+    runId: string,
+    o: { nodeId?: string; note: string; via: 'cli' | 'telegram' | 'api' | 'orchestrator' },
+  ): Promise<RunState> {
+    const state = await this.state(runId);
+    if (isTerminal(state.status))
+      throw new Error(`run ${runId} is ${state.status}: nothing to steer`);
+    const running = Object.entries(state.nodes)
+      .filter(([, n]) => n.status === 'running')
+      .map(([id]) => id);
+    const nodeId = o.nodeId ?? (running.length === 1 ? running[0] : undefined);
+    if (!nodeId)
+      throw new Error(
+        running.length === 0
+          ? `run ${runId}: no task is running (status ${state.status})`
+          : `run ${runId}: ${running.length} tasks are running, name one: ${running.join(', ')}`,
+      );
+    if (!running.includes(nodeId)) throw new Error(`run ${runId}: node ${nodeId} is not running`);
+    if (!o.note.trim()) throw new Error('the steering note is empty');
+    await this.emit({
+      type: 'NodeSteered',
+      runId,
+      nodeId,
+      at: this.now(),
+      note: o.note.trim(),
+      via: o.via,
+    });
+    const key = `${runId}:${nodeId}`;
+    this.steered.add(key);
+    this.nodeControllers.get(key)?.abort(new SteerSignal(nodeId, o.note.trim()));
+    return this.state(runId);
+  }
+
   /** Aborts a run's tasks without recording anything (the log stays as it is). */
   abort(runId: string, reason: string): void {
     this.controllerFor(runId).abort(new Error(reason));
@@ -282,6 +325,17 @@ export class RunEngine {
           sessionId: e.sessionId,
         }),
       );
+  }
+
+  /** A task's own signal: aborted by a steer of that task, or by the run's cancellation. */
+  private nodeSignal(runId: string, nodeId: string): AbortSignal {
+    const key = `${runId}:${nodeId}`;
+    const c = new AbortController();
+    this.nodeControllers.set(key, c);
+    const run = this.controllerFor(runId).signal;
+    if (run.aborted) c.abort(run.reason);
+    else run.addEventListener('abort', () => c.abort(run.reason), { once: true });
+    return c.signal;
   }
 
   private controllerFor(runId: string): AbortController {
@@ -454,13 +508,12 @@ export class RunEngine {
             approvedCommands: Object.fromEntries(
               resolved.map((a) => [a.argvHash, a.approved as boolean]),
             ),
+            // the last task of a run asked for a structured output answers in that shape
+            outputSchema: outputSchemaFor(state, node),
             // a node suspended with a session resumes it; a fresh node starts clean
             resumeSessionId: nodeState?.sessionId,
             ...(workflow.conversation ? { conversation: true } : {}),
-            resumeNote:
-              last && nodeState?.sessionId
-                ? `The approval for \`${last.command}\` was ${last.approved ? 'granted' : 'denied'}${last.note ? ` (${last.note})` : ''}. Continue the task.`
-                : undefined,
+            resumeNote: resumeNoteFor(nodeState, last),
           };
           const runtimeId = this.deps.adapterFor
             ? this.deps.adapterFor(job)
@@ -468,12 +521,24 @@ export class RunEngine {
           const adapter = this.deps.adapters[runtimeId];
           if (!adapter) throw new Error(`no adapter registered for runtime "${runtimeId}"`);
           const pendingEmits: Promise<void>[] = [];
+          const nodeSignal = this.nodeSignal(runId, nodeId);
           const result = await collectRun(adapter, job, {
-            signal: this.controllerFor(runId).signal,
+            signal: nodeSignal,
             log: this.log,
             onEvent: (e) => this.onRuntimeEvent(runId, nodeId, e, pendingEmits),
-          }).finally(() => Promise.all(pendingEmits));
+          }).finally(() => {
+            this.nodeControllers.delete(`${runId}:${nodeId}`);
+            return Promise.all(pendingEmits);
+          });
           await Promise.all(pendingEmits);
+          if (job.outputSchema) {
+            const problems = validateJson(result.output, job.outputSchema);
+            if (problems.length)
+              throw new AdapterError(
+                `the output does not match the requested schema: ${problems.join('; ')}`,
+                result.cost,
+              );
+          }
           await this.emit({
             type: 'NodeCompleted',
             runId,
@@ -683,6 +748,11 @@ export class RunEngine {
           return;
       }
     } catch (e) {
+      if (this.steered.delete(`${runId}:${nodeId}`) || e instanceof SteerSignal) {
+        // the task was redirected: NodeSteered already put it back to pending with the note
+        this.log(`[${runId}] ${nodeId}: steered, running it again with the note`);
+        return;
+      }
       if (e instanceof AdapterError && e.reason === 'approval_pending') {
         // only an approval the inbox recorded can be answered later; otherwise the task fails.
         // One already answered (the human beat the interruption) suspends too: the node then
@@ -730,6 +800,48 @@ export class RunEngine {
         ...(e instanceof AdapterError && e.cost ? { cost: e.cost } : {}),
       });
     }
+  }
+}
+
+/** `input.output_schema` for a task with no `next` (the run's answer), nothing for the others. */
+function outputSchemaFor(
+  state: RunState,
+  node: { next?: string },
+): Record<string, unknown> | undefined {
+  const schema = state.input.output_schema;
+  if (node.next || !schema || typeof schema !== 'object' || Array.isArray(schema)) return undefined;
+  return schema as Record<string, unknown>;
+}
+
+/** What a re-run task is told: the steering notes (newest last), then the answer to its approval. */
+function resumeNoteFor(
+  nodeState: NodeState | undefined,
+  last: { command: string; approved?: boolean; note?: string } | undefined,
+): string | undefined {
+  const parts: string[] = [];
+  const steering = nodeState?.steering ?? [];
+  if (steering.length)
+    parts.push(
+      steering.length === 1
+        ? `Steering from the operator (${steering[0]?.via}): ${steering[0]?.note}`
+        : `Steering from the operator, in order:\n${steering.map((x) => `- (${x.via}) ${x.note}`).join('\n')}`,
+    );
+  if (last && nodeState?.sessionId)
+    parts.push(
+      `The approval for \`${last.command}\` was ${last.approved ? 'granted' : 'denied'}${last.note ? ` (${last.note})` : ''}. Continue the task.`,
+    );
+  else if (steering.length) parts.push('Continue the task.');
+  return parts.length ? parts.join(parts.length > 1 && steering.length ? '\n\n' : ' ') : undefined;
+}
+
+/** The reason a steered task's signal aborts with. */
+export class SteerSignal extends Error {
+  constructor(
+    readonly nodeId: string,
+    readonly note: string,
+  ) {
+    super(`steered: ${note}`);
+    this.name = 'SteerSignal';
   }
 }
 

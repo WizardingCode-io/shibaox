@@ -78,6 +78,8 @@ export interface SubmitRequest {
    * detected from the lockfile), `off`, or a command.
    */
   setup?: string;
+  /** A JSON Schema the run's last task answers in (`start_workflow(output_schema)`); checked when it ends. */
+  outputSchema?: Record<string, unknown>;
 }
 
 /** A conversation carried into a run is compacted beyond this (estimated tokens). */
@@ -246,6 +248,7 @@ export class RunManager {
         spec: req.input,
         ...(messages.length > 0 ? { messages } : {}),
         ...(req.event ? { event: true } : {}),
+        ...(req.outputSchema ? { output_schema: req.outputSchema } : {}),
       },
       workspace,
       budgetUsd,
@@ -367,12 +370,15 @@ export class RunManager {
     return diffWorkspace(state.workspace, { base });
   }
 
-  async list(filter: { status?: RunStatus; orgRoot?: string } = {}): Promise<RunSummaryPlus[]> {
+  async list(
+    filter: { status?: RunStatus; orgRoot?: string; parent?: string } = {},
+  ): Promise<RunSummaryPlus[]> {
     const out: RunSummaryPlus[] = [];
     for (const run of await this.opts.store.listRuns()) {
       if (filter.status && run.status !== filter.status) continue;
       const state = replay(await this.opts.store.read(run.runId));
       if (filter.orgRoot && state.orgRoot !== resolve(filter.orgRoot)) continue;
+      if (filter.parent && state.parentRunId !== filter.parent) continue;
       out.push({
         ...run,
         project: state.project,
@@ -395,6 +401,19 @@ export class RunManager {
     const fromBuffer = !store || (first !== undefined && first <= since + 1);
     const all = fromBuffer ? this.buffer.read(runId, since) : store.read(runId, since, types);
     return types && fromBuffer ? all.filter((e) => types.includes(e.event.type)) : all;
+  }
+
+  /** Redirects the running task of a live run (see `RunEngine.steer`); a run that is not live has nothing to steer. */
+  async steer(
+    runId: string,
+    o: { nodeId?: string; note: string; via: 'cli' | 'telegram' | 'api' | 'orchestrator' },
+  ): Promise<RunState> {
+    const a = this.live.get(runId);
+    if (!a) {
+      const state = await this.state(runId); // throws not found
+      throw new Error(`run ${runId} is ${state.status}: nothing to steer`);
+    }
+    return a.engine.steer(runId, o);
   }
 
   /**
@@ -735,7 +754,7 @@ export class RunManager {
           runId: r.runId,
           current,
           workflows,
-          startWorkflow: async (workflow, request) => {
+          startWorkflow: async (workflow, request, o) => {
             const { runId } = await this.submit({
               orgRoot: org.root,
               project,
@@ -746,8 +765,19 @@ export class RunManager {
               // a dispatched run reports where its parent was asked from
               origin: r.origin,
               model: r.model,
+              outputSchema: o?.outputSchema,
             });
             return { runId };
+          },
+          listRuns: () => this.list({ parent: r.runId }),
+          runStatus: (id) => this.state(id),
+          steerRun: async (id, note) => {
+            await this.steer(id, { note, via: 'orchestrator' });
+            return { ok: true };
+          },
+          cancelRun: async (id) => {
+            await this.cancel(id);
+            return { ok: true };
           },
         })
       : [];

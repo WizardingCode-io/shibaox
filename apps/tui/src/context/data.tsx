@@ -45,6 +45,7 @@ export interface Data {
   actions: {
     answer(id: InboxId, approved: boolean, note?: string): Promise<void>;
     cancel(runId: string): Promise<void>;
+    steer(runId: string, note: string): Promise<void>;
     resume(runId: string, budgetUsd?: number): Promise<void>;
     submit(req: SubmitRequest): Promise<string | undefined>;
   };
@@ -170,8 +171,15 @@ export function DataProvider(
       .filter(([, n]) => n.summary)
       .map(([id, n]) => `${id}: ${String(n.summary).replace(/\s+/g, ' ').slice(0, 200)}`);
     const files = timeline(st.runId)().find((c) => c.kind === 'summary');
+    const schema = st.input.output_schema;
+    const answer = schema
+      ? Object.entries(st.nodes)
+          .filter(([, n]) => n.status === 'completed' && n.output !== undefined)
+          .at(-1)?.[1].output
+      : undefined;
     const parts = [
       `workflow ${st.workflow} finished: ${status}`,
+      ...(answer !== undefined ? [`answer: ${JSON.stringify(answer).slice(0, 1500)}`] : []),
       `${nodes.length} node${nodes.length === 1 ? '' : 's'}`,
       money(st.spentUsd),
       ...(files?.kind === 'summary' && files.files.length > 0
@@ -293,6 +301,7 @@ export function DataProvider(
     actions: {
       answer: (id, approved, note) => poller.answer(id, approved, note),
       cancel: (runId) => poller.cancel(runId),
+      steer: (runId, note) => poller.steer(runId, note),
       resume: (runId, budgetUsd) => poller.resume(runId, budgetUsd),
       submit: (req) => poller.submit(req),
     },

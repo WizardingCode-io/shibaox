@@ -312,6 +312,18 @@ export class Poller {
     this.afterAction();
   }
 
+  async steer(runId: string, note: string): Promise<void> {
+    try {
+      this.setState(await this.client.steer(runId, { note }));
+      this.toast({
+        message: `Run ${runId.slice(0, 8)} steered: the task starts again with your note`,
+        variant: 'success',
+      });
+    } catch (e) {
+      this.toastError(e, 'Could not steer the run');
+    }
+  }
+
   async cancel(runId: string): Promise<void> {
     if (this.down()) return;
     try {

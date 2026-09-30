@@ -435,10 +435,11 @@ export class DaemonServer {
     if (method === 'GET' && path === '/runs') {
       const status = url.searchParams.get('status') ?? undefined;
       const orgRoot = url.searchParams.get('org') ?? undefined;
+      const parent = url.searchParams.get('parent') ?? undefined;
       return send(
         res,
         200,
-        await this.deps.runs.list({ status: status as RunStatus | undefined, orgRoot }),
+        await this.deps.runs.list({ status: status as RunStatus | undefined, orgRoot, parent }),
       );
     }
     const runGet = param(/^\/runs\/([^/]+)$/);
@@ -469,6 +470,29 @@ export class DaemonServer {
     }
     const runEvents = param(/^\/runs\/([^/]+)\/events$/);
     if (runEvents !== undefined && method === 'GET') return this.stream(req, res, runEvents, url);
+    const runSteer = param(/^\/runs\/([^/]+)\/steer$/);
+    if (runSteer !== undefined && method === 'POST') {
+      const body = asRecord(await readBody(req));
+      const note = typeof body.note === 'string' ? body.note.trim() : '';
+      if (!note) throw new HttpError(400, 'bad_request', '"note" is required');
+      const via = body.via === 'cli' || body.via === 'telegram' ? body.via : 'api';
+      try {
+        return send(
+          res,
+          200,
+          await this.deps.runs.steer(runSteer, {
+            nodeId: typeof body.nodeId === 'string' ? body.nodeId : undefined,
+            note,
+            via,
+          }),
+        );
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        if (/nothing to steer|not running|are running|is not running/.test(m))
+          throw new HttpError(409, 'conflict', m);
+        throw e;
+      }
+    }
     const runCancel = param(/^\/runs\/([^/]+)\/cancel$/);
     if (runCancel !== undefined && method === 'POST')
       return send(res, 200, await this.deps.runs.cancel(runCancel));

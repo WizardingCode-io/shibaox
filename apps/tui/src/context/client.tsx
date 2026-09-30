@@ -31,6 +31,7 @@ export interface DaemonClientLike {
     a: { approved: boolean; note?: string; via?: 'cli' | 'api' },
   ): Promise<{ runId: string; kind: 'human' | 'approval' }>;
   cancel(id: string): Promise<RunState>;
+  steer(id: string, o: { nodeId?: string; note: string }): Promise<RunState>;
   resume(id: string, o?: { budgetUsd?: number }): Promise<RunState>;
   submitRun(req: SubmitRequest): Promise<{ runId: string; warnings: string[] }>;
   diff(id: string): Promise<DiffResult>;

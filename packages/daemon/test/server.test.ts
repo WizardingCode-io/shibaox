@@ -994,3 +994,47 @@ describe('routines: what the network may add', () => {
     expect(await client.schedules()).toEqual([]);
   });
 });
+
+describe('steering through the API', () => {
+  it("POST /runs/:id/steer redirects the running task; GET /runs?parent= lists a run's children", async () => {
+    const s = setup();
+    let release: (() => void) | undefined;
+    const { client } = await started(s, {
+      mockScript: async (job: TaskJob) => {
+        if (job.nodeId === 'implement' && !job.resumeNote) {
+          await new Promise<void>((r) => {
+            release = r;
+          });
+        }
+        return { output: { heard: job.resumeNote ?? null }, summary: job.nodeId };
+      },
+    });
+    const { runId } = await submit(client, s);
+    await vi.waitFor(async () =>
+      expect((await client.getRun(runId)).nodes.implement?.status).toBe('running'),
+    );
+    const steered = await client.steer(runId, { note: 'Use the other API', via: 'api' });
+    expect(steered.nodes.implement?.steering).toEqual([
+      expect.objectContaining({ note: 'Use the other API', via: 'api' }),
+    ]);
+    await vi.waitFor(async () => expect((await client.getRun(runId)).status).toBe('waiting_human'));
+    expect((await client.getRun(runId)).nodes.implement?.output).toMatchObject({
+      heard: expect.stringContaining('Use the other API'),
+    });
+    await expect(client.steer(runId, { note: 'too late' })).rejects.toMatchObject({ status: 409 });
+    await expect(client.steer(runId, { note: '  ' })).rejects.toMatchObject({ status: 400 });
+    await expect(client.steer('nope', { note: 'x' })).rejects.toMatchObject({ status: 404 });
+    release?.();
+    // children by parent
+    const child = await client.submitRun({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'child',
+      adapter: 'mock',
+      workspace: 'inplace',
+      parentRunId: runId,
+    });
+    expect((await client.listRuns({ parent: runId })).map((r) => r.runId)).toEqual([child.runId]);
+  });
+});

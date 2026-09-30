@@ -140,10 +140,11 @@ export class DaemonClient {
   submitRun(req: SubmitRequest): Promise<{ runId: string; warnings: string[] }> {
     return this.json('POST', '/runs', req);
   }
-  listRuns(q: { status?: string; org?: string } = {}): Promise<RunSummaryPlus[]> {
+  listRuns(q: { status?: string; org?: string; parent?: string } = {}): Promise<RunSummaryPlus[]> {
     const p = new URLSearchParams();
     if (q.status) p.set('status', q.status);
     if (q.org) p.set('org', q.org);
+    if (q.parent) p.set('parent', q.parent);
     const qs = p.toString();
     return this.json('GET', `/runs${qs ? `?${qs}` : ''}`);
   }
@@ -209,6 +210,13 @@ export class DaemonClient {
   /** The run's checkout diff against HEAD (404 `no_workspace` once the directory is gone). */
   diff(id: string): Promise<DiffResult> {
     return this.json('GET', `/runs/${encodeURIComponent(id)}/diff`);
+  }
+  /** Redirects the running task of a run: it stops and starts again with the note. */
+  steer(
+    id: string,
+    o: { nodeId?: string; note: string; via?: 'cli' | 'api' | 'telegram' },
+  ): Promise<RunState> {
+    return this.json('POST', `/runs/${encodeURIComponent(id)}/steer`, o);
   }
   cancel(id: string): Promise<RunState> {
     return this.json('POST', `/runs/${encodeURIComponent(id)}/cancel`);

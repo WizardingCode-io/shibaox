@@ -3,6 +3,7 @@ import { useTerminalDimensions } from '@opentui/solid';
 import { createEffect, createMemo, createSignal, type JSX, onCleanup, Show } from 'solid-js';
 import { Confirm } from '../../component/dialogs/confirm.js';
 import { DiffDialog } from '../../component/dialogs/diff.js';
+import { SteerDialog } from '../../component/dialogs/steer.js';
 import { type KeyHint, KeyHints } from '../../component/footer.js';
 import { Sidebar } from '../../component/sidebar.js';
 import { useCommands } from '../../context/commands.js';
@@ -170,6 +171,13 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
     },
     { id: 'cancel', label: 'Cancel run', keys: 'c', run: cancel, when: () => !finished() },
     {
+      id: 'steer',
+      label: 'Steer the running task',
+      keys: 's',
+      run: () => dialog.open(() => <SteerDialog runId={latest()} />),
+      when: () => status() === 'running',
+    },
+    {
       id: 'resume',
       label: 'Resume run',
       keys: 'r',
@@ -194,6 +202,11 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
       cancel();
       return true;
     }
+    if (key.name === 's' && status() === 'running') {
+      // next tick: the input that opens would otherwise receive this same key
+      setTimeout(() => dialog.open(() => <SteerDialog runId={latest()} />), 0);
+      return true;
+    }
     if (key.name === 'r') {
       resume();
       return true;
@@ -207,6 +220,7 @@ export function SessionFrame(props: { runId: string; single?: boolean }): JSX.El
   const hints = () => {
     const base = props.single ? STREAM_HINTS : SESSION_HINTS;
     if (status() === 'paused_budget') return [{ key: 'r', label: 'resume' }, ...base];
+    if (status() === 'running') return [{ key: 's', label: 'steer' }, ...base];
     return base;
   };
 

@@ -29,23 +29,27 @@ const chatState = (): RunState =>
     pendingApprovals: [],
   }) as unknown as RunState;
 
-async function mount(o: { models?: FakeDaemonClient['modelChoices'] } = {}) {
+async function mount(o: { models?: FakeDaemonClient['modelChoices']; status?: string } = {}) {
   const client = new FakeDaemonClient();
   if (o.models) client.modelChoices = o.models;
+  const status = o.status ?? 'completed';
   client.runs = [
     {
       runId: 'r1',
       workflow: 'chat',
-      status: 'completed',
+      status,
       createdAt: 'x',
       updatedAt: 'x',
       spentUsd: 0.04,
     } as never,
   ];
-  client.states.set('r1', chatState());
-  client.history.set('r1', [
-    { kind: 'end', seq: 9, cursor: '9:0', status: 'completed' } as unknown as Envelope,
-  ]);
+  client.states.set('r1', { ...chatState(), status } as RunState);
+  client.history.set(
+    'r1',
+    status === 'completed'
+      ? [{ kind: 'end', seq: 9, cursor: '9:0', status: 'completed' } as unknown as Envelope]
+      : [],
+  );
   let hooks: AppHooks | undefined;
   const setup = await testRender(
     () => (
@@ -193,6 +197,25 @@ test('/model in the run tab sets the model of the next turn and shows it in the 
       | { model?: string }
       | undefined;
     expect(submit?.model).toBe('anthropic-subscription/claude-sonnet-5');
+  } finally {
+    m.setup.renderer.destroy();
+  }
+});
+
+test('s in a running run tab opens the steer dialog; enter sends the note to the daemon', async () => {
+  const m = await mount({ status: 'running' });
+  try {
+    await m.setup.mockInput.pressKey('s');
+    let f = await m.frame();
+    expect(f).toContain('Steer the running task');
+    await m.type('use pnpm, not npm');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(m.client.calls.find((c) => c.method === 'steer')?.args).toEqual([
+      'r1',
+      { note: 'use pnpm, not npm' },
+    ]);
+    expect(f).toContain('steered');
   } finally {
     m.setup.renderer.destroy();
   }

@@ -25,6 +25,8 @@ export interface AuditNode {
   choice?: string;
   costUsd: number;
   toolCalls: AuditToolCall[];
+  /** What people told this task while it ran. */
+  steering?: { note: string; via: string; at: string }[];
 }
 
 export interface AuditApproval {
@@ -151,6 +153,7 @@ export function buildAudit(
       choice: n?.choice,
       costUsd: byNode[nodeId] ?? 0,
       toolCalls: toolCalls.get(nodeId) ?? [],
+      ...(n?.steering?.length ? { steering: n.steering } : {}),
     };
   });
   const gates = events.flatMap((e) =>
@@ -302,6 +305,7 @@ export function renderAuditMarkdown(doc: AuditDoc): string {
     if (n.summary) out.push(`- Summary: ${inline(n.summary)}`);
     if (n.choice) out.push(`- Choice: ${inline(n.choice)}`);
     if (n.error) out.push(`- Error: ${inline(n.error)}`);
+    for (const s of n.steering ?? []) out.push(`- Steered (${s.via}, ${s.at}): ${inline(s.note)}`);
     if (n.toolCalls.length) {
       out.push('', '| Tool | Input | Duration |', '| --- | --- | --- |');
       for (const c of n.toolCalls)

@@ -107,6 +107,13 @@ export class FakeDaemonClient implements DaemonClientLike {
     return { runId: item?.runId ?? 'r', kind: item?.kind ?? 'human' };
   }
 
+  async steer(id: string, o: { nodeId?: string; note: string }): Promise<RunState> {
+    this.record('steer', [id, o]);
+    const s = this.states.get(id);
+    if (!s) throw new DaemonHttpError(404, 'not_found', `run ${id} not found`);
+    return s;
+  }
+
   async cancel(id: string): Promise<RunState> {
     this.record('cancel', [id]);
     const s = this.states.get(id);
