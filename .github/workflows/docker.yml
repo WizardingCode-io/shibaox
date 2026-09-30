@@ -28,19 +28,19 @@ jobs:
           else
             echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
           fi
-      - name: wait for the version and its packages on npm (a tag may arrive before the publish propagates)
+      - name: wait for the version and every package of the monorepo on npm (a tag may arrive before the publish propagates)
         run: |
           v="${{ steps.v.outputs.version }}"
+          # every published workspace package, from this checkout (transitive ones included: shibaox-view once lagged)
+          names="$(node -e 'const fs=require("fs");for (const d of ["packages","apps"]) for (const p of fs.readdirSync(d)) { try { const j=JSON.parse(fs.readFileSync(`${d}/${p}/package.json`,"utf8")); if (!j.private) console.log(j.name) } catch {} }')"
           for i in $(seq 1 80); do
-            if deps="$(npm view "shibaox@$v" dependencies --json 2>/dev/null)"; then
-              ok=1
-              for spec in $(echo "$deps" | node -e 'const d=JSON.parse(require("fs").readFileSync(0,"utf8")); for (const [n,r] of Object.entries(d)) if (n.startsWith("@wizardingcode/")) console.log(n+"@"+r)'); do
-                npm view "$spec" version >/dev/null 2>&1 || ok=0
-              done
-              # the metadata shows a version minutes before its tarball is served: wait for the tarball too
-              curl -fsSL -o /dev/null "https://registry.npmjs.org/shibaox/-/shibaox-$v.tgz" || ok=0
-              [ "$ok" = 1 ] && exit 0
-            fi
+            ok=1
+            for n in $names; do
+              # the metadata shows a version minutes before its tarball is served: wait for the tarball itself
+              base="${n#@wizardingcode/}"
+              curl -fsSL -o /dev/null "https://registry.npmjs.org/$n/-/$base-$v.tgz" || { ok=0; echo "waiting for $n@$v"; break; }
+            done
+            [ "$ok" = 1 ] && exit 0
             sleep 15
           done
           echo "shibaox@$v (or one of its packages) is not on npm" >&2; exit 1
