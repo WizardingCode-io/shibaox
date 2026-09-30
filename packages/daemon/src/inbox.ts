@@ -28,6 +28,8 @@ export interface InboxItem {
     role?: string;
     program?: string;
     category?: 'push' | 'deploy' | 'execute' | 'network' | 'protected';
+    /** `file` for a write to a protected path (the prompt is `write <path>`), else a command. */
+    tool?: 'Bash' | 'file';
   };
 }
 
@@ -75,7 +77,7 @@ const approvalItem = (p: RunState['pendingApprovals'][number]): InboxItem => ({
   nodeId: p.nodeId,
   at: p.at,
   prompt: p.command,
-  detail: { role: p.role, program: p.program, category: p.category },
+  detail: { role: p.role, program: p.program, category: p.category, tool: p.tool },
 });
 
 /**
@@ -117,7 +119,7 @@ export class InboxService implements ApprovalHandler, HumanHandler {
       nodeId: req.nodeId,
       at,
       prompt: req.command,
-      detail: { role: req.role, program: req.program, category: req.category },
+      detail: { role: req.role, program: req.program, category: req.category, tool: req.tool },
     });
     return new Promise<ApprovalAnswer>((resolve) => {
       const done = (a: ApprovalAnswer) => {

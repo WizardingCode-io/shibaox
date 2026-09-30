@@ -1,8 +1,11 @@
+import { mkdirSync, mkdtempSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   type ApprovalAnswer,
   type ApprovalRequest,
   AutoApproveApprovals,
+  argvHash,
   DenyApprovals,
 } from '@wizardingcode/shibaox-core';
 import { RoleSchema } from '@wizardingcode/shibaox-schemas';
@@ -427,6 +430,61 @@ describe('semantic approvals (claude-code)', () => {
       tool: 'file',
       command: 'write infra/prod.tf',
       argv: ['write', 'infra/prod.tf'],
+    });
+  });
+});
+
+describe('semantic approvals: the review probes (claude-code)', () => {
+  const ctx = { signal: new AbortController().signal, suggestions: [] };
+  it('an approval of node -e is not reused when an environment prefix changes the command', async () => {
+    const asked: string[] = [];
+    const fn = buildCanUseTool({
+      role: RoleSchema.parse({
+        role: 'b',
+        tools: ['node'],
+        permissions: { approval_required: ['execute'] },
+      }),
+      cwd: process.cwd(),
+      approvals: {
+        async request(r) {
+          asked.push(r.command);
+          return { approved: true };
+        },
+      },
+      runId: 'r',
+      nodeId: 'n',
+      log: () => {},
+      approvedCommands: { [argvHash(['node', '-e', 'x'])]: true },
+    });
+    expect(await fn('Bash', { command: 'node -e x' }, ctx)).toMatchObject({ behavior: 'allow' });
+    expect(asked).toEqual([]);
+    expect(
+      await fn('Bash', { command: 'NODE_OPTIONS=--require=./evil.js node -e x' }, ctx),
+    ).toMatchObject({ behavior: 'allow' });
+    expect(asked).toEqual(['NODE_OPTIONS=--require=./evil.js node -e x']);
+  });
+  it('a protected write is caught when Claude Code sends the realpath of a symlinked workspace', async () => {
+    const link = mkdtempSync(join(tmpdir(), 'cc-prot-'));
+    const real = realpathSync(link);
+    if (real === link) return; // no symlink on this platform's tmpdir: nothing to test
+    mkdirSync(join(link, 'infra'));
+    const fn = buildCanUseTool({
+      role: RoleSchema.parse({
+        role: 'b',
+        tools: ['read', 'write'],
+        permissions: { protected: ['infra/**'] },
+      }),
+      cwd: link,
+      approvals: new DenyApprovals(),
+      runId: 'r',
+      nodeId: 'n',
+      log: () => {},
+    });
+    expect(
+      await fn('Write', { file_path: join(real, 'infra', 'main.tf'), content: 'x' }, ctx),
+    ).toMatchObject({
+      behavior: 'deny',
+      message: expect.stringMatching(/infra\/main\.tf.*protected/),
     });
   });
 });

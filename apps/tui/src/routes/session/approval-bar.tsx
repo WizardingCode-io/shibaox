@@ -127,7 +127,9 @@ export function ApprovalBar(props: { runId: string }): JSX.Element {
           {items().length > 1
             ? `+${items().length - 1} more waiting`
             : item()?.kind === 'approval'
-              ? 'a command needs your approval before it runs'
+              ? item()?.detail.tool === 'file'
+                ? `a write to a protected file needs your approval${item()?.detail.category ? '' : ''}`
+                : `a ${item()?.detail.category ?? 'command'} command needs your approval before it runs`
               : 'the workflow waits for your answer'}
         </text>
       </box>

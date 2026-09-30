@@ -1,14 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
+import { lstatSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import {
   type AgentTool,
@@ -18,10 +9,11 @@ import {
   classifyArgv,
   type ExecutionContext,
   ghPolicy,
-  isProtected,
+  isProtectedPath,
   type RuntimeEvent,
   runArgv,
   validateJson,
+  workspaceLocalBin,
 } from '@wizardingcode/shibaox-core';
 import type { Role } from '@wizardingcode/shibaox-schemas';
 import { jsonSchema, type ToolSet, tool } from 'ai';
@@ -213,17 +205,10 @@ export function buildTools(a: ToolArgs): ToolSet {
   const canWrite = !readOnly && a.role.tools.includes('write');
   const network = a.role.permissions.network;
   const graphQuery = a.graphQuery;
-  /** The workspace as file tools see it (symlinks resolved, like safePath's results). */
-  const workspaceRoot = () => {
-    try {
-      return realpathSync(a.workspace);
-    } catch {
-      return a.workspace;
-    }
-  };
-  const localBin = (name: string) =>
-    existsSync(join(a.workspace, 'node_modules', '.bin', name)) ||
-    existsSync(join(a.workspace, 'node_modules', name));
+  const localBin = workspaceLocalBin(a.workspace);
+  const protectedGlobsOf = () => [
+    ...new Set([...a.role.permissions.protected, ...(a.protectedPaths ?? [])]),
+  ];
   /** The human's yes for a categorised command or file write; throws when refused or pending. */
   const approve = async (
     category: ApprovalCategory,
@@ -292,14 +277,8 @@ export function buildTools(a: ToolArgs): ToolSet {
               'write_file',
               async ({ path, content }: { path: string; content: string }) => {
                 const p = safePath(a.workspace, path, { write: true });
-                // a new file's path is not resolved through symlinks; an existing one is
-                const rel =
-                  [relative(a.workspace, p), relative(workspaceRoot(), p)].find(
-                    (r) => !r.startsWith('..'),
-                  ) ?? relative(a.workspace, p);
-                if (
-                  isProtected(rel, [...a.role.permissions.protected, ...(a.protectedPaths ?? [])])
-                )
+                const rel = relative(a.workspace, p);
+                if (isProtectedPath(a.workspace, p, protectedGlobsOf()))
                   await approve('protected', {
                     tool: 'file',
                     program: 'write',

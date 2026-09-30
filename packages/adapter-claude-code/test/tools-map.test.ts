@@ -11,7 +11,8 @@ describe('mapRoleTools', () => {
       }),
     );
     // file tools are decided per path by canUseTool
-    expect(r.allowedTools).toEqual(['Bash(node *)', 'Bash(jq *)']);
+    // node is inspected by the policy (node -e): no blanket allow, like git and the deploy programs
+    expect(r.allowedTools).toEqual(['Bash(jq *)']);
     expect(r.disallowedTools).toEqual([
       'Bash(rm -rf *)',
       'Bash(git push *)',
@@ -47,5 +48,17 @@ describe('mapRoleTools', () => {
   });
   it('an empty tools list allows only nothing beyond reading', () => {
     expect(mapRoleTools(RoleSchema.parse({ role: 'analyst' })).allowedTools).toEqual([]);
+  });
+});
+
+describe('policy-inspected programs get no blanket allow', () => {
+  it('node, curl, npx, bun, python3 and sudo are decided per call by canUseTool', () => {
+    const r = mapRoleTools(
+      RoleSchema.parse({
+        role: 'x',
+        tools: ['node', 'curl', 'npx', 'bun', 'python3', 'sudo', 'jq'],
+      }),
+    );
+    expect(r.allowedTools).toEqual(['Bash(jq *)']);
   });
 });

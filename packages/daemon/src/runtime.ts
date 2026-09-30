@@ -35,8 +35,8 @@ import {
   reviewCheckRunner,
 } from '@wizardingcode/shibaox-providers';
 import type { Org, Role, Workflow } from '@wizardingcode/shibaox-schemas';
-import { loadProjectFile } from '@wizardingcode/shibaox-schemas';
 import { diffRunWorkspace } from '@wizardingcode/shibaox-workspace';
+import { projectProtectedGlobs } from './protected.js';
 import { changeDescriber } from './runs/summarize.js';
 
 export const AVAILABLE_RUNTIMES = ['mock', 'direct', 'claude-code'];
@@ -103,6 +103,8 @@ export interface RuntimeOptions {
   /** Push/deploy approvals for adapters; defaults to asking `human` (deferred → task fails). */
   approvals?: ApprovalHandler;
   log: (line: string) => void;
+  /** The project checkout (where `shibaox.yaml` is read for protected files); the workspace when absent. */
+  project?: string;
   /** Explicit adapter (`--adapter`); else `adapter:` in org.yaml; else `mock`. */
   adapter?: AdapterId;
   /** Workflow about to run/resume: with `direct`, its task roles are resolved up front. */
@@ -331,18 +333,10 @@ export function buildRuntime(o: RuntimeOptions) {
 
   const orgRoot = o.orgRoot ?? o.org.root;
   const approvals: ApprovalHandler = o.approvals ?? humanApprovals(o.human);
-  // files a task may not write: the role's globs plus the project's shibaox.yaml
-  const protectedFor = (job: TaskJob): string[] => {
-    let project: { protected: string[] } | undefined;
-    try {
-      project = loadProjectFile(job.workspace);
-    } catch (e) {
-      o.log(
-        `warn: shibaox.yaml not read for protected files: ${e instanceof Error ? e.message : String(e)}`,
-      );
-    }
-    return protectedGlobs(job.role, project);
-  };
+  // files a task may not write: the role's globs plus the project's shibaox.yaml, read from
+  // the project checkout (a run's worktree is the model's to edit); unreadable → the task fails
+  const protectedFor = (job: TaskJob): string[] =>
+    protectedGlobs(job.role, { protected: projectProtectedGlobs(o.project ?? job.workspace) });
   // the role's catalog MCP servers, with their vault keys (a missing key fails the task clearly)
   const mcpFor = (job: TaskJob): McpServerSpec[] =>
     job.role.mcp.map((id) => {

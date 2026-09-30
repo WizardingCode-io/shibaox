@@ -41,8 +41,11 @@ const escapeHtml = (s: string) =>
 export function telegramText(item: InboxItem): string {
   const where = [`Run ${item.runId.slice(0, 8)}`, `node ${item.nodeId}`];
   if (item.detail.role) where.push(`role ${item.detail.role}`);
-  if (item.kind === 'approval')
-    return `Approval needed\n${where.join(' · ')}\n<code>${escapeHtml(item.prompt)}</code>`;
+  if (item.kind === 'approval') {
+    const what = item.detail.tool === 'file' ? 'File write' : 'Command';
+    const category = item.detail.category ? ` (${item.detail.category})` : '';
+    return `Approval needed${category}\n${where.join(' · ')}\n${what}: <code>${escapeHtml(item.prompt)}</code>`;
+  }
   return `Decision needed\n${where.join(' · ')}\n${escapeHtml(item.prompt)}`;
 }
 

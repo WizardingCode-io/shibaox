@@ -50,8 +50,8 @@ tools: [read, write, git, node, pnpm]
 permissions:
   fs: [workspace]
   network: [github.com]             # hosts it may fetch; '*' = any
-  approval_required: [push, deploy]  # what asks a human: push | deploy | execute | network | protected
-  protected: ['infra/**', '*.lock']  # files a task may not write without a protected approval
+  approval_required: [push, deploy]  # what asks a human: push | deploy | execute | network | protected (only these)
+  protected: ['infra/**', '*.lock']  # files a task may not write without a protected approval (*.lock = any depth)
 capabilities: [orchestrate, memory] # start_workflow; remember/recall
 mcp: [playwright]                   # catalog MCP servers whose tools it gets, in every runtime
 skills: [e2e-checklist]             # org/skills/<id>/SKILL.md appended to its prompt

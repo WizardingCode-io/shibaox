@@ -698,6 +698,7 @@ export class RunManager {
       env: this.opts.env,
       extraProviders: this.opts.extraProviders,
       queryFn: this.opts.queryFn,
+      project: r.project,
       graph: r.graph,
       newRunId: r.runId ? () => r.runId as string : undefined,
       mockScript: this.opts.mockScript,

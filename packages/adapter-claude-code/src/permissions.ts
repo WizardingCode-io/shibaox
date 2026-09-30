@@ -6,7 +6,8 @@ import {
   type ApprovalHandler,
   argvHash,
   hostAllowed,
-  isProtected,
+  isProtectedPath,
+  workspaceLocalBin,
 } from '@wizardingcode/shibaox-core';
 import type { Role } from '@wizardingcode/shibaox-schemas';
 import { type ApprovalCategory, analyseBashCommand, type ToolCategory } from './bash-command.js';
@@ -110,6 +111,9 @@ export function buildCanUseTool(args: CanUseToolArgs): CanUseTool {
     return { behavior: 'deny', message };
   };
   const notAllowed = (name: string) => `tool "${name}" is not allowed for role ${args.role.role}`;
+  const protectedGlobsOf = () => [
+    ...new Set([...args.role.permissions.protected, ...(args.protectedPaths ?? [])]),
+  ];
   return async (toolName, input, options): Promise<PermissionResult> => {
     const fileGroup = Object.entries(FILE_TOOLS).find(([, tools]) => tools.includes(toolName));
     if (fileGroup) {
@@ -119,8 +123,9 @@ export function buildCanUseTool(args: CanUseToolArgs): CanUseTool {
       if (violation) return deny(toolName, input, violation);
       if (fileGroup[0] === 'write') {
         const raw = input.file_path ?? input.notebook_path ?? input.path;
-        const rel = relative(args.cwd, resolve(args.cwd, String(raw ?? '')));
-        if (isProtected(rel, [...args.role.permissions.protected, ...(args.protectedPaths ?? [])]))
+        const target = resolve(args.cwd, String(raw ?? ''));
+        const rel = relative(args.cwd, target);
+        if (isProtectedPath(args.cwd, target, protectedGlobsOf()))
           return ask(
             toolName,
             input,
@@ -158,9 +163,7 @@ export function buildCanUseTool(args: CanUseToolArgs): CanUseTool {
     const command = String(input.command ?? '');
     const a = analyseBashCommand(command, {
       network: args.role.permissions.network,
-      localBin: (name) =>
-        existsSync(join(args.cwd, 'node_modules', '.bin', name)) ||
-        existsSync(join(args.cwd, 'node_modules', name)),
+      localBin: workspaceLocalBin(args.cwd),
     });
     if (!a.ok) return deny(toolName, input, a.reason);
     if (!args.role.tools.includes(a.program)) return deny(toolName, input, notAllowed(a.program));

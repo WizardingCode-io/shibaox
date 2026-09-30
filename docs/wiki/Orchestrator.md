@@ -27,6 +27,10 @@ model_tier: cheap                      # the conversation runs on the cheap tier
 
 A `conversation: true` workflow runs **in place** on your checkout; dispatched team runs use the org default (a worktree in a git repository). The turn Shibaox submits when a dispatched run ends never gets `start_workflow`, so nothing re-dispatches without you. Memory notes reach only roles with the `memory` capability, quoted as data.
 
+## Inline code and the network
+
+The scaffold's `assistant` lists `execute` in `approval_required`: when it reaches for `python3 -c`, `node -e` or `npx <something not installed>` the run pauses for your yes in the inbox instead of refusing. Without `execute` those calls are refused (see [Security](Security)); `curl` to a host outside `permissions.network` needs `network` the same way.
+
 ## Models without tool calling
 
 Many local models and some routers write their tool calls as text (`<tools>{"name": …}</tools>`, `<tool_call>…</tool_call>`, a fenced JSON block, or `finish` followed by JSON). The direct adapter runs those as real tool calls, hands the results back and lets the model continue, so the conversation shows `⊙ start_workflow …` rather than raw XML. Text streams as it arrives, held back from the first sign of a call written as text so no half-written call ever shows.

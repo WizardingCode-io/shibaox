@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -183,9 +183,10 @@ describe('semantic approvals (direct)', () => {
   const setup = async (
     role: Record<string, unknown>,
     script: Parameters<typeof startFakeOpenAI>[0],
-    o: { protected?: string[] } = {},
+    o: { protected?: string[]; before?: (ws: string) => void } = {},
   ) => {
     const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    o.before?.(ws);
     fake = await startFakeOpenAI(script);
     const asked: ApprovalRequest[] = [];
     const approvals: ApprovalHandler = {
@@ -286,5 +287,19 @@ describe('semantic approvals (direct)', () => {
     });
     expect(existsSync(join(b.ws, 'infra/prod.tf'))).toBe(true);
     expect(b.asked).toHaveLength(1);
+  });
+  it('a symlink inside the workspace does not get around a protected glob', async () => {
+    const a = await setup(
+      { permissions: { protected: ['infra/**'] } },
+      finishAfter([{ name: 'write_file', args: { path: 'x/main.tf', content: 'x' } }]),
+      {
+        before: (ws) => {
+          mkdirSync(join(ws, 'infra'));
+          symlinkSync(join(ws, 'infra'), join(ws, 'x'));
+        },
+      },
+    );
+    expect(a.result('write_file')).toMatch(/protected/);
+    expect(existsSync(join(a.ws, 'infra', 'main.tf'))).toBe(false);
   });
 });

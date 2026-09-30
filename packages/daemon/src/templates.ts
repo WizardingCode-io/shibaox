@@ -48,7 +48,7 @@ capabilities: [orchestrate, memory]
 tools: [read, write, git, node, npm, pnpm, bun, python3]
 permissions:
   network: ['*']
-  approval_required: [push, deploy]
+  approval_required: [push, deploy, execute]   # execute: inline code (python3 -c, node -e) and npx of a package not installed ask first
 max_steps: 40
 max_turns: 80
 system_prompt: prompts/assistant.md
