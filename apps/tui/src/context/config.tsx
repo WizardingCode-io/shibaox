@@ -7,6 +7,8 @@ export interface AppConfig {
   cwd: string;
   /** The environment the dashboard was launched with (PATH decides the default adapter). */
   env: NodeJS.ProcessEnv;
+  /** The URL of a daemon on another machine: its disk is not ours (projects and orgs live there). */
+  remote?: string;
 }
 
 const Context = createContext<AppConfig>();

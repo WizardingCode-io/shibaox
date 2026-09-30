@@ -472,6 +472,7 @@ export class Daemon {
 
   async start(): Promise<void> {
     await this.defaultOrg();
+    mkdirSync(this.workspace, { recursive: true });
     this.schedules = this.opts.schedules
       ? this.opts.schedules(this)
       : this.store instanceof SqliteEventStore

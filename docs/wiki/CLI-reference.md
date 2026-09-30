@@ -1,6 +1,6 @@
 # CLI reference
 
-`shibaox` with no command opens the [Dashboard](Dashboard). Every command takes `--json` (one JSON object per line) and `--help`.
+`shibaox` with no command opens the [Dashboard](Dashboard). Every command takes `--json` (one JSON object per line), `--remote <url>` (a daemon on another machine, see [Remote daemon](Remote-daemon)) and `--help`.
 
 ## Runs
 
@@ -36,6 +36,8 @@
 | --- | --- |
 | `shibaox daemon start [--detach]`, `status`, `stop [--force]` | the daemon |
 | `shibaox daemon install`, `uninstall` | the launchd service (macOS) |
+| `shibaox serve [--host <addr>] [--port <n>]` | the daemon in the foreground, reachable over the network with the token in `SHIBAOX_DAEMON_TOKEN` (vault or environment) |
+| `shibaox remote set <url> [token]`, `show`, `clear` | send every command to a daemon on another machine (`~/.shibaox/remote.json`, 0600; the token from stdin when omitted) |
 | `shibaox schedule add "<cron>" <workflow> [--org] [--project] [--input]`, `list`, `rm <id>`, `run <id>` | cron schedules |
 | `shibaox doctor` | prerequisites, the daemon, the service, the install, keys, Telegram, the Claude login |
 | `shibaox upgrade` | updates an installer checkout and restarts the daemon |

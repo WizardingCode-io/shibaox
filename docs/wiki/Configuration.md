@@ -91,7 +91,17 @@ channels:
     project: /path/to/project
     workflow: chat
     # adapter: claude-code
+listen:                         # a network listener next to the socket (see Remote daemon)
+  host: 0.0.0.0
+  port: 7433
+  token_env: SHIBAOX_DAEMON_TOKEN
+  # tls: { cert: ./cert.pem, key: ./key.pem }
+projects: [/srv/app]            # what a remote dashboard offers as projects
 ```
+
+## `~/.shibaox/remote.json`
+
+Written by `shibaox remote set <url> <token>` (0600): `{ "baseUrl": "http://box:7433", "token": "…" }`. While it exists every command goes to that daemon; `shibaox remote clear` removes it.
 
 ## Environment
 
@@ -99,6 +109,8 @@ channels:
 | --- | --- |
 | `SHIBAOX_HOME` | the home directory (default `~/.shibaox`) |
 | `SHIBAOX_NO_AUTOSTART=1` | never start the daemon on demand |
+| `SHIBAOX_REMOTE`, `SHIBAOX_REMOTE_TOKEN` | a daemon on another machine and its token (over `remote.json`; `--remote <url>` sets the first for one command) |
+| `SHIBAOX_DAEMON_TOKEN` | on the server: the token `shibaox serve` expects (the vault is the better place) |
 | `SHIBAOX_NO_MOTION=1` | no animations in the dashboard |
 | `SHIBAOX_APP` | the installer checkout (`shibaox upgrade`) |
 | `TYPESAFE_API_KEY`, `SHIBAOX_JEV_BASE_URL` | Jev through TypeSafe |

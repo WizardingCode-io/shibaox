@@ -27,6 +27,8 @@ export interface AppOptions {
   version: string;
   home: string;
   cwd?: string;
+  /** A daemon on another machine (`--remote <url>`). */
+  remote?: string;
   env?: NodeJS.ProcessEnv;
   renderer?: CliRenderer;
   log?: (line: string) => void;
@@ -183,7 +185,9 @@ export function App(props: AppProps): JSX.Element {
   const cwd = props.cwd ?? process.cwd();
   return (
     <ClientProvider client={props.client}>
-      <ConfigProvider config={{ version: props.version, home: props.home, cwd, env }}>
+      <ConfigProvider
+        config={{ version: props.version, home: props.home, cwd, env, remote: props.remote }}
+      >
         <PrefsProvider home={props.home}>
           <MotionProvider enabled={motionEnabled(env, loadPrefs(props.home))}>
             <ThemeProvider>
@@ -250,6 +254,7 @@ function mount(
           version={o.version}
           home={o.home}
           cwd={o.cwd}
+          remote={o.remote}
           env={o.env}
           runId={o.runId}
           log={o.log}

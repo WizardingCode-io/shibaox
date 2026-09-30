@@ -8,6 +8,8 @@ import type {
   ModelChoice,
   OrgConfig,
   OrgConfigPatch,
+  OrgInfo,
+  ProjectEntry,
   RunSummaryPlus,
   SubmitRequest,
 } from '@wizardingcode/shibaox-daemon';
@@ -36,6 +38,8 @@ export interface DaemonClientLike {
   orgConfig(root: string): Promise<OrgConfig>;
   setOrgConfig(root: string, patch: OrgConfigPatch): Promise<OrgConfig>;
   defaultOrg(): Promise<{ root: string; created: boolean }>;
+  orgInfo(root: string): Promise<OrgInfo>;
+  projects(): Promise<ProjectEntry[]>;
   keys(): Promise<KeyRow[]>;
   setKey(name: string, value: string): Promise<{ name: string; set: true }>;
   unsetKey(name: string): Promise<{ name: string; removed: boolean }>;

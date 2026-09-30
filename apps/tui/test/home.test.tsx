@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { testRender } from '@opentui/solid';
 import type { ProjectProfile } from '@wizardingcode/shibaox-core';
-import type { ModelChoice } from '@wizardingcode/shibaox-daemon';
+import type { ModelChoice, OrgInfo, ProjectEntry } from '@wizardingcode/shibaox-daemon';
 import { scaffoldOrg } from '@wizardingcode/shibaox-daemon';
 import { App } from '../src/app.js';
 import { loadPrefs } from '../src/context/prefs.js';
@@ -25,6 +25,11 @@ async function mount(
     daemonDown?: boolean;
     /** `defaultOrg()` fails this many times first (a daemon still settling). */
     defaultOrgFailures?: number;
+    /** A daemon on another machine: its URL; the fake answers `projects` and `orgInfos`. */
+    remote?: string;
+    projects?: ProjectEntry[];
+    orgInfos?: Record<string, OrgInfo>;
+    defaultOrgRoot?: string;
   } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'tui-home-'));
@@ -40,6 +45,9 @@ async function mount(
   if (o.noLocalOrg) mkdirSync(cwd, { recursive: true });
   if (o.profile) client.profiles.set(dir, o.profile);
   if (o.models) client.modelChoices = o.models;
+  if (o.projects) client.projectList = o.projects;
+  for (const [root, info] of Object.entries(o.orgInfos ?? {})) client.orgInfos.set(root, info);
+  if (o.defaultOrgRoot) client.defaultOrgRoot = o.defaultOrgRoot;
   const exits: number[] = [];
   const setup = await testRender(
     () => (
@@ -48,6 +56,7 @@ async function mount(
         version="0.0.1"
         home={home}
         cwd={cwd}
+        remote={o.remote}
         env={{ SHIBAOX_NO_MOTION: '1', PATH: '/nonexistent', ...o.env }}
         onExit={(c) => exits.push(c)}
       />
@@ -655,3 +664,62 @@ test('a fresh install: the default org is asked again after a transient failure,
     m.done();
   }
 }, 20_000);
+
+test('a remote daemon: project and org come from the daemon, paths are checked there, nothing local is read', async () => {
+  const m = await mount({
+    width: 120,
+    remote: 'http://10.0.0.5:7433',
+    noLocalOrg: true,
+    defaultOrgRoot: '/srv/org',
+    projects: [
+      { path: '/srv/app', source: 'config' },
+      { path: '/srv/home/.shibaox/workspace', source: 'workspace' },
+    ],
+    orgInfos: {
+      '/srv/org': { workflows: ['chat', 'land-feature'], single: ['chat'], subscription: false },
+    },
+  });
+  try {
+    let f = await m.frame();
+    expect(f).toContain('project /srv/app'); // the first project the daemon offers
+    expect(f).toContain('workflow chat'); // the daemon's default org, described by the daemon
+    expect(f).toContain('remote 10.0.0.5:7433');
+    expect(f).not.toContain('Org not found');
+    await m.type('/project relative/dir');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).toContain('absolute path');
+    await m.type('/project /srv/x');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).toContain('Project not found: /srv/x'); // the daemon has no profile for it
+    expect(f).toContain('project /srv/app');
+    m.client.profiles.set('/srv/app2', {
+      path: '/srv/app2',
+      name: 'app2',
+      stack: [],
+      tests: [],
+      lint: [],
+      files: 3,
+      loc: 10,
+      summary: 'app2',
+    } as unknown as ProjectProfile);
+    await m.type('/project /srv/app2');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).toContain('project /srv/app2');
+    await m.type('/org /srv/nope');
+    await m.setup.mockInput.pressEnter();
+    f = await m.frame();
+    expect(f).toContain('Org not found: /srv/nope');
+    expect(f).toContain('workflow chat'); // the current org stays
+    await m.type('do it');
+    await m.setup.mockInput.pressEnter();
+    await m.frame();
+    const submit = m.client.calls.find((c) => c.method === 'submitRun');
+    expect(submit?.args[0]).toMatchObject({ orgRoot: '/srv/org', project: '/srv/app2' });
+    expect(m.client.calls.some((c) => c.method === 'projects')).toBe(true);
+  } finally {
+    m.done();
+  }
+});

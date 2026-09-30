@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { useTerminalDimensions } from '@opentui/solid';
-import { loadOrg, OrgLoadError } from '@wizardingcode/shibaox-schemas';
+import type { OrgInfo } from '@wizardingcode/shibaox-daemon';
+import { DaemonHttpError } from '@wizardingcode/shibaox-daemon/client';
 import {
   createEffect,
   createMemo,
@@ -53,38 +54,23 @@ export const HOME_HINTS = [
   { key: '?', label: 'help' },
 ];
 
-interface OrgInfo {
-  workflows: string[];
-  /** Workflows marked `conversation: true` (the org's `chat`): they run in place. */
-  single: string[];
-  subscription: boolean;
-  /** `org.yaml adapter`: the org's default runtime. */
-  adapter?: 'mock' | 'direct' | 'claude-code';
+/** What the home knows about the org, from the daemon; `error` when it could not be described. */
+interface OrgView extends OrgInfo {
   error?: string;
 }
+const NO_ORG: OrgView = { workflows: [], single: [], subscription: false };
 
-/** The org's workflows and whether its strong tier runs on a subscription runtime, or why it could not be loaded. */
-function orgInfo(root: string): OrgInfo {
+const notFound = (e: unknown) =>
+  (e instanceof DaemonHttpError && e.status === 404) ||
+  (e instanceof Error && /not found/i.test(e.message));
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** `10.0.0.5:7433` for a remote URL (the footer names the machine, not the socket). */
+export function remoteLabel(remote: string): string {
   try {
-    const org = loadOrg(root);
-    const strong = String(org.models.tiers?.strong ?? '');
-    return {
-      workflows: Object.keys(org.workflows),
-      single: Object.values(org.workflows)
-        .filter((w) => w.conversation)
-        .map((w) => w.workflow),
-      subscription: /-subscription\//.test(strong),
-      adapter: org.org.adapter,
-    };
-  } catch (e) {
-    if (e instanceof OrgLoadError && /not found/i.test(e.message))
-      return { workflows: [], single: [], subscription: false, error: `Org not found: ${root}` };
-    return {
-      workflows: [],
-      single: [],
-      subscription: false,
-      error: e instanceof Error ? e.message : String(e),
-    };
+    return new URL(remote).host;
+  } catch {
+    return remote;
   }
 }
 
@@ -122,11 +108,16 @@ export function Home(): JSX.Element {
   const dialog = useDialog();
   const dimensions = useTerminalDimensions();
   let prompt: PromptRef | undefined;
-  // the org: the remembered one, else `./org` next to the project, else the daemon's default
+  // the org: the remembered one, else `./org` next to the project, else the daemon's default.
+  // With a remote daemon the disk is its own: no local paths, no remembered local org; the
+  // project is the first the daemon offers
+  const remote = config.remote;
   const localOrg = join(config.cwd, 'org');
   const [ctx, setCtx] = createSignal<PromptContext>({
-    org: prefs.data.lastOrg ?? (existsSync(join(localOrg, 'org.yaml')) ? localOrg : ''),
-    project: defaultProject(config.cwd, config.env.HOME),
+    org: remote
+      ? ''
+      : (prefs.data.lastOrg ?? (existsSync(join(localOrg, 'org.yaml')) ? localOrg : '')),
+    project: remote ? '' : defaultProject(config.cwd, config.env.HOME),
     // the org's models decide the runtime: a subscription tier runs through claude-code, an API
     // or local tier through our own agent loop (direct); mock is never the remembered choice
     adapter: ADAPTERS.find((a) => a === prefs.data.lastAdapter && a !== 'mock') ?? 'direct',
@@ -154,13 +145,28 @@ export function Home(): JSX.Element {
     const d = defaultOrg();
     if (d?.root && !ctx().org) setCtx((c) => ({ ...c, org: d.root }));
   });
-  const orgRoot = createMemo(() => ctx().org);
-  // bumped when the org's files change under us (a /tiers save) so the memo reads them again
-  const [orgVersion, setOrgVersion] = createSignal(0);
-  const org = createMemo(() => {
-    orgVersion();
-    return orgInfo(orgRoot());
+  // the projects a remote daemon offers (daemon.yaml projects, recent runs, its workspace)
+  const [projects] = createResource(() => (remote ? client.projects().catch(() => []) : []));
+  createEffect(() => {
+    const first = projects()?.[0];
+    if (first && !ctx().project) setCtx((c) => ({ ...c, project: first.path }));
   });
+  const orgRoot = createMemo(() => ctx().org);
+  // bumped when the org's files change under us (a /tiers save) so the daemon describes it again
+  const [orgVersion, setOrgVersion] = createSignal(0);
+  const [orgRes] = createResource(
+    () => ({ root: orgRoot(), v: orgVersion() }),
+    async (k): Promise<OrgView> => {
+      if (!k.root) return NO_ORG;
+      try {
+        return await client.orgInfo(k.root);
+      } catch (e) {
+        return { ...NO_ORG, error: notFound(e) ? `Org not found: ${k.root}` : message(e) };
+      }
+    },
+  );
+  // the last description while the next one is on its way: no flash of an empty org
+  const org = () => orgRes.latest ?? NO_ORG;
   // what the project is (stack, tests, size), from the daemon; nothing when it cannot say
   const [profile] = createResource(
     () => ({ project: ctx().project, org: orgRoot() }),
@@ -215,6 +221,20 @@ export function Home(): JSX.Element {
         );
       return;
     }
+    if (remote && (cmd.command === 'project' || cmd.command === 'org')) {
+      // the path lives on the daemon's machine: absolute, and checked there
+      const p = cmd.arg.trim();
+      const label = cmd.command === 'org' ? 'Org' : 'Project';
+      if (!p) return setError(`${label} directory is required`);
+      if (!isAbsolute(p))
+        return setError(`Remote daemon: absolute path needed (/srv/app)`);
+      const check = cmd.command === 'org' ? client.orgInfo(p) : client.projectProfile(p);
+      void check.then(
+        () => setCtx((c) => (cmd.command === 'org' ? { ...c, org: p } : { ...c, project: p })),
+        (e: unknown) => setError(notFound(e) ? `${label} not found: ${p}` : message(e)),
+      );
+      return;
+    }
     const next = applyPromptCommand(ctx(), cmd, { cwd: config.cwd });
     if ('error' in next) return setError(next.error);
     setCtx(next);
@@ -228,12 +248,11 @@ export function Home(): JSX.Element {
     const req = toSubmitRequest({ ...ctx(), workflow: wf }, text);
     // a conversation acts on the checkout itself; teams get the org default (a worktree)
     if (req.workspace === undefined && org().single.includes(wf)) req.workspace = 'inplace';
-    if (req.project === join(config.env.HOME || homedir(), '.shibaox', 'workspace'))
-      mkdirSync(req.project, { recursive: true });
     const runId = await data.actions.submit(req);
     if (!runId) return;
     prefs.update({
-      lastOrg: req.orgRoot,
+      // a remote org is a path on another machine: not remembered for the local daemon
+      lastOrg: remote ? prefs.data.lastOrg : req.orgRoot,
       lastAdapter: req.adapter === 'mock' ? undefined : (req.adapter as Adapter),
       lastWorkflow: wf,
       lastModel: req.model,
@@ -350,7 +369,7 @@ export function Home(): JSX.Element {
         width="100%"
       >
         <text fg={theme.text.muted} flexShrink={1} wrapMode="none">
-          {tilde(config.cwd, config.env.HOME)}
+          {remote ? `remote ${remoteLabel(remote)}` : tilde(config.cwd, config.env.HOME)}
         </text>
         <text fg={theme.text.muted} flexShrink={0} wrapMode="none">
           {`  ·  ${daemonLine(data.state, config.version)}`}

@@ -10,9 +10,12 @@ Shibaox runs agents on your machine with your user's permissions. These are the 
 - **Push and deploy ask first.** `git push`, `npm publish`, `vercel deploy`, `kubectl apply`, `terraform apply`, `docker push` and the rest (see [Claude Code runtime](Claude-Code-runtime)) are refused unless the role lists `push`/`deploy` in `permissions.approval_required` and you approve that exact command, in the inbox, the dashboard or Telegram. `gh` is not gated.
 - **Git nodes land only after a human node.** The template puts `approve-push` before `commit` and `merge`; a cancelled run never lands.
 - **Keys stay in Shibaox.** The vault is a 0600 file in a 0700 directory; runtimes get only the keys they need; channels never receive file contents, diffs or tool output; the socket is 0600 and local.
+- **The network listener needs a token.** With `listen` in `daemon.yaml` (or `shibaox serve`) the API answers on TCP only to requests with the bearer token, compared in constant time; without a token the daemon refuses to listen; a request with no token gets the version and nothing else.
 - **Everything is on the record.** Every tool call, approval and decision is an event in the run log.
 
 ## What is not
+
+**A daemon token is shell access** on the machine that runs the daemon, as that user: the API takes any org and any project path, and tasks run programs. Keep it like an SSH key, send it over TLS, an SSH tunnel or a VPN only, and rotate it by changing the vault key and restarting `serve`. See [Remote daemon](Remote-daemon).
 
 An allowlist is **not a sandbox**. An allowed program such as `node`, `pnpm` or `make` can run arbitrary code: a `package.json` script, `node -e`, a script the task wrote. Claude Code's Bash tool snapshots your shell rc files, so anything they export can reach the task's shell. Cancelling a run does not kill a command that is already running. Only list programs you would let the model run unattended, and run Shibaox on projects and machines where that is acceptable.
 

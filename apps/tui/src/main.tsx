@@ -1,6 +1,6 @@
 /**
  * The Bun entry the CLI spawns (from the apps/tui root, with @opentui/solid/preload):
- *   bun --preload @opentui/solid/preload src/main.tsx dashboard --socket <path> --home <dir> --version <v> [--cwd <dir>]
+ *   bun --preload @opentui/solid/preload src/main.tsx dashboard --socket <path> | --remote <url> --home <dir> --version <v> [--cwd <dir>]
  *   bun --preload @opentui/solid/preload src/main.tsx stream <runId> --socket <path> --home <dir>
  */
 import { appendFileSync } from 'node:fs';
@@ -15,14 +15,21 @@ function arg(name: string): string | undefined {
 
 const mode = process.argv[2];
 const socket = arg('socket');
+const remote = arg('remote');
 const home = arg('home');
-if (!socket || !home || (mode !== 'dashboard' && mode !== 'stream')) {
+if ((!socket && !remote) || !home || (mode !== 'dashboard' && mode !== 'stream')) {
   console.error(
-    'usage: main.tsx dashboard|stream [runId] --socket <path> --home <dir> [--version <v>] [--cwd <dir>]',
+    'usage: main.tsx dashboard|stream [runId] --socket <path> | --remote <url> --home <dir> [--version <v>] [--cwd <dir>]',
   );
   process.exit(2);
 }
-const client = new DaemonClient(socket);
+// the token for a remote daemon comes in the environment (never on the command line) and
+// goes no further than this client
+const token = process.env.SHIBAOX_REMOTE_TOKEN;
+delete process.env.SHIBAOX_REMOTE_TOKEN;
+const client = remote
+  ? new DaemonClient({ baseUrl: remote, token })
+  : new DaemonClient(socket as string);
 const log = (line: string) => {
   try {
     appendFileSync(join(home, 'tui.log'), `${new Date().toISOString()} ${line}\n`);
@@ -35,6 +42,7 @@ if (mode === 'dashboard') {
     version: arg('version') ?? '0.0.0',
     home,
     cwd: arg('cwd'),
+    remote,
     log,
   });
   process.exit(code);
@@ -48,6 +56,7 @@ if (mode === 'dashboard') {
     version: arg('version') ?? '0.0.0',
     home,
     cwd: arg('cwd'),
+    remote,
     log,
   });
   if (r.message) console.log(r.message);

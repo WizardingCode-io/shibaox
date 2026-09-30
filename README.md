@@ -19,13 +19,14 @@
 
 ---
 
-Shibaox runs on your machine. A local daemon keeps your runs going after you close the terminal, a terminal dashboard shows what every agent is doing, and your models stay yours: Claude (subscription or API), OpenAI, OpenRouter, Ollama, LM Studio, and thirty more providers through one catalog.
+Shibaox runs on your machine, or on a server you reach with a token. A daemon keeps your runs going after you close the terminal, a terminal dashboard shows what every agent is doing, and your models stay yours: Claude (subscription or API), OpenAI, OpenRouter, Ollama, LM Studio, and thirty more providers through one catalog.
 
 - **Your org, as files.** Teams, roles, gates and workflows in `org/*.yaml`. Version it, review it, share it.
 - **One orchestrator.** Ask for what you want in your own language. It reads and edits the project, runs tools, and hands larger work to the right workflow.
 - **Gates before anything ships.** The project's own tests, its linter, a model review with a rubric, and a human approval where it matters.
 - **A git cycle that lands.** Worktree per run, a commit with a written message, a pull request or a merge through a per-project queue.
 - **Nothing off-screen.** Event-sourced runs you can replay, a cost line per turn, approvals in an inbox, reports on Telegram.
+- **Runs anywhere.** `shibaox serve` on a VPS or a Mac mini, `shibaox remote set` on your laptop: the same dashboard, the same commands, runs that land while the laptop is closed.
 
 ## Install
 
@@ -87,6 +88,7 @@ The [wiki](https://github.com/WizardingCode-io/shibaox/wiki) has everything, org
 | [Gates](https://github.com/WizardingCode-io/shibaox/wiki/Gates) | tests, lint, review, judge, jev, human |
 | [Git cycle](https://github.com/WizardingCode-io/shibaox/wiki/Git-cycle) | commit, pull request, merge queue |
 | [Daemon and service](https://github.com/WizardingCode-io/shibaox/wiki/Daemon-and-service) | 24h service, inbox, schedules, reports |
+| [Remote daemon](https://github.com/WizardingCode-io/shibaox/wiki/Remote-daemon) | `shibaox serve` on a server, a token on your machine |
 | [Channels and Telegram](https://github.com/WizardingCode-io/shibaox/wiki/Channels-and-Telegram) | approve and talk from your phone |
 | [Security](https://github.com/WizardingCode-io/shibaox/wiki/Security) | what an allowlist is, and is not |
 | [CLI reference](https://github.com/WizardingCode-io/shibaox/wiki/CLI-reference) | every command |

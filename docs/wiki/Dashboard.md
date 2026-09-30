@@ -19,6 +19,8 @@ Slash commands set the context shown inside the prompt:
 
 The org defaults to `./org` next to the project when it exists, else the daemon's default org; the project to the current directory (your home directory itself becomes `~/.shibaox/workspace`). The last org, adapter, workflow and model are remembered in `~/.shibaox/ui.json`. The footer shows the daemon, how many runs work or wait, and how many things need you.
 
+With a [remote daemon](Remote-daemon) the dashboard reads nothing from your disk: the project is the first the daemon offers (`daemon.yaml projects`, recent runs, its workspace), the org is the daemon's default, `/project` and `/org` take absolute paths on that machine and the daemon checks them, and the footer names the remote.
+
 ## A run
 
 A run opens as a tab and reads like a conversation: one card per node with the agent's text in Markdown, tool calls (`> Read src/a.ts · 7 ms · done`; `enter` shows input and output), touched files, gate checks with evidence, the decision and its confidence, and a summary at the end (status, cost, duration, files changed, branch).

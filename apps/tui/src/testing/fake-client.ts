@@ -8,9 +8,12 @@ import type {
   ModelChoice,
   OrgConfig,
   OrgConfigPatch,
+  OrgInfo,
+  ProjectEntry,
   RunSummaryPlus,
   SubmitRequest,
 } from '@wizardingcode/shibaox-daemon';
+import { orgInfo as describeOrg } from '@wizardingcode/shibaox-daemon';
 import { DaemonHttpError } from '@wizardingcode/shibaox-daemon/client';
 import type { DaemonClientLike } from '../context/client.js';
 
@@ -53,6 +56,10 @@ export class FakeDaemonClient implements DaemonClientLike {
   defaultOrgRoot = '/o';
   /** How many times `defaultOrg()` still fails before answering (a daemon that is settling). */
   defaultOrgFailures = 0;
+  /** What `GET /orgs/info` answers for a root; other roots are read from disk like the daemon does. */
+  orgInfos = new Map<string, OrgInfo>();
+  /** What `GET /projects` answers. */
+  projectList: ProjectEntry[] = [];
   private readonly streams = new Map<string, Stream>();
 
   private record(method: string, args: unknown[]): void {
@@ -130,6 +137,23 @@ export class FakeDaemonClient implements DaemonClientLike {
       throw new Error('daemon still starting');
     }
     return { root: this.defaultOrgRoot, created: false };
+  }
+
+  async orgInfo(root: string): Promise<OrgInfo> {
+    this.record('orgInfo', [root]);
+    const known = this.orgInfos.get(root);
+    if (known) return known;
+    try {
+      return describeOrg(root);
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e);
+      throw new DaemonHttpError(/not found/i.test(m) ? 404 : 400, 'bad_request', m);
+    }
+  }
+
+  async projects(): Promise<ProjectEntry[]> {
+    this.record('projects', []);
+    return this.projectList;
   }
 
   async keys(): Promise<KeyRow[]> {

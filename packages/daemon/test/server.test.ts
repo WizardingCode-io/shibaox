@@ -590,6 +590,7 @@ describe('what a dashboard without a local disk asks the daemon', () => {
     });
     await submit(client, s);
     const workspace = join(s.home.root, 'workspace');
+    expect(existsSync(workspace)).toBe(true); // created at start: a run may target it at once
     expect(await client.projects()).toEqual([
       { path: '/cfg/a', source: 'config' },
       { path: s.project, source: 'config' },

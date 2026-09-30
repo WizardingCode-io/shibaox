@@ -20,6 +20,7 @@ An agentic OS for software teams. You describe your organisation in YAML, talk t
 - [Gates](Gates) — tests, lint, review, judge, jev, human
 - [Git cycle](Git-cycle) — commit, pull request, merge queue
 - [Daemon and service](Daemon-and-service) — 24h service, inbox, schedules, reports
+- [Remote daemon](Remote-daemon) — `shibaox serve` on a server, `shibaox remote set` on your machine
 - [Channels and Telegram](Channels-and-Telegram) — approvals and conversations from your phone
 - [Claude Code runtime](Claude-Code-runtime) — the subscription path and its tool rules
 - [Worktrees](Worktrees) — where tasks work

@@ -1,6 +1,6 @@
 # Daemon and service
 
-Runs execute inside a per-user daemon (`~/.shibaox/`, or `$SHIBAOX_HOME`): closing the terminal never kills a run, and approvals wait in a persistent inbox. Any command that needs the daemon starts it in the background and says so (`SHIBAOX_NO_AUTOSTART=1` disables that).
+Runs execute inside a per-user daemon (`~/.shibaox/`, or `$SHIBAOX_HOME`): closing the terminal never kills a run, and approvals wait in a persistent inbox. Any command that needs the daemon starts it in the background and says so (`SHIBAOX_NO_AUTOSTART=1` disables that). The daemon can also run on another machine and be reached with a token: see [Remote daemon](Remote-daemon).
 
 ```sh
 shibaox daemon start --detach   # or in the foreground: shibaox daemon start
@@ -8,6 +8,7 @@ shibaox daemon status
 shibaox daemon stop             # waits for active runs (60 s, then they resume at the next start); --force cancels them
 shibaox daemon install          # macOS: a launchd agent starts it at login and restarts it
 shibaox daemon uninstall
+shibaox serve                   # the daemon in the foreground, reachable over the network with a token
 ```
 
 ## The service (macOS)
@@ -18,7 +19,7 @@ The plist runs `~/.shibaox/daemon.sh`, a launcher that records the `node` and CL
 
 ## Files
 
-`daemon.sock` (0600, HTTP JSON + SSE, no authentication: only your user reaches it), `daemon.pid`, `daemon.log`, `daemon.yaml`, `events.db` (one SQLite database for every org and project you run), `secrets.json` (the key vault), `org/` (the default org), `ui.json` (dashboard preferences).
+`daemon.sock` (0600, HTTP JSON + SSE, no authentication: only your user reaches it), `daemon.pid`, `daemon.log`, `daemon.yaml`, `events.db` (one SQLite database for every org and project you run), `secrets.json` (the key vault), `org/` (the default org), `workspace/` (where the orchestrator works when no project is chosen), `ui.json` (dashboard preferences), `remote.json` (0600, the remote daemon and its token when one is set).
 
 ## Inbox
 
@@ -51,4 +52,4 @@ At start and after a key changes, the daemon asks the providers what they offer 
 
 ## The API
 
-Everything the CLI and the dashboard do goes through the socket: `POST /runs`, `GET /runs/:id`, `GET /runs/:id/events` (SSE), `/inbox`, `/keys`, `/models`, `/orgs/default`, `/orgs/config`, `/schedules`, `/projects/profile`, `/health`, `/shutdown`. It is local and unauthenticated by design: the socket is 0600.
+Everything the CLI and the dashboard do goes through the socket: `POST /runs`, `GET /runs/:id`, `GET /runs/:id/events` (SSE), `/inbox`, `/keys`, `/models`, `/orgs/default`, `/orgs/info`, `/orgs/config`, `/projects`, `/projects/profile`, `/schedules`, `/health`, `/shutdown`. On the socket it is unauthenticated by design (0600, local). With `listen` in `daemon.yaml` the same API answers on TCP with a bearer token: [Remote daemon](Remote-daemon).
