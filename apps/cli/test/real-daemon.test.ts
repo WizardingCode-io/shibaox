@@ -63,7 +63,7 @@ describe.skipIf(!real)('real Claude Code approval flow through the daemon', () =
     git(dir, 'init', '-q', '--bare', '-b', 'main', bare);
     git(project, 'remote', 'add', 'origin', bare);
     const home = homePaths({ SHIBAOX_HOME: join(dir, 'home') });
-    const daemon = new Daemon({ home, channels: [], log: (l) => console.log(l), version: '0.1.7' });
+    const daemon = new Daemon({ home, channels: [], log: (l) => console.log(l), version: '0.1.8' });
     daemons.push(daemon);
     await daemon.start();
     const { runId } = await daemon.runs.submit({
