@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <strong>An agentic OS for software teams.</strong><br>
+  <strong>An agentic OS for software teams: runs on your VPS, watches your repos, lands your PRs.</strong><br>
   Describe your organisation once, in YAML. Talk to an orchestrator that plans, acts and dispatches teams of agents. Every run is a replayable event log, every risky step waits for you.
 </p>
 
