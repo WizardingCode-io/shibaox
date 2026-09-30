@@ -91,7 +91,8 @@ describe('scaffoldOrg with a stack', () => {
       return scan(dir)?.nodes.audit as { command: string; ok_exit_codes: number[] };
     };
     expect(withFiles('node')).toMatchObject({
-      command: 'npm audit --audit-level=high --package-lock-only',
+      // npm audit needs a lockfile: without one it is created first (install scripts never run)
+      command: 'npm install --package-lock-only --ignore-scripts && npm audit --audit-level=high',
       ok_exit_codes: [0, 1],
     });
     expect(withFiles('node', { 'package-lock.json': '{}' }).command).toBe(

@@ -624,8 +624,12 @@ export class RunEngine {
             runId,
             nodeId,
             at: at(),
-            // the tail only: a verbose install would otherwise flood every later prompt
-            output: { exitCode: r.exitCode, stdout: r.stdout.slice(-4000) },
+            // the tails only: a verbose install would otherwise flood every later prompt
+            output: {
+              exitCode: r.exitCode,
+              stdout: r.stdout.slice(-4000),
+              stderr: r.stderr.slice(-2000),
+            },
             summary: `ran ${node.command}`,
           });
           return;

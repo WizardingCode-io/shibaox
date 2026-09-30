@@ -263,8 +263,11 @@ function auditFor(dir: string, stack: Stack): { command: string; ok: number[] } 
         return { command: 'bun audit', ok: [0, 1] };
       if (has(dir, 'package-lock.json'))
         return { command: 'npm audit --audit-level=high', ok: [0, 1] };
-      // no lockfile: npm builds the tree it would install and audits that
-      return { command: 'npm audit --audit-level=high --package-lock-only', ok: [0, 1] };
+      // no lockfile: npm audit needs one, so it is created first (install scripts never run)
+      return {
+        command: 'npm install --package-lock-only --ignore-scripts && npm audit --audit-level=high',
+        ok: [0, 1],
+      };
     case 'python':
       if (has(dir, 'uv.lock'))
         return { command: 'uv run --with pip-audit pip-audit .', ok: [0, 1] };

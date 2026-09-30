@@ -120,7 +120,7 @@ describe('a code node with ok_exit_codes', () => {
       'teams/eng.yaml': 'team: eng\nlead: tl\nroles: [tl]\ngates: []\nworkflows: [w]\n',
       'roles/tl.yaml': 'role: tl\n',
       'workflows/w.yaml':
-        'workflow: w\nteam: eng\nstart: audit\nnodes:\n  audit: { type: code, command: "echo found; exit 1", ok_exit_codes: [0, 1] }\n',
+        'workflow: w\nteam: eng\nstart: audit\nnodes:\n  audit: { type: code, command: "echo found; echo oops >&2; exit 1", ok_exit_codes: [0, 1] }\n',
     });
     const engine = new RunEngine({
       store: new MemoryEventStore(),
@@ -131,7 +131,12 @@ describe('a code node with ok_exit_codes', () => {
     });
     const st = await engine.start({ workflow: 'w', input: {}, workspace: process.cwd() });
     expect(st.status).toBe('completed');
-    expect(st.nodes.audit?.output).toMatchObject({ exitCode: 1 });
+    // the next task reads both streams: an audit tool explains itself on stderr
+    expect(st.nodes.audit?.output).toMatchObject({
+      exitCode: 1,
+      stdout: 'found\n',
+      stderr: 'oops\n',
+    });
     expect(GateSchema).toBeDefined();
   });
 });
