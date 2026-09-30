@@ -1,0 +1,44 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - link [ref=e5] [cursor=pointer]:
+      - /url: "#/"
+      - img "Shibaox" [ref=e6]
+      - text: shibaox
+    - button "New chat" [ref=e25] [cursor=pointer]
+    - button "Chats 2" [ref=e109] [cursor=pointer]:
+      - generic [ref=e31]: Chats
+      - generic [ref=e110]: "2"
+    - button "Scheduled" [ref=e32] [cursor=pointer]
+    - button "Skills" [ref=e37] [cursor=pointer]
+    - button "Memory" [ref=e41] [cursor=pointer]
+    - button "Integrations" [ref=e53] [cursor=pointer]
+    - generic [ref=e57]: Recent
+    - generic [ref=e111]:
+      - button "scan" [ref=e112] [cursor=pointer]
+      - button "probe" [ref=e114] [cursor=pointer]
+      - button "Open https://example.com and repo…" [ref=e116] [cursor=pointer]
+      - button "Add a multiply(a,b) function to m…" [ref=e118] [cursor=pointer]
+      - button "Add a subtract(a,b) function to m…" [ref=e120] [cursor=pointer]
+      - button "the watched file changed" [ref=e122] [cursor=pointer]
+      - button "status changed" [ref=e124] [cursor=pointer]
+      - button "setup live" [ref=e126] [cursor=pointer]
+    - generic [ref=e58]:
+      - generic [ref=e59]: "Y"
+      - text: You
+      - button "Settings" [ref=e61] [cursor=pointer]
+  - main [ref=e65]:
+    - generic [ref=e66]:
+      - heading "New chat" [level=2] [ref=e67]
+      - generic [ref=e68]: Online
+    - generic [ref=e71]:
+      - img "Shiba — default" [ref=e72]
+      - heading "What should Shibaox do?" [level=2] [ref=e91]
+      - paragraph [ref=e92]: Describe the work in your own words. It plans, acts, and hands larger work to your team.
+    - generic [ref=e94]:
+      - textbox "Message" [ref=e95]:
+        - /placeholder: Ask Shibaox to do something…
+      - generic [ref=e96]:
+        - button "Attach" [ref=e97] [cursor=pointer]
+        - button "Skills" [ref=e99] [cursor=pointer]
+        - button "Voice" [ref=e102] [cursor=pointer]
+        - button "Send" [disabled] [ref=e106]

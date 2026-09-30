@@ -40,34 +40,39 @@ function Paragraphs(props: { text: string }): JSX.Element {
   );
 }
 
+/** `finish` is how a task hands back its result: the reply already shows it, so the call itself stays in Logs. */
+const INTERNAL_TOOLS = new Set(['finish']);
+
 function ToolBlocks(props: { blocks: Block[] }): JSX.Element {
   const S = ds();
   return (
     <div className="stack">
-      {props.blocks.map((b) =>
-        b.kind === 'tool' ? (
-          <S.ToolCall
-            key={b.key}
-            tool={b.name}
-            summary={b.summary || summarizeInput(b.input)}
-            status={b.status}
-            icon={iconFor(b.name)}
-            duration={duration(b.ms)}
-            args={b.input as Record<string, unknown>}
-            defaultOpen={b.status === 'error'}
-          >
-            {b.output !== undefined ? (
-              <pre className="out">
-                {typeof b.output === 'string'
-                  ? b.output
-                  : JSON.stringify(b.output, null, 2).slice(0, 4000)}
-              </pre>
-            ) : undefined}
-          </S.ToolCall>
-        ) : b.kind === 'file' ? (
-          <S.ToolCall key={b.key} tool="file" summary={b.path} status="done" icon="file-text" />
-        ) : null,
-      )}
+      {props.blocks
+        .filter((b) => !(b.kind === 'tool' && INTERNAL_TOOLS.has(b.name)))
+        .map((b) =>
+          b.kind === 'tool' ? (
+            <S.ToolCall
+              key={b.key}
+              tool={b.name}
+              summary={b.summary || summarizeInput(b.input)}
+              status={b.status}
+              icon={iconFor(b.name)}
+              duration={duration(b.ms)}
+              args={b.input as Record<string, unknown>}
+              defaultOpen={b.status === 'error'}
+            >
+              {b.output !== undefined ? (
+                <pre className="out">
+                  {typeof b.output === 'string'
+                    ? b.output
+                    : JSON.stringify(b.output, null, 2).slice(0, 4000)}
+                </pre>
+              ) : undefined}
+            </S.ToolCall>
+          ) : b.kind === 'file' ? (
+            <S.ToolCall key={b.key} tool="file" summary={b.path} status="done" icon="file-text" />
+          ) : null,
+        )}
     </div>
   );
 }

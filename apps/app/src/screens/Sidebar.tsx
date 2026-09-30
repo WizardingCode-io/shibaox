@@ -18,9 +18,12 @@ export function Sidebar(props: { route: Route; onNewChat: () => void }): JSX.Ele
   const store = useStore();
   const state = useAppState();
   const threads = store.threads().slice(0, 8);
+  // one line per conversation: the first line of the request, cut short
   const title = (t: RunSummaryPlus) => {
     const st = state.states[t.runId];
-    return (st ? requestText(st.input) : '') || t.workflow;
+    const text =
+      ((st ? requestText(st.input) : '') || t.workflow).split('\n')[0]?.trim() ?? t.workflow;
+    return text.length > 34 ? `${text.slice(0, 33).trimEnd()}…` : text;
   };
   const needsYou = state.inbox.length;
   const active = (id: string) =>

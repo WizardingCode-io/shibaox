@@ -49,6 +49,12 @@ body {
   flex-direction: column;
   gap: 2px;
 }
+.recent > * {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
 .me {
   margin-top: auto;
   display: flex;
