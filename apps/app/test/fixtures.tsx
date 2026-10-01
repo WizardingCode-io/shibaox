@@ -473,6 +473,9 @@ export function client(
         installCommand:
           'curl -fsSL https://raw.githubusercontent.com/higgsfield-ai/cli/main/install.sh | sh',
         site: 'https://higgsfield.ai',
+        api: { keySet: false },
+        mode: 'auto' as const,
+        effective: 'account' as const,
       };
     },
     async higgsfieldLogin() {

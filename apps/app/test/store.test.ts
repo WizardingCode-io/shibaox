@@ -130,6 +130,9 @@ function fakeClient() {
         signupUrl: 'https://higgsfield.ai',
         installCommand: 'curl …',
         site: 'https://higgsfield.ai',
+        api: { keySet: false },
+        mode: 'auto' as const,
+        effective: 'none' as const,
       };
     },
     async higgsfieldLogin() {

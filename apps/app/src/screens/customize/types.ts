@@ -3,8 +3,11 @@
  * the aliases below keep the screen's names.
  */
 import type {
+  Brings,
+  HiggsfieldMode,
   HiggsfieldView,
   McpServerRow,
+  PluginMode,
   PluginRow,
   SkillAdded,
   SkillAddRequest,
@@ -20,56 +23,12 @@ export type AddedSkill = SkillAdded;
 export type AddSkillOutcome = SkillAddResult;
 export type SkillDoc = SkillDetail;
 
-// ---- Higgsfield in two modes (account, API): the daemon's shapes, declared here until it exports them
-
-// TODO daemon export: `HiggsfieldMode` (partners.higgsfield.mode in daemon.yaml)
-export type HiggsfieldMode = 'auto' | 'account' | 'api';
-// TODO daemon export: what a task uses now (`effectiveHiggsfieldMode`)
-export type HiggsfieldEffective = 'account' | 'api' | 'none';
-
-// TODO daemon export: `Brings` with `tools?` and `builtin?`
-/** What a plugin (or one of its modes) brings; `builtin` skills come from Shibaox's own template. */
-export interface Brings {
-  connectors: string[];
-  skills: string[];
-  /** Daemon tools the mode gives the agent (`higgsfield_api_generate`). */
-  tools?: string[];
-  /** Skills added from Shibaox's template (`{source:'builtin', id}`), not a vendor repository. */
-  builtin?: string[];
-}
-
-// TODO daemon export: `PluginMode`
-/** One way of using a plugin (Higgsfield: account or API), with its own setup. */
-export interface PluginMode {
-  id: string;
-  name: string;
-  description: string;
-  /** The mode the plugin's top-level fields describe. */
-  active: boolean;
-  status: PluginRow['status'];
-  checks: PluginRow['checks'];
-  keys: PluginRow['keys'];
-  actions: PluginRow['actions'];
-  brings: Brings;
-}
-
-// TODO daemon export: `PluginRow.modes?` / `PluginRow.mode?`
-/** A plugin row with its modes (top level = the active mode). */
-export type PluginRowModes = Omit<PluginRow, 'brings'> & {
-  brings: Brings;
-  modes?: PluginMode[];
-  mode?: { configured: HiggsfieldMode; effective: HiggsfieldEffective };
-};
-
-// TODO daemon export: `HiggsfieldView.api/mode/effective`
-export type HiggsfieldViewModes = HiggsfieldView & {
-  api?: { keySet: boolean; valid?: boolean | 'unknown'; status?: number; checkedAt?: string };
-  mode?: HiggsfieldMode;
-  effective?: HiggsfieldEffective;
-};
-
-// TODO daemon export: `SkillAddRequest |= {source:'builtin', id, replace?}`
-export type SkillAddReq = SkillAddRequest | { source: 'builtin'; id: string; replace?: boolean };
+// ---- Higgsfield in two modes (account, API): the daemon's shapes under the screen's names
+export type HiggsfieldEffective = HiggsfieldView['effective'];
+export type PluginRowModes = PluginRow;
+export type HiggsfieldViewModes = HiggsfieldView;
+export type SkillAddReq = SkillAddRequest;
+export type { Brings, HiggsfieldMode, PluginMode };
 
 /** The connector categories of the registry, in the order the filter shows them (the daemon's list). */
 export const CONNECTOR_CATEGORIES = [
