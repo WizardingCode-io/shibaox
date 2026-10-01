@@ -24,6 +24,18 @@ import type {
   SubmitRequest,
 } from '@wizardingcode/shibaox-daemon';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
+import type {
+  AddMcpRequest,
+  AddSkillRequest,
+  AddSkillResult,
+  ConnectorTemplate,
+  DiscoverResult,
+  PluginRow,
+  RoleLinks,
+  RoleRow,
+  SkillRow,
+  SkillSource,
+} from '../screens/customize/types.js';
 
 /** An error the daemon answered with (status, its code and message). */
 export class AppHttpError extends Error {
@@ -224,6 +236,59 @@ export class AppClient {
   mcpTest(id: string, org: string): Promise<McpTestResult> {
     return this.json('POST', `/mcp/${encodeURIComponent(id)}/test?org=${encodeURIComponent(org)}`);
   }
+  // ---- Customize: skills, roles, connectors, registries, plugins
+
+  /** The org's skills (`org/skills/<id>/SKILL.md`) with the roles that use each. */
+  skills(org: string): Promise<SkillRow[]> {
+    return this.json('GET', `/skills?org=${encodeURIComponent(org)}`);
+  }
+  /** Installs skills from a repository or a folder, or writes one. */
+  addSkill(org: string, req: AddSkillRequest): Promise<AddSkillResult> {
+    return this.json('POST', `/skills?org=${encodeURIComponent(org)}`, req);
+  }
+  /** What a repository offers (a cached shallow clone on the daemon). */
+  discoverSkills(repo: string, path?: string): Promise<DiscoverResult> {
+    const p = new URLSearchParams({ repo });
+    if (path) p.set('path', path);
+    return this.json('GET', `/skills/discover?${p.toString()}`);
+  }
+  /** Removes a skill; `detach` first takes it out of the roles that list it (else 409 while used). */
+  removeSkill(org: string, id: string, detach: boolean): Promise<{ removed: true }> {
+    return this.json(
+      'DELETE',
+      `/skills/${encodeURIComponent(id)}?org=${encodeURIComponent(org)}${detach ? '&detach=1' : ''}`,
+    );
+  }
+  roles(org: string): Promise<RoleRow[]> {
+    return this.json('GET', `/roles?org=${encodeURIComponent(org)}`);
+  }
+  /** Replaces a role's `mcp:` and/or `skills:` lists. */
+  setRoleLinks(org: string, id: string, links: RoleLinks): Promise<RoleRow> {
+    return this.json(
+      'PUT',
+      `/roles/${encodeURIComponent(id)}?org=${encodeURIComponent(org)}`,
+      links,
+    );
+  }
+  /** Writes `catalog/<id>.yaml` for an MCP server and attaches it to the roles. */
+  addMcp(org: string, req: AddMcpRequest): Promise<McpServerRow> {
+    return this.json('POST', `/mcp?org=${encodeURIComponent(org)}`, req);
+  }
+  /** Removes a connector after detaching it from every role. */
+  removeMcp(org: string, id: string): Promise<{ removed: true }> {
+    return this.json('DELETE', `/mcp/${encodeURIComponent(id)}?org=${encodeURIComponent(org)}`);
+  }
+  registryConnectors(): Promise<ConnectorTemplate[]> {
+    return this.json('GET', '/registry/connectors');
+  }
+  registrySkills(): Promise<SkillSource[]> {
+    return this.json('GET', '/registry/skills');
+  }
+  /** The partner integrations and how far each is set up. */
+  plugins(): Promise<PluginRow[]> {
+    return this.json('GET', '/plugins');
+  }
+
   projectProfile(path: string, org?: string): Promise<ProjectProfile> {
     const p = new URLSearchParams({ path });
     if (org) p.set('org', org);

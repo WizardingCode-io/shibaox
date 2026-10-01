@@ -237,6 +237,48 @@ function fakeClient() {
       rec('mcpTest', id, org);
       return { ok: true, tools: [{ name: 'browser_navigate', description: 'go' }] };
     },
+    async skills(org: string) {
+      rec('skills', org);
+      return [{ id: 'pdf', name: 'PDF', description: 'PDFs', path: '/o/skills/pdf', roles: [] }];
+    },
+    async addSkill(org: string, req: unknown) {
+      rec('addSkill', org, req);
+      return { added: [], skipped: [] };
+    },
+    async discoverSkills(repo: string, path?: string) {
+      rec('discoverSkills', repo, path);
+      if (repo === 'nope/nope') throw new Error('repository not found');
+      return { repo, skills: [{ id: 'pdf', name: 'PDF', description: 'PDFs', path: 'pdf' }] };
+    },
+    async removeSkill(org: string, id: string, detach: boolean) {
+      rec('removeSkill', org, id, detach);
+      return { removed: true as const };
+    },
+    async roles(org: string) {
+      rec('roles', org);
+      return [{ id: 'assistant', name: 'Assistant', tools: [], mcp: [], skills: [] }];
+    },
+    async setRoleLinks(org: string, id: string, links: unknown) {
+      rec('setRoleLinks', org, id, links);
+      return { id, name: id, tools: [], mcp: [], skills: [] };
+    },
+    async addMcp(org: string, req: unknown) {
+      rec('addMcp', org, req);
+      return {} as never;
+    },
+    async removeMcp(org: string, id: string) {
+      rec('removeMcp', org, id);
+      return { removed: true as const };
+    },
+    async registryConnectors() {
+      return [];
+    },
+    async registrySkills() {
+      throw new Error('not found: /registry/skills');
+    },
+    async plugins() {
+      return [];
+    },
     async projectProfile(path: string, org?: string) {
       rec('projectProfile', path, org);
       return { name: 'p', path, git: true, stack: ['node'], files: 3, truncated: false } as never;
@@ -646,6 +688,43 @@ describe('AppStore: the slice-2 review fixes', () => {
     store.start();
     await vi.waitFor(() => expect(store.get().routines?.length).toBe(1));
     store.stop();
+  });
+  it('Customize loads in parallel (a failing part is the toast, the rest loads) and its mutations reload', async () => {
+    const f = fakeClient();
+    const store = new AppStore({ client: f.client });
+    await store.loadCustomize();
+    const c = store.get().customize;
+    expect(c?.org).toBe('/o');
+    expect(c?.skills[0]?.id).toBe('pdf');
+    expect(c?.roles[0]?.id).toBe('assistant');
+    expect(c?.mcp[0]?.id).toBe('playwright');
+    expect(c?.keys[0]?.name).toBe('OPENAI_API_KEY');
+    expect(c?.workflows.map((w) => w.name)).toEqual(['chat', 'hello-feature']);
+    expect(c?.registry.skills).toEqual([]);
+    expect(store.get().error).toContain('/registry/skills');
+    // the thread and routine dialog lists ride along
+    expect(store.get().integrations?.mcp[0]?.id).toBe('playwright');
+    const loads = () => f.calls.filter((x) => x.name === 'skills').length;
+    const before = loads();
+    await store.addSkill({ source: 'inline', id: 'x', content: '# x' });
+    await store.removeSkill('pdf', true);
+    await store.setRoleLinks([{ id: 'assistant', links: { skills: ['pdf'] } }]);
+    await store.addMcp({
+      id: 'ctx',
+      description: 'Docs',
+      server: { transport: 'http', url: 'https://x' },
+    });
+    await store.removeMcp('ctx');
+    expect(loads()).toBe(before + 5);
+    expect(f.calls.find((x) => x.name === 'removeSkill')?.args).toEqual(['/o', 'pdf', true]);
+    expect(f.calls.find((x) => x.name === 'setRoleLinks')?.args).toEqual([
+      '/o',
+      'assistant',
+      { skills: ['pdf'] },
+    ]);
+    expect(await store.discoverSkills('a/b', 'p')).toMatchObject({ repo: 'a/b' });
+    expect(store.get().discovered['a/b|p']).toBeTruthy();
+    expect(await store.discoverSkills('nope/nope')).toEqual({ error: 'repository not found' });
   });
   it('a failing part of Integrations surfaces as the error, the rest still loads; addRoutine says whether it worked', async () => {
     const f = fakeClient();
