@@ -77,20 +77,29 @@ body {
   padding: 0 24px;
   border-bottom: 1px solid var(--line);
 }
+.top > * {
+  flex-shrink: 0;
+}
 .top h2 {
   margin: 0;
   font: 600 16px / 24px var(--font-sans);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 0;
+  flex: 0 1 auto;
+  min-width: 80px;
 }
 .grow {
   flex: 1;
 }
-.thread {
+/* The whole column scrolls (the bar sits at the window's edge); the thread is centred inside. */
+.scroll {
   flex: 1;
+  min-height: 0;
   overflow: auto;
+  position: relative;
+}
+.thread {
   padding: 24px 32px;
   display: flex;
   flex-direction: column;
@@ -114,11 +123,10 @@ body {
 }
 .page {
   flex: 1;
+  min-height: 0;
   overflow: auto;
-  padding: 24px 32px;
-  max-width: 760px;
-  width: 100%;
-  margin: 0 auto;
+  /* full width so the scrollbar sits at the edge; the content keeps the 760px column */
+  padding: 24px max(32px, calc((100% - 696px) / 2));
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -188,6 +196,16 @@ body {
   display: flex;
   gap: 8px;
   align-items: center;
+  min-width: 300px;
+}
+.jump {
+  position: sticky;
+  bottom: 8px;
+  align-self: center;
+  z-index: var(--z-sticky);
+  box-shadow: var(--shadow-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
 }
 .toasts {
   position: fixed;
@@ -204,18 +222,4 @@ pre.out {
   word-break: break-word;
   font-family: var(--font-mono);
   font-size: 12px;
-}
-
-.sx-select {
-  height: var(--control-md, 36px);
-  padding: 0 var(--space-3, 12px);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--ink);
-  font: 500 14px / 1 var(--font-sans);
-}
-.sx-select:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
 }

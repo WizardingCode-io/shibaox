@@ -6,9 +6,10 @@ import {
   summarizeInput,
   type ThreadMessage,
 } from '@wizardingcode/shibaox-view';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ds } from '../ds.js';
 import { clock, duration, RUN_STATUS_TONE, RUN_STATUS_WORD, shortModel } from '../format.js';
+import { useFollowScroll } from '../hooks/follow-scroll.js';
 import { navigate } from '../router.js';
 import { useAppState, useStore } from '../store/hooks.js';
 
@@ -138,62 +139,79 @@ function ChatTab(props: {
   inbox: InboxItem[];
 }): JSX.Element {
   const S = ds();
+  const scroll = useRef<HTMLDivElement>(null);
+  // grows with every delta and tool call of the newest turn: what the view follows
+  const version = props.messages.reduce((n, m) => n + m.text.length + m.blocks.length * 997, 0);
+  const follow = useFollowScroll(scroll, version + props.inbox.length);
   const byRun = (runId: string) => props.inbox.filter((i) => i.runId === runId);
   // what a dispatched run asks for belongs to the conversation too: it follows the last message
   const turnRuns = new Set(props.messages.map((m) => m.runId));
   const fromTasks = props.inbox.filter((i) => !turnRuns.has(i.runId));
   return (
-    <div className="thread">
-      {props.messages.map((m) =>
-        m.from === 'user' ? (
-          <S.Message key={m.key} from="user">
-            <Paragraphs text={m.text} />
-          </S.Message>
-        ) : (
-          <div key={m.key} className="stack">
-            {(m.text || m.blocks.length > 0) && (
-              <S.Message
-                from="agent"
-                name="Shibaox"
-                time={m.pending ? undefined : clock(m.time)}
-                mood={m.pending ? 'working' : 'default'}
-              >
-                {m.text ? <Paragraphs text={m.text} /> : null}
-                {m.blocks.length > 0 ? <ToolBlocks blocks={m.blocks} /> : null}
-              </S.Message>
-            )}
-            {byRun(m.runId).map((i) =>
+    <div className="scroll" ref={scroll}>
+      <div className="thread">
+        {props.messages.map((m) =>
+          m.from === 'user' ? (
+            <S.Message key={m.key} from="user">
+              <Paragraphs text={m.text} />
+            </S.Message>
+          ) : (
+            <div key={m.key} className="stack">
+              {(m.text || m.blocks.length > 0) && (
+                <S.Message
+                  from="agent"
+                  name="Shibaox"
+                  time={m.pending ? undefined : clock(m.time)}
+                  mood={m.pending ? 'working' : 'default'}
+                >
+                  {m.text ? <Paragraphs text={m.text} /> : null}
+                  {m.blocks.length > 0 ? <ToolBlocks blocks={m.blocks} /> : null}
+                </S.Message>
+              )}
+              {byRun(m.runId).map((i) =>
+                i.kind === 'approval' ? (
+                  <ApprovalCall key={i.id} item={i} />
+                ) : (
+                  <HumanAsk key={i.id} item={i} />
+                ),
+              )}
+              {m.pending && byRun(m.runId).length === 0 ? <S.ThinkingIndicator /> : null}
+              {byRun(m.runId).length > 0 ? (
+                <S.ThinkingIndicator label="Waiting for your approval" />
+              ) : null}
+            </div>
+          ),
+        )}
+        {fromTasks.length > 0 ? (
+          <div className="stack">
+            {fromTasks.map((i) =>
               i.kind === 'approval' ? (
                 <ApprovalCall key={i.id} item={i} />
               ) : (
                 <HumanAsk key={i.id} item={i} />
               ),
             )}
-            {m.pending && byRun(m.runId).length === 0 ? <S.ThinkingIndicator /> : null}
-            {byRun(m.runId).length > 0 ? (
-              <S.ThinkingIndicator label="Waiting for your approval" />
-            ) : null}
+            <S.ThinkingIndicator label="Waiting for your approval" />
           </div>
-        ),
-      )}
-      {fromTasks.length > 0 ? (
-        <div className="stack">
-          {fromTasks.map((i) =>
-            i.kind === 'approval' ? (
-              <ApprovalCall key={i.id} item={i} />
-            ) : (
-              <HumanAsk key={i.id} item={i} />
-            ),
-          )}
-          <S.ThinkingIndicator label="Waiting for your approval" />
-        </div>
-      ) : null}
-      {props.messages.length === 0 ? (
-        <div className="empty">
-          <h2>Nothing here yet</h2>
-          <p>Ask Shibaox to do something below.</p>
-        </div>
-      ) : null}
+        ) : null}
+        {props.messages.length === 0 ? (
+          <div className="empty">
+            <h2>Nothing here yet</h2>
+            <p>Ask Shibaox to do something below.</p>
+          </div>
+        ) : null}
+        {follow.behind ? (
+          <S.Button
+            className="jump"
+            size="sm"
+            variant="quiet"
+            icon="chevron-down"
+            onClick={follow.jump}
+          >
+            Jump to latest
+          </S.Button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -247,6 +265,54 @@ function ResumeForm(props: { runId: string }): JSX.Element {
         Resume
       </S.Button>
     </form>
+  );
+}
+
+/** Steer in the top bar: an icon button; the note floats below it, never inside the bar. */
+function SteerPopover(props: { runId: string }): JSX.Element {
+  const S = ds();
+  const [open, setOpen] = useState(false);
+  return (
+    <S.Popover
+      open={open}
+      onClose={() => setOpen(false)}
+      align="end"
+      label="Steer the running task"
+      anchor={
+        <S.IconButton
+          icon="send-horizontal"
+          label="Steer"
+          size="sm"
+          onClick={() => setOpen((o) => !o)}
+        />
+      }
+    >
+      <SteerForm runId={props.runId} onDone={() => setOpen(false)} />
+    </S.Popover>
+  );
+}
+
+/** Resume in the top bar, the same way: an icon button and a floating budget form. */
+function ResumePopover(props: { runId: string }): JSX.Element {
+  const S = ds();
+  const [open, setOpen] = useState(false);
+  return (
+    <S.Popover
+      open={open}
+      onClose={() => setOpen(false)}
+      align="end"
+      label="Resume the paused run"
+      anchor={
+        <S.IconButton
+          icon="play"
+          label="Resume with a budget"
+          size="sm"
+          onClick={() => setOpen((o) => !o)}
+        />
+      }
+    >
+      <ResumeForm runId={props.runId} />
+    </S.Popover>
   );
 }
 
@@ -418,46 +484,45 @@ function LogsTab(props: { rootId: string }): JSX.Element {
   );
 }
 
-/** The model the next turns run on: a quiet button, then the configured models to pick from. */
-function ModelPicker(props: { rootId: string; current?: string }): JSX.Element {
+/**
+ * The model of the next turns, chosen from the composer's label (as the mockup places it):
+ * the org's tiers, or one of the configured models.
+ */
+function useModelMenu(
+  rootId: string,
+  current: string | undefined,
+  open: boolean,
+  close: () => void,
+) {
   const S = ds();
   const store = useStore();
   const state = useAppState();
-  const [open, setOpen] = useState(false);
   useEffect(() => {
     if (open && !state.integrations) void store.loadIntegrations();
   }, [open, state.integrations, store]);
-  const chosen = state.threadModels[props.rootId];
-  if (!open)
-    return (
-      <S.Button size="sm" variant="quiet" icon="brain" onClick={() => setOpen(true)}>
-        Model: {props.current ?? "the org's tiers"}
-      </S.Button>
-    );
+  if (!open) return undefined;
   const models = (state.integrations?.models ?? []).filter((m) => m.configured || m.available);
+  const items = [
+    {
+      id: '',
+      label: "The org's tiers",
+      hint: 'strong for tasks, cheap for summaries',
+      checked: !current,
+    },
+    ...models.map((m) => ({
+      id: m.ref,
+      label: shortModel(m.ref) ?? m.ref,
+      hint: `${m.provider}${m.local ? ' · local' : ''}`,
+      checked: current === m.ref,
+    })),
+  ];
   return (
-    <span className="row">
-      <label className="muted" htmlFor="thread-model">
-        Model for this conversation
-      </label>
-      <select
-        id="thread-model"
-        className="sx-select"
-        value={chosen ?? ''}
-        onBlur={() => setOpen(false)}
-        onChange={(e) => {
-          store.setThreadModel(props.rootId, e.target.value || undefined);
-          setOpen(false);
-        }}
-      >
-        <option value="">The org's tiers</option>
-        {models.map((m) => (
-          <option key={m.ref} value={m.ref}>
-            {m.ref}
-          </option>
-        ))}
-      </select>
-    </span>
+    <S.MenuList
+      title="Model for this conversation"
+      items={items}
+      onSelect={(id) => store.setThreadModel(rootId, id || undefined)}
+      onClose={close}
+    />
   );
 }
 
@@ -467,7 +532,7 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
   const store = useStore();
   const state = useAppState();
   const [tab, setTab] = useState<'chat' | 'tasks' | 'logs'>('chat');
-  const [steering, setSteering] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
   useEffect(() => {
     store.openThread(props.rootId);
     return () => store.openThread(undefined);
@@ -482,11 +547,13 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
   const inbox = state.inbox.filter((i) => runIds.has(i.runId));
   const live = store.liveTurn(props.rootId);
   const picked = state.threadModels[props.rootId];
-  const model = shortModel(
+  const currentRef =
     picked !== undefined
       ? picked || undefined
-      : (state.states[turns[turns.length - 1]?.runId ?? '']?.model ?? state.settings.model),
-  );
+      : (state.states[turns[turns.length - 1]?.runId ?? '']?.model ?? state.settings.model);
+  const model = shortModel(currentRef);
+  const closeModel = useCallback(() => setModelOpen(false), []);
+  const modelMenu = useModelMenu(props.rootId, currentRef, modelOpen, closeModel);
   const busy = live !== undefined || state.busy[props.rootId] === true;
   const runningTasks = store
     .tasksOf(props.rootId)
@@ -497,20 +564,8 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
         <h2>{view?.title || 'Conversation'}</h2>
         <S.AgentStatus status={inbox.length > 0 ? 'waiting' : (view?.status ?? 'idle')} />
         <span className="grow" />
-        {live?.status === 'paused_budget' ? <ResumeForm runId={live.runId} /> : null}
-        {live && live.status === 'running' ? (
-          steering ? (
-            <SteerForm runId={live.runId} onDone={() => setSteering(false)} />
-          ) : (
-            <S.IconButton
-              icon="send-horizontal"
-              label="Steer"
-              size="sm"
-              onClick={() => setSteering(true)}
-            />
-          )
-        ) : null}
-        <ModelPicker rootId={props.rootId} current={model} />
+        {live?.status === 'paused_budget' ? <ResumePopover runId={live.runId} /> : null}
+        {live?.status === 'running' ? <SteerPopover runId={live.runId} /> : null}
         <S.Tabs
           items={[
             { id: 'chat', label: 'Chat' },
@@ -530,11 +585,14 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
         <div className="compose">
           <S.Composer
             key={props.rootId}
-            model={model}
+            model={model ?? "the org's tiers"}
             busy={busy}
             placeholder="Ask Shibaox to do something…"
             onSend={(text) => void store.send(props.rootId, text)}
             onStop={() => void store.stopThread(props.rootId)}
+            onModelClick={() => setModelOpen((o) => !o)}
+            modelMenu={modelMenu}
+            onModelMenuClose={closeModel}
           />
         </div>
       ) : null}

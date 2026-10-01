@@ -1,291 +1,17 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { RunState } from '@wizardingcode/shibaox-core';
-import type { Envelope, InboxItem, RunSummaryPlus } from '@wizardingcode/shibaox-daemon';
+import type { InboxItem } from '@wizardingcode/shibaox-daemon';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { App } from '../src/App.js';
 import { loadDesignSystem } from '../src/ds.js';
-import { AppStore, type StoreClient } from '../src/store/store.js';
+import { client, mount, rtFrame, runFrame, state, summary } from './fixtures.js';
 
 beforeAll(() =>
   loadDesignSystem(
     pathToFileURL(join(process.cwd(), 'vendor/design-system/components/bundle.js')).href,
   ),
 );
-
-const summary = (id: string, o: Partial<RunSummaryPlus> = {}): RunSummaryPlus =>
-  ({
-    runId: id,
-    workflow: 'chat',
-    status: 'completed',
-    createdAt: '2026-09-30T10:00:00.000Z',
-    updatedAt: '2026-09-30T10:00:30.000Z',
-    spentUsd: 0.012,
-    thread: id,
-    project: '/p',
-    orgRoot: '/o',
-    ...o,
-  }) as RunSummaryPlus;
-const state = (
-  id: string,
-  o: Partial<RunState> & { input?: Record<string, unknown> } = {},
-): RunState =>
-  ({
-    runId: id,
-    workflow: 'chat',
-    status: 'completed',
-    input: { spec: 'Find me a hotel in Porto' },
-    workspace: '/p',
-    nodes: {},
-    pendingApprovals: [],
-    pendingHumans: [],
-    spentUsd: 0.012,
-    thread: id,
-    project: '/p',
-    orgRoot: '/o',
-    adapter: 'direct',
-    workspaceMode: 'inplace',
-    model: 'anthropic/claude-opus',
-    workflowSnapshot: {
-      workflow: 'chat',
-      start: 'reply',
-      conversation: true,
-      nodes: { reply: { type: 'task', role: 'assistant' } },
-    },
-    ...o,
-  }) as unknown as RunState;
-const runFrame = (seq: number, type: string, extra: Record<string, unknown>): Envelope =>
-  ({
-    kind: 'run',
-    seq,
-    cursor: `${seq}:0`,
-    event: { seq, type, at: 't', runId: 'x', ...extra },
-  }) as Envelope;
-const rtFrame = (seq: number, nodeId: string, event: Record<string, unknown>): Envelope =>
-  ({
-    kind: 'runtime',
-    seq,
-    cursor: `1:${seq}`,
-    event: { runId: 'x', nodeId, seq, at: 't', event },
-  }) as Envelope;
-
-function client(
-  o: {
-    runs?: RunSummaryPlus[];
-    states?: Record<string, RunState>;
-    frames?: Record<string, Envelope[]>;
-    inbox?: InboxItem[];
-    routines?: unknown[];
-  } = {},
-) {
-  const calls: { name: string; args: unknown[] }[] = [];
-  const rec = (name: string, ...args: unknown[]) => calls.push({ name, args });
-  const c: StoreClient = {
-    async health() {
-      return {
-        version: '0.2.1',
-        uptimeSeconds: 1,
-        runs: { running: 0, queued: 0, waiting: 0 },
-        channels: [],
-      };
-    },
-    async listRuns() {
-      return o.runs ?? [];
-    },
-    async getRun(id) {
-      const s = o.states?.[id];
-      if (!s) throw new Error('not found');
-      return s;
-    },
-    async inbox() {
-      return o.inbox ?? [];
-    },
-    async submitRun(req) {
-      rec('submitRun', req);
-      return { runId: 'new-1', warnings: [] };
-    },
-    async answer(id, a) {
-      rec('answer', id, a);
-      return {};
-    },
-    async steer(id, s) {
-      rec('steer', id, s);
-      return o.states?.[id] as RunState;
-    },
-    async auditMarkdown(id) {
-      rec('auditMarkdown', id);
-      return `# Audit ${id}`;
-    },
-    async cancel(id) {
-      rec('cancel', id);
-      return {};
-    },
-    async resume(id) {
-      rec('resume', id);
-      return {};
-    },
-    async models() {
-      return [
-        {
-          ref: 'anthropic/claude-opus',
-          provider: 'anthropic',
-          model: 'claude-opus',
-          configured: true,
-        },
-        {
-          ref: 'lmstudio/qwen',
-          provider: 'lmstudio',
-          model: 'qwen',
-          configured: true,
-          local: true,
-          available: true,
-        },
-        {
-          ref: 'openai/gpt-5',
-          provider: 'openai',
-          model: 'gpt-5',
-          configured: false,
-          missing: ['OPENAI_API_KEY'],
-        },
-      ];
-    },
-    async projects() {
-      return [{ path: '/p', source: 'config' as const }];
-    },
-    async defaultOrg() {
-      return { root: '/o', created: false };
-    },
-    async orgInfo() {
-      return {
-        workflows: ['chat'],
-        single: ['chat'],
-        subscription: false,
-        adapter: 'direct' as const,
-        descriptions: {},
-        catalog: [],
-      };
-    },
-    async *stream(id) {
-      for (const f of o.frames?.[id] ?? []) yield f;
-      const st = o.states?.[id];
-      if (st && st.status !== 'running')
-        yield { kind: 'end', seq: 99, cursor: '99:0', status: st.status } as Envelope;
-    },
-    async routines() {
-      return (o.routines ?? []) as never;
-    },
-    async runRoutine(id) {
-      rec('runRoutine', id);
-      return { runId: 'rr' };
-    },
-    async pauseRoutine(id) {
-      rec('pauseRoutine', id);
-      return {} as never;
-    },
-    async resumeRoutine(id) {
-      rec('resumeRoutine', id);
-      return {} as never;
-    },
-    async removeRoutine(id) {
-      rec('removeRoutine', id);
-    },
-    async addRoutine(r) {
-      rec('addRoutine', r);
-      return {} as never;
-    },
-    async syncRoutines(org) {
-      rec('syncRoutines', org);
-      return {};
-    },
-    async keys() {
-      return [
-        { name: 'OPENAI_API_KEY', description: 'OpenAI', set: false },
-        {
-          name: 'GH_TOKEN',
-          description: 'GitHub',
-          set: true,
-          source: 'vault' as const,
-          masked: 'gh…12',
-        },
-      ];
-    },
-    async setKey(name, value) {
-      rec('setKey', name, value);
-      return { name, set: true as const };
-    },
-    async unsetKey(name) {
-      rec('unsetKey', name);
-      return { name, removed: true };
-    },
-    async orgConfig(root) {
-      return {
-        root,
-        organization: 'wc',
-        tiers: { strong: 'anthropic/claude-opus', cheap: 'openai/gpt-5-mini' },
-        adapter: 'direct' as const,
-        per_run_usd: 3,
-      };
-    },
-    async setOrgConfig(root, patch) {
-      rec('setOrgConfig', root, patch);
-      return { root, organization: 'wc', tiers: {} };
-    },
-    async mcpList() {
-      return [
-        {
-          id: 'playwright',
-          description: 'A browser',
-          transport: 'stdio' as const,
-          target: 'npx -y @playwright/mcp',
-          roles: ['browser-qa'],
-          keys: [{ name: 'PW_TOKEN', present: false }],
-        },
-      ];
-    },
-    async mcpTest(id, org) {
-      rec('mcpTest', id, org);
-      return { ok: true, tools: [{ name: 'browser_navigate', description: 'Open a page' }] };
-    },
-    async projectProfile(path) {
-      return {
-        name: 'sample',
-        path,
-        git: true,
-        branch: 'main',
-        stack: ['node'],
-        packageManager: 'pnpm',
-        testCommand: 'pnpm test',
-        files: 12,
-        truncated: false,
-      } as never;
-    },
-  };
-  return { client: c, calls };
-}
-
-const storage = () => {
-  const m = new Map<string, string>();
-  return {
-    getItem: (k: string) => m.get(k) ?? null,
-    setItem: (k: string, v: string) => void m.set(k, v),
-    removeItem: (k: string) => void m.delete(k),
-  };
-};
-
-const mount = (
-  c: StoreClient,
-  o: { hash?: string; connected?: boolean; store?: AppStore } = {},
-) => {
-  window.location.hash = o.hash ?? '';
-  const st =
-    o.store ?? new AppStore({ client: c, storage: storage(), intervals: { fast: 20, slow: 20 } });
-  const s = storage();
-  if (o.connected !== false)
-    s.setItem('shibaox.connection', JSON.stringify({ base: 'http://d', token: 't' }));
-  const ui = render(<App store={st} storage={s} connect={() => c} />);
-  return { ...ui, store: st };
-};
 
 describe('the app', () => {
   it('renders the mockup: brand, New chat, the five sections, the recent threads and the me row', async () => {
@@ -484,8 +210,9 @@ describe('the app: the review fixes', () => {
       states: { root: state('root', { status: 'paused_budget' }) },
     });
     mount(c, { hash: '#/t/root' });
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Resume' })).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume with a budget' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Resume' }));
     await waitFor(() => expect(calls.find((x) => x.name === 'resume')?.args[0]).toBe('root'));
   });
   it('Open audit fetches the document with the token instead of navigating to a URL', async () => {
@@ -623,11 +350,8 @@ describe('the sections', () => {
       states: { root: state('root') },
     });
     mount(c, { hash: '#/t/root' });
-    await waitFor(() => expect(screen.getByRole('button', { name: /Model/ })).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: /Model/ }));
-    fireEvent.change(await screen.findByLabelText('Model for this conversation'), {
-      target: { value: 'lmstudio/qwen' },
-    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Change model' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /qwen/ }));
     const box = screen.getByRole('textbox', { name: 'Message' });
     fireEvent.change(box, { target: { value: 'again' } });
     fireEvent.keyDown(box, { key: 'Enter', metaKey: true });
@@ -660,10 +384,10 @@ describe('the sections: the review fixes', () => {
   it('the composer shows the model picked for the conversation', async () => {
     const { client: c } = client({ runs: [summary('root')], states: { root: state('root') } });
     mount(c, { hash: '#/t/root' });
-    fireEvent.click(await screen.findByRole('button', { name: /Model/ }));
-    fireEvent.change(await screen.findByLabelText('Model for this conversation'), {
-      target: { value: 'lmstudio/qwen' },
-    });
-    await waitFor(() => expect(screen.getByText('qwen')).toBeTruthy());
+    fireEvent.click(await screen.findByRole('button', { name: 'Change model' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /qwen/ }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Change model' }).textContent).toContain('qwen'),
+    );
   });
 });

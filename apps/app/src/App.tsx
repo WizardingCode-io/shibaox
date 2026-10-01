@@ -89,13 +89,15 @@ function Shell(props: { base: string; onDisconnect: () => void }): JSX.Element {
             <h2>New chat</h2>
             <S.AgentStatus status={state.reachable ? 'online' : 'error'} />
           </div>
-          <div className="thread">
-            <div className="empty">
-              <h2>{draft ? 'A fresh start' : 'What should Shibaox do?'}</h2>
-              <p>
-                Describe the work in your own words. It plans, acts, and hands larger work to your
-                team.
-              </p>
+          <div className="scroll">
+            <div className="thread">
+              <div className="empty">
+                <h2>{draft ? 'A fresh start' : 'What should Shibaox do?'}</h2>
+                <p>
+                  Describe the work in your own words. It plans, acts, and hands larger work to your
+                  team.
+                </p>
+              </div>
             </div>
           </div>
           <div className="compose">
