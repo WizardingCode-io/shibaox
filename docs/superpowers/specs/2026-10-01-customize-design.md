@@ -170,6 +170,11 @@ schema validity.
 Skill sources: `anthropics/skills` (Anthropic, categories from folder names), `higgsfield-ai/
 skills` (Higgsfield), `WizardingCode-io/shibaox` `org/skills` templates (Shibaox).
 
+Revised after review: the Shibaox skill source is dropped; Postgres (archived, known read-only
+bypass) and Slack (archived) are dropped; Brave is `@brave/brave-search-mcp-server`; Exa's key is
+optional and goes in the URL (`?exaApiKey=…`), not a header; the OAuth entries say "signs in with
+OAuth through the Claude Code runtime; the direct runtime cannot sign in yet".
+
 ## Design system additions (source `~/Projects/shibaox/design-system`, then sync)
 
 Icons: `puzzle`, `key`, `lock`, `package`, `trash`, `sparkles`, `server`, `github`, `filter`,

@@ -9,7 +9,7 @@ import { ORG_TEMPLATE } from '../src/templates.js';
 describe('connector registry', () => {
   const all = connectorRegistry();
   it('every template parses as a catalog mcp entry and has a valid id and category', () => {
-    expect(all.length).toBeGreaterThanOrEqual(21);
+    expect(all.length).toBe(19);
     for (const t of all) {
       const r = CatalogEntrySchema.safeParse({
         id: t.id,
@@ -45,6 +45,29 @@ describe('connector registry', () => {
     expect(gh?.keys[0]?.signupUrl).toMatch(/^https:\/\/github.com\//);
     for (const id of ['exa', 'firecrawl', 'brave-search', 'stripe'])
       expect(all.find((t) => t.id === id)?.keys[0]?.signupUrl, id).toMatch(/^https:\/\//);
+  });
+  it('drops the archived servers and says which runtime can sign in with OAuth', () => {
+    const ids = all.map((t) => t.id);
+    expect(ids).not.toContain('postgres');
+    expect(ids).not.toContain('slack');
+    for (const id of ['notion', 'linear', 'sentry', 'supabase', 'figma', 'vercel'])
+      expect(all.find((t) => t.id === id)?.note, id).toBe(
+        'Signs in with OAuth through the Claude Code runtime; the direct runtime cannot sign in yet',
+      );
+  });
+  it('Brave uses its own package; Exa takes an optional key in the URL; Filesystem asks for a path', () => {
+    expect(all.find((t) => t.id === 'brave-search')?.server.args).toEqual([
+      '-y',
+      '@brave/brave-search-mcp-server',
+    ]);
+    const exa = all.find((t) => t.id === 'exa');
+    expect(exa?.server.headers).toEqual({});
+    expect(exa?.server.env_keys).toEqual([]);
+    expect(exa?.keys[0]).toMatchObject({ name: 'EXA_API_KEY', optional: true });
+    expect(exa?.note).toMatch(/\?exaApiKey=/);
+    const fs = all.find((t) => t.id === 'filesystem');
+    expect(fs?.server.args.at(-1)).toBe('/path/to/allow');
+    expect(fs?.note).toMatch(/\/path\/to\/allow/);
   });
 });
 

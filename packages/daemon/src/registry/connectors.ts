@@ -53,7 +53,8 @@ const scaffoldServer = (id: string): McpServerInput =>
 /** `${KEY}`: a vault key expanded in a header value. */
 const key = (name: string) => `\${${name}}`;
 
-const OAUTH = 'Signs in on first use (OAuth in the browser); no key to set.';
+const OAUTH =
+  'Signs in with OAuth through the Claude Code runtime; the direct runtime cannot sign in yet';
 const http = (url: string, extra: Partial<McpServerInput> = {}): McpServerInput => ({
   transport: 'http',
   url,
@@ -145,8 +146,8 @@ const TEMPLATES: Template[] = [
     category: 'Data',
     description: 'Reads and writes files under the directories given as arguments.',
     keys: [],
-    server: npx('@modelcontextprotocol/server-filesystem', '.'),
-    note: 'Edit the last argument to the directories it may touch.',
+    server: npx('@modelcontextprotocol/server-filesystem', '/path/to/allow'),
+    note: 'Replace /path/to/allow with the directories it may touch (one argument each) before adding.',
   },
   {
     id: 'memory',
@@ -269,18 +270,17 @@ const TEMPLATES: Template[] = [
         name: 'EXA_API_KEY',
         signupUrl: 'https://dashboard.exa.ai/api-keys',
         description: 'An Exa API key',
+        optional: true,
       },
     ],
-    server: http('https://mcp.exa.ai/mcp', {
-      headers: { 'x-api-key': key('EXA_API_KEY') },
-      env_keys: ['EXA_API_KEY'],
-    }),
+    server: http('https://mcp.exa.ai/mcp'),
+    note: 'Works without a key at lower limits; to use yours, put ?exaApiKey=… in the URL when adding.',
   },
   {
     id: 'brave-search',
     name: 'Brave Search',
-    vendor: 'Model Context Protocol',
-    verified: false,
+    vendor: 'Brave',
+    verified: true,
     category: 'Search',
     description: 'Web and local search through the Brave Search API.',
     keys: [
@@ -290,18 +290,7 @@ const TEMPLATES: Template[] = [
         description: 'A Brave Search API key',
       },
     ],
-    server: { ...npx('@modelcontextprotocol/server-brave-search'), env_keys: ['BRAVE_API_KEY'] },
-  },
-  {
-    id: 'postgres',
-    name: 'Postgres',
-    vendor: 'Model Context Protocol',
-    verified: false,
-    category: 'Data',
-    description: 'Read-only SQL against a Postgres database, with its schema.',
-    keys: [],
-    server: npx('@modelcontextprotocol/server-postgres', 'postgresql://localhost:5432/postgres'),
-    note: 'The connection URL is the last argument: edit it (it is not read from the vault).',
+    server: { ...npx('@brave/brave-search-mcp-server'), env_keys: ['BRAVE_API_KEY'] },
   },
   {
     id: 'figma',
@@ -324,30 +313,6 @@ const TEMPLATES: Template[] = [
     keys: [],
     server: http('https://mcp.vercel.com'),
     note: OAUTH,
-  },
-  {
-    id: 'slack',
-    name: 'Slack',
-    vendor: 'Model Context Protocol',
-    verified: false,
-    category: 'Productivity',
-    description: 'Channels, messages, threads and reactions in a Slack workspace.',
-    keys: [
-      {
-        name: 'SLACK_BOT_TOKEN',
-        signupUrl: 'https://api.slack.com/apps',
-        description: 'A Slack bot token (xoxb-…) of an app installed in the workspace',
-      },
-      {
-        name: 'SLACK_TEAM_ID',
-        signupUrl: 'https://api.slack.com/apps',
-        description: 'The workspace id (T…)',
-      },
-    ],
-    server: {
-      ...npx('@modelcontextprotocol/server-slack'),
-      env_keys: ['SLACK_BOT_TOKEN', 'SLACK_TEAM_ID'],
-    },
   },
 ];
 
