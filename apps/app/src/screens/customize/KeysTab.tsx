@@ -250,7 +250,8 @@ export function KeysTab(props: { focus?: string }): JSX.Element {
         <div className="stack">
           <h3>Other</h3>
           <span className="muted">
-            Shibaox's own keys (Telegram, GitHub, the daemon token, TypeSafe) and yours.
+            Shibaox's own keys (Telegram, GitHub, the daemon token, TypeSafe, the Higgsfield API)
+            and yours.
           </span>
         </div>
         {other.length ? (
