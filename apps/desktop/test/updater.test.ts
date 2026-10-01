@@ -137,7 +137,8 @@ describe('the desktop updater', () => {
 
     const broken = fake({
       found: async () => {
-        throw new Error('ENOTFOUND github.com');
+        // electron-updater's errors carry the response headers on the lines after the first
+        throw new Error('ENOTFOUND github.com\nHeaders: {\n  "server": "github.com"\n}');
       },
     });
     const u = startUpdater(broken.source, broken.ui, broken.opts);
@@ -147,6 +148,7 @@ describe('the desktop updater', () => {
     expect(broken.lines.join('\n')).toContain('ENOTFOUND github.com');
     await u.checkNow();
     expect(broken.said[0]).toMatch(/could not check.*ENOTFOUND/i);
+    expect(broken.said[0]).not.toContain('Headers');
   });
 
   it('stop() clears the timers', () => {

@@ -80,7 +80,8 @@ export function startUpdater(source: UpdateSource, ui: UpdateUi, o: UpdaterOptio
       } catch (e) {
         const reason = e instanceof Error ? e.message : String(e);
         log(`update check failed: ${reason}`);
-        await ui.say(`Shibaox could not check for updates: ${reason}`);
+        // the first line says what went wrong; the rest are response headers
+        await ui.say(`Shibaox could not check for updates: ${reason.split('\n')[0]}`);
         return;
       }
       await ui.say(
