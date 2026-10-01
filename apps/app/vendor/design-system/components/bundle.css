@@ -159,6 +159,33 @@ body { margin: 0; font-family: var(--font-sans); font-size: 15px; line-height: 2
 .tok-diff-add { color: var(--code-diff-add); }
 .tok-diff-del { color: var(--code-diff-del); }
 
+/* Textarea — multi-line entry, same field frame as Input */
+.sx-field--area { display: flex; flex-direction: column; gap: 6px; }
+.sx-field__area { font: inherit; font-size: 15px; line-height: 24px; min-height: 96px; padding: 8px var(--space-3); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--ink); resize: vertical; outline: 0; }
+.sx-field__area:focus-visible { box-shadow: var(--focus-ring); border-color: var(--focus); }
+.sx-field__area::placeholder { color: var(--ink-muted); }
+
+/* Select — a field whose choices open in a Menu */
+.sx-select { font: inherit; font-size: 14px; font-weight: 500; height: var(--control-md); min-width: 160px; padding: 0 var(--space-2) 0 var(--space-3); display: inline-flex; align-items: center; justify-content: space-between; gap: var(--space-2); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--ink); cursor: pointer; text-align: left; }
+.sx-select:hover:not(:disabled) { background: var(--surface-hover); }
+.sx-select:disabled { opacity: .45; cursor: not-allowed; }
+.sx-select:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.sx-select.is-empty .sx-select__value { color: var(--ink-muted); }
+.sx-select__value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sx-field .sx-popover { display: flex; }
+.sx-field .sx-popover .sx-select { flex: 1; }
+
+/* Dialog — a modal for a form that needs room: creating a routine, confirming a removal */
+.sx-scrim { position: fixed; inset: 0; z-index: var(--z-overlay); display: grid; place-items: center; padding: var(--space-6); background: #1c140e66; }
+.sx-dialog { width: min(640px, 100%); max-height: 100%; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); outline: 0; }
+.sx-dialog__head { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-5) var(--space-4) var(--space-3) var(--space-6); }
+.sx-dialog__icon { width: 36px; height: 36px; border-radius: var(--radius-md); background: var(--shiba-soft); color: var(--shiba-strong); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.sx-dialog__titles { flex: 1; min-width: 0; padding-top: 4px; }
+.sx-dialog__title { font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: -0.01em; }
+.sx-dialog__desc { font-size: 13px; line-height: 20px; color: var(--ink-muted); margin-top: 2px; }
+.sx-dialog__body { flex: 1; min-height: 0; overflow: auto; padding: 0 var(--space-6) var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
+.sx-dialog__foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-6) var(--space-5); border-top: 1px solid var(--line); }
+
 /* FileChip — a file a run produced or changed */
 .sx-filechip { font: inherit; display: inline-flex; align-items: center; gap: var(--space-2); max-width: 100%; height: 36px; padding: 0 var(--space-2) 0 6px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); text-align: left; }
 .sx-filechip.is-interactive { cursor: pointer; }

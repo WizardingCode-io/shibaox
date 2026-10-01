@@ -43,6 +43,13 @@ export interface FileChipProps { path: string; name?: string; status?: 'added' |
 export declare function FileChip(props: FileChipProps): React.ReactElement;
 export interface SheetProps { open: boolean; onClose?: () => void; title?: React.ReactNode; subtitle?: React.ReactNode; icon?: IconName; label?: string; actions?: React.ReactNode; footer?: React.ReactNode; width?: number | string; className?: string; children?: React.ReactNode }
 export declare function Sheet(props: SheetProps): React.ReactElement | null;
+export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> { label?: string; hint?: string; error?: string; rows?: number; className?: string }
+export declare function Textarea(props: TextareaProps): React.ReactElement;
+export interface SelectOption { id: string; label: string; hint?: string; icon?: IconName; disabled?: boolean }
+export interface SelectProps { id?: string; label?: string; value?: string; options: SelectOption[]; onChange?: (id: string) => void; placeholder?: string; hint?: string; disabled?: boolean; width?: number | string; className?: string }
+export declare function Select(props: SelectProps): React.ReactElement;
+export interface DialogProps { open: boolean; onClose?: () => void; title?: React.ReactNode; description?: React.ReactNode; icon?: IconName; label?: string; footer?: React.ReactNode; width?: number | string; className?: string; children?: React.ReactNode }
+export declare function Dialog(props: DialogProps): React.ReactElement | null;
 export interface KbdProps { children: React.ReactNode }
 export declare function Kbd(props: KbdProps): React.ReactElement;
 export interface IconProps { name: IconName; size?: number; strokeWidth?: number; label?: string; className?: string }
@@ -60,4 +67,4 @@ export interface MenuProps extends MenuListProps { open: boolean; anchor?: React
 export declare function Menu(props: MenuProps): React.ReactElement;
 /** @deprecated a decorative 14px Wave, kept for compatibility */
 export declare function Spinner(props?: { size?: number }): React.ReactElement;
-declare global { interface Window { Shibaox: { Button: typeof Button; IconButton: typeof IconButton; Input: typeof Input; Switch: typeof Switch; Composer: typeof Composer; Tabs: typeof Tabs; NavItem: typeof NavItem; Badge: typeof Badge; AgentStatus: typeof AgentStatus; Toast: typeof Toast; Avatar: typeof Avatar; Mascot: typeof Mascot; Message: typeof Message; ToolCall: typeof ToolCall; ThinkingIndicator: typeof ThinkingIndicator; CodeBlock: typeof CodeBlock; Card: typeof Card; Kbd: typeof Kbd; Icon: typeof Icon; Spinner: typeof Spinner; Wave: typeof Wave; TextShimmer: typeof TextShimmer; Popover: typeof Popover; MenuList: typeof MenuList; Menu: typeof Menu; Table: typeof Table; Sheet: typeof Sheet; FileChip: typeof FileChip } } }
+declare global { interface Window { Shibaox: { Button: typeof Button; IconButton: typeof IconButton; Input: typeof Input; Switch: typeof Switch; Composer: typeof Composer; Tabs: typeof Tabs; NavItem: typeof NavItem; Badge: typeof Badge; AgentStatus: typeof AgentStatus; Toast: typeof Toast; Avatar: typeof Avatar; Mascot: typeof Mascot; Message: typeof Message; ToolCall: typeof ToolCall; ThinkingIndicator: typeof ThinkingIndicator; CodeBlock: typeof CodeBlock; Card: typeof Card; Kbd: typeof Kbd; Icon: typeof Icon; Spinner: typeof Spinner; Wave: typeof Wave; TextShimmer: typeof TextShimmer; Popover: typeof Popover; MenuList: typeof MenuList; Menu: typeof Menu; Table: typeof Table; Sheet: typeof Sheet; FileChip: typeof FileChip; Textarea: typeof Textarea; Select: typeof Select; Dialog: typeof Dialog } } }

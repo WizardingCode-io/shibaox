@@ -17,7 +17,7 @@ import {
   type ThreadView,
   threadView,
 } from '@wizardingcode/shibaox-view';
-import type { AppClient, RunFileContent } from '../api/client.js';
+import type { AppClient, RoutineDraft, RoutinePatch, RunFileContent } from '../api/client.js';
 import { type AppState, initialState, type Settings, TERMINAL } from './state.js';
 
 /** The part of AppClient the store uses (a fake in tests). */
@@ -47,6 +47,8 @@ export type StoreClient = Pick<
   | 'resumeRoutine'
   | 'removeRoutine'
   | 'addRoutine'
+  | 'updateRoutine'
+  | 'draftRoutine'
   | 'syncRoutines'
   | 'keys'
   | 'setKey'
@@ -586,6 +588,28 @@ export class AppStore {
       } as RoutineInput);
       await this.loadRoutines();
     });
+  }
+  updateRoutine(id: string, patch: RoutinePatch): Promise<boolean> {
+    return this.act(async () => {
+      await this.client.updateRoutine(id, patch);
+      await this.loadRoutines();
+    });
+  }
+  /** "Create with Shibaox": a sentence into a draft, or undefined with the error as a toast. */
+  async draftRoutine(text: string): Promise<RoutineDraft | undefined> {
+    try {
+      const d = await this.defaults();
+      return await this.client.draftRoutine({ text, orgRoot: d.orgRoot, project: d.project });
+    } catch (e) {
+      if (isUnauthorized(e)) this.set({ unauthorized: true });
+      else this.set({ error: message(e) });
+      return undefined;
+    }
+  }
+  loadProjects(): Promise<void> {
+    return this.load(async () => {
+      this.set({ projects: await this.client.projects() });
+    }).then(() => undefined);
   }
   syncRoutines(): Promise<boolean> {
     return this.act(async () => {

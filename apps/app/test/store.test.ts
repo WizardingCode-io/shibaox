@@ -164,6 +164,14 @@ function fakeClient() {
     async removeRoutine(id: string) {
       rec('removeRoutine', id);
     },
+    async updateRoutine(id: string, patch: unknown) {
+      rec('updateRoutine', id, patch);
+      return {} as never;
+    },
+    async draftRoutine(r: unknown) {
+      rec('draftRoutine', r);
+      return {} as never;
+    },
     async addRoutine(r: unknown) {
       rec('addRoutine', r);
       return {} as never;

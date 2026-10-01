@@ -250,3 +250,30 @@ pre.out {
   font-family: var(--font-mono);
   font-size: 12px;
 }
+
+/* Scheduled: two columns of routine cards, the template gallery below */
+.routines {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+.template {
+  font: inherit;
+  text-align: left;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.template:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-lg);
+}
+.note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--warning);
+}

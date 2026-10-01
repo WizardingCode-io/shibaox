@@ -16,6 +16,20 @@ A routine is what the daemon does on its own: on a schedule, or when something i
 
 Watchers look every `every` seconds (default 120, at least 30) and fire in mode `on_change` (the default for them) when the fingerprint of what they saw differs from the last time they fired; the first look fires when there is something to act on. `mode: always` fires at every look. `repo` defaults to the project's `origin` remote on GitHub. What the trigger saw goes into the run's input, fenced and marked as data, never as instructions, capped at a few KB; a run should still treat issue titles and page contents with the same suspicion as anything else it reads. `gh` runs with the `GH_TOKEN` of the vault.
 
+## Manual routines
+
+`on: { manual: true }` (`--on manual`, or **Frequency: Manual** in the app) is a routine that never fires on its own: a task kept ready, run from the app, the CLI (`shibaox routine run <id>`) or Telegram whenever you want it, with its instructions, model and policy saved.
+
+## Approvals per routine
+
+A routine says how its runs handle approvals (`approvals`, **Permissions** in the app):
+
+- `inbox` (default): a push, a deploy, a command with inline code, a network call or a protected file waits for you in the inbox, as in any run.
+- `auto`: those tool approvals are answered by Shibaox itself; the workflow's human steps (`approve-push`, `approve-merge`…) still wait for you.
+- `skip`: nothing waits, human steps included. The run never pauses.
+
+The policy travels to every run the routine's run dispatches, and is written on each run (`shibaox audit` shows "Approvals: auto"). `auto` and `skip` are for work you would let run while you sleep; a routine from the org files carries the same field.
+
 ## Guards
 
 A routine never fires while a run it started is still active, and a change seen meanwhile is not lost: it fires once the run ends. `max_daily_usd` stops it for the day (UTC) once its runs have spent that much; watchers get a cap of $10 a day unless you set one, because a busy repository would otherwise start a run every few minutes. `shibaox routine pause` and `resume` switch it off and on; `run` fires it now, whatever the trigger says (never twice at once).
@@ -40,12 +54,23 @@ project: ../app               # relative to the org directory (default: its pare
 every: 300                    # seconds between looks (watchers)
 mode: on_change               # or always
 max_daily_usd: 5
+# description: bug-labelled issues become pull requests
+# model: anthropic/claude-opus-4      # else the org's tiers
+# approvals: inbox                    # inbox (ask, default) | auto | skip, see below
 # adapter: claude-code
 # budget_usd: 2
 # enabled: false
 ```
 
 `sync` adds new files, updates changed ones in place (what the file says wins; the routine's state stays, so a paused routine stays paused unless the file sets `enabled`), and removes org routines whose file is gone; routines added by hand (`routine add`) and the routines of other orgs are never touched. Run `sync` again after editing the files.
+
+## Editing, drafts and views
+
+`PUT /routines/:id` (`shibaox routine update <id> --on … --input … --model … --approvals …`, or **Edit** on a card) changes the given fields. A routine that came from `org/routines/*.yaml` and is edited this way stops following its file (it becomes `api`): what you changed would otherwise be undone by the next sync.
+
+`GET /routines` answers with views: each routine with `words` (its trigger in words: "Weekdays at 09:00", "On issues labelled bug in acme/app"), `nextRunAt` (the next cron occurrence, a watcher's next look, `null` for paused and manual ones) and `lastRun` (id, status, cost, when).
+
+`POST /routines/draft` (**Create with Shibaox** in the app) turns a sentence ("every weekday at 9 tell me what changed") into a routine draft with the org's cheap tier: name, description, trigger, workflow, instructions and policy, for you to check and save; nothing is saved by the draft itself. Without a callable model it says so (503).
 
 ## From the command line and the dashboard
 

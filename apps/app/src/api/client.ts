@@ -11,8 +11,11 @@ import type {
   OrgConfigPatch,
   OrgInfo,
   ProjectEntry,
+  RoutineDraft,
   RoutineInput,
+  RoutinePatch,
   RoutineRow,
+  RoutineView,
   RunFile,
   RunFileContent,
   RunSummaryPlus,
@@ -36,7 +39,7 @@ export class AppHttpError extends Error {
  * The daemon's API from the browser: JSON over `fetch` with the bearer token, and the run
  * event stream (SSE) read through `fetch` too, since `EventSource` cannot send a header.
  */
-export type { RunFile, RunFileContent };
+export type { RoutineDraft, RoutinePatch, RoutineView, RunFile, RunFileContent };
 
 export class AppClient {
   readonly base: string;
@@ -151,7 +154,7 @@ export class AppClient {
   models(): Promise<ModelChoice[]> {
     return this.json('GET', '/models');
   }
-  routines(): Promise<RoutineRow[]> {
+  routines(): Promise<RoutineView[]> {
     return this.json('GET', '/routines');
   }
   runRoutine(id: string): Promise<{ runId: string }> {
@@ -168,6 +171,13 @@ export class AppClient {
   }
   addRoutine(r: RoutineInput): Promise<RoutineRow> {
     return this.json('POST', '/routines', r);
+  }
+  updateRoutine(id: string, patch: RoutinePatch): Promise<RoutineRow> {
+    return this.json('PUT', `/routines/${encodeURIComponent(id)}`, patch);
+  }
+  /** A sentence into a routine draft (the daemon's cheap model); nothing is saved. */
+  draftRoutine(r: { text: string; orgRoot: string; project?: string }): Promise<RoutineDraft> {
+    return this.json('POST', '/routines/draft', r);
   }
   syncRoutines(orgRoot: string): Promise<unknown> {
     return this.json('POST', '/routines/sync', { orgRoot });

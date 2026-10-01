@@ -6,7 +6,7 @@ import type {
   McpServerRow,
   OrgConfig,
   OrgInfo,
-  RoutineRow,
+  RoutineView,
   RunSummaryPlus,
 } from '@wizardingcode/shibaox-daemon';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
@@ -45,7 +45,9 @@ export interface AppState {
   /** The daemon refused the token: back to Connect. */
   unauthorized?: boolean;
   /** The sections, loaded when opened. */
-  routines?: RoutineRow[];
+  routines?: RoutineView[];
+  /** The projects the daemon offers (for the routine dialog). */
+  projects?: { path: string; source?: string }[];
   skills?: {
     org: string;
     workflows: { name: string; description: string; conversation: boolean }[];

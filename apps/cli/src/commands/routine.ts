@@ -4,7 +4,7 @@ import { connect } from '../client.js';
 import type { Out } from '../output.js';
 
 export const ON_HELP =
-  'cron:<expr> | github:issues|prs|checks | url:<https://…> | file:<path> | command:<shell command>';
+  'cron:<expr> | github:issues|prs|checks | url:<https://…> | file:<path> | command:<shell command> | manual';
 
 /** `--on cron:0 9 * * 1-5`, `--on github:issues`, `--on url:https://…`, `--on file:./x`, `--on command:git fetch`. */
 export function parseOn(
@@ -15,6 +15,8 @@ export function parseOn(
   const kind = i < 0 ? on : on.slice(0, i);
   const rest = i < 0 ? '' : on.slice(i + 1).trim();
   switch (kind) {
+    case 'manual':
+      return { type: 'manual' };
     case 'cron':
       if (!rest) throw new Error('cron: needs an expression, e.g. --on "cron:0 9 * * 1-5"');
       return { type: 'cron', cron: rest };
@@ -55,8 +57,18 @@ export function describeTrigger(t: RoutineTrigger): string {
       return `file ${t.path}`;
     case 'command':
       return `command ${t.command}`;
+    case 'manual':
+      return 'manual';
   }
 }
+
+const APPROVALS = ['inbox', 'auto', 'skip'] as const;
+type Approvals = (typeof APPROVALS)[number];
+const approvalsOf = (v: string | undefined): Approvals | undefined => {
+  if (v === undefined) return undefined;
+  if (!APPROVALS.includes(v as Approvals)) throw new Error('--approvals takes inbox, auto or skip');
+  return v as Approvals;
+};
 
 const line = (r: RoutineRow) =>
   `${r.id}  ${(r.name ?? '').padEnd(14).slice(0, 14)} ${describeTrigger(r.trigger).padEnd(34).slice(0, 34)} ${r.workflow.padEnd(16)} ${r.enabled ? 'on ' : 'off'}${r.lastRunId ? `  last run ${r.lastRunId.slice(0, 8)}` : ''}${r.source === 'org' ? '  (org)' : ''}`;
@@ -69,6 +81,9 @@ export async function routineAdd(
     project: string;
     input?: string;
     name?: string;
+    description?: string;
+    model?: string;
+    approvals?: string;
     adapter?: string;
     budget?: number;
     maxDaily?: number;
@@ -82,8 +97,10 @@ export async function routineAdd(
 ): Promise<number> {
   const project = resolve(o.project);
   let trigger: RoutineTrigger;
+  let approvals: Approvals | undefined;
   try {
     trigger = parseOn(o.on, { label: o.label, repo: o.repo, branch: o.branch, project });
+    approvals = approvalsOf(o.approvals);
   } catch (e) {
     out.line(e instanceof Error ? e.message : String(e));
     out.obj({ added: false, error: e instanceof Error ? e.message : String(e) });
@@ -101,6 +118,9 @@ export async function routineAdd(
     workflow,
     input: o.input ?? '',
     name: o.name,
+    description: o.description,
+    model: o.model,
+    approvals,
     adapter: o.adapter,
     budgetUsd: o.budget,
     maxDailyUsd: o.maxDaily,
@@ -128,6 +148,70 @@ export async function routineList(out: Out): Promise<number> {
   return 0;
 }
 
+/** `shibaox routine update <id> [flags]`: the given fields change; an org routine edited here becomes `api`. */
+export async function routineUpdate(
+  id: string,
+  o: {
+    on?: string;
+    project?: string;
+    workflow?: string;
+    input?: string;
+    name?: string;
+    description?: string;
+    model?: string;
+    approvals?: string;
+    adapter?: string;
+    budget?: number;
+    maxDaily?: number;
+    every?: number;
+    mode?: string;
+    label?: string;
+    repo?: string;
+    branch?: string;
+  },
+  out: Out,
+): Promise<number> {
+  const patch: Record<string, unknown> = {};
+  try {
+    if (o.on !== undefined) {
+      const project = o.project ? resolve(o.project) : process.cwd();
+      patch.trigger = parseOn(o.on, { label: o.label, repo: o.repo, branch: o.branch, project });
+    }
+    if (o.approvals !== undefined) patch.approvals = approvalsOf(o.approvals);
+  } catch (e) {
+    out.line(e instanceof Error ? e.message : String(e));
+    out.obj({ updated: false, error: e instanceof Error ? e.message : String(e) });
+    return 1;
+  }
+  if (o.mode !== undefined && o.mode !== 'always' && o.mode !== 'on_change') {
+    out.line('--mode takes always or on_change');
+    return 1;
+  }
+  if (o.project !== undefined) patch.project = resolve(o.project);
+  for (const [k, v] of Object.entries({
+    workflow: o.workflow,
+    input: o.input,
+    name: o.name,
+    description: o.description,
+    model: o.model,
+    adapter: o.adapter,
+    budgetUsd: o.budget,
+    maxDailyUsd: o.maxDaily,
+    intervalS: o.every,
+    mode: o.mode,
+  }))
+    if (v !== undefined) patch[k] = v;
+  if (Object.keys(patch).length === 0) {
+    out.line('Nothing to change: give at least one flag (shibaox routine update --help)');
+    return 1;
+  }
+  const client = await connect({ write: true });
+  const r = await client.updateRoutine(id, patch);
+  out.line(`Updated routine ${id}${r.source === 'api' ? '' : ''}`);
+  out.obj(r);
+  return 0;
+}
+
 export async function routineShow(id: string, out: Out): Promise<number> {
   const client = await connect();
   const r = await client.routine(id);
@@ -140,8 +224,16 @@ export async function routineShow(id: string, out: Out): Promise<number> {
   out.line(`workflow: ${r.workflow} · project: ${r.project} · org: ${r.orgRoot}`);
   if (r.input) out.line(`input: ${r.input.split('\n')[0]}`);
   out.line(
-    `${r.enabled ? 'enabled' : 'paused'}${r.adapter ? ` · adapter ${r.adapter}` : ''}${r.budgetUsd !== undefined ? ` · budget $${r.budgetUsd}` : ''}${r.maxDailyUsd !== undefined ? ` · max $${r.maxDailyUsd}/day` : ''}`,
+    `${r.enabled ? 'enabled' : 'paused'}${r.adapter ? ` · adapter ${r.adapter}` : ''}${r.model ? ` · model ${r.model}` : ''}${r.approvals && r.approvals !== 'inbox' ? ` · approvals ${r.approvals}` : ''}${r.budgetUsd !== undefined ? ` · budget $${r.budgetUsd}` : ''}${r.maxDailyUsd !== undefined ? ` · max $${r.maxDailyUsd}/day` : ''}`,
   );
+  if (r.description) out.line(`description: ${r.description}`);
+  out.line(
+    `when: ${r.words}${r.nextRunAt ? ` · next ${r.nextRunAt}` : r.enabled ? ' · only by hand' : ''}`,
+  );
+  if (r.lastRun)
+    out.line(
+      `last run: ${r.lastRun.runId} · ${r.lastRun.status} · $${r.lastRun.spentUsd.toFixed(4)} · ${r.lastRun.createdAt}`,
+    );
   if (r.lastFiredAt)
     out.line(`last fired: ${r.lastFiredAt}${r.lastRunId ? ` (run ${r.lastRunId})` : ''}`);
   if (r.lastCheckedAt) out.line(`last looked: ${r.lastCheckedAt}`);

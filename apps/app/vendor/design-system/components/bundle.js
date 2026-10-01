@@ -188,6 +188,53 @@
       p.footer ? h('div', { className: 'sx-sheet__foot' }, p.footer) : null);
   }
 
+  function Textarea(p) {
+    var rest = Object.assign({}, p);
+    ['label', 'hint', 'error', 'className', 'rows'].forEach((k) => { delete rest[k]; });
+    var id = p.id || (p.label ? 'ta-' + p.label.toLowerCase().replace(/[^a-z0-9]+/g, '-') : undefined);
+    return h('label', { className: cx('sx-field', 'sx-field--area', p.error && 'is-error', p.className), htmlFor: id },
+      p.label ? h('span', { className: 'sx-field__label' }, p.label) : null,
+      h('textarea', Object.assign({ className: 'sx-field__area', rows: p.rows || 4, id: id }, rest)),
+      (p.error || p.hint) ? h('span', { className: 'sx-field__hint' }, p.error || p.hint) : null);
+  }
+
+  function Select(p) {
+    var s = useState(false), open = s[0];
+    var current = (p.options || []).find(function (o) { return o.id === p.value; });
+    var id = p.id || (p.label ? 'sel-' + p.label.toLowerCase().replace(/[^a-z0-9]+/g, '-') : undefined);
+    return h('div', { className: cx('sx-field', p.className) },
+      p.label ? h('span', { className: 'sx-field__label', id: id ? id + '-label' : undefined }, p.label) : null,
+      h(Menu, { open: open, onClose: function () { s[1](false); }, align: 'start', width: p.width || 280,
+        items: (p.options || []).map(function (o) { return { id: o.id, label: o.label, hint: o.hint, icon: o.icon, disabled: o.disabled, checked: o.id === p.value }; }),
+        onSelect: function (v) { if (p.onChange) p.onChange(v); },
+        anchor: h('button', { type: 'button', id: id, className: cx('sx-select', !current && 'is-empty'), 'aria-label': p.label, 'aria-haspopup': 'menu', 'aria-expanded': open, disabled: p.disabled, onClick: function () { s[1](!open); } },
+          h('span', { className: 'sx-select__value' }, current ? current.label : (p.placeholder || 'Choose')),
+          h(Icon, { name: 'chevron-down', size: 16 })) }),
+      p.hint ? h('span', { className: 'sx-field__hint' }, p.hint) : null);
+  }
+
+  function Dialog(p) {
+    var ref = useRef(null), onClose = useRef(p.onClose);
+    onClose.current = p.onClose;
+    useEffect(function () {
+      if (!p.open) return;
+      function onKey(e) { if (e.key === 'Escape' && onClose.current) onClose.current(); }
+      document.addEventListener('keydown', onKey);
+      var root = ref.current;
+      if (root) { var first = root.querySelector('input, textarea, select, button.sx-select, button'); try { (first || root).focus({ preventScroll: true }); } catch (_) {} }
+      return function () { document.removeEventListener('keydown', onKey); };
+    }, [p.open]);
+    if (!p.open) return null;
+    return h('div', { className: 'sx-scrim', onMouseDown: function (e) { if (e.target === e.currentTarget && onClose.current) onClose.current(); } },
+      h('div', { className: cx('sx-dialog', p.className), role: 'dialog', 'aria-modal': 'true', 'aria-label': p.label || (typeof p.title === 'string' ? p.title : undefined), ref: ref, tabIndex: -1, style: p.width ? { width: p.width } : undefined },
+        h('div', { className: 'sx-dialog__head' },
+          p.icon ? h('span', { className: 'sx-dialog__icon' }, h(Icon, { name: p.icon, size: 18 })) : null,
+          h('div', { className: 'sx-dialog__titles' }, h('div', { className: 'sx-dialog__title' }, p.title), p.description ? h('div', { className: 'sx-dialog__desc' }, p.description) : null),
+          h(IconButton, { icon: 'x', label: 'Close', size: 'sm', onClick: p.onClose })),
+        h('div', { className: 'sx-dialog__body sx-scroll' }, p.children),
+        p.footer ? h('div', { className: 'sx-dialog__foot' }, p.footer) : null));
+  }
+
   function Table(p) {
     var align = p.align || [];
     var cls = function (i) { var a = align[i]; return a === 'right' ? 'is-num' : a === 'center' ? 'is-center' : undefined; };
@@ -304,6 +351,6 @@
       h(MenuList, { items: p.items, onSelect: p.onSelect, onClose: p.onClose, title: p.title }));
   }
 
-  var api = { Icon: Icon, Mascot: Mascot, Button: Button, IconButton: IconButton, Input: Input, Switch: Switch, Composer: Composer, Tabs: Tabs, NavItem: NavItem, Badge: Badge, AgentStatus: AgentStatus, Toast: Toast, Avatar: Avatar, Message: Message, ToolCall: ToolCall, ThinkingIndicator: ThinkingIndicator, CodeBlock: CodeBlock, Card: Card, Kbd: Kbd, Spinner: Spinner, Wave: Wave, TextShimmer: TextShimmer, Popover: Popover, MenuList: MenuList, Menu: Menu, Table: Table, Sheet: Sheet, FileChip: FileChip };
+  var api = { Icon: Icon, Mascot: Mascot, Button: Button, IconButton: IconButton, Input: Input, Switch: Switch, Composer: Composer, Tabs: Tabs, NavItem: NavItem, Badge: Badge, AgentStatus: AgentStatus, Toast: Toast, Avatar: Avatar, Message: Message, ToolCall: ToolCall, ThinkingIndicator: ThinkingIndicator, CodeBlock: CodeBlock, Card: Card, Kbd: Kbd, Spinner: Spinner, Wave: Wave, TextShimmer: TextShimmer, Popover: Popover, MenuList: MenuList, Menu: Menu, Table: Table, Sheet: Sheet, FileChip: FileChip, Textarea: Textarea, Select: Select, Dialog: Dialog };
   window.Shibaox = Object.assign(window.Shibaox || {}, api);
 })();

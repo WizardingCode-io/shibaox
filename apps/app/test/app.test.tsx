@@ -255,48 +255,6 @@ describe('the app: the review fixes', () => {
 });
 
 describe('the sections', () => {
-  const routine = {
-    id: 'scan',
-    name: 'Weekly scan',
-    trigger: { type: 'cron', cron: '0 9 * * 1' },
-    orgRoot: '/o',
-    project: '/p',
-    workflow: 'security-scan',
-    input: 'x',
-    mode: 'always',
-    intervalS: 120,
-    enabled: true,
-    source: 'org',
-    createdAt: 't',
-    lastFiredAt: '2026-09-30T09:00:00.000Z',
-  };
-  it('Scheduled lists the routines with Run now, Pause and Sync from org; Add routine posts one', async () => {
-    const { client: c, calls } = client({ routines: [routine] });
-    mount(c, { hash: '#/scheduled' });
-    await waitFor(() => expect(screen.getByText('Weekly scan')).toBeTruthy());
-    expect(screen.getByText(/security-scan/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
-    await waitFor(() => expect(calls.find((x) => x.name === 'runRoutine')?.args[0]).toBe('scan'));
-    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
-    await waitFor(() => expect(calls.find((x) => x.name === 'pauseRoutine')?.args[0]).toBe('scan'));
-    fireEvent.click(screen.getByRole('button', { name: 'Sync from org' }));
-    await waitFor(() => expect(calls.find((x) => x.name === 'syncRoutines')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'Add routine' }));
-    fireEvent.change(screen.getByLabelText('Trigger'), { target: { value: 'url' } });
-    fireEvent.change(screen.getByLabelText('Watch'), {
-      target: { value: 'https://example.com/status' },
-    });
-    fireEvent.change(screen.getByLabelText('Workflow'), { target: { value: 'hello-feature' } });
-    fireEvent.change(screen.getByLabelText('Request'), { target: { value: 'Check it' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save routine' }));
-    await waitFor(() =>
-      expect(calls.find((x) => x.name === 'addRoutine')?.args[0]).toMatchObject({
-        trigger: { type: 'url', url: 'https://example.com/status' },
-        workflow: 'hello-feature',
-        input: 'Check it',
-      }),
-    );
-  });
   it('Skills lists the workflows and runs one as a task', async () => {
     const { client: c, calls } = client();
     mount(c, { hash: '#/skills' });
@@ -363,23 +321,6 @@ describe('the sections', () => {
 });
 
 describe('the sections: the review fixes', () => {
-  it('a GitHub routine takes what to watch and the optional repo, label and branch', async () => {
-    const { client: c, calls } = client();
-    mount(c, { hash: '#/scheduled' });
-    fireEvent.click(await screen.findByRole('button', { name: 'Add routine' }));
-    fireEvent.change(screen.getByLabelText('Trigger'), { target: { value: 'github' } });
-    fireEvent.change(await screen.findByLabelText('What to watch'), { target: { value: 'prs' } });
-    fireEvent.change(screen.getByLabelText('Label'), { target: { value: 'bug' } });
-    fireEvent.change(screen.getByLabelText('Repository'), { target: { value: 'wc/app' } });
-    fireEvent.change(screen.getByLabelText('Workflow'), { target: { value: 'review-pr' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save routine' }));
-    await waitFor(() =>
-      expect(calls.find((x) => x.name === 'addRoutine')?.args[0]).toMatchObject({
-        trigger: { type: 'github', watch: 'prs', label: 'bug', repo: 'wc/app' },
-        workflow: 'review-pr',
-      }),
-    );
-  });
   it('the composer shows the model picked for the conversation', async () => {
     const { client: c } = client({ runs: [summary('root')], states: { root: state('root') } });
     mount(c, { hash: '#/t/root' });

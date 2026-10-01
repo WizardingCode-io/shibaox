@@ -48,6 +48,24 @@ export const RUN_STATUS_WORD: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
+/** `in 2 h`, `3 min ago`, `now`; a date beyond two weeks. */
+export function relative(iso: string | undefined, now = Date.now()): string {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return iso;
+  const diff = t - now;
+  const abs = Math.abs(diff);
+  if (abs < 60_000) return 'now';
+  if (abs >= 86_400_000 * 14) return when(iso);
+  const unit =
+    abs < 3_600_000
+      ? `${Math.round(abs / 60_000)} min`
+      : abs < 86_400_000
+        ? `${Math.round(abs / 3_600_000)} h`
+        : `${Math.round(abs / 86_400_000)} d`;
+  return diff < 0 ? `${unit} ago` : `in ${unit}`;
+}
+
 /** `30 Sep, 09:00` in the local clock (the date matters for routines). */
 export function when(iso: string | undefined): string {
   if (!iso) return '';

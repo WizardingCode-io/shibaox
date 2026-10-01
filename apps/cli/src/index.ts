@@ -29,6 +29,7 @@ import {
   routineRun,
   routineShow,
   routineSync,
+  routineUpdate,
 } from './commands/routine.js';
 import {
   auditCommand,
@@ -449,6 +450,12 @@ routine
   .requiredOption('--project <path>')
   .option('--input <text>', 'what to ask; what the trigger saw is appended as data')
   .option('--name <text>')
+  .option('--description <text>', 'a line for the Scheduled screen')
+  .option('--model <ref>', 'provider/model for the runs (default: the org tiers)')
+  .option(
+    '--approvals <policy>',
+    'inbox (ask, default) | auto (tool approvals answered) | skip (human steps too)',
+  )
   .option('--label <label>', 'github:issues|prs: only with this label')
   .option('--repo <owner/name>', 'github: the repository (default: the project origin)')
   .option('--branch <name>', 'github:checks: the branch to watch')
@@ -469,6 +476,55 @@ routine
           project: o.project as string,
           input: o.input as string | undefined,
           name: o.name as string | undefined,
+          description: o.description as string | undefined,
+          model: o.model as string | undefined,
+          approvals: o.approvals as string | undefined,
+          label: o.label as string | undefined,
+          repo: o.repo as string | undefined,
+          branch: o.branch as string | undefined,
+          every: o.every as number | undefined,
+          mode: o.mode as string | undefined,
+          maxDaily: o.maxDaily as number | undefined,
+          adapter: o.adapter as string | undefined,
+          budget: o.budget as number | undefined,
+        },
+        out(this),
+      ),
+    );
+  });
+routine
+  .command('update')
+  .argument('<id>')
+  .description('change a routine (an org routine edited here stops following its file)')
+  .option('--on <trigger>', ON_HELP)
+  .option('--project <path>')
+  .option('--workflow <name>')
+  .option('--input <text>')
+  .option('--name <text>')
+  .option('--description <text>')
+  .option('--model <ref>', 'provider/model, or "" for the org tiers')
+  .option('--approvals <policy>', 'inbox | auto | skip')
+  .option('--label <label>')
+  .option('--repo <owner/name>')
+  .option('--branch <name>')
+  .option('--every <seconds>', 'watchers: seconds between looks', (v: string) => Number(v))
+  .option('--mode <mode>', 'always | on_change')
+  .option('--max-daily <usd>', 'stop for the day past this spend', parseBudget)
+  .addOption(new Option('--adapter <id>').choices(ADAPTER_IDS))
+  .option('--budget <usd>', 'budget in USD per run', parseBudget)
+  .action(async function (this: Command, id: string, o: Record<string, unknown>) {
+    exitWith(
+      await routineUpdate(
+        id,
+        {
+          on: o.on as string | undefined,
+          project: o.project as string | undefined,
+          workflow: o.workflow as string | undefined,
+          input: o.input as string | undefined,
+          name: o.name as string | undefined,
+          description: o.description as string | undefined,
+          model: o.model as string | undefined,
+          approvals: o.approvals as string | undefined,
           label: o.label as string | undefined,
           repo: o.repo as string | undefined,
           branch: o.branch as string | undefined,

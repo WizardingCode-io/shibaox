@@ -196,6 +196,22 @@ export function client(
       rec('addRoutine', r);
       return {} as never;
     },
+    async updateRoutine(id, patch) {
+      rec('updateRoutine', id, patch);
+      return {} as never;
+    },
+    async draftRoutine(r) {
+      rec('draftRoutine', r);
+      return {
+        name: 'Daily briefing',
+        description: 'What changed yesterday',
+        trigger: { type: 'cron' as const, cron: '0 9 * * 1-5' },
+        workflow: 'chat',
+        input: "Summarise yesterday's commits, PRs and issues.",
+        approvals: 'inbox' as const,
+        words: 'Weekdays at 09:00',
+      };
+    },
     async syncRoutines(org) {
       rec('syncRoutines', org);
       return {};
