@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import type { PluginRow } from '@wizardingcode/shibaox-daemon';
+import type { PluginMode, PluginRow } from '@wizardingcode/shibaox-daemon';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadDesignSystem } from '../src/ds.js';
 import { client, higgsfieldApi, mount, PLUGINS, server } from './fixtures.js';
@@ -17,7 +17,7 @@ const BEARER = 'Bearer ${ACME_KEY}';
 const call = (calls: { name: string; args: unknown[] }[], name: string) =>
   calls.find((x) => x.name === name)?.args;
 const tab = (name: string) => screen.getByRole('tab', { name });
-const radio = (name: string) => screen.getByRole('radio', { name });
+const radio = (name: string | RegExp) => screen.getByRole('radio', { name });
 const pickCategory = async (label: RegExp, item: string) => {
   fireEvent.click(screen.getByRole('button', { name: label }));
   fireEvent.click(await screen.findByRole('menuitemradio', { name: item }));
@@ -848,7 +848,7 @@ describe('Customize: Plugins → Higgsfield in two modes', () => {
   ];
   const card = () => screen.getByText('Higgsfield').closest('.sx-card') as HTMLElement;
   const openConnect = async () => {
-    fireEvent.click(radio('API'));
+    fireEvent.click(radio(/^API/));
     fireEvent.click(screen.getByRole('button', { name: 'Connect API key' }));
     return screen.findByRole('dialog', { name: 'Connect API key' });
   };
@@ -857,10 +857,10 @@ describe('Customize: Plugins → Higgsfield in two modes', () => {
     const { client: c } = client();
     mount(c, { hash: '#/customize&tab=plugins' });
     await screen.findByText('Higgsfield');
-    expect(radio('Account').getAttribute('aria-checked')).toBe('true');
+    expect(radio(/^Account/).getAttribute('aria-checked')).toBe('true');
     expect(screen.getByText('CLI installed')).toBeTruthy();
     expect(screen.getByText(/affiliate link/i)).toBeTruthy();
-    fireEvent.click(radio('API'));
+    fireEvent.click(radio(/^API/));
     expect(screen.getByText('API key saved')).toBeTruthy();
     expect(screen.getByText('API key valid')).toBeTruthy();
     expect(screen.queryByText('CLI installed')).toBeNull();
@@ -922,7 +922,7 @@ describe('Customize: Plugins → Higgsfield in two modes', () => {
     mount(c, { hash: '#/customize&tab=plugins' });
     await screen.findByText('Higgsfield');
     // the active mode is the one shown first
-    expect(radio('API').getAttribute('aria-checked')).toBe('true');
+    expect(radio(/^API/).getAttribute('aria-checked')).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: 'Manage API key' }));
     const dialog = await screen.findByRole('dialog', { name: 'Manage API key' });
     expect(within(dialog).getByText('abcd…wxyz')).toBeTruthy();
@@ -991,12 +991,204 @@ describe('Customize: Plugins → Higgsfield in two modes', () => {
     const { client: c, calls } = client();
     mount(c, { hash: '#/customize&tab=plugins' });
     await screen.findByText('Higgsfield');
-    fireEvent.click(radio('API'));
+    fireEvent.click(radio(/^API/));
     expect(screen.getByText('tool higgsfield_api_generate')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Add skill higgsfield-app' }));
     await waitFor(() =>
       expect(call(calls, 'addSkill')).toEqual(['/o', { source: 'builtin', id: 'higgsfield-app' }]),
     );
+  });
+  it('the mode in use carries the dot; the group is named Mode', async () => {
+    const { client: c } = client();
+    mount(c, { hash: '#/customize&tab=plugins' });
+    await screen.findByText('Higgsfield');
+    expect(screen.getByRole('radiogroup', { name: 'Mode' })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'Account (in use)' })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'API' })).toBeTruthy();
+  });
+
+  it('Now: API when the API is what tasks use', async () => {
+    const { client: c } = client({ plugins: [higgsfieldApi({ active: true })] });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    expect(await screen.findByText('Now: API')).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'API (in use)' })).toBeTruthy();
+  });
+
+  it('re-picking the current choice puts nothing', async () => {
+    const { client: c, calls } = client();
+    mount(c, { hash: '#/customize&tab=plugins' });
+    await screen.findByText('Higgsfield');
+    fireEvent.click(screen.getByRole('button', { name: 'Use for generation' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /^Auto/ }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls.some((x) => x.name === 'setHiggsfieldMode')).toBe(false);
+  });
+
+  it('the panel follows the choice: choose API, the API panel shows; switching stays free', async () => {
+    const f = client();
+    let configured: 'auto' | 'account' | 'api' = 'auto';
+    const base = f.client.setHiggsfieldMode;
+    f.client.setHiggsfieldMode = async (m) => {
+      configured = m;
+      return base(m);
+    };
+    f.client.plugins = async () => [
+      { ...(PLUGINS[0] as PluginRow), mode: { configured, effective: 'account' } },
+    ];
+    mount(f.client, { hash: '#/customize&tab=plugins' });
+    await screen.findByText('Higgsfield');
+    expect(radio(/^Account/).getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Use for generation' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /^API/ }));
+    await waitFor(() => expect(radio(/^API/).getAttribute('aria-checked')).toBe('true'));
+    fireEvent.click(radio(/^Account/));
+    expect(radio(/^Account/).getAttribute('aria-checked')).toBe('true');
+    // reading the same choice again keeps the panel picked by hand
+    fireEvent.click(screen.getAllByRole('button', { name: 'Check again' })[0] as HTMLElement);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(radio(/^Account/).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it("search finds a plugin by its modes' keys and check labels", async () => {
+    const { client: c } = client();
+    mount(c, { hash: '#/customize&tab=plugins' });
+    await screen.findByText('Higgsfield');
+    const search = screen.getByLabelText('Search plugins');
+    fireEvent.change(search, { target: { value: 'HIGGSFIELD_API_KEY' } });
+    expect(screen.getByText('Higgsfield')).toBeTruthy();
+    expect(screen.queryByText('GitHub')).toBeNull();
+    fireEvent.change(search, { target: { value: 'API key valid' } });
+    expect(screen.getByText('Higgsfield')).toBeTruthy();
+  });
+
+  it('chosen API before any key: the card stays in Yours, not in Discover', async () => {
+    const off = (m: PluginMode): PluginMode => ({
+      ...m,
+      status: 'off',
+      checks: m.checks.map((ch) => ({ ...ch, ok: false })),
+    });
+    const row: PluginRow = {
+      ...(PLUGINS[0] as PluginRow),
+      status: 'off',
+      modes: (PLUGINS[0] as PluginRow).modes?.map(off),
+      mode: { configured: 'api', effective: 'none' },
+    };
+    const { client: c } = client({ plugins: [row, PLUGINS[2] as PluginRow] });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    expect(await screen.findByText('Higgsfield')).toBeTruthy();
+    fireEvent.click(radio('Discover'));
+    await screen.findByText('Telegram');
+    expect(screen.queryByText('Higgsfield')).toBeNull();
+  });
+
+  it('Enter in the key field saves, once', async () => {
+    const { client: c, calls } = client();
+    mount(c, { hash: '#/customize&tab=plugins' });
+    await screen.findByText('Higgsfield');
+    const dialog = await openConnect();
+    const input = within(dialog).getByLabelText('API key');
+    fireEvent.change(input, { target: { value: 'id:secret' } });
+    fireEvent.submit(input.closest('form') as HTMLFormElement);
+    fireEvent.submit(input.closest('form') as HTMLFormElement);
+    await waitFor(() => expect(call(calls, 'setKey')).toEqual([HF_KEY, 'id:secret']));
+    // a second Enter while saving sends nothing more
+    expect(calls.filter((x) => x.name === 'setKey').length).toBe(1);
+  });
+
+  it('the key is checked as the daemon does: no colon in the id', async () => {
+    const { client: c, calls } = client();
+    mount(c, { hash: '#/customize&tab=plugins' });
+    await screen.findByText('Higgsfield');
+    const dialog = await openConnect();
+    fireEvent.change(within(dialog).getByLabelText('API key'), { target: { value: '::secret' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(
+      await within(dialog).findByText(
+        'Copy the whole key from open.higgsfield.ai (it has a colon)',
+      ),
+    ).toBeTruthy();
+    expect(calls.some((x) => x.name === 'setKey')).toBe(false);
+  });
+
+  it('Cancel on Replace goes back to Manage', async () => {
+    const { client: c } = client({
+      plugins: [higgsfieldApi({ active: true })],
+      keys: savedKey('vault'),
+    });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage API key' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Manage API key' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Replace' }));
+    const replace = await screen.findByRole('dialog', { name: 'Replace API key' });
+    fireEvent.click(within(replace).getByRole('button', { name: 'Cancel' }));
+    expect(await screen.findByRole('dialog', { name: 'Manage API key' })).toBeTruthy();
+  });
+
+  it('Remove waits for the daemon, then closes: no Connect form in between', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const { client: c, calls } = client({
+      plugins: [higgsfieldApi({ active: true })],
+      keys: savedKey('vault'),
+      unsetKey: gate,
+    });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage API key' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Manage API key' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove' }));
+    const confirm = await screen.findByRole('dialog', { name: /Remove the API key/ });
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(call(calls, 'unsetKey')).toEqual([HF_KEY]));
+    // pending: the confirm stays
+    expect(screen.getByRole('dialog', { name: /Remove the API key/ })).toBeTruthy();
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByRole('dialog', { name: 'Connect API key' })).toBeNull();
+  });
+
+  it('a failing Remove keeps the dialog usable', async () => {
+    const failed = Promise.reject(new Error('vault locked'));
+    failed.catch(() => undefined);
+    const { client: c } = client({
+      plugins: [higgsfieldApi({ active: true })],
+      keys: savedKey('vault'),
+      unsetKey: failed,
+    });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage API key' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Manage API key' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove' }));
+    const confirm = await screen.findByRole('dialog', { name: /Remove the API key/ });
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Remove' }));
+    const back = await screen.findByRole('dialog', { name: 'Manage API key' });
+    const remove = within(back).getByRole('button', { name: 'Remove' }) as HTMLButtonElement;
+    expect(remove.disabled).toBe(false);
+    expect(within(back).getByRole('button', { name: 'Done' })).toBeTruthy();
+  });
+
+  it('Manage API key when /keys failed but the mode says the key is there', async () => {
+    const { client: c } = client({
+      plugins: [higgsfieldApi({ active: true })],
+      failKeys: true,
+    });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage API key' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Manage API key' });
+    expect(dialog.querySelector('input')).toBeNull();
+    expect(within(dialog).getByRole('button', { name: 'Replace' })).toBeTruthy();
+  });
+
+  it('the button says what the dialog does: a saved key is managed', async () => {
+    const row = higgsfieldApi({ active: true });
+    const api = row.modes?.[1] as PluginMode;
+    api.actions = api.actions.map((a) =>
+      a.id === 'connect_key' ? { ...a, label: 'Connect API key' } : a,
+    );
+    const { client: c } = client({ plugins: [row], keys: savedKey('vault') });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    expect(await screen.findByRole('button', { name: 'Manage API key' })).toBeTruthy();
   });
 });
 

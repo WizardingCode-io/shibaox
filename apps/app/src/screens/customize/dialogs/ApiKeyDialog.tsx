@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { ds } from '../../../ds.js';
 import { useAppState, useStore } from '../../../store/hooks.js';
-import { ConfirmDialog } from './ConfirmDialog.js';
 
 export const HIGGSFIELD_KEY = 'HIGGSFIELD_API_KEY';
 const KEYS_URL = 'https://open.higgsfield.ai/api-keys';
 const COPY = 'Paste the API key copied from open.higgsfield.ai. Paste it as-is.';
-/** The key is an `id:secret` pair; the daemon checks it more strictly. */
-const PAIR_RE = /^\S+:\S+$/;
+/** The key is an `id:secret` pair: the daemon's own check (secrets.ts). */
+const PAIR_RE = /^[^\s:]+:\S+$/;
 const PAIR_ERROR = 'Copy the whole key from open.higgsfield.ai (it has a colon)';
 
 /**
@@ -15,6 +14,8 @@ const PAIR_ERROR = 'Copy the whole key from open.higgsfield.ai (it has a colon)'
  * else Manage (masked, its validity, Replace and Remove; a key from the environment stays).
  */
 export function ApiKeyDialog(props: {
+  /** Whether a key is saved: the API mode's `keys[].present` (else the `/keys` row). */
+  present?: boolean;
   /** What the daemon's probe said about the saved key ("accepted", "rejected… (401)"). */
   validity?: { ok: boolean; detail?: string };
   onClose: () => void;
@@ -23,11 +24,14 @@ export function ApiKeyDialog(props: {
   const store = useStore();
   const state = useAppState();
   const row = state.customize?.keys.find((k) => k.name === HIGGSFIELD_KEY);
-  const [view, setView] = useState<'form' | 'manage' | 'confirm'>(row?.set ? 'manage' : 'form');
+  const present = props.present ?? row?.set === true;
+  const [view, setView] = useState<'form' | 'manage' | 'confirm'>(present ? 'manage' : 'form');
   const [value, setValue] = useState('');
   const [error, setError] = useState<string | undefined>(undefined);
   const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const save = () => {
+    if (saving) return;
     const v = value.trim();
     if (!v) return;
     if (!PAIR_RE.test(v)) {
@@ -41,23 +45,43 @@ export function ApiKeyDialog(props: {
     });
   };
 
+  // the confirm stays until the daemon answers: then the whole dialog closes (no Connect form)
   if (view === 'confirm')
     return (
-      <ConfirmDialog
+      <S.Dialog
+        open
         title="Remove the API key?"
         description="Shibaox stops using the Higgsfield API until a key is connected again; on Auto, generation goes back to your account."
-        confirm="Remove"
-        onClose={() => setView('manage')}
-        onConfirm={() => {
-          void store.unsetKey(HIGGSFIELD_KEY).then((ok) => {
-            if (ok) props.onClose();
-          });
-        }}
+        icon="triangle-alert"
+        width={440}
+        onClose={() => (removing ? undefined : setView('manage'))}
+        footer={
+          <>
+            <S.Button variant="quiet" disabled={removing} onClick={() => setView('manage')}>
+              Cancel
+            </S.Button>
+            <S.Button
+              variant="danger"
+              loading={removing}
+              onClick={() => {
+                if (removing) return;
+                setRemoving(true);
+                void store.unsetKey(HIGGSFIELD_KEY).then((ok) => {
+                  setRemoving(false);
+                  if (ok) props.onClose();
+                  else setView('manage');
+                });
+              }}
+            >
+              Remove
+            </S.Button>
+          </>
+        }
       />
     );
 
-  if (view === 'manage' && row?.set) {
-    const fromEnv = row.source === 'env';
+  if (view === 'manage' && present) {
+    const fromEnv = row?.source === 'env';
     return (
       <S.Dialog
         open
@@ -85,8 +109,8 @@ export function ApiKeyDialog(props: {
       >
         <div className="form">
           <div className="row">
-            <span className="mono">{row.masked ?? 'set'}</span>
-            <S.Badge>{fromEnv ? 'environment' : 'vault'}</S.Badge>
+            <span className="mono">{row?.masked ?? 'saved'}</span>
+            {row ? <S.Badge>{fromEnv ? 'environment' : 'vault'}</S.Badge> : null}
             {props.validity ? (
               <S.Badge tone={props.validity.ok ? 'matcha' : 'warning'}>
                 {props.validity.detail ?? (props.validity.ok ? 'valid' : 'not valid')}
@@ -107,14 +131,14 @@ export function ApiKeyDialog(props: {
   return (
     <S.Dialog
       open
-      title={row?.set ? 'Replace API key' : 'Connect API key'}
+      title={present ? 'Replace API key' : 'Connect API key'}
       description={COPY}
       icon="key"
       width={480}
       onClose={props.onClose}
       footer={
         <>
-          <S.Button variant="quiet" onClick={props.onClose}>
+          <S.Button variant="quiet" onClick={() => (present ? setView('manage') : props.onClose())}>
             Cancel
           </S.Button>
           <S.Button variant="primary" loading={saving} disabled={!value.trim()} onClick={save}>

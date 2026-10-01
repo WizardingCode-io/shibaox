@@ -2,7 +2,7 @@ import type { ConnectorTemplate, PluginRow } from '@wizardingcode/shibaox-daemon
 import { useState } from 'react';
 import { ds } from '../../ds.js';
 import { useAppState, useStore } from '../../store/hooks.js';
-import { ApiKeyDialog } from './dialogs/ApiKeyDialog.js';
+import { ApiKeyDialog, HIGGSFIELD_KEY } from './dialogs/ApiKeyDialog.js';
 import { TemplateDialog } from './dialogs/ConnectorDialog.js';
 import { RolesDialog } from './dialogs/RolesDialog.js';
 import { matches } from './filter.js';
@@ -63,6 +63,10 @@ function PluginBody(props: {
   const [copied, setCopied] = useState(false);
   const [adding, setAdding] = useState<string | undefined>(undefined);
   const [keyDialog, setKeyDialog] = useState(false);
+  // Connect vs Manage: the part's own key first, else the vault row (label and dialog agree)
+  const keyPresent =
+    part.keys.find((k) => k.name === HIGGSFIELD_KEY)?.present ??
+    c?.keys.find((k) => k.name === HIGGSFIELD_KEY)?.set === true;
   const builtin = part.brings.builtin ?? [];
   const skills = [...new Set([...part.brings.skills, ...builtin])];
   const tools = part.brings.tools ?? [];
@@ -132,7 +136,7 @@ function PluginBody(props: {
     if (a.id === 'connect_key')
       return (
         <S.Button key={a.id} size="sm" variant="primary" onClick={() => setKeyDialog(true)}>
-          {a.label}
+          {keyPresent ? 'Manage API key' : 'Connect API key'}
         </S.Button>
       );
     if (a.href && /^https?:\/\//i.test(a.href))
@@ -255,6 +259,7 @@ function PluginBody(props: {
       ) : null}
       {keyDialog ? (
         <ApiKeyDialog
+          present={keyPresent}
           {...(validity ? { validity: { ok: validity.ok, detail: validity.detail } } : {})}
           onClose={() => setKeyDialog(false)}
         />
@@ -274,14 +279,28 @@ function PluginModes(props: {
   const store = useStore();
   const p = props.p;
   const first = props.modes.find((m) => m.active) ?? props.modes[0];
-  const [shown, setShown] = useState(first?.id ?? '');
+  const configured = p.mode?.configured;
+  const chosen = props.modes.find((m) => m.id === configured);
+  const [shown, setShown] = useState((chosen ?? first)?.id ?? '');
+  // a new choice shows its panel (a re-read of the same choice does not); the Segmented still switches
+  const [seen, setSeen] = useState(configured);
+  if (configured !== seen) {
+    setSeen(configured);
+    if (chosen) setShown(chosen.id);
+  }
   const mode = props.modes.find((m) => m.id === shown) ?? first;
+  /** The mode generation uses now (the daemon's effective one, else the active one). */
+  const inUse = (m: PluginMode) => (p.mode ? p.mode.effective === m.id : m.active);
   return (
     <div className="stack-12">
       <div className="row">
         <S.Segmented
-          label={`${p.name} mode`}
-          items={props.modes.map((m) => ({ id: m.id, label: m.name }))}
+          label="Mode"
+          items={props.modes.map((m) => ({
+            id: m.id,
+            label: m.name,
+            ...(inUse(m) ? { dot: true, dotLabel: 'in use' } : {}),
+          }))}
           value={mode?.id ?? ''}
           onChange={setShown}
         />
@@ -293,7 +312,9 @@ function PluginModes(props: {
           label="Use for generation"
           value={p.mode.configured}
           options={MODE_OPTIONS}
-          onChange={(id) => void store.setHiggsfieldMode(id as HiggsfieldMode)}
+          onChange={(id) => {
+            if (id !== p.mode?.configured) void store.setHiggsfieldMode(id as HiggsfieldMode);
+          }}
         />
       ) : null}
       {mode ? (
@@ -367,6 +388,27 @@ function PluginCard(props: {
   );
 }
 
+/** Yours: something set up, a mode set up, or a generation choice made (API before its key). */
+function isYours(p: PluginRow): boolean {
+  return (
+    p.status !== 'off' ||
+    p.modes?.some((m) => m.status !== 'off') === true ||
+    (p.mode !== undefined && p.mode.configured !== 'auto')
+  );
+}
+
+/** What search reads: the plugin's words, keys and checks, and its modes'. */
+function searchText(p: PluginRow): string[] {
+  const parts = [p, ...(p.modes ?? [])];
+  return [
+    p.id,
+    p.name,
+    p.description,
+    ...(p.modes ?? []).flatMap((m) => [m.name, m.description]),
+    ...parts.flatMap((x) => [...x.keys.map((k) => k.name), ...x.checks.map((ch) => ch.label)]),
+  ];
+}
+
 /** Plugins: partner integrations with their own setup (built in; Yours = something configured). */
 export function PluginsTab(props: { view: CustomizeView }): JSX.Element {
   const state = useAppState();
@@ -380,8 +422,8 @@ export function PluginsTab(props: { view: CustomizeView }): JSX.Element {
   const plugins = c?.plugins ?? [];
   const discover = props.view === 'discover';
   const rows = plugins
-    .filter((p) => (discover ? p.status === 'off' : p.status !== 'off'))
-    .filter((p) => matches(query, [p.id, p.name, p.description, ...p.keys.map((k) => k.name)]));
+    .filter((p) => (discover ? !isYours(p) : isYours(p)))
+    .filter((p) => matches(query, searchText(p)));
   return (
     <>
       <Toolbar

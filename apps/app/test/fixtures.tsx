@@ -402,6 +402,10 @@ export function client(
     mcp?: McpRow[];
     /** GET /keys answers these instead. */
     keys?: Awaited<ReturnType<StoreClient['keys']>>;
+    /** GET /keys fails. */
+    failKeys?: boolean;
+    /** unsetKey waits for this (and fails when it rejects). */
+    unsetKey?: Promise<void>;
     /** addSkill skips these ids with that reason. */
     skip?: Record<string, string>;
     /** addSkill leaves these files out of the skills it adds. */
@@ -630,6 +634,7 @@ export function client(
       return {};
     },
     async keys() {
+      if (o.failKeys) throw new Error('keys unavailable');
       if (o.keys) return o.keys;
       return [
         { name: 'OPENAI_API_KEY', description: 'OpenAI', set: false },
@@ -664,6 +669,7 @@ export function client(
     },
     async unsetKey(name) {
       rec('unsetKey', name);
+      if (o.unsetKey) await o.unsetKey;
       return { name, removed: true };
     },
     async orgConfig(root) {
