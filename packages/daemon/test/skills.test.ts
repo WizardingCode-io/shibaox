@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { OrgEditError } from '../src/org-edit.js';
 import {
+  BUILTIN_SKILLS,
   CLONE_MAX,
   CLONE_MAX_FILES,
   checkTree,
@@ -24,7 +25,7 @@ import {
   SkillsService,
   skillMeta,
 } from '../src/skills.js';
-import { scaffoldOrg } from '../src/templates.js';
+import { ORG_TEMPLATE, scaffoldOrg } from '../src/templates.js';
 
 const tmp: string[] = [];
 afterEach(() => {
@@ -194,6 +195,40 @@ describe('SkillsService', () => {
     await expect(
       s.add(root, { source: 'inline', id: '../evil', content: 'x' }, { local: true }),
     ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('builtin: copies a skill shipped with Shibaox; skipped when it exists unless replace; 404 when unknown', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sk-builtin-'));
+    tmp.push(dir);
+    scaffoldOrg(dir);
+    const root = join(dir, 'org');
+    const s = service();
+    const file = join(root, 'skills', 'higgsfield', 'SKILL.md');
+    expect(BUILTIN_SKILLS.higgsfield).toBe(ORG_TEMPLATE['org/skills/higgsfield/SKILL.md']);
+    // a fresh org already has it: skipped, the file untouched
+    writeFileSync(file, 'old text');
+    const skipped = await s.add(root, { source: 'builtin', id: 'higgsfield' }, { local: true });
+    expect(skipped).toEqual({ added: [], skipped: [{ id: 'higgsfield', reason: 'exists' }] });
+    expect(readFileSync(file, 'utf8')).toBe('old text');
+    const replaced = await s.add(
+      root,
+      { source: 'builtin', id: 'higgsfield', replace: true },
+      { local: true },
+    );
+    expect(replaced.added[0]?.id).toBe('higgsfield');
+    expect(readFileSync(file, 'utf8')).toBe(BUILTIN_SKILLS.higgsfield);
+    const roleFile = join(root, 'roles', 'assistant.yaml');
+    writeFileSync(
+      roleFile,
+      readFileSync(roleFile, 'utf8').replace(/^skills: \[.*\]$/m, 'skills: []'),
+    );
+    rmSync(join(root, 'skills', 'higgsfield'), { recursive: true });
+    const created = await s.add(root, { source: 'builtin', id: 'higgsfield' }, { local: false });
+    expect(created.added[0]?.id).toBe('higgsfield');
+    expect(readFileSync(file, 'utf8')).toBe(BUILTIN_SKILLS.higgsfield);
+    await expect(
+      s.add(root, { source: 'builtin', id: 'nope' }, { local: true }),
+    ).rejects.toMatchObject({ status: 404 });
   });
 
   it('discovers a repository once per 10 minutes (cached clone listing)', async () => {

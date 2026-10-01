@@ -401,7 +401,7 @@ skills
   )
   .argument(
     '<source>',
-    'owner/repo[/path] (github.com/ in front is fine), an https git URL, or a folder (./x, /x, ~/x)',
+    'owner/repo[/path] (github.com/ in front is fine), an https git URL, a folder (./x, /x, ~/x), or with --builtin a built-in skill id',
   )
   .option('--id <id>', 'install only this skill (repeat it)', collect, [])
   .option('--path <path>', 'where the skills are inside the repository')
@@ -409,11 +409,20 @@ skills
     '--folder',
     'the source is a folder on this machine (needed for a relative path like skills/x)',
   )
+  .option('--builtin', 'the source is the id of a skill shipped with Shibaox (higgsfield, …)')
+  .option('--replace', 'with --builtin: rewrite an existing SKILL.md with the built-in text')
   .option('--org <dir>', 'org directory')
   .action(async function (
     this: Command,
     source: string,
-    o: { org?: string; id?: string[]; path?: string; folder?: boolean },
+    o: {
+      org?: string;
+      id?: string[];
+      path?: string;
+      folder?: boolean;
+      builtin?: boolean;
+      replace?: boolean;
+    },
   ) {
     exitWith(await skillsAdd(source, o, out(this)));
   });

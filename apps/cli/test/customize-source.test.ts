@@ -4,6 +4,20 @@ import { DaemonHttpError } from '@wizardingcode/shibaox-daemon';
 import { describe, expect, it } from 'vitest';
 import { mcpAddRequest, mcpConflictLine, skillSource } from '../src/commands/customize.js';
 
+describe('skills add <id> --builtin', () => {
+  it('names a skill shipped with Shibaox; --replace rewrites it', () => {
+    expect(skillSource('higgsfield', { builtin: true })).toEqual({
+      source: 'builtin',
+      id: 'higgsfield',
+    });
+    expect(skillSource('higgsfield', { builtin: true, replace: true })).toEqual({
+      source: 'builtin',
+      id: 'higgsfield',
+      replace: true,
+    });
+  });
+});
+
 describe('skills add <source>', () => {
   it('owner/repo[/path] is a repository, with or without github.com in front', () => {
     expect(skillSource('anthropics/skills', {})).toEqual({

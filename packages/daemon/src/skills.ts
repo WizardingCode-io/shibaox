@@ -17,6 +17,16 @@ import { bearerEnv, runArgv } from '@wizardingcode/shibaox-core';
 import { Id, loadOrg } from '@wizardingcode/shibaox-schemas';
 import { parse as parseYaml } from 'yaml';
 import { detachFromRoles, OrgEditError } from './org-edit.js';
+import { ORG_TEMPLATE } from './templates.js';
+import { writeAtomic } from './yaml-file.js';
+
+/** The skills shipped with Shibaox (the scaffold's `skills/<id>/SKILL.md`), by id. */
+export const BUILTIN_SKILLS: Record<string, string> = Object.fromEntries(
+  Object.entries(ORG_TEMPLATE).flatMap(([rel, content]) => {
+    const m = /^org\/skills\/([^/]+)\/SKILL\.md$/.exec(rel);
+    return m ? [[m[1] as string, content]] : [];
+  }),
+);
 
 /** One skill of an org (`skills/<id>/SKILL.md`), with the roles that list it. */
 export interface SkillRow {
@@ -37,7 +47,9 @@ export interface SkillDetail extends SkillRow {
 export type SkillAddRequest =
   | { source: 'repo'; repo: string; path?: string; ids?: string[] }
   | { source: 'folder'; path: string }
-  | { source: 'inline'; id: string; content: string };
+  | { source: 'inline'; id: string; content: string }
+  /** A skill shipped with Shibaox; `replace` rewrites an existing SKILL.md with Shibaox's text. */
+  | { source: 'builtin'; id: string; replace?: boolean };
 
 /** An installed skill; `omitted` lists its files left out for being over 1 MB. */
 export type SkillAdded = SkillRow & { omitted?: string[] };
@@ -536,6 +548,7 @@ export class SkillsService {
     loadOrg(root); // an org that does not load is not edited
     this.sweep(root);
     if (req?.source === 'inline') return this.addInline(root, req);
+    if (req?.source === 'builtin') return this.addBuiltin(root, req);
     if (req?.source === 'folder') {
       if (!o.local)
         throw new OrgEditError(
@@ -570,7 +583,26 @@ export class SkillsService {
         ),
       );
     }
-    throw new OrgEditError(400, 'bad_request', '"source" takes repo, folder or inline');
+    throw new OrgEditError(400, 'bad_request', '"source" takes repo, folder, inline or builtin');
+  }
+
+  private addBuiltin(root: string, req: { id: string; replace?: boolean }): SkillAddResult {
+    const content =
+      typeof req.id === 'string' && Object.hasOwn(BUILTIN_SKILLS, req.id)
+        ? BUILTIN_SKILLS[req.id]
+        : undefined;
+    if (content === undefined)
+      throw new OrgEditError(
+        404,
+        'not_found',
+        `no built-in skill "${String(req.id)}" (built-in: ${Object.keys(BUILTIN_SKILLS).join(', ')})`,
+      );
+    const dest = join(root, 'skills', req.id);
+    if (!existsSync(dest)) return this.addInline(root, { id: req.id, content });
+    if (req.replace !== true) return { added: [], skipped: [{ id: req.id, reason: 'exists' }] };
+    // only SKILL.md is rewritten (in one step): other files the user put there stay
+    writeAtomic(join(dest, 'SKILL.md'), content);
+    return { added: [this.row(root, req.id)], skipped: [] };
   }
 
   private addInline(root: string, req: { id: string; content: string }): SkillAddResult {

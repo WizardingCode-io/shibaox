@@ -26,14 +26,16 @@ export async function skillsList(o: { org?: string }, out: Out): Promise<number>
 }
 
 /**
- * What `skills add <source>` means: a folder on this machine (copied by the daemon) when it
+ * What `skills add <source>` means: with `--builtin`, a skill shipped with Shibaox (its id);
+ * a folder on this machine (copied by the daemon) when it
  * starts with `.`, `/` or `~`, or with `--folder`; otherwise a repository: `owner/repo[/path]`
  * (a leading `github.com/` or `https://github.com/` is dropped) or a git URL.
  */
 export function skillSource(
   source: string,
-  o: { id?: string[]; path?: string; folder?: boolean },
+  o: { id?: string[]; path?: string; folder?: boolean; builtin?: boolean; replace?: boolean },
 ): SkillAddRequest {
+  if (o.builtin) return { source: 'builtin', id: source, ...(o.replace ? { replace: true } : {}) };
   if (o.folder || /^[./~]/.test(source)) {
     const path =
       source === '~' || source.startsWith('~/')
@@ -56,14 +58,24 @@ export function skillSource(
 /** `shibaox skills add <repo|path>`: installs every skill found (or the `--id` ones). */
 export async function skillsAdd(
   source: string,
-  o: { org?: string; id?: string[]; path?: string; folder?: boolean },
+  o: {
+    org?: string;
+    id?: string[];
+    path?: string;
+    folder?: boolean;
+    builtin?: boolean;
+    replace?: boolean;
+  },
   out: Out,
 ): Promise<number> {
   const client = await connect({ write: true });
   const root = await resolveOrg(client, o.org);
   const r = await client.addSkills(root, skillSource(source, o));
-  for (const a of r.added) out.line(`added ${a.id}  ${a.path}`);
-  for (const s of r.skipped) out.line(`skipped ${s.id} (${s.reason})`);
+  for (const a of r.added) out.line(`${o.replace ? 'written' : 'added'} ${a.id}  ${a.path}`);
+  for (const s of r.skipped)
+    out.line(
+      `skipped ${s.id} (${s.reason})${o.builtin && s.reason === 'exists' ? ': --replace rewrites it with the built-in text' : ''}`,
+    );
   if (r.added.length === 0 && r.skipped.length === 0) out.line('No SKILL.md found there.');
   if (r.added.length)
     out.line(
