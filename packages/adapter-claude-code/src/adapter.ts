@@ -11,6 +11,7 @@ import {
   conversationOf,
   type ExecutionContext,
   type McpServerSpec,
+  MissingKeyError,
   type RuntimeAdapter,
   type RuntimeEvent,
   runArgv,
@@ -150,7 +151,17 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     // key); one whose command fails is left out with a note, the task goes on
     const specs: McpServerSpec[] = [];
     const notes: string[] = [];
-    for (const s of this.opts.mcpSpecs?.(job) ?? [])
+    let wanted: McpServerSpec[] = [];
+    try {
+      wanted = this.opts.mcpSpecs?.(job) ?? [];
+    } catch (e) {
+      if (!(e instanceof MissingKeyError)) throw e;
+      ctx.log(`[claude-code] ${e.message}`);
+      notes.push(
+        `[note] mcp server "${e.serverId}" needs ${e.key} in the vault (Customize → Keys): its tools are off this turn.`,
+      );
+    }
+    for (const s of wanted)
       try {
         specs.push(
           await withBearer(s, (argv) =>

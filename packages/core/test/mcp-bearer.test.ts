@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expandHeaders, mcpServerSpec, withBearer } from '../src/index.js';
+import { expandHeaders, MissingKeyError, mcpServerSpec, withBearer } from '../src/index.js';
 
 const entry = {
   id: 'higgsfield',
@@ -61,5 +61,34 @@ describe('bearer from a command', () => {
     expect(await withBearer(plain, async () => ({ exitCode: 0, stdout: 'x', stderr: '' }))).toBe(
       plain,
     );
+  });
+});
+
+describe('a server whose vault key is missing', () => {
+  it('throws a MissingKeyError naming the server and the key', () => {
+    const entry = {
+      id: 'acme',
+      type: 'mcp' as const,
+      description: 'x',
+      tags: [],
+      server: {
+        transport: 'http' as const,
+        url: 'https://e.com/mcp',
+        args: [],
+        env: {},
+        env_keys: ['ACME_KEY'],
+        headers: {},
+        timeout_ms: 1000,
+      },
+    };
+    let err: unknown;
+    try {
+      mcpServerSpec(entry, {});
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(MissingKeyError);
+    expect((err as MissingKeyError).serverId).toBe('acme');
+    expect((err as MissingKeyError).key).toBe('ACME_KEY');
   });
 });

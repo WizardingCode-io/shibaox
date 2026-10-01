@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ds } from '../../../ds.js';
 import { useAppState, useStore } from '../../../store/hooks.js';
 import { headerLines, ID_RE, words } from '../filter.js';
+import { KEY_NAME_RE } from '../needed-keys.js';
 import { RoleChecks } from '../parts.js';
 import type { McpRow } from '../types.js';
 
@@ -315,6 +316,9 @@ export function CustomConnectorDialog(props: {
     set({ [k]: (e.target as HTMLInputElement).value } as Partial<CustomForm>);
   const idError = mcpIdError(f.id.trim());
   const commandSpaced = /\s/.test(f.command.trim());
+  const keysError = words(f.keys).some((k) => !KEY_NAME_RE.test(k))
+    ? 'Keys are the UPPER_CASE names of vault entries (ACME_KEY), never a value: paste the value in Keys and write its name here'
+    : undefined;
   const target =
     f.transport === 'http'
       ? /^https?:\/\/\S+$/.test(f.url.trim())
@@ -335,7 +339,7 @@ export function CustomConnectorDialog(props: {
           <S.Button
             variant="primary"
             loading={saving}
-            disabled={!!idError || !target}
+            disabled={!!idError || !!keysError || !target}
             onClick={() => {
               setSaving(true);
               void store.addMcp(customRequest(f, props.editing === true)).then((ok) => {
@@ -419,6 +423,7 @@ export function CustomConnectorDialog(props: {
           hint="Vault keys it needs, comma separated (set them in Keys)"
           value={f.keys}
           onChange={field('keys')}
+          error={keysError}
         />
         {f.transport === 'http' ? (
           <>

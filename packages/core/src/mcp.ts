@@ -35,10 +35,7 @@ export function mcpServerSpec(entry: CatalogEntry, env: NodeJS.ProcessEnv): McpS
   const keys: Record<string, string> = {};
   for (const k of server.env_keys) {
     const v = env[k];
-    if (typeof v !== 'string' || v === '')
-      throw new Error(
-        `catalog entry "${entry.id}" needs ${k} in the vault (shibaox keys set ${k})`,
-      );
+    if (typeof v !== 'string' || v === '') throw new MissingKeyError(entry.id, k);
     keys[k] = v;
   }
   const spec: McpServerSpec = {
@@ -130,6 +127,19 @@ export function bearerEnv(env: NodeJS.ProcessEnv = process.env): Record<string, 
 }
 
 /** A bearer command that failed: the server is skipped for the task, never the task failed. */
+/** A server whose vault key is not set: adapters leave it out with a note, the task goes on. */
+export class MissingKeyError extends Error {
+  constructor(
+    readonly serverId: string,
+    readonly key: string,
+  ) {
+    super(
+      `catalog entry "${serverId}" needs ${key} in the vault (Customize → Keys, or shibaox keys set ${key})`,
+    );
+    this.name = 'MissingKeyError';
+  }
+}
+
 export class BearerError extends Error {
   constructor(
     readonly serverId: string,

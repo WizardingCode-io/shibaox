@@ -561,7 +561,8 @@ esac
     expect(set.stdout).not.toContain('1234567890');
     const list = await cli('keys', 'list');
     expect(list.stdout).toContain('OPENROUTER_API_KEY');
-    expect(list.stdout).toContain('sk-o…7890');
+    expect(list.stdout).toContain('…7890');
+    expect(list.stdout).not.toContain('sk-o…');
     expect(list.stdout).toContain('TYPESAFE_API_KEY');
     const unset = await cli('keys', 'unset', 'OPENROUTER_API_KEY');
     expect(unset.code).toBe(0);

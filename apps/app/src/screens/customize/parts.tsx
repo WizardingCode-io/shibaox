@@ -2,6 +2,7 @@ import type { RoleRow } from '@wizardingcode/shibaox-daemon';
 import { type ReactNode, useState } from 'react';
 import { ds } from '../../ds.js';
 import { customizePath, navigate } from '../../router.js';
+import { KEY_NAME_RE } from './needed-keys.js';
 import type { CustomizeTab, CustomizeView } from './types.js';
 
 type MenuItem = Parameters<Window['Shibaox']['Menu']>[0]['items'][number];
@@ -161,6 +162,13 @@ export function KeyBadge(props: {
   focus?: string;
 }): JSX.Element {
   const S = ds();
+  // a name that is not a key name is never printed: it could be a value pasted by mistake
+  if (!props.name.split(' or ').every((n) => KEY_NAME_RE.test(n)))
+    return (
+      <S.Badge tone="danger" icon="key">
+        invalid key name
+      </S.Badge>
+    );
   return props.present ? (
     <S.Badge tone="matcha" icon="key">
       {props.name}

@@ -3,7 +3,9 @@ import { join } from 'node:path';
 import { connectMcp } from '@wizardingcode/shibaox-adapter-direct';
 import { mcpIdProblem, mcpServerSpec } from '@wizardingcode/shibaox-core';
 import {
+  badPlaceholder,
   CatalogEntrySchema,
+  KEY_NAME_RE,
   loadOrg,
   type McpServer,
   type McpServerInput,
@@ -35,7 +37,7 @@ export function serverKeys(s: { env_keys?: string[]; headers?: Record<string, st
   const fromHeaders = Object.values(s.headers ?? {}).flatMap((v) =>
     [...String(v).matchAll(/\$\{([A-Za-z0-9_]+)\}/g)].map((m) => m[1] as string),
   );
-  return [...new Set([...(s.env_keys ?? []), ...fromHeaders])];
+  return [...new Set([...(s.env_keys ?? []), ...fromHeaders])].filter((k) => KEY_NAME_RE.test(k));
 }
 
 export interface McpTestResult {
@@ -157,6 +159,18 @@ export function mcpAdd(root: string, req: McpAddRequest, env: NodeJS.ProcessEnv)
     !(Array.isArray(req.tags) && req.tags.every((t) => typeof t === 'string'))
   )
     throw new OrgEditError(400, 'bad_request', '"tags" must be a list of strings');
+  const srv = req.server as { env_keys?: unknown; headers?: unknown };
+  const badName =
+    (Array.isArray(srv.env_keys) && srv.env_keys.some((k) => !KEY_NAME_RE.test(String(k)))) ||
+    (srv.headers && typeof srv.headers === 'object'
+      ? badPlaceholder(srv.headers as Record<string, string>) !== undefined
+      : false);
+  if (badName)
+    throw new OrgEditError(
+      400,
+      'bad_key_name',
+      'a key goes in the vault, never in the connector: "keys" holds the UPPER_CASE names of vault entries (ACME_KEY); paste the value in Customize → Keys and write its name here',
+    );
   const roles = req.roles ?? [];
   if (!Array.isArray(roles) || !roles.every((r) => typeof r === 'string'))
     throw new OrgEditError(400, 'bad_request', '"roles" must be a list of role ids');

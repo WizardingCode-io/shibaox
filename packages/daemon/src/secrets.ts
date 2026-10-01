@@ -65,7 +65,7 @@ export const KNOWN_KEYS: KnownKey[] = (() => {
 /** `sk-o…7890`; short values are hidden whole. */
 export function maskSecret(value: string): string {
   if (value.length < 12) return '•'.repeat(Math.min(value.length, 8));
-  return `${value.slice(0, 4)}…${value.slice(-4)}`;
+  return `…${value.slice(-4)}`;
 }
 
 interface FileShape {

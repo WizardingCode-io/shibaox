@@ -513,6 +513,50 @@ describe('Customize: Connectors', () => {
     expect(add.disabled).toBe(false);
   });
 
+  it('a key value typed where key names go is refused before anything is sent', async () => {
+    const { client: c, calls } = client();
+    mount(c, { hash: '#/customize&tab=connectors' });
+    await screen.findByText('playwright');
+    await openAdd('Custom connector');
+    const dialog = await screen.findByRole('dialog', { name: 'Add a custom connector' });
+    const set = (label: string, value: string) =>
+      fireEvent.change(within(dialog).getByLabelText(label), { target: { value } });
+    set('Id', 'acme');
+    set('Description', 'Acme');
+    set('URL', 'https://mcp.acme.dev/mcp');
+    set('Keys', 'f6760db0-8607:4cca224bee865c');
+    expect(within(dialog).getByText(/UPPER_CASE names of vault entries/)).toBeTruthy();
+    expect(
+      (within(dialog).getByRole('button', { name: 'Add' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
+    expect(call(calls, 'addMcp')).toBeUndefined();
+    set('Keys', 'ACME_KEY');
+    expect(within(dialog).queryByText(/UPPER_CASE names of vault entries/)).toBeNull();
+    expect(
+      (within(dialog).getByRole('button', { name: 'Add' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it('a connector row never shows a key-like text as a badge', async () => {
+    const { client: c } = client({
+      mcp: [
+        {
+          id: 'odd',
+          description: 'x',
+          transport: 'http',
+          target: 'https://e.com/mcp',
+          roles: [],
+          keys: [{ name: 'f6760db0-8607:4cca224bee865c', present: false }],
+        },
+      ],
+    });
+    mount(c, { hash: '#/customize&tab=connectors' });
+    await screen.findByText('odd');
+    expect(screen.queryByText(/4cca224bee865c/)).toBeNull();
+    expect(screen.getByText('invalid key name')).toBeTruthy();
+  });
+
   it('a custom connector posts exactly what the form says', async () => {
     const { client: c, calls } = client();
     mount(c, { hash: '#/customize&tab=connectors' });

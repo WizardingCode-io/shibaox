@@ -120,7 +120,7 @@ describe('keys endpoints', () => {
     expect(keys.find((k) => k.name === 'OPENAI_API_KEY')).toMatchObject({
       set: true,
       source: 'vault',
-      masked: 'sk-t…7890',
+      masked: '…7890',
     });
     expect(JSON.stringify(keys)).not.toContain('sk-test-1234567890');
     // no restart: the models list already sees the provider as configured

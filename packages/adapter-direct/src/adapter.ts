@@ -9,6 +9,7 @@ import {
   conversationOf,
   type ExecutionContext,
   type McpServerSpec,
+  MissingKeyError,
   modelToolName,
   type RuntimeAdapter,
   type RuntimeEvent,
@@ -158,7 +159,18 @@ export class DirectAdapter implements RuntimeAdapter {
   async *run(job: TaskJob, ctx: ExecutionContext): AsyncIterable<RuntimeEvent> {
     yield { type: 'started' };
     // the role's MCP servers run for the whole task: started here, stopped whatever happens
-    const specs = this.opts.mcpServers?.(job) ?? [];
+    let specs: McpServerSpec[] = [];
+    const keyNotes: string[] = [];
+    try {
+      specs = this.opts.mcpServers?.(job) ?? [];
+    } catch (e) {
+      if (!(e instanceof MissingKeyError)) throw e;
+      ctx.log(`[direct] ${e.message}`);
+      keyNotes.push(
+        `[note] mcp server "${e.serverId}" needs ${e.key} in the vault (Customize → Keys): its tools are off this turn.\n`,
+      );
+    }
+    for (const text of keyNotes) yield { type: 'text', text };
     const connections: McpConnection[] = [];
     try {
       const settled = await Promise.allSettled(

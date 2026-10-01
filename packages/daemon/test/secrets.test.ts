@@ -51,7 +51,7 @@ describe('SecretsStore', () => {
       description: expect.stringContaining('OpenRouter'),
       set: true,
       source: 'vault',
-      masked: 'sk-o…7890',
+      masked: '…7890',
     });
     expect(rows.find((r) => r.name === 'ANTHROPIC_API_KEY')).toMatchObject({
       set: true,
@@ -74,7 +74,7 @@ describe('SecretsStore', () => {
     expect(() => s.set('bad name', 'x')).toThrow(/name/);
     expect(() => s.set('OPENAI_API_KEY', '   ')).toThrow(/value/);
     expect(maskSecret('short')).toBe('•••••');
-    expect(maskSecret('sk-or-1234567890')).toBe('sk-o…7890');
+    expect(maskSecret('sk-or-1234567890')).toBe('…7890');
     expect(existsSync(s.path)).toBe(false); // nothing written for refused sets
   });
   it('HIGGSFIELD_API_KEY is known and must be the whole id:secret pair, trimmed', () => {
@@ -95,7 +95,7 @@ describe('SecretsStore', () => {
     s.set('HIGGSFIELD_API_KEY', '  id-1234:secret-abcdef \n');
     expect(s.get('HIGGSFIELD_API_KEY')).toBe('id-1234:secret-abcdef');
     const row = s.list({}).find((r) => r.name === 'HIGGSFIELD_API_KEY');
-    expect(row).toMatchObject({ set: true, source: 'vault', masked: 'id-1…cdef' });
+    expect(row).toMatchObject({ set: true, source: 'vault', masked: '…cdef' });
     expect(JSON.stringify(s.list({}))).not.toContain('secret-abcdef');
   });
 

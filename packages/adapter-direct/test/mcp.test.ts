@@ -2,7 +2,12 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AutoApproveApprovals, type RuntimeEvent, type TaskJob } from '@wizardingcode/shibaox-core';
+import {
+  AutoApproveApprovals,
+  MissingKeyError,
+  type RuntimeEvent,
+  type TaskJob,
+} from '@wizardingcode/shibaox-core';
 import { ProviderRegistry } from '@wizardingcode/shibaox-providers';
 import { startFakeOpenAI } from '@wizardingcode/shibaox-providers/testing';
 import { RoleSchema } from '@wizardingcode/shibaox-schemas';
@@ -196,6 +201,26 @@ describe('MCP servers on a role (direct adapter)', () => {
     expect(
       events.some(
         (e) => e.type === 'text' && /hf.*off this turn/i.test((e as { text: string }).text),
+      ),
+    ).toBe(true);
+  });
+
+  it('a server whose vault key is missing is left out with a note; the task still runs', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI(() => ({ content: 'Fine without it.' }));
+    const events = await collect(
+      adapterWith(fake.baseURL, {
+        mcpServers: () => {
+          throw new MissingKeyError('hf', 'HF_KEY');
+        },
+      }),
+      job(ws),
+    );
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    expect(events.some((e) => e.type === 'result')).toBe(true);
+    expect(
+      events.some(
+        (e) => e.type === 'text' && /hf.*HF_KEY.*off this turn/i.test((e as { text: string }).text),
       ),
     ).toBe(true);
   });

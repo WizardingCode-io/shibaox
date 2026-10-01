@@ -34,7 +34,7 @@ describe('mcpServerSpec', () => {
   });
   it('a missing key is a clear error naming the entry, the key and the vault command', () => {
     expect(() => mcpServerSpec(entry, {})).toThrow(
-      'catalog entry "docs" needs DOCS_TOKEN in the vault (shibaox keys set DOCS_TOKEN)',
+      'catalog entry "docs" needs DOCS_TOKEN in the vault (Customize → Keys, or shibaox keys set DOCS_TOKEN)',
     );
   });
   it('an http server carries its url and headers, with env keys expanded in header values', () => {

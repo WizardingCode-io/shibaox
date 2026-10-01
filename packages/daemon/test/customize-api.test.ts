@@ -313,4 +313,23 @@ describe('customize API hardening', () => {
     const rows: McpServerRow[] = await client.mcpList(org);
     expect(rows.find((r) => r.id === 'higgsfield')?.server?.transport).toBe('http');
   });
+
+  it('POST /mcp refuses a key value where a key name goes, pointing to Keys', async () => {
+    const { org, client } = await setup();
+    let err: unknown;
+    try {
+      await client.addMcp(org, {
+        id: 'acme',
+        description: 'x',
+        server: { transport: 'http', url: 'https://e.com/mcp', env_keys: ['f676-0db0:4cca224bee'] },
+      });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(DaemonHttpError);
+    expect((err as DaemonHttpError).status).toBe(400);
+    expect((err as DaemonHttpError).code).toBe('bad_key_name');
+    expect((err as DaemonHttpError).message).toMatch(/Customize → Keys/);
+    expect((err as DaemonHttpError).message).not.toMatch(/4cca224bee/);
+  });
 });
