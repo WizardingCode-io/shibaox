@@ -18,6 +18,7 @@ import { highlight } from '../markdown/highlight.js';
 import { type CodeOpen, Markdown } from '../markdown/render.js';
 import { navigate } from '../router.js';
 import { useAppState, useStore } from '../store/hooks.js';
+import { thumbKind, thumbOfFile, thumbOfRunFile } from '../thumbs.js';
 import { FileSheet, type InlineFile, type SaveTarget } from './FileSheet.js';
 
 const TOOL_ICON: Record<string, string> = {
@@ -79,6 +80,71 @@ function ToolBlock(props: { block: Extract<Block, { kind: 'tool' }> }): JSX.Elem
 }
 
 /** The agent's turn as it happened: text as a document, tool calls and files in between. */
+/** A file chip with a thumbnail when the file is an image or a video. */
+function ThumbChip(props: {
+  runId: string;
+  path: string;
+  mime?: string;
+  status?: 'added' | 'modified' | 'deleted' | 'renamed';
+  load: (runId: string, path: string) => Promise<RunFileContent>;
+  loadWhole?: (runId: string, path: string) => Promise<Blob>;
+  onClick: () => void;
+}): JSX.Element {
+  const S = ds();
+  const [preview, setPreview] = useState<string | undefined>(undefined);
+  const kind = thumbKind(props.path, props.mime);
+  const { runId, path, mime, load, loadWhole } = props;
+  useEffect(() => {
+    if (!kind) return;
+    let live = true;
+    let made: string | undefined;
+    thumbOfRunFile(runId, path, mime, load, loadWhole)
+      .then((url) => {
+        if (!live) return;
+        if (url?.startsWith('blob:')) made = url;
+        setPreview(url);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+      if (made) URL.revokeObjectURL(made);
+    };
+  }, [kind, runId, path, mime, load, loadWhole]);
+  return (
+    <S.FileChip
+      path={props.path}
+      status={props.status}
+      onClick={props.onClick}
+      {...(preview ? { preview, previewKind: kind } : {})}
+    />
+  );
+}
+
+/** Thumbnails of the files picked for the next message, made once per file. */
+function useFileThumbs(files: readonly File[]): Map<File, string> {
+  const [thumbs, setThumbs] = useState<Map<File, string>>(new Map());
+  useEffect(() => {
+    let live = true;
+    const made: string[] = [];
+    void (async () => {
+      const next = new Map<File, string>();
+      for (const f of files) {
+        const url = await thumbOfFile(f).catch(() => undefined);
+        if (url) {
+          next.set(f, url);
+          if (url.startsWith('blob:')) made.push(url);
+        }
+      }
+      if (live) setThumbs(next);
+    })();
+    return () => {
+      live = false;
+      for (const u of made) URL.revokeObjectURL(u);
+    };
+  }, [files]);
+  return thumbs;
+}
+
 /** A file of the run referred to as an image in the reply: shown inline once loaded. */
 function RunImage(props: {
   runId: string;
@@ -115,6 +181,9 @@ function Parts(props: {
   onOpenCode: (code: CodeOpen) => void;
   /** Renders a Markdown image whose path is a file of the run. */
   renderImage?: (path: string, alt: string) => ReactNode;
+  runId: string;
+  loadFile: (runId: string, path: string) => Promise<RunFileContent>;
+  loadWhole?: (runId: string, path: string) => Promise<Blob>;
   /** The turn is still streaming: its last text part is treated as unfinished. */
   pending?: boolean;
   /** The run's workspace: absolute paths it reported are shown relative to it. */
@@ -138,9 +207,12 @@ function Parts(props: {
             <ToolBlock key={p.key} block={p} />
           ) : (
             <div key={p.key}>
-              <S.FileChip
+              <ThumbChip
+                runId={props.runId}
                 path={workspacePath(p.path, props.workspace)}
                 status="added"
+                load={props.loadFile}
+                loadWhole={props.loadWhole}
                 onClick={() => props.onFile(workspacePath(p.path, props.workspace))}
               />
             </div>
@@ -230,6 +302,7 @@ function ChatTab(props: {
   onFile: (runId: string, path: string) => void;
   onOpenCode: (code: CodeOpen) => void;
   loadFile: (runId: string, path: string) => Promise<RunFileContent>;
+  loadWhole?: (runId: string, path: string) => Promise<Blob>;
   /** The run still streaming, if any. */
   live?: string;
 }): JSX.Element {
@@ -253,10 +326,14 @@ function ChatTab(props: {
               {m.attachments?.length ? (
                 <div className="row" style={{ flexWrap: 'wrap', marginTop: m.text ? 6 : 0 }}>
                   {m.attachments.map((a) => (
-                    <S.FileChip
+                    <ThumbChip
                       key={a.path}
+                      runId={m.runId}
                       path={a.path}
+                      mime={a.mime}
                       status="added"
+                      load={props.loadFile}
+                      loadWhole={props.loadWhole}
                       onClick={() => props.onFile(m.runId, a.path)}
                     />
                   ))}
@@ -279,6 +356,9 @@ function ChatTab(props: {
                     workspace={state.states[m.runId]?.workspace}
                     onFile={(path) => props.onFile(m.runId, path)}
                     onOpenCode={props.onOpenCode}
+                    runId={m.runId}
+                    loadFile={props.loadFile}
+                    loadWhole={props.loadWhole}
                     renderImage={(path, alt) => (
                       <RunImage
                         runId={m.runId}
@@ -783,6 +863,7 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
   const [actionsOpen, setActionsOpen] = useState(false);
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  const thumbs = useFileThumbs(files);
   const [dropping, setDropping] = useState(false);
   // a workflow picked in the actions menu: the next message starts it in this conversation
   const [pendingWorkflow, setPendingWorkflow] = useState<string | undefined>(undefined);
@@ -947,6 +1028,7 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
           onFile={(runId, path) => setFile({ runId, path })}
           onOpenCode={openCode}
           loadFile={loadFile}
+          loadWhole={loadWhole}
         />
       ) : null}
       {file ? (
@@ -988,7 +1070,13 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
               if (pendingWorkflow && !t.toLowerCase().startsWith(`run ${pendingWorkflow}:`))
                 setPendingWorkflow(undefined);
             }}
-            attachments={files.map((f) => ({ name: f.name, size: f.size }))}
+            attachments={files.map((f) => ({
+              name: f.name,
+              size: f.size,
+              ...(thumbs.get(f)
+                ? { preview: thumbs.get(f), previewKind: thumbKind(f.name, f.type) }
+                : {}),
+            }))}
             onAttach={attach}
             onRemoveAttachment={(i) => setFiles((f) => f.filter((_, j) => j !== i))}
             dropping={dropping}

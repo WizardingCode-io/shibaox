@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { QueryFn } from '@wizardingcode/shibaox-adapter-claude-code';
+import { connectMcp } from '@wizardingcode/shibaox-adapter-direct';
 import {
   type ApprovalHandler,
   AutoApproveHuman,
@@ -11,6 +12,7 @@ import {
   isProtected,
   isTerminal,
   type MockScript,
+  mcpServerSpec,
   RunEngine,
   type RunState,
   type RunStatus,
@@ -22,7 +24,7 @@ import {
 } from '@wizardingcode/shibaox-core';
 import { type Graphify, MemoryNotes } from '@wizardingcode/shibaox-memory';
 import type { ProviderEntry } from '@wizardingcode/shibaox-providers';
-import type { RoutineApprovals } from '@wizardingcode/shibaox-schemas';
+import type { CatalogEntry, RoutineApprovals } from '@wizardingcode/shibaox-schemas';
 import {
   type ChatMessage,
   loadOrg,
@@ -54,6 +56,7 @@ import {
   writeRunFile,
 } from './runs/files.js';
 import { type GraphMode, prepareGraph } from './runs/graph.js';
+import { higgsfieldTools } from './runs/higgsfield-tools.js';
 import { finishRun, vaultDir } from './runs/notes.js';
 import { memoryTools, orchestrationTools, toolsForRole } from './runs/orchestration.js';
 import { profileFor } from './runs/profile.js';
@@ -462,6 +465,21 @@ export class RunManager {
   async fileContent(runId: string, path: string): Promise<RunFileContent> {
     const state = await this.state(runId);
     return readRunFile(state.workspace, path, { protectedGlobs: this.protectedFor(state) });
+  }
+
+  /** One call on a catalog MCP server from the daemon itself (a fresh connection, closed after). */
+  private async callMcp(
+    entry: CatalogEntry,
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown> {
+    const spec = mcpServerSpec(entry, this.opts.env ?? process.env);
+    const c = await connectMcp({ ...spec, tools: undefined }, { log: this.opts.log });
+    try {
+      return await c.call(name, args);
+    } finally {
+      await c.close();
+    }
   }
 
   /** A runtime event of a run, buffered, stored and streamed to every subscriber. */
@@ -993,7 +1011,27 @@ export class RunManager {
         const p = withNotes?.preamble({ profileSummary });
         return p || (profileSummary ? `Project: ${profileSummary}` : undefined);
       },
-      extra: (job) => toolsForRole(job.role, job.input, { orchestration, memory }),
+      extra: (job) => [
+        ...toolsForRole(job.role, job.input, { orchestration, memory }),
+        // a role with Higgsfield's server gets the upload the model cannot do itself
+        ...(job.role.mcp.includes('higgsfield') && org.catalog.higgsfield?.server
+          ? higgsfieldTools({
+              workspace: job.workspace,
+              protectedGlobs: projectProtectedGlobs(project),
+              call: (name, args) =>
+                this.callMcp(org.catalog.higgsfield as CatalogEntry, name, args),
+              put: async (url, bytes, contentType) =>
+                (
+                  await fetch(url, {
+                    method: 'PUT',
+                    headers: { 'content-type': contentType },
+                    body: new Uint8Array(bytes),
+                    signal: AbortSignal.timeout(120_000),
+                  })
+                ).status,
+            })
+          : []),
+      ],
     };
   }
 

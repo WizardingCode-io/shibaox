@@ -397,4 +397,26 @@ describe('FileSheet', () => {
     await new Promise((r) => setTimeout(r, 30));
     expect(loads).toBe(1);
   });
+
+  it('an image past the preview cap is shown from the whole download', async () => {
+    const ui = render(
+      <FileSheet
+        runId="r1"
+        path="outputs/big.png"
+        load={async () => ({
+          path: 'outputs/big.png',
+          size: 4_000_000,
+          encoding: 'base64',
+          mime: 'image/png',
+          content: 'AAAA',
+          truncated: true,
+        })}
+        loadWhole={async () => new Blob([new Uint8Array(4)], { type: 'image/png' })}
+        onClose={() => {}}
+        onDownload={() => {}}
+      />,
+    );
+    await waitFor(() => expect(ui.container.querySelector('img')).toBeTruthy());
+    expect(screen.queryByText(/No preview/)).toBeNull();
+  });
 });

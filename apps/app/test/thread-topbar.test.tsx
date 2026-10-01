@@ -419,4 +419,40 @@ describe('the reply is rendered as a document', () => {
       delete g.shibaoxDesktop;
     }
   });
+
+  it('an attached image shows its thumbnail in the composer chip; the sent message shows it too', async () => {
+    const { client: c } = client({
+      runs: [summary('root')],
+      states: {
+        root: state('root', {
+          input: {
+            spec: 'With this\n\n[Attached files]\n- attachments/dog.png (6 B, image/png)',
+            attachments: [{ path: 'attachments/dog.png', size: 6, mime: 'image/png' }],
+          },
+        }),
+      },
+      files: {
+        'attachments/dog.png': {
+          path: 'attachments/dog.png',
+          size: 6,
+          encoding: 'base64',
+          mime: 'image/png',
+          content: 'iVBORw0KGgo=',
+          truncated: false,
+        },
+      },
+    });
+    mount(c, { hash: '#/t/root' });
+    const main = await screen.findByRole('main');
+    // the user's bubble: a chip with a thumbnail loaded from the run's file
+    await waitFor(() => expect(main.querySelector('.sx-filechip__thumb')).toBeTruthy());
+    expect(main.querySelector('.sx-filechip__thumb')?.getAttribute('src')).toContain(
+      'data:image/png;base64,iVBORw0KGgo=',
+    );
+    // a new image attached in the composer: a thumbnail from the file itself
+    const file = new File([new Uint8Array([1, 2, 3])], 'cat.png', { type: 'image/png' });
+    fireEvent.drop(main, { dataTransfer: { files: [file], types: ['Files'] } });
+    await screen.findByText('cat.png');
+    expect(main.querySelector('.sx-composer__thumb')).toBeTruthy();
+  });
 });

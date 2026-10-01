@@ -11,7 +11,7 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
 export declare function Input(props: InputProps): React.ReactElement;
 export interface SwitchProps { label?: string; checked?: boolean; defaultChecked?: boolean; onChange?: (next: boolean) => void; disabled?: boolean }
 export declare function Switch(props: SwitchProps): React.ReactElement;
-export interface ComposerAttachment { name: string; size?: number }
+export interface ComposerAttachment { name: string; size?: number; /** A thumbnail (an object URL) for an image or a video. */ preview?: string; previewKind?: 'image' | 'video' }
 export interface ComposerProps { onSend?: (text: string) => void; onStop?: () => void; busy?: boolean; placeholder?: string; model?: string; defaultValue?: string; /** Controlled text (with onChange); otherwise the composer keeps its own. */ value?: string; onChange?: (text: string) => void; /** Files going with the next message, as chips; `onAttach` enables + and drag and drop; `dropping` highlights while files hover elsewhere. */ attachments?: ComposerAttachment[]; onAttach?: (files: File[]) => void; onRemoveAttachment?: (index: number) => void; dropping?: boolean; /** The bolt: opens your actions menu; `actionsMenu` (a MenuList) floats above it while set. */ onActionsClick?: () => void; actionsMenu?: React.ReactNode; onActionsMenuClose?: () => void; /** The mic: `onVoice` toggles, `listening` shows it live, `voice: false` hides it (no speech recognition here). */ onVoice?: () => void; listening?: boolean; voice?: boolean; /** Makes the model label a button (opens your model menu). */ onModelClick?: () => void; /** The menu's content (a MenuList) while it is open; it floats above the label. */ modelMenu?: React.ReactNode; onModelMenuClose?: () => void }
 export declare function Composer(props: ComposerProps): React.ReactElement;
 export interface TabsProps { items: { id: string; label: string; count?: number }[]; value?: string; defaultValue?: string; onChange?: (id: string) => void }
@@ -40,7 +40,7 @@ export interface CardProps { icon?: IconName; title?: string; description?: stri
 export declare function Card(props: CardProps): React.ReactElement;
 export interface TableProps { columns?: React.ReactNode[]; rows: React.ReactNode[][]; align?: ('left' | 'center' | 'right' | null | undefined)[]; dense?: boolean; caption?: React.ReactNode; className?: string }
 export declare function Table(props: TableProps): React.ReactElement;
-export interface FileChipProps { path: string; name?: string; status?: 'added' | 'modified' | 'deleted' | 'renamed'; meta?: string; icon?: IconName; onClick?: () => void; className?: string }
+export interface FileChipProps { path: string; name?: string; status?: 'added' | 'modified' | 'deleted' | 'renamed'; meta?: string; icon?: IconName; /** A thumbnail in place of the icon (a data or object URL); `previewKind: 'video'` shows a frame of a video. */ preview?: string; previewKind?: 'image' | 'video'; onClick?: () => void; className?: string }
 export declare function FileChip(props: FileChipProps): React.ReactElement;
 export interface SheetProps { open: boolean; onClose?: () => void; title?: React.ReactNode; subtitle?: React.ReactNode; icon?: IconName; label?: string; actions?: React.ReactNode; footer?: React.ReactNode; width?: number | string; className?: string; children?: React.ReactNode }
 export declare function Sheet(props: SheetProps): React.ReactElement | null;

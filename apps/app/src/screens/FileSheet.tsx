@@ -26,7 +26,7 @@ const AUDIO = new Set(['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac']);
 
 /** A video or audio file played from the whole download (a Blob URL, never the token). */
 function Media(props: {
-  kind: 'video' | 'audio';
+  kind: 'video' | 'audio' | 'image';
   /** Identifies the file: the load runs once per file, not per parent render. */
   id: string;
   load: () => Promise<Blob>;
@@ -58,6 +58,8 @@ function Media(props: {
   }, [id]);
   if (error) return <p className="muted">{error}</p>;
   if (!url) return <S.ThinkingIndicator label="Fetching" />;
+  if (props.kind === 'image')
+    return <img src={url} alt="" style={{ maxWidth: '100%', borderRadius: 'var(--radius-md)' }} />;
   return props.kind === 'video' ? (
     // biome-ignore lint/a11y/useMediaCaption: a generated clip has no captions
     <video controls src={url} style={{ maxWidth: '100%', borderRadius: 'var(--radius-md)' }} />
@@ -79,6 +81,9 @@ function Body(props: {
   if (props.loadWhole && (VIDEO.has(ext) || AUDIO.has(ext)))
     return <Media kind={VIDEO.has(ext) ? 'video' : 'audio'} id={f.path} load={props.loadWhole} />;
   if (f.encoding === 'base64') {
+    // an image past the preview cap: the whole download, like a video
+    if (f.mime?.startsWith('image/') && f.truncated && props.loadWhole)
+      return <Media kind="image" id={f.path} load={props.loadWhole} />;
     if (f.mime?.startsWith('image/') && !f.truncated)
       return (
         <img

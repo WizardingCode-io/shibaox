@@ -162,7 +162,7 @@
     var dir = p.path && p.path.indexOf('/') >= 0 ? p.path.slice(0, p.path.lastIndexOf('/')) : '';
     var tone = { added: 'matcha', modified: 'info', deleted: 'danger', renamed: 'neutral' }[p.status];
     return h(p.onClick ? 'button' : 'span', Object.assign({ className: cx('sx-filechip', p.onClick && 'is-interactive', p.className), title: p.path }, p.onClick ? { type: 'button', onClick: p.onClick } : {}),
-      h('span', { className: 'sx-filechip__icon' }, h(Icon, { name: p.icon || fileIcon(p.path || name || ''), size: 16 })),
+      p.preview ? h('span', { className: 'sx-filechip__icon sx-filechip__icon--preview' }, p.previewKind === 'video' ? h('video', { className: 'sx-filechip__thumb', src: p.preview, muted: true, playsInline: true, preload: 'metadata' }) : h('img', { className: 'sx-filechip__thumb', src: p.preview, alt: '' })) : h('span', { className: 'sx-filechip__icon' }, h(Icon, { name: p.icon || fileIcon(p.path || name || ''), size: 16 })),
       h('span', { className: 'sx-filechip__text' }, h('span', { className: 'sx-filechip__name' }, name), (dir || p.meta) ? h('span', { className: 'sx-filechip__meta' }, [dir, p.meta].filter(Boolean).join(' · ')) : null),
       p.status ? h(Badge, { tone: tone }, p.status) : null);
   }
@@ -284,7 +284,7 @@
       attachments.length ? h('div', { className: 'sx-composer__files', role: 'list', 'aria-label': 'Attachments' },
         attachments.map(function (a, i) {
           return h('span', { key: a.name + i, className: 'sx-composer__file', role: 'listitem' },
-            h(Icon, { name: FILE_ICON[(a.name.split('.').pop() || '').toLowerCase()] || 'file-text', size: 14 }),
+            a.preview ? (a.previewKind === 'video' ? h('video', { className: 'sx-composer__thumb', src: a.preview, muted: true, playsInline: true, preload: 'metadata' }) : h('img', { className: 'sx-composer__thumb', src: a.preview, alt: '' })) : h(Icon, { name: FILE_ICON[(a.name.split('.').pop() || '').toLowerCase()] || 'file-text', size: 14 }),
             h('span', { className: 'sx-composer__filename' }, a.name),
             a.size !== undefined ? h('span', { className: 'sx-composer__filesize' }, SIZE(a.size)) : null,
             p.onRemoveAttachment ? h('button', { type: 'button', className: 'sx-composer__remove', 'aria-label': 'Remove ' + a.name, onClick: function () { p.onRemoveAttachment(i); } }, h(Icon, { name: 'x', size: 12 })) : null);

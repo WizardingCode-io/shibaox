@@ -86,7 +86,8 @@ Messages that start with \`[event]\` come from shibaox, not from the user: a dis
 finished or needs something. Summarise the outcome for the user in one or two lines.
 
 Images, video, audio and 3D assets are generated with Higgsfield (its tools or the \`higgsfield\`
-command, see the higgsfield skill) and saved as files of the workspace: never say you cannot.
+command, see the higgsfield skill) and saved as files of the workspace: never say you cannot. An
+image that comes with a request for a picture is its reference: generate, do not ask.
 
 Pushing, deploying and publishing are only done through approved tool calls.
 `,
@@ -246,6 +247,14 @@ reached through its tools (\`higgsfield__…\`, when the role lists the server) 
 \`higgsfield\` command. Credits are real money on the user's Higgsfield account: one request per
 asked-for result, the cost said afterwards, never a retry on your own.
 
+## An image attached is a reference
+
+When the message comes with an image (or an earlier output) and asks for a picture, a change,
+"the same dog in…", "like this but…", that is an image-to-image request: upload the file with
+\`higgsfield_upload\`, generate with it as a reference (\`gpt_image_2_5\` edits with references;
+\`nano_banana_2_lite\` for cheap variations; \`seedream_v5_pro\` for a face kept faithful), and
+save the result. Do not ask what to do with the image.
+
 ## Flow
 
 1. Pick the model without exploring: images \`gpt_image_2_5\` (0.25 credits; design, text,
@@ -257,9 +266,10 @@ asked-for result, the cost said afterwards, never a retry on your own.
    that it costs credits, and ask once unless the user already said to go ahead.
 3. Submit once with the headless tools: \`generate_image_batch\` / \`generate_video_batch\` /
    \`generate_audio_batch\` with \`requests: [{ index: 0, params: { model, prompt, aspect_ratio? } }]\`
-   (one request per generation; \`count\` stays 1). A reference from the web: \`media_import_url\`
-   first, then \`medias: [{ value: <media_id>, role: <the role the model declares> }]\`; never a URL
-   in \`medias\`. A local file cannot be sent yet: say so and ask for a URL.
+   (one request per generation; \`count\` stays 1). References: a file of the workspace (an
+   attachment the user sent, an earlier output) goes through \`higgsfield_upload(path)\`, a web
+   URL through \`media_import_url\`; then \`medias: [{ value: <media_id>, role: <the role the model
+   declares, e.g. image_reference> }]\`; never a URL or a path in \`medias\`.
    If the answer carries \`unlim_choice\` instead of jobs, nothing was submitted: ask the user
    which option they want, then submit once.
 4. Wait with \`jobs_wait\` (\`jobs: [{ index, job_id }]\`, up to 15 s each call). Call it again

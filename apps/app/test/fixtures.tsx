@@ -2,6 +2,7 @@ import { render } from '@testing-library/react';
 import type { RunState } from '@wizardingcode/shibaox-core';
 import type { Envelope, InboxItem, RunSummaryPlus } from '@wizardingcode/shibaox-daemon';
 import { App } from '../src/App.js';
+import type { RunFileContent } from '../src/api/client.js';
 import { AppStore, type StoreClient } from '../src/store/store.js';
 
 export const summary = (id: string, o: Partial<RunSummaryPlus> = {}): RunSummaryPlus =>
@@ -67,6 +68,8 @@ export function client(
     frames?: Record<string, Envelope[]>;
     /** submitRun rejects (a failed send). */
     failSubmit?: boolean;
+    /** Files of runs by path (fileContent answers from here first). */
+    files?: Record<string, RunFileContent>;
     inbox?: InboxItem[];
     routines?: unknown[];
   } = {},
@@ -116,6 +119,8 @@ export function client(
     },
     async fileContent(id, path) {
       rec('fileContent', id, path);
+      const known = o.files?.[path];
+      if (known) return known;
       return { path, size: 5, encoding: 'utf8' as const, content: 'name\n', truncated: false };
     },
     async fileBlob(id, path) {
