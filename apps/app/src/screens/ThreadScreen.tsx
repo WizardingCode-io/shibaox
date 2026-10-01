@@ -12,10 +12,10 @@ import { ds } from '../ds.js';
 import { clock, duration, RUN_STATUS_TONE, RUN_STATUS_WORD, shortModel } from '../format.js';
 import { useFollowScroll } from '../hooks/follow-scroll.js';
 import { highlight } from '../markdown/highlight.js';
-import { Markdown } from '../markdown/render.js';
+import { type CodeOpen, Markdown } from '../markdown/render.js';
 import { navigate } from '../router.js';
 import { useAppState, useStore } from '../store/hooks.js';
-import { FileSheet } from './FileSheet.js';
+import { FileSheet, type InlineFile, type SaveTarget } from './FileSheet.js';
 
 const TOOL_ICON: Record<string, string> = {
   browser: 'globe',
@@ -79,6 +79,7 @@ function ToolBlock(props: { block: Extract<Block, { kind: 'tool' }> }): JSX.Elem
 function Parts(props: {
   parts: MessagePart[];
   onFile: (path: string) => void;
+  onOpenCode: (code: CodeOpen) => void;
   /** The turn is still streaming: its last text part is treated as unfinished. */
   pending?: boolean;
   /** The run's workspace: absolute paths it reported are shown relative to it. */
@@ -91,7 +92,12 @@ function Parts(props: {
         .filter((p) => !(p.kind === 'tool' && INTERNAL_TOOLS.has(p.name)))
         .map((p, i, all) =>
           p.kind === 'text' ? (
-            <Markdown key={p.key} text={p.text} pending={props.pending && i === all.length - 1} />
+            <Markdown
+              key={p.key}
+              text={p.text}
+              pending={props.pending && i === all.length - 1}
+              onOpenCode={props.onOpenCode}
+            />
           ) : p.kind === 'tool' ? (
             <ToolBlock key={p.key} block={p} />
           ) : (
@@ -186,6 +192,7 @@ function ChatTab(props: {
   messages: ThreadMessage[];
   inbox: InboxItem[];
   onFile: (runId: string, path: string) => void;
+  onOpenCode: (code: CodeOpen) => void;
   /** The run still streaming, if any. */
   live?: string;
 }): JSX.Element {
@@ -221,6 +228,7 @@ function ChatTab(props: {
                     pending={m.pending || props.live === m.runId}
                     workspace={state.states[m.runId]?.workspace}
                     onFile={(path) => props.onFile(m.runId, path)}
+                    onOpenCode={props.onOpenCode}
                   />
                 </S.Message>
               )}
@@ -589,7 +597,11 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
   const state = useAppState();
   const [tab, setTab] = useState<'chat' | 'tasks' | 'logs'>('chat');
   const [modelOpen, setModelOpen] = useState(false);
-  const [file, setFile] = useState<{ runId: string; path: string } | undefined>(undefined);
+  const [file, setFile] = useState<
+    { runId: string; path: string } | { inline: InlineFile } | undefined
+  >(undefined);
+  // files saved from the panel in this session: listed under Outputs until the run's own list has them
+  const [savedHere, setSavedHere] = useState<{ runId: string; path: string }[]>([]);
   const loadFile = useCallback(
     (runId: string, path: string) => store.loadFile(runId, path),
     [store],
@@ -616,10 +628,28 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
   const closeModel = useCallback(() => setModelOpen(false), []);
   const modelMenu = useModelMenu(props.rootId, currentRef, modelOpen, closeModel);
   const busy = live !== undefined || state.busy[props.rootId] === true;
-  const outputs = useMemo(
-    () => outputsOf(view?.messages ?? [], (id) => state.states[id]?.workspace),
-    [view?.messages, state.states],
-  );
+  const outputs = useMemo(() => {
+    const own = outputsOf(view?.messages ?? [], (id) => state.states[id]?.workspace);
+    const seen = new Set(own.map((o) => o.path));
+    return [...own, ...savedHere.filter((s) => !seen.has(s.path))];
+  }, [view?.messages, state.states, savedHere]);
+  // where a code block can be saved: the newest finished run of the conversation with a workspace
+  const saveTarget = useMemo((): SaveTarget | undefined => {
+    for (let i = turns.length - 1; i >= 0; i--) {
+      const id = turns[i]?.runId;
+      const st = id ? state.states[id] : undefined;
+      if (id && st?.workspace && ['completed', 'failed', 'cancelled'].includes(st.status))
+        return {
+          runId: id,
+          workspace: st.workspace,
+          write: async (path, content) => {
+            await store.writeFile(id, path, content);
+            setSavedHere((s) => [...s, { runId: id, path }]);
+          },
+        };
+    }
+    return undefined;
+  }, [turns, state.states, store]);
   const runningTasks = store
     .tasksOf(props.rootId)
     .filter((t) => !['completed', 'failed', 'cancelled'].includes(t.status)).length;
@@ -656,15 +686,20 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
           inbox={inbox}
           live={live?.runId}
           onFile={(runId, path) => setFile({ runId, path })}
+          onOpenCode={(code) =>
+            setFile({ inline: { name: code.name, content: code.text, lang: code.lang } })
+          }
         />
       ) : null}
       {file ? (
         <FileSheet
-          runId={file.runId}
-          path={file.path}
+          key={'inline' in file ? `inline:${file.inline.name}` : `${file.runId}:${file.path}`}
+          {...('inline' in file ? { inline: file.inline } : { runId: file.runId, path: file.path })}
+          save={saveTarget}
           load={loadFile}
           onClose={() => setFile(undefined)}
           onDownload={(runId, path) => void store.downloadFile(runId, path)}
+          onDownloadInline={(name, content) => store.downloadText(name, content)}
         />
       ) : null}
       {tab === 'tasks' ? <TasksTab rootId={props.rootId} inbox={inbox} /> : null}

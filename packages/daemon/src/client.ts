@@ -296,6 +296,14 @@ export class DaemonClient {
   runSchedule(id: string): Promise<{ runId: string }> {
     return this.json('POST', `/schedules/${encodeURIComponent(id)}/run`);
   }
+  /** Writes a text file into the run's workspace (403 outside or protected, 409 while it runs). */
+  writeFile(id: string, path: string, content: string): Promise<{ path: string; size: number }> {
+    return this.json(
+      'PUT',
+      `/runs/${encodeURIComponent(id)}/files/content?path=${encodeURIComponent(path)}`,
+      { content },
+    );
+  }
   routines(): Promise<RoutineView[]> {
     return this.json('GET', '/routines');
   }

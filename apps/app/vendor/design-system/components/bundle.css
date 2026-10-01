@@ -176,8 +176,8 @@ body { margin: 0; font-family: var(--font-sans); font-size: 15px; line-height: 2
 .sx-field .sx-popover .sx-select { flex: 1; }
 
 /* Dialog — a modal for a form that needs room: creating a routine, confirming a removal */
-.sx-scrim { position: fixed; inset: 0; z-index: var(--z-overlay); display: grid; place-items: center; padding: var(--space-6); background: #1c140e66; }
-.sx-dialog { width: min(640px, 100%); max-height: 100%; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); outline: 0; }
+.sx-scrim { position: fixed; inset: 0; z-index: var(--z-overlay); display: grid; place-items: center; padding: var(--space-6); background: #1c140e66; overflow: auto; }
+.sx-dialog { width: min(640px, 100%); max-height: calc(100dvh - var(--space-6) * 2); min-height: 0; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); outline: 0; }
 .sx-dialog__head { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-5) var(--space-4) var(--space-3) var(--space-6); }
 .sx-dialog__icon { width: 36px; height: 36px; border-radius: var(--radius-md); background: var(--shiba-soft); color: var(--shiba-strong); display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .sx-dialog__titles { flex: 1; min-width: 0; padding-top: 4px; }

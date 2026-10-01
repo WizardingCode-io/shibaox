@@ -15,6 +15,7 @@ import {
   type RunState,
   type RunStatus,
   type RunSummary,
+  type RuntimeEvent,
   replay,
   ScriptedDecider,
   type StoredEvent,
@@ -42,6 +43,7 @@ import {
   type RunFileContent,
   RunFileError,
   readRunFile,
+  writeRunFile,
 } from './runs/files.js';
 import { type GraphMode, prepareGraph } from './runs/graph.js';
 import { finishRun, vaultDir } from './runs/notes.js';
@@ -425,6 +427,46 @@ export class RunManager {
     return readRunFile(state.workspace, path, { protectedGlobs: this.protectedFor(state) });
   }
 
+  /** A runtime event of a run, buffered, stored and streamed to every subscriber. */
+  private recordRuntime(runId: string, nodeId: string, e: RuntimeEvent): void {
+    const env = this.buffer.push(runId, nodeId, e, this.now());
+    try {
+      this.opts.runtimeStore?.append(env);
+    } catch (err) {
+      this.opts.log(
+        `warn: runtime event not stored: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    for (const l of this.listeners)
+      try {
+        l(env);
+      } catch {
+        // a broken subscriber never breaks a run
+      }
+  }
+
+  /**
+   * Writes a text file into the run's workspace for the user (the app's "Save to project"):
+   * same fence as reads, recorded as a `file_changed` of node `you` so it lists with the run's
+   * files. Refused while a task of the run is running: it owns the workspace then.
+   */
+  async writeFile(
+    runId: string,
+    path: string,
+    content: string,
+  ): Promise<{ path: string; size: number }> {
+    const state = await this.state(runId);
+    if (state.status === 'running' || state.status === 'queued')
+      throw new RunFileError('busy', 'The run is running: its tasks own the workspace now');
+    if (!existsSync(state.workspace))
+      throw new RunFileError('no_workspace', 'The run workspace is gone');
+    const r = await writeRunFile(state.workspace, path, content, {
+      protectedGlobs: this.protectedFor(state),
+    });
+    this.recordRuntime(runId, 'you', { type: 'file_changed', path: r.path });
+    return r;
+  }
+
   /** The real path of a file of the run's workspace, for a download (same rules as fileContent). */
   async filePath(
     runId: string,
@@ -804,22 +846,7 @@ export class RunManager {
       graph: r.graph,
       newRunId: r.runId ? () => r.runId as string : undefined,
       mockScript: this.opts.mockScript,
-      onRuntimeEvent: (runId, nodeId, e) => {
-        const env = this.buffer.push(runId, nodeId, e, this.now());
-        try {
-          this.opts.runtimeStore?.append(env);
-        } catch (err) {
-          this.opts.log(
-            `warn: runtime event not stored: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
-        for (const l of this.listeners)
-          try {
-            l(env);
-          } catch {
-            // a broken subscriber never breaks a run
-          }
-      },
+      onRuntimeEvent: (runId, nodeId, e) => this.recordRuntime(runId, nodeId, e),
     });
     for (const w of warnings) r.warn(w);
     return engine;

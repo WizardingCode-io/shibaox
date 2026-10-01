@@ -43,6 +43,8 @@ A conversation: the title (your first request), the agent's status (Working, Nee
 
 **Files a run produced.** A file the run wrote shows as a chip in the reply and in the "Outputs" row under the top bar. A chip opens the file in a panel on the right: CSV as a table, Markdown as a document, code with colours, images inline, anything else as a download; Copy and Download are in the panel's head (Download saves the whole file, the view stops at 2 MB). The panel reads the file from the run's workspace through the daemon, so it works for remote daemons too; `.env`, `.git` and the project's protected files are never shown. The same files from the terminal: `shibaox files <runId> [path]`.
 
+**Code that becomes a file.** Every code block and CSV table in a reply has **Open**: the block opens in the same panel as a file (named from the fence, a `file:` comment, its first function, or its kind: `fibonacci.js`, `table.csv`), with Copy and Download, and, when the conversation has a finished run with a workspace, **Save to project**: a path inside that workspace, written through the daemon (`PUT /runs/:id/files/content`), listed under Outputs and in `shibaox files` as a file of yours. The orchestrator is also told to create requested files with its own tools; Open is for the times it only shows the code.
+
 When a dispatched run ends while its conversation is open, the app tells the orchestrator (an event turn), as the terminal dashboard does; the orchestrator may then answer or dispatch more.
 
 ## The desktop app (macOS)

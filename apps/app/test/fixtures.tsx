@@ -107,6 +107,10 @@ export function client(
       rec('files', id);
       return { root: '/p', files: [] };
     },
+    async writeFile(id, path, content) {
+      rec('writeFile', id, path, content);
+      return { path, size: content.length };
+    },
     async fileContent(id, path) {
       rec('fileContent', id, path);
       return { path, size: 5, encoding: 'utf8' as const, content: 'name\n', truncated: false };

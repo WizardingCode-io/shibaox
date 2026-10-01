@@ -2,12 +2,14 @@ import {
   closeSync,
   existsSync,
   lstatSync,
+  mkdirSync,
   openSync,
   readSync,
   realpathSync,
   statSync,
+  writeFileSync,
 } from 'node:fs';
-import { isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { isProtected } from '@wizardingcode/shibaox-core';
 import type { DiffFile, DiffResult } from './diff.js';
 
@@ -33,12 +35,19 @@ export interface RunFileContent {
 export class RunFileError extends Error {
   readonly status: number;
   constructor(
-    readonly code: 'forbidden' | 'not_found' | 'no_workspace' | 'protected',
+    readonly code: 'forbidden' | 'not_found' | 'no_workspace' | 'protected' | 'too_large' | 'busy',
     message: string,
   ) {
     super(message);
     this.name = 'RunFileError';
-    this.status = code === 'forbidden' || code === 'protected' ? 403 : 404;
+    this.status =
+      code === 'forbidden' || code === 'protected'
+        ? 403
+        : code === 'too_large'
+          ? 413
+          : code === 'busy'
+            ? 409
+            : 404;
   }
 }
 
@@ -211,4 +220,55 @@ export async function listRunFiles(
     }
   }
   return [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * Writes a text file into the workspace (the app's "Save to project" for a code block): the
+ * same fence as reads (inside the root, through no symlink that leaves it, never a protected
+ * file), directories created on the way, `too_large` past the cap. The relative path and size.
+ */
+export async function writeRunFile(
+  root: string,
+  path: string,
+  content: string,
+  o: { protectedGlobs?: string[]; maxBytes?: number },
+): Promise<{ path: string; size: number }> {
+  let realRoot: string;
+  try {
+    realRoot = realpathSync(root);
+  } catch {
+    throw new RunFileError('no_workspace', 'The run workspace is gone');
+  }
+  if (path.endsWith('/') || path.endsWith('\\'))
+    throw new RunFileError('not_found', `${path} is not a file name`);
+  const rel = relativeInWorkspace(realRoot, path);
+  if (rel === undefined)
+    throw new RunFileError('forbidden', `${path || '(empty)'} is not a path inside the workspace`);
+  if (isProtected(rel, [...ALWAYS_PROTECTED, ...(o.protectedGlobs ?? [])]))
+    throw new RunFileError('protected', `${rel} is protected: it is never written from here`);
+  const size = Buffer.byteLength(content, 'utf8');
+  const cap = o.maxBytes ?? RUN_FILE_LIMIT;
+  if (size > cap)
+    throw new RunFileError('too_large', `${rel} would be ${size} bytes; the cap is ${cap}`);
+  const target = resolve(realRoot, rel);
+  // the deepest directory that exists must really be inside the root (no symlink out) and be a directory
+  let dir = dirname(target);
+  while (!existsSync(dir)) dir = dirname(dir);
+  const realDir = realpathSync(dir);
+  if (realDir !== realRoot && !realDir.startsWith(realRoot + sep))
+    throw new RunFileError('forbidden', `${rel} points outside the workspace`);
+  if (!statSync(realDir).isDirectory())
+    throw new RunFileError(
+      'not_found',
+      `${relative(realRoot, realDir) || '.'} is a file, not a directory`,
+    );
+  if (existsSync(target)) {
+    const real = realpathSync(target);
+    if (real !== realRoot && !real.startsWith(realRoot + sep))
+      throw new RunFileError('forbidden', `${rel} points outside the workspace`);
+    if (statSync(real).isDirectory()) throw new RunFileError('not_found', `${rel} is a directory`);
+  }
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, content, 'utf8');
+  return { path: rel, size };
 }

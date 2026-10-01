@@ -118,6 +118,10 @@ function fakeClient() {
       rec('files', id);
       return { root: '/p', files: [] };
     },
+    async writeFile(id: string, path: string, content: string) {
+      rec('writeFile', id, path, content);
+      return { path, size: content.length };
+    },
     async fileContent(id: string, path: string) {
       rec('fileContent', id, path);
       return { path, size: 5, encoding: 'utf8' as const, content: 'name\n', truncated: false };

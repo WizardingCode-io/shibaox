@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadDesignSystem } from '../src/ds.js';
 import { Markdown } from '../src/markdown/render.js';
@@ -163,5 +163,33 @@ describe('Markdown', () => {
     }
     const labelled = render(<Markdown text={'```csv\na;b\n1;2\n```'} />);
     expect(labelled.container.querySelector('table')).toBeTruthy();
+  });
+
+  it('with onOpenCode, every code block and CSV table offers Open with a name for the file', () => {
+    const opened: { text: string; lang?: string; name: string }[] = [];
+    render(
+      <Markdown
+        text={
+          'A script:\n\n```javascript\nfunction fibonacci(n) {\n  return n;\n}\n```\n\nAnd data:\n\n```csv\nname,total\nAna,10\nRui,20\n```'
+        }
+        onOpenCode={(c) => opened.push(c)}
+      />,
+    );
+    const buttons = screen.getAllByRole('button', { name: /open/i });
+    expect(buttons).toHaveLength(2);
+    fireEvent.click(buttons[0] as HTMLElement);
+    expect(opened[0]).toEqual({
+      text: 'function fibonacci(n) {\n  return n;\n}',
+      lang: 'javascript',
+      name: 'fibonacci.js',
+    });
+    fireEvent.click(buttons[1] as HTMLElement);
+    expect(opened[1]).toMatchObject({ lang: 'csv', name: 'table.csv' });
+    expect(opened[1]?.text).toBe('name,total\nAna,10\nRui,20');
+  });
+
+  it('without onOpenCode there is no Open control', () => {
+    render(<Markdown text={'```js\nlet a = 1;\n```'} />);
+    expect(screen.queryByRole('button', { name: /open/i })).toBeNull();
   });
 });

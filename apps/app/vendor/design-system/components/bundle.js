@@ -149,6 +149,7 @@
       h('div', { className: 'sx-code__bar' },
         h('div', null, p.filename ? h('span', { className: 'sx-code__file' }, p.filename) : null, h('span', null, p.language || 'text')),
         h('div', null,
+          p.actions || null,
           clippable ? h('button', { type: 'button', className: 'sx-code__copy', 'aria-expanded': !clip[0], onClick: function () { clip[1](!clip[0]); } }, clip[0] ? 'Show all (' + lines + ' lines)' : 'Show less') : null,
           h('button', { type: 'button', className: 'sx-code__copy', onClick: copy }, h(Icon, { name: s[0] ? 'check' : 'copy', size: 14 }), s[0] ? 'Copied' : 'Copy'))),
       h('pre', { className: 'sx-code__pre' }, h('code', null, p.children)));

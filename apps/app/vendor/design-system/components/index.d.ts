@@ -33,7 +33,7 @@ export interface ToolCallProps { tool: string; summary?: string; status?: 'runni
 export declare function ToolCall(props: ToolCallProps): React.ReactElement;
 export interface ThinkingIndicatorProps { label?: string }
 export declare function ThinkingIndicator(props: ThinkingIndicatorProps): React.ReactElement;
-export interface CodeBlockProps { language?: string; /** The code: a string, or highlighted spans (then pass the raw text as `code` for Copy). */ children: React.ReactNode; code?: string; filename?: string; /** Wrap long lines instead of scrolling sideways. */ wrap?: boolean; /** Clip tall blocks to this height with a "Show all" control. */ maxHeight?: number | string; className?: string }
+export interface CodeBlockProps { language?: string; /** The code: a string, or highlighted spans (then pass the raw text as `code` for Copy). */ children: React.ReactNode; code?: string; filename?: string; /** Wrap long lines instead of scrolling sideways. */ wrap?: boolean; /** Clip tall blocks to this height with a "Show all" control. */ maxHeight?: number | string; /** Extra controls in the bar, before Copy (`sx-code__copy` buttons: Open, Save…). */ actions?: React.ReactNode; className?: string }
 export declare function CodeBlock(props: CodeBlockProps): React.ReactElement;
 export interface CardProps { icon?: IconName; title?: string; description?: string; action?: React.ReactNode; footer?: React.ReactNode; interactive?: boolean; className?: string; children?: React.ReactNode }
 export declare function Card(props: CardProps): React.ReactElement;

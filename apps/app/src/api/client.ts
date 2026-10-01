@@ -105,6 +105,14 @@ export class AppClient {
       `/runs/${encodeURIComponent(id)}/files/content?path=${encodeURIComponent(path)}`,
     );
   }
+  /** Writes a text file into the run's workspace ("Save to project"). */
+  writeFile(id: string, path: string, content: string): Promise<{ path: string; size: number }> {
+    return this.json(
+      'PUT',
+      `/runs/${encodeURIComponent(id)}/files/content?path=${encodeURIComponent(path)}`,
+      { content },
+    );
+  }
   /** The file as a Blob for a download (the token travels in the header, never in a URL). */
   async fileBlob(id: string, path: string): Promise<Blob> {
     const r = await this.fetchImpl(

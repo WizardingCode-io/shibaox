@@ -277,3 +277,27 @@ pre.out {
   line-height: 20px;
   color: var(--warning);
 }
+
+/* a CSV table from the reply with its Open control */
+.table-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-3) 0;
+}
+.table-block__bar {
+  display: flex;
+  justify-content: flex-end;
+}
+.table-block__bar .sx-code__copy {
+  color: var(--ink-muted);
+}
+.save-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  width: 100%;
+}
+.save-row > :first-child {
+  flex: 1;
+}

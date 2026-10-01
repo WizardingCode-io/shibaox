@@ -21,7 +21,7 @@ const iconFor = (path: string): 'table' | 'image' | 'code' | 'file-text' => {
 };
 
 /** The file's body by what it is: a table, a document, coloured code, an image, or a download. */
-function Body(props: { file: RunFileContent }): JSX.Element {
+function Body(props: { file: RunFileContent; lang?: string }): JSX.Element {
   const S = ds();
   const f = props.file;
   const ext = f.path.split('.').pop()?.toLowerCase() ?? '';
@@ -56,7 +56,7 @@ function Body(props: { file: RunFileContent }): JSX.Element {
     }
   }
   if (ext === 'md' || ext === 'markdown') return <Markdown text={f.content} />;
-  const lang = languageOfFile(f.path);
+  const lang = languageOfFile(f.path) ?? props.lang;
   return (
     <S.CodeBlock
       language={lang ?? 'text'}
@@ -69,29 +69,52 @@ function Body(props: { file: RunFileContent }): JSX.Element {
   );
 }
 
+/** A code block the model wrote, shown as a file before it exists anywhere. */
+export interface InlineFile {
+  name: string;
+  content: string;
+  lang?: string;
+}
+
+/** Where an inline file can be saved: the conversation's run and its workspace. */
+export interface SaveTarget {
+  runId: string;
+  workspace: string;
+  write: (path: string, content: string) => Promise<void>;
+}
+
 /**
- * A file a run produced, in the side panel: its content by type, Copy for text, Download for
- * everything. `load` fetches it (the store), `onDownload` saves it.
+ * A file in the side panel: one a run produced (`runId` + `path`, fetched with `load`) or one
+ * the model wrote in its reply (`inline`). Copy for text, Download for everything, and for an
+ * inline file with a workspace to go to, "Save to project".
  */
 export function FileSheet(props: {
-  runId: string;
-  path: string;
+  runId?: string;
+  path?: string;
+  inline?: InlineFile;
+  save?: SaveTarget;
   load: (runId: string, path: string) => Promise<RunFileContent>;
   onClose: () => void;
   onDownload: (runId: string, path: string) => void;
+  onDownloadInline?: (name: string, content: string) => void;
 }): JSX.Element {
   const S = ds();
-  const [file, setFile] = useState<RunFileContent | undefined>(undefined);
+  const { runId, path, inline, load } = props;
+  const [loaded, setLoaded] = useState<RunFileContent | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [copied, setCopied] = useState(false);
+  const [savePath, setSavePath] = useState(inline?.name ?? '');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState<string | undefined>(undefined);
+  const [saveError, setSaveError] = useState<string | undefined>(undefined);
   useEffect(() => {
+    if (inline || runId === undefined || path === undefined) return;
     let live = true;
-    setFile(undefined);
+    setLoaded(undefined);
     setError(undefined);
-    props
-      .load(props.runId, props.path)
+    load(runId, path)
       .then((f) => {
-        if (live) setFile(f);
+        if (live) setLoaded(f);
       })
       .catch((e: unknown) => {
         if (live) setError(e instanceof Error ? e.message : String(e));
@@ -99,20 +122,48 @@ export function FileSheet(props: {
     return () => {
       live = false;
     };
-  }, [props.load, props.runId, props.path]);
-  const name = props.path.split('/').pop() ?? props.path;
+  }, [load, runId, path, inline]);
+  const file: RunFileContent | undefined = inline
+    ? {
+        path: inline.name,
+        size: new TextEncoder().encode(inline.content).length,
+        encoding: 'utf8',
+        content: inline.content,
+        truncated: false,
+      }
+    : loaded;
+  const shownPath = path ?? inline?.name ?? '';
+  const name = shownPath.split('/').pop() ?? shownPath;
   const text = file && file.encoding === 'utf8' ? file.content : undefined;
+  const subtitle = saved
+    ? `Saved to ${saved}`
+    : file
+      ? `${inline ? 'From the reply' : shownPath} · ${bytes(file.size)}${file.truncated ? ' · shown up to 2 MB' : ''}`
+      : shownPath;
+  const download = () => {
+    if (inline) props.onDownloadInline?.(inline.name, inline.content);
+    else if (runId !== undefined && path !== undefined) props.onDownload(runId, path);
+  };
+  const doSave = async () => {
+    if (!props.save || !inline || !savePath.trim()) return;
+    setSaving(true);
+    setSaveError(undefined);
+    try {
+      await props.save.write(savePath.trim(), inline.content);
+      setSaved(savePath.trim());
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
     <S.Sheet
       open
       onClose={props.onClose}
       title={name}
-      subtitle={
-        file
-          ? `${props.path} · ${bytes(file.size)}${file.truncated ? ' · shown up to 2 MB' : ''}`
-          : props.path
-      }
-      icon={iconFor(props.path)}
+      subtitle={subtitle}
+      icon={iconFor(shownPath)}
       actions={
         <>
           {text !== undefined ? (
@@ -131,19 +182,38 @@ export function FileSheet(props: {
               }}
             />
           ) : null}
-          <S.IconButton
-            icon="download"
-            label="Download"
-            size="sm"
-            onClick={() => props.onDownload(props.runId, props.path)}
-          />
+          <S.IconButton icon="download" label="Download" size="sm" onClick={download} />
         </>
+      }
+      footer={
+        inline && props.save && !saved ? (
+          <form
+            className="save-row"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void doSave();
+            }}
+          >
+            <S.Input
+              label="Save to project"
+              hint={saveError ?? `A path inside ${props.save.workspace}`}
+              error={saveError}
+              value={savePath}
+              onChange={(e) => setSavePath((e.target as HTMLInputElement).value)}
+            />
+            <S.Button type="submit" variant="primary" size="sm" loading={saving}>
+              Save
+            </S.Button>
+          </form>
+        ) : saved ? (
+          <p className="muted">Saved. It is now a file of this conversation.</p>
+        ) : undefined
       }
     >
       {error ? (
         <p className="muted">{error}</p>
       ) : file ? (
-        <Body file={file} />
+        <Body file={file} lang={inline?.lang} />
       ) : (
         <S.ThinkingIndicator label="Fetching" />
       )}

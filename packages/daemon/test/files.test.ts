@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { DaemonClient } from '../src/client.js';
 import { Daemon } from '../src/daemon.js';
 import { homePaths } from '../src/home.js';
-import { listRunFiles, RunFileError, readRunFile } from '../src/runs/files.js';
+import { listRunFiles, RunFileError, readRunFile, writeRunFile } from '../src/runs/files.js';
 import { scaffoldOrg } from '../src/templates.js';
 
 const tmp: string[] = [];
@@ -201,5 +201,52 @@ describe('GET /runs/:id/files', () => {
       status: 403,
       code: 'protected',
     });
+    // PUT writes a text file into the workspace, lists it as the user's, and keeps the fence
+    const written = await client.writeFile(runId, 'scripts/fib.js', 'const a = 1;\n');
+    expect(written).toEqual({ path: 'scripts/fib.js', size: 13 });
+    expect((await client.fileContent(runId, 'scripts/fib.js')).content).toBe('const a = 1;\n');
+    const after = await client.files(runId);
+    expect(after.files.map((f) => `${f.status} ${f.path}`)).toContain('added scripts/fib.js');
+    const frames = daemon.runs.runtimeEvents(runId, 0, ['file_changed']);
+    expect(
+      frames.some(
+        (f) => f.nodeId === 'you' && (f.event as { path: string }).path === 'scripts/fib.js',
+      ),
+    ).toBe(true);
+    await expect(client.writeFile(runId, '../out.js', 'x')).rejects.toMatchObject({ status: 403 });
+    await expect(client.writeFile(runId, '.env', 'x')).rejects.toMatchObject({
+      status: 403,
+      code: 'protected',
+    });
+  });
+});
+
+describe('writeRunFile', () => {
+  it('writes utf8 into the workspace, creating the directories, and reads back', async () => {
+    const dir = repo();
+    const r = await writeRunFile(dir, 'out/scripts/fib.js', 'const a = 1;\n', {});
+    expect(r).toEqual({ path: 'out/scripts/fib.js', size: 13 });
+    expect((await readRunFile(dir, 'out/scripts/fib.js')).content).toBe('const a = 1;\n');
+  });
+  it('never leaves the workspace, never a protected file, never past the cap', async () => {
+    const dir = repo();
+    const outside = mkdtempSync(join(tmpdir(), 'files-outside-'));
+    tmp.push(outside);
+    symlinkSync(outside, join(dir, 'link'));
+    for (const [path, code] of [
+      ['../escape.txt', 'forbidden'],
+      ['/etc/passwd', 'forbidden'],
+      ['link/x.txt', 'forbidden'],
+      ['.env', 'protected'],
+      ['secrets/key.pem', 'protected'],
+    ] as const) {
+      await expect(
+        writeRunFile(dir, path, 'x', { protectedGlobs: ['secrets/**'] }),
+      ).rejects.toMatchObject({ code });
+    }
+    await expect(
+      writeRunFile(dir, 'big.txt', 'x'.repeat(11), { maxBytes: 10 }),
+    ).rejects.toMatchObject({ code: 'too_large' });
+    await expect(writeRunFile(dir, 'a.ts/x', 'x', {})).rejects.toMatchObject({ code: 'not_found' }); // a file in the way
   });
 });

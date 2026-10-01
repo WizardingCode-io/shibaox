@@ -40,6 +40,7 @@ export type StoreClient = Pick<
   | 'auditMarkdown'
   | 'files'
   | 'fileContent'
+  | 'writeFile'
   | 'fileBlob'
   | 'routines'
   | 'runRoutine'
@@ -666,19 +667,25 @@ export class AppStore {
   /** Saves a file of a run through the browser's download (a Blob URL, never the token). */
   async downloadFile(runId: string, path: string): Promise<boolean> {
     try {
-      const blob = await this.client.fileBlob(runId, path);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = path.split('/').pop() ?? 'file';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      saveBlob(await this.client.fileBlob(runId, path), path.split('/').pop() ?? 'file');
       return true;
     } catch (e) {
       this.set({ error: message(e) });
       return false;
+    }
+  }
+
+  /** Saves text the model wrote (a code block) as a file through the browser's download. */
+  downloadText(name: string, content: string): void {
+    saveBlob(new Blob([content], { type: 'text/plain;charset=utf-8' }), name);
+  }
+
+  /** Writes a code block into the run's workspace; the daemon's error is the thrown message. */
+  async writeFile(runId: string, path: string, content: string): Promise<void> {
+    try {
+      await this.client.writeFile(runId, path, content);
+    } catch (e) {
+      throw new Error(message(e));
     }
   }
 
@@ -765,3 +772,15 @@ export class AppStore {
 }
 
 export type { InboxItem, RunStatus };
+
+/** A Blob through an anchor download (never the token in a URL). */
+function saveBlob(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}

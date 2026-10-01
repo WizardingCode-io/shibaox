@@ -2,6 +2,7 @@ import { marked, type Token, type Tokens } from 'marked';
 import { Fragment, type ReactNode, useMemo } from 'react';
 import { ds } from '../ds.js';
 import { looksTabular, numericColumns, parseCsv } from './csv.js';
+import { suggestName } from './filename.js';
 import { highlight } from './highlight.js';
 
 const NAMED: Record<string, string> = {
@@ -124,8 +125,25 @@ function inline(tokens: Token[] | undefined, keyBase: string): ReactNode[] {
   return out;
 }
 
-function blocks(tokens: Token[], keyBase: string): ReactNode[] {
+/** A code block the reader wants as a file: its text, language and a suggested name. */
+export interface CodeOpen {
+  text: string;
+  lang?: string;
+  name: string;
+}
+interface Ctx {
+  onOpenCode?: (code: CodeOpen) => void;
+}
+
+function blocks(tokens: Token[], keyBase: string, ctx: Ctx = {}): ReactNode[] {
   const S = ds();
+  const openButton = (code: CodeOpen) =>
+    ctx.onOpenCode ? (
+      <button type="button" className="sx-code__copy" onClick={() => ctx.onOpenCode?.(code)}>
+        <S.Icon name="external-link" size={14} />
+        Open
+      </button>
+    ) : null;
   const out: ReactNode[] = [];
   tokens.forEach((t, i) => {
     const key = `${keyBase}.${i}`;
@@ -157,28 +175,43 @@ function blocks(tokens: Token[], keyBase: string): ReactNode[] {
             : lang === undefined
               ? looksTabular(c.text)
               : undefined;
+        const open = openButton({
+          text: c.text,
+          lang: csv ? (lang ?? 'csv') : lang,
+          name: suggestName(c.text, csv ? (lang ?? 'csv') : lang, c.lang),
+        });
         if (csv) {
           const nums = numericColumns(csv);
           out.push(
-            <S.Table
-              key={key}
-              columns={csv.header}
-              rows={csv.rows}
-              align={nums.map((n) => (n ? 'right' : null))}
-              caption={`${csv.rows.length} row${csv.rows.length === 1 ? '' : 's'} · ${lang ?? 'csv'}`}
-            />,
+            <div key={key} className="table-block">
+              <S.Table
+                columns={csv.header}
+                rows={csv.rows}
+                align={nums.map((n) => (n ? 'right' : null))}
+                caption={`${csv.rows.length} row${csv.rows.length === 1 ? '' : 's'} · ${lang ?? 'csv'}`}
+              />
+              {open ? <div className="table-block__bar">{open}</div> : null}
+            </div>,
           );
           break;
         }
         out.push(
-          <S.CodeBlock key={key} language={lang ?? 'text'} code={c.text} maxHeight={480}>
+          <S.CodeBlock
+            key={key}
+            language={lang ?? 'text'}
+            code={c.text}
+            maxHeight={480}
+            actions={open}
+          >
             {highlight(c.text, lang)}
           </S.CodeBlock>,
         );
         break;
       }
       case 'blockquote':
-        out.push(<blockquote key={key}>{blocks((t as Tokens.Blockquote).tokens, key)}</blockquote>);
+        out.push(
+          <blockquote key={key}>{blocks((t as Tokens.Blockquote).tokens, key, ctx)}</blockquote>,
+        );
         break;
       case 'hr':
         out.push(<hr key={key} />);
@@ -198,9 +231,9 @@ function blocks(tokens: Token[], keyBase: string): ReactNode[] {
                   <input type="checkbox" checked={!!it.checked} disabled readOnly />
                 ) : null}
                 {it.task ? (
-                  <div>{blocks(it.tokens, `${key}.${j}`)}</div>
+                  <div>{blocks(it.tokens, `${key}.${j}`, ctx)}</div>
                 ) : (
-                  blocks(it.tokens, `${key}.${j}`)
+                  blocks(it.tokens, `${key}.${j}`, ctx)
                 )}
               </li>
             ))}
@@ -243,14 +276,17 @@ export function Markdown(props: {
   pending?: boolean;
   /** The user's own words: inline marks and line breaks only, never blocks (a `# todo` stays text). */
   plain?: boolean;
+  /** With it, every code block and CSV table offers "Open": the block as a file in the side panel. */
+  onOpenCode?: (code: CodeOpen) => void;
 }): JSX.Element {
+  const onOpenCode = props.onOpenCode;
   const nodes = useMemo(() => {
     if (props.plain) {
       const lexer = new marked.Lexer({ gfm: true, breaks: true });
       return [<p key="plain">{inline(lexer.inlineTokens(props.text), 'plain')}</p>];
     }
     const text = props.pending ? props.text.replace(/\n[-=]{1,2}$/, '') : props.text;
-    return blocks(marked.lexer(text, { gfm: true, breaks: false }), 'md');
-  }, [props.text, props.pending, props.plain]);
+    return blocks(marked.lexer(text, { gfm: true, breaks: false }), 'md', { onOpenCode });
+  }, [props.text, props.pending, props.plain, onOpenCode]);
   return <>{nodes}</>;
 }

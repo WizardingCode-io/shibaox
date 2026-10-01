@@ -570,6 +570,20 @@ export class DaemonServer {
         throw e;
       }
     }
+    if (runFile !== undefined && method === 'PUT') {
+      // a text file into the run's workspace (the app's "Save to project"); the token is shell
+      // access already, so no approval is asked: the same fence as reads applies
+      const path = url.searchParams.get('path') ?? '';
+      const body = asRecord(await readBody(req));
+      if (typeof body.content !== 'string')
+        throw new HttpError(400, 'bad_request', 'content (a string) is required');
+      try {
+        return send(res, 200, await this.deps.runs.writeFile(runFile, path, body.content));
+      } catch (e) {
+        if (e instanceof RunFileError) throw new HttpError(e.status, e.code, e.message);
+        throw e;
+      }
+    }
     const runEvents = param(/^\/runs\/([^/]+)\/events$/);
     if (runEvents !== undefined && method === 'GET') return this.stream(req, res, runEvents, url);
     const runSteer = param(/^\/runs\/([^/]+)\/steer$/);

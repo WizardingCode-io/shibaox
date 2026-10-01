@@ -236,4 +236,18 @@ describe('the connection', () => {
     for (const call of f.calls)
       expect(new Headers(call.init.headers).get('authorization')).toBe('Bearer tok');
   });
+
+  it('writeFile PUTs the content as JSON to the run file route', async () => {
+    const f = fakeFetch(() => json({ path: 'scripts/fib.js', size: 13 }));
+    const c = new AppClient('http://127.0.0.1:7433/', 'tok', { fetch: f.fetch });
+    await expect(c.writeFile('r1', 'scripts/fib.js', 'const a = 1;\n')).resolves.toEqual({
+      path: 'scripts/fib.js',
+      size: 13,
+    });
+    expect(f.calls[0]?.url).toBe(
+      'http://127.0.0.1:7433/runs/r1/files/content?path=scripts%2Ffib.js',
+    );
+    expect(f.calls[0]?.init.method).toBe('PUT');
+    expect(JSON.parse(String(f.calls[0]?.init.body))).toEqual({ content: 'const a = 1;\n' });
+  });
 });

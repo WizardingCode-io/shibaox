@@ -111,4 +111,64 @@ describe('FileSheet', () => {
     );
     await screen.findByText('The run workspace is gone');
   });
+
+  it('an inline file (a code block) shows its code with Copy and Download, and Save to project when a workspace exists', async () => {
+    const saved: { path: string; content: string }[] = [];
+    const downloads: string[] = [];
+    render(
+      <FileSheet
+        inline={{
+          name: 'fibonacci.js',
+          content: 'function fibonacci(n) {\n  return n;\n}',
+          lang: 'javascript',
+        }}
+        save={{
+          runId: 'r1',
+          workspace: '/w/proj',
+          write: async (path, content) => {
+            saved.push({ path, content });
+          },
+        }}
+        load={async () => {
+          throw new Error('not loaded');
+        }}
+        onClose={() => {}}
+        onDownload={() => {}}
+        onDownloadInline={(name) => {
+          downloads.push(name);
+        }}
+      />,
+    );
+    expect(screen.getAllByText('fibonacci.js').length).toBeGreaterThan(0);
+    expect(screen.getByText('fibonacci')).toBeTruthy(); // highlighted code
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    expect(downloads).toEqual(['fibonacci.js']);
+    const path = screen.getByLabelText('Save to project') as HTMLInputElement;
+    expect(path.value).toBe('fibonacci.js');
+    fireEvent.change(path, { target: { value: 'scripts/fibonacci.js' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0]).toEqual({
+      path: 'scripts/fibonacci.js',
+      content: 'function fibonacci(n) {\n  return n;\n}',
+    });
+    await waitFor(() => expect(screen.getByText(/saved to scripts\/fibonacci\.js/i)).toBeTruthy());
+  });
+
+  it('an inline file without a workspace offers Download only', () => {
+    render(
+      <FileSheet
+        inline={{ name: 'table.csv', content: 'a,b\n1,2', lang: 'csv' }}
+        load={async () => {
+          throw new Error('not loaded');
+        }}
+        onClose={() => {}}
+        onDownload={() => {}}
+        onDownloadInline={() => {}}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Download' })).toBeTruthy();
+    expect(screen.queryByLabelText('Save to project')).toBeNull();
+    expect(screen.getByRole('table')).toBeTruthy();
+  });
 });
