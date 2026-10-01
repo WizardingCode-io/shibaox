@@ -266,23 +266,45 @@
       p.action || null, p.onClose ? h(IconButton, { icon: 'x', label: 'Dismiss', size: 'sm', onClick: p.onClose }) : null);
   }
 
+  var SIZE = function (n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB'; };
   function Composer(p) {
-    var s = useState(p.defaultValue || ''), v = s[0];
-    function send() { if (!v.trim() || p.busy) return; if (p.onSend) p.onSend(v); s[1](''); }
-    return h('div', { className: cx('sx-composer', p.busy && 'is-busy') },
-      h('textarea', { className: 'sx-composer__input', rows: 2, placeholder: p.placeholder || 'Ask Shibaox to do something…', value: v, 'aria-label': 'Message', onChange: function (e) { s[1](e.target.value); }, onKeyDown: function (e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send(); } }),
+    var inner = useState(p.defaultValue || ''), controlled = p.value !== undefined, v = controlled ? p.value : inner[0];
+    var over = useState(false), fileInput = useRef(null);
+    function setText(t) { if (!controlled) inner[1](t); if (p.onChange) p.onChange(t); }
+    var canSend = !!(v.trim() || (p.attachments && p.attachments.length));
+    function send() { if (!canSend || p.busy) return; if (p.onSend) p.onSend(v); setText(''); }
+    function files(list) { var out = []; for (var i = 0; i < list.length; i++) out.push(list[i]); if (out.length && p.onAttach) p.onAttach(out); }
+    var attachments = p.attachments || [];
+    return h('div', { className: cx('sx-composer', p.busy && 'is-busy', (over[0] || p.dropping) && 'is-dropping'),
+        onDragOver: p.onAttach ? function (e) { e.preventDefault(); over[1](true); } : undefined,
+        onDragLeave: p.onAttach ? function () { over[1](false); } : undefined,
+        onDrop: p.onAttach ? function (e) { e.preventDefault(); over[1](false); files(e.dataTransfer && e.dataTransfer.files ? e.dataTransfer.files : []); } : undefined },
+      attachments.length ? h('div', { className: 'sx-composer__files', role: 'list', 'aria-label': 'Attachments' },
+        attachments.map(function (a, i) {
+          return h('span', { key: a.name + i, className: 'sx-composer__file', role: 'listitem' },
+            h(Icon, { name: FILE_ICON[(a.name.split('.').pop() || '').toLowerCase()] || 'file-text', size: 14 }),
+            h('span', { className: 'sx-composer__filename' }, a.name),
+            a.size !== undefined ? h('span', { className: 'sx-composer__filesize' }, SIZE(a.size)) : null,
+            p.onRemoveAttachment ? h('button', { type: 'button', className: 'sx-composer__remove', 'aria-label': 'Remove ' + a.name, onClick: function () { p.onRemoveAttachment(i); } }, h(Icon, { name: 'x', size: 12 })) : null);
+        })) : null,
+      h('textarea', { className: 'sx-composer__input', rows: 2, placeholder: p.placeholder || 'Ask Shibaox to do something…', value: v, 'aria-label': 'Message', onChange: function (e) { setText(e.target.value); }, onKeyDown: function (e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send(); } }),
       h('div', { className: 'sx-composer__bar' },
-        h(IconButton, { icon: 'plus', label: 'Attach', size: 'sm' }),
-        h(IconButton, { icon: 'zap', label: 'Skills', size: 'sm' }),
+        p.onAttach ? h('input', { ref: fileInput, type: 'file', multiple: true, hidden: true, 'aria-hidden': true, tabIndex: -1, onChange: function (e) { files(e.target.files || []); e.target.value = ''; } }) : null,
+        h(IconButton, { icon: 'plus', label: 'Attach', size: 'sm', onClick: p.onAttach ? function () { if (fileInput.current) fileInput.current.click(); } : undefined, disabled: !p.onAttach }),
+        p.onActionsClick || p.actionsMenu
+          ? h(Popover, { open: !!p.actionsMenu, onClose: p.onActionsMenuClose || p.onActionsClick, placement: 'up', role: 'presentation',
+              anchor: h(IconButton, { icon: 'zap', label: 'Actions', size: 'sm', onClick: p.onActionsClick, 'aria-haspopup': 'menu', 'aria-expanded': !!p.actionsMenu }) },
+              p.actionsMenu || null)
+          : h(IconButton, { icon: 'zap', label: 'Actions', size: 'sm', disabled: true }),
         p.model && (p.onModelClick || p.modelMenu)
           ? h(Popover, { open: !!p.modelMenu, onClose: p.onModelMenuClose || p.onModelClick, placement: 'up', role: 'presentation',
               anchor: h('button', { type: 'button', className: 'sx-composer__model sx-composer__model--btn', 'aria-label': 'Change model', 'aria-haspopup': 'menu', 'aria-expanded': !!p.modelMenu, onClick: p.onModelClick }, p.model, h(Icon, { name: 'chevron-down', size: 12 })) },
               p.modelMenu || null)
           : p.model ? h('span', { className: 'sx-composer__model' }, p.model) : null,
         h('span', { className: 'sx-tool__spacer' }),
-        h(IconButton, { icon: 'mic', label: 'Voice', size: 'sm' }),
+        p.voice === false ? null : h(IconButton, { icon: 'mic', label: p.listening ? 'Stop listening' : 'Voice', size: 'sm', variant: p.listening ? 'primary' : undefined, onClick: p.onVoice, disabled: !p.onVoice, 'aria-pressed': !!p.listening }),
         p.busy ? h(IconButton, { icon: 'square', label: 'Stop', variant: 'secondary', size: 'sm', onClick: p.onStop })
-          : h(IconButton, { icon: 'arrow-up', label: 'Send', variant: 'primary', size: 'sm', onClick: send, disabled: !v.trim() })));
+          : h(IconButton, { icon: 'arrow-up', label: 'Send', variant: 'primary', size: 'sm', onClick: send, disabled: !canSend })));
   }
 
   function Popover(p) {

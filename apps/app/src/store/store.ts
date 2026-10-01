@@ -1,5 +1,6 @@
 import type { RunState, RunStatus } from '@wizardingcode/shibaox-core';
 import type {
+  Attachment,
   Envelope,
   InboxItem,
   OrgConfigPatch,
@@ -370,8 +371,13 @@ export class AppStore {
 
   // ---- actions
 
+  /** A message for the toast (something the user must change before sending). */
+  notice(message: string): void {
+    this.set({ error: message });
+  }
+
   /** A new conversation on the default project and org; opens it. Undefined (and an error) when it could not start. */
-  async newChat(text: string): Promise<string | undefined> {
+  async newChat(text: string, attachments: Attachment[] = []): Promise<string | undefined> {
     try {
       const project = this.state.settings.project ?? (await this.client.projects())[0]?.path;
       if (!project) throw new Error('no project to start in: pick one in Settings');
@@ -386,6 +392,7 @@ export class AppStore {
         adapter: info.adapter && info.adapter !== 'mock' ? info.adapter : 'direct',
         workspace: 'inplace',
         ...(this.state.settings.model ? { model: this.state.settings.model } : {}),
+        ...(attachments.length > 0 ? { attachments } : {}),
       } as SubmitRequest);
       await this.refresh();
       this.openThread(runId);
@@ -418,7 +425,11 @@ export class AppStore {
    * The next turn of a thread: after the previous one settled, the conversation so far
    * travels as messages and the text is the new turn. Turns of a thread go one at a time.
    */
-  send(rootId: string, text: string, o: { event?: boolean } = {}): Promise<string | undefined> {
+  send(
+    rootId: string,
+    text: string,
+    o: { event?: boolean; attachments?: Attachment[]; workflow?: string } = {},
+  ): Promise<string | undefined> {
     const run = async (): Promise<string | undefined> => {
       const turns = this.turnsOf(rootId);
       const previous = turns[turns.length - 1];
@@ -437,9 +448,11 @@ export class AppStore {
         const { runId } = await this.client.submitRun({
           orgRoot: prev.orgRoot ?? previous.orgRoot ?? '',
           project: prev.project ?? previous.project ?? prev.workspace,
-          workflow: previous.workflow,
+          // an action picked in the composer starts that workflow here instead of a chat turn
+          workflow: o.workflow ?? previous.workflow,
           input: text,
-          messages,
+          ...(o.workflow ? {} : { messages }),
+          ...(o.attachments && o.attachments.length > 0 ? { attachments: o.attachments } : {}),
           thread: rootId,
           ...(o.event ? { event: true } : {}),
           ...(() => {

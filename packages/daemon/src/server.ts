@@ -43,7 +43,7 @@ const isRemote = (req: IncomingMessage) => REMOTE.has(req);
 import type { HiggsfieldView, LoginStart } from './higgsfield.js';
 import type { RunManager, SubmitRequest } from './run-manager.js';
 import { AUDIT_RUNTIME_TYPES, buildAudit, renderAuditMarkdown } from './runs/audit.js';
-import { mimeOf, RunFileError } from './runs/files.js';
+import { ATTACHMENTS_LIMIT, ATTACHMENTS_MAX, mimeOf, RunFileError } from './runs/files.js';
 import type { DecisionsView } from './runtime.js';
 import type { RuntimeEnvelope } from './runtime-buffer.js';
 import type { KeyRow } from './secrets.js';
@@ -168,6 +168,8 @@ export class HttpError extends Error {
 const MAX_BODY = 1_000_000;
 /** A file written from the app: the 2 MB file cap plus JSON overhead. */
 const FILE_BODY_LIMIT = 3_000_000;
+/** A run submit with attachments: the 25 MB cap in base64 plus the message and the conversation. */
+const RUNS_BODY_LIMIT = 40_000_000;
 const TEXT_LIMIT = 4096;
 
 function readBody(req: IncomingMessage, limit = MAX_BODY): Promise<unknown> {
@@ -501,7 +503,7 @@ export class DaemonServer {
       }
     }
     if (method === 'POST' && path === '/runs') {
-      const body = asRecord(await readBody(req));
+      const body = asRecord(await readBody(req, RUNS_BODY_LIMIT));
       for (const k of ['orgRoot', 'project', 'workflow', 'input'])
         if (typeof body[k] !== 'string')
           throw new HttpError(400, 'bad_request', `"${k}" is required`);
@@ -514,6 +516,31 @@ export class DaemonServer {
       // a run that never asks: the same policy a routine carries (the token is shell anyway)
       if (body.approvals !== undefined && !RoutineApprovalsSchema.safeParse(body.approvals).success)
         throw new HttpError(400, 'bad_request', '"approvals" takes inbox, auto or skip');
+      if (body.attachments !== undefined) {
+        const list = body.attachments;
+        if (!Array.isArray(list) || list.length > ATTACHMENTS_MAX)
+          throw new HttpError(
+            400,
+            'bad_request',
+            `"attachments" is a list of at most ${ATTACHMENTS_MAX} files`,
+          );
+        let total = 0;
+        for (const a of list as { name?: unknown; content?: unknown; mime?: unknown }[]) {
+          if (!a || typeof a.name !== 'string' || !a.name.trim() || typeof a.content !== 'string')
+            throw new HttpError(
+              400,
+              'bad_request',
+              'an attachment is { name, content (base64), mime? }',
+            );
+          total += Math.floor((a.content.length * 3) / 4);
+        }
+        if (total > ATTACHMENTS_LIMIT)
+          throw new HttpError(
+            413,
+            'too_large',
+            `attachments add up to more than ${ATTACHMENTS_LIMIT} bytes`,
+          );
+      }
       return send(res, 200, await this.deps.runs.submit(body as unknown as SubmitRequest));
     }
     if (method === 'POST' && path === '/runs/prune') {

@@ -266,6 +266,13 @@ body { margin: 0; font-family: var(--font-sans); font-size: 15px; line-height: 2
 /* Composer */
 .sx-composer { background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-xl); box-shadow: var(--shadow-md); padding: var(--space-3) var(--space-3) var(--space-2) var(--space-4); display: flex; flex-direction: column; gap: var(--space-1); max-width: 720px; }
 .sx-composer:focus-within { border-color: var(--focus); box-shadow: var(--shadow-md), 0 0 0 1px var(--focus); }
+.sx-composer.is-dropping { border-color: var(--shiba); box-shadow: var(--shadow-md), 0 0 0 2px var(--shiba-soft); }
+.sx-composer__files { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: 2px 0 4px; }
+.sx-composer__file { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 6px 0 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-sunken); font-size: 12px; color: var(--ink); max-width: 280px; }
+.sx-composer__filename { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sx-composer__filesize { color: var(--ink-faint); font-family: var(--font-mono); font-size: 11px; }
+.sx-composer__remove { display: inline-flex; border: 0; background: transparent; color: var(--ink-muted); cursor: pointer; padding: 2px; border-radius: var(--radius-xs); }
+.sx-composer__remove:hover { background: var(--surface-hover); color: var(--ink); }
 .sx-composer__input { font: inherit; font-size: 15px; line-height: 24px; border: 0; outline: 0; resize: none; background: transparent; color: var(--ink); padding: 4px 0; }
 .sx-composer__input::placeholder { color: var(--ink-muted); }
 .sx-composer__bar { display: flex; align-items: center; gap: var(--space-1); margin-left: -6px; }

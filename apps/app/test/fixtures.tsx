@@ -213,11 +213,14 @@ export function client(
     },
     async orgInfo() {
       return {
-        workflows: ['chat'],
+        workflows: ['chat', 'fix-issue', 'hello-feature'],
         single: ['chat'],
         subscription: false,
         adapter: 'direct' as const,
-        descriptions: {},
+        descriptions: {
+          'fix-issue': 'Fix a GitHub issue end to end',
+          'hello-feature': 'Analyse, implement, test, judge, ship.',
+        },
         catalog: [],
       };
     },

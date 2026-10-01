@@ -37,12 +37,14 @@ import { projectProtectedGlobs } from './protected.js';
 import { type DiffResult, diffWorkspace, worktreeBase } from './runs/diff.js';
 import {
   ALWAYS_PROTECTED,
+  type Attachment,
   confine,
   listRunFiles,
   type RunFile,
   type RunFileContent,
   RunFileError,
   readRunFile,
+  writeAttachments,
   writeRunFile,
 } from './runs/files.js';
 import { type GraphMode, prepareGraph } from './runs/graph.js';
@@ -91,6 +93,8 @@ export interface SubmitRequest {
   thread?: string;
   /** A model ref (`provider/model`) for every task of the run; the adapter follows from it. */
   model?: string;
+  /** Files sent with the message: written under attachments/ in the workspace before the run. */
+  attachments?: Attachment[];
   /**
    * The dependency install of a worktree run: `auto` (default: `shibaox.yaml setup`, else
    * detected from the lockfile), `off`, or a command.
@@ -261,6 +265,17 @@ export class RunManager {
     });
     const ws = await createRunWorkspace({ project, runId, mode });
     const workspace = ws.mode === 'worktree' ? join(ws.path, await gitPrefix(project)) : ws.path;
+    // the message's files go into the workspace first, and the message names them
+    const attached =
+      req.attachments && req.attachments.length > 0
+        ? await writeAttachments(workspace, req.attachments, {
+            protectedGlobs: projectProtectedGlobs(project),
+          })
+        : [];
+    const input =
+      attached.length > 0
+        ? `${req.input}\n\n[Attached files]\n${attached.map((f) => `- ${f.path} (${sizeWords(f.size)}${f.mime ? `, ${f.mime}` : ''})`).join('\n')}`
+        : req.input;
     const raw = req.messages?.filter((m) => m && typeof m.content === 'string') ?? [];
     // a conversation that outgrew its cap carries a summary of its oldest turns instead
     const summarize = raw.length > 0 ? this.opts.summarizer?.(org, model) : undefined;
@@ -282,7 +297,7 @@ export class RunManager {
     await engine.create({
       workflow: req.workflow,
       input: {
-        spec: req.input,
+        spec: input,
         ...(messages.length > 0 ? { messages } : {}),
         ...(req.event ? { event: true } : {}),
         ...(req.outputSchema ? { output_schema: req.outputSchema } : {}),
@@ -302,6 +317,8 @@ export class RunManager {
       approvals: req.approvals,
       setup,
     });
+    for (const f of attached)
+      this.recordRuntime(runId, 'you', { type: 'file_changed', path: f.path });
     this.prepared.set(runId, { engine, org, adapter });
     this.enqueue({ runId, action: 'run', settle: [] });
     return { runId, warnings, ...(compacted ? { messages } : {}) };
@@ -1017,3 +1034,11 @@ function setupFor(o: {
   const command = plan.cwd === '.' ? plan.command : `cd '${plan.cwd}' && ${plan.command}`;
   return { command, timeoutMs };
 }
+
+/** `8 B`, `12.3 KB`, `1.5 MB`. */
+const sizeWords = (n: number): string =>
+  n < 1024
+    ? `${n} B`
+    : n < 1048576
+      ? `${(n / 1024).toFixed(1)} KB`
+      : `${(n / 1048576).toFixed(1)} MB`;

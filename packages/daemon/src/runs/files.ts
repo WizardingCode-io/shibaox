@@ -10,7 +10,7 @@ import {
   statSync,
   writeSync,
 } from 'node:fs';
-import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { isProtected } from '@wizardingcode/shibaox-core';
 import type { DiffFile, DiffResult } from './diff.js';
 
@@ -233,7 +233,7 @@ export async function listRunFiles(
 export async function writeRunFile(
   root: string,
   path: string,
-  content: string,
+  content: string | Buffer,
   o: { protectedGlobs?: string[]; maxBytes?: number },
 ): Promise<{ path: string; size: number }> {
   let realRoot: string;
@@ -250,7 +250,7 @@ export async function writeRunFile(
   const globs = [...ALWAYS_PROTECTED, ...(o.protectedGlobs ?? [])];
   if (isProtected(rel, globs))
     throw new RunFileError('protected', `${rel} is protected: it is never written from here`);
-  const size = Buffer.byteLength(content, 'utf8');
+  const size = typeof content === 'string' ? Buffer.byteLength(content, 'utf8') : content.length;
   const cap = o.maxBytes ?? RUN_FILE_LIMIT;
   if (size > cap)
     throw new RunFileError('too_large', `${rel} would be ${size} bytes; the cap is ${cap}`);
@@ -310,9 +310,58 @@ export async function writeRunFile(
     throw e;
   }
   try {
-    writeSync(fd, content, null, 'utf8');
+    if (typeof content === 'string') writeSync(fd, content, null, 'utf8');
+    else writeSync(fd, content);
   } finally {
     closeSync(fd);
   }
   return { path: rel, size };
+}
+
+/** A file the user sends with a message (the app's composer). */
+export interface Attachment {
+  name: string;
+  /** base64 */
+  content: string;
+  mime?: string;
+}
+export const ATTACHMENTS_LIMIT = 25 * 1024 * 1024;
+export const ATTACHMENTS_MAX = 20;
+
+/** The file name an attachment gets: the base name, trailing dots and spaces gone, never empty. */
+export function attachmentName(name: string): string {
+  const base = basename(name.normalize('NFC').replace(/\\/g, '/'))
+    .replace(/[\0/]/g, '')
+    .trim()
+    .replace(/[.\s]+$/, '');
+  return !base || base === '.' || base === '..' ? 'file' : base;
+}
+
+/**
+ * Writes a message's attachments under `attachments/` in the workspace (a clash gets `-2`,
+ * `-3`…), with the same fence as any write; the relative paths, sizes and types, for the
+ * message and the run's files.
+ */
+export async function writeAttachments(
+  root: string,
+  attachments: readonly Attachment[],
+  o: { protectedGlobs?: string[] } = {},
+): Promise<{ path: string; size: number; mime?: string }[]> {
+  const out: { path: string; size: number; mime?: string }[] = [];
+  const taken = new Set<string>();
+  for (const a of attachments) {
+    const name = attachmentName(a.name);
+    const dot = name.lastIndexOf('.');
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const ext = dot > 0 ? name.slice(dot) : '';
+    let candidate = name;
+    for (let n = 2; taken.has(candidate) || existsSync(join(root, 'attachments', candidate)); n++)
+      candidate = `${stem}-${n}${ext}`;
+    taken.add(candidate);
+    const rel = `attachments/${candidate}`;
+    const bytes = Buffer.from(a.content, 'base64');
+    const r = await writeRunFile(root, rel, bytes, o);
+    out.push({ path: r.path, size: r.size, ...(a.mime ? { mime: a.mime } : {}) });
+  }
+  return out;
 }

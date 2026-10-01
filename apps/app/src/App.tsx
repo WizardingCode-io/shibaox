@@ -6,6 +6,7 @@ import {
   readConnection,
   saveConnection,
 } from './api/connection.js';
+import { blobToBase64 } from './desktop.js';
 import { ds } from './ds.js';
 import { useRoute } from './router.js';
 import { ChatsScreen } from './screens/ChatsScreen.js';
@@ -50,6 +51,7 @@ function applyTheme(theme: 'light' | 'dark' | 'system'): void {
 function Shell(props: { base: string; onDisconnect: () => void }): JSX.Element {
   const S = ds();
   const store = useStore();
+  const [files, setFiles] = useState<File[]>([]);
   const state = useAppState();
   const route = useRoute();
   useEffect(() => applyTheme(state.settings.theme), [state.settings.theme]);
@@ -104,10 +106,22 @@ function Shell(props: { base: string; onDisconnect: () => void }): JSX.Element {
             <S.Composer
               placeholder="Ask Shibaox to do something…"
               model={state.settings.model?.split('/').pop()}
+              attachments={files.map((f) => ({ name: f.name, size: f.size }))}
+              onAttach={(picked) => setFiles((f) => [...f, ...picked].slice(0, 20))}
+              onRemoveAttachment={(i) => setFiles((f) => f.filter((_, j) => j !== i))}
               onSend={(text) =>
-                void store.newChat(text).then((id) => {
+                void (async () => {
+                  const attachments = await Promise.all(
+                    files.map(async (f) => ({
+                      name: f.name,
+                      content: await blobToBase64(f),
+                      ...(f.type ? { mime: f.type } : {}),
+                    })),
+                  );
+                  setFiles([]);
+                  const id = await store.newChat(text, attachments);
                   if (id) window.location.hash = `#/t/${encodeURIComponent(id)}`;
-                })
+                })()
               }
             />
           </div>

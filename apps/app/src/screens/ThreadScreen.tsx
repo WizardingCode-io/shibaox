@@ -9,6 +9,7 @@ import {
 } from '@wizardingcode/shibaox-view';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RunFileContent } from '../api/client.js';
+import { blobToBase64 } from '../desktop.js';
 import { ds } from '../ds.js';
 import { clock, duration, RUN_STATUS_TONE, RUN_STATUS_WORD, shortModel } from '../format.js';
 import { useFollowScroll } from '../hooks/follow-scroll.js';
@@ -595,6 +596,112 @@ function LogsTab(props: { rootId: string }): JSX.Element {
   );
 }
 
+/** The bolt's menu: the org's workflows to start here, Higgsfield prefills, and the file picker. */
+function useActionsMenu(
+  open: boolean,
+  close: () => void,
+  on: {
+    onWorkflow: (name: string) => void;
+    onPrefill: (text: string) => void;
+    onAttach: () => void;
+  },
+): ReactNode {
+  const S = ds();
+  const store = useStore();
+  const state = useAppState();
+  useEffect(() => {
+    if (open && !state.skills) void store.loadSkills();
+  }, [open, state.skills, store]);
+  if (!open) return undefined;
+  const workflows = (state.skills?.workflows ?? []).filter((w) => !w.conversation);
+  const items = [
+    { id: 'image', label: 'Generate an image…', hint: 'Higgsfield', icon: 'image' as const },
+    { id: 'video', label: 'Generate a video…', hint: 'Higgsfield', icon: 'image' as const },
+    {
+      id: 'attach',
+      label: 'Attach files…',
+      hint: 'or drop them on the conversation',
+      icon: 'plus' as const,
+    },
+    ...(workflows.length > 0 ? [{ id: '-', label: '' }] : []),
+    ...workflows.map((w) => ({
+      id: `wf:${w.name}`,
+      label: `Run ${w.name}`,
+      hint: w.description || 'a workflow of the org, started in this conversation',
+      icon: 'zap' as const,
+    })),
+  ];
+  return (
+    <S.MenuList
+      title="Actions"
+      items={items}
+      onSelect={(id) => {
+        if (id === 'image') on.onPrefill('Generate an image of ');
+        else if (id === 'video') on.onPrefill('Generate a short video of ');
+        else if (id === 'attach') on.onAttach();
+        else if (id.startsWith('wf:')) on.onWorkflow(id.slice(3));
+      }}
+      onClose={close}
+    />
+  );
+}
+
+type Recognizer = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult:
+    | ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>>; resultIndex: number }) => void)
+    | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  start(): void;
+  stop(): void;
+};
+
+/** The browser's speech recognition when it exists (Chrome): words land in the composer. */
+function useVoice(onWords: (words: string) => void): {
+  available: boolean;
+  listening: boolean;
+  toggle: () => void;
+} {
+  const w = globalThis as {
+    SpeechRecognition?: new () => Recognizer;
+    webkitSpeechRecognition?: new () => Recognizer;
+  };
+  const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+  const [listening, setListening] = useState(false);
+  const rec = useRef<Recognizer | undefined>(undefined);
+  const toggle = useCallback(() => {
+    if (!Ctor) return;
+    if (rec.current) {
+      rec.current.stop();
+      rec.current = undefined;
+      setListening(false);
+      return;
+    }
+    const r = new Ctor();
+    r.lang = navigator.language || 'en';
+    r.interimResults = false;
+    r.continuous = true;
+    r.onresult = (e) => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i]?.[0]?.transcript?.trim();
+        if (t) onWords(t);
+      }
+    };
+    r.onend = () => {
+      rec.current = undefined;
+      setListening(false);
+    };
+    r.onerror = r.onend;
+    rec.current = r;
+    r.start();
+    setListening(true);
+  }, [Ctor, onWords]);
+  return { available: Boolean(Ctor), listening, toggle };
+}
+
 /**
  * The model of the next turns, chosen from the composer's label (as the mockup places it):
  * the org's tiers, or one of the configured models.
@@ -645,6 +752,52 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
   const state = useAppState();
   const [tab, setTab] = useState<'chat' | 'tasks' | 'logs'>('chat');
   const [modelOpen, setModelOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
+  const [dropping, setDropping] = useState(false);
+  // a workflow picked in the actions menu: the next message starts it in this conversation
+  const [pendingWorkflow, setPendingWorkflow] = useState<string | undefined>(undefined);
+  const voice = useVoice((words) => setText((t) => (t ? `${t} ${words}` : words)));
+  const attach = useCallback((picked: File[]) => {
+    setFiles((f) => [...f, ...picked].slice(0, 20));
+  }, []);
+  const sendMessage = useCallback(
+    async (raw: string) => {
+      const attachments = await Promise.all(
+        files.map(async (f) => ({
+          name: f.name,
+          content: await blobToBase64(f),
+          ...(f.type ? { mime: f.type } : {}),
+        })),
+      );
+      const total = attachments.reduce((n, a) => n + Math.floor((a.content.length * 3) / 4), 0);
+      if (total > 25 * 1024 * 1024) {
+        store.notice('Attachments add up to more than 25 MB: remove some.');
+        return;
+      }
+      let message = raw.trim();
+      let workflow: string | undefined;
+      if (pendingWorkflow) {
+        workflow = pendingWorkflow;
+        message = message.replace(new RegExp(`^Run ${pendingWorkflow}:\\s*`, 'i'), '');
+      }
+      setText('');
+      setFiles([]);
+      setPendingWorkflow(undefined);
+      await store.send(props.rootId, message, { attachments, workflow });
+    },
+    [files, pendingWorkflow, store, props.rootId],
+  );
+  const actionsMenu = useActionsMenu(actionsOpen, () => setActionsOpen(false), {
+    onWorkflow: (name) => {
+      setPendingWorkflow(name);
+      setText(`Run ${name}: `);
+    },
+    onPrefill: (t) => setText(t),
+    onAttach: () =>
+      document.querySelector<HTMLInputElement>('.sx-composer input[type=file]')?.click(),
+  });
   const [file, setFile] = useState<
     { runId: string; path: string } | { inline: InlineFile } | undefined
   >(undefined);
@@ -717,7 +870,22 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
     .tasksOf(props.rootId)
     .filter((t) => !['completed', 'failed', 'cancelled'].includes(t.status)).length;
   return (
-    <main className="main">
+    <main
+      className="main"
+      onDragOver={(e) => {
+        if (e.dataTransfer?.types?.includes('Files')) {
+          e.preventDefault();
+          setDropping(true);
+        }
+      }}
+      onDragLeave={() => setDropping(false)}
+      onDrop={(e) => {
+        if (!e.dataTransfer?.files?.length) return;
+        e.preventDefault();
+        setDropping(false);
+        attach([...e.dataTransfer.files]);
+      }}
+    >
       <div className="top">
         <h2>{view?.title || 'Conversation'}</h2>
         <S.AgentStatus status={inbox.length > 0 ? 'waiting' : (view?.status ?? 'idle')} />
@@ -781,12 +949,28 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
             key={props.rootId}
             model={model ?? "the org's tiers"}
             busy={busy}
-            placeholder="Ask Shibaox to do something…"
-            onSend={(text) => void store.send(props.rootId, text)}
+            placeholder={
+              pendingWorkflow
+                ? `What should ${pendingWorkflow} work on?`
+                : 'Ask Shibaox to do something…'
+            }
+            value={text}
+            onChange={setText}
+            attachments={files.map((f) => ({ name: f.name, size: f.size }))}
+            onAttach={attach}
+            onRemoveAttachment={(i) => setFiles((f) => f.filter((_, j) => j !== i))}
+            dropping={dropping}
+            onSend={(t) => void sendMessage(t)}
             onStop={() => void store.stopThread(props.rootId)}
             onModelClick={() => setModelOpen((o) => !o)}
             modelMenu={modelMenu}
             onModelMenuClose={closeModel}
+            onActionsClick={() => setActionsOpen((o) => !o)}
+            actionsMenu={actionsMenu}
+            onActionsMenuClose={() => setActionsOpen(false)}
+            voice={voice.available}
+            listening={voice.listening}
+            onVoice={voice.available ? voice.toggle : undefined}
           />
         </div>
       ) : null}

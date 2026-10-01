@@ -285,4 +285,59 @@ describe('the reply is rendered as a document', () => {
       expect(screen.getByRole('button', { name: 'Change model' }).textContent).toContain('qwen'),
     );
   });
+
+  it('files dropped on the conversation become chips and go with the next message as attachments', async () => {
+    const { client: c, calls } = client({
+      runs: [summary('root')],
+      states: { root: state('root') },
+    });
+    mount(c, { hash: '#/t/root' });
+    const box = await screen.findByRole('textbox', { name: 'Message' });
+    const file = new File(['a,b\n1,2\n'], 'clientes.csv', { type: 'text/csv' });
+    fireEvent.drop(screen.getByRole('main'), { dataTransfer: { files: [file], types: ['Files'] } });
+    expect(await screen.findByText('clientes.csv')).toBeTruthy();
+    fireEvent.change(box, { target: { value: 'Read this' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(calls.find((x) => x.name === 'submitRun')).toBeTruthy());
+    const req = calls.find((x) => x.name === 'submitRun')?.args[0] as {
+      input: string;
+      attachments?: { name: string; content: string; mime?: string }[];
+    };
+    expect(req.input).toBe('Read this');
+    expect(req.attachments).toEqual([
+      { name: 'clientes.csv', content: btoa('a,b\n1,2\n'), mime: 'text/csv' },
+    ]);
+    expect(screen.queryByText('clientes.csv')).toBeNull(); // sent: the chips are gone
+  });
+
+  it('the Actions menu lists the org workflows; picking one makes the next message start it here', async () => {
+    const { client: c, calls } = client({
+      runs: [summary('root')],
+      states: { root: state('root') },
+    });
+    mount(c, { hash: '#/t/root' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Actions' }));
+    const menu = await screen.findByRole('menu');
+    fireEvent.click(await within(menu).findByRole('menuitem', { name: /fix-issue/ }));
+    const box = screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement;
+    expect(box.value).toMatch(/fix-issue/);
+    fireEvent.change(box, { target: { value: 'Run fix-issue: the login button is broken' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(calls.find((x) => x.name === 'submitRun')).toBeTruthy());
+    const req = calls.find((x) => x.name === 'submitRun')?.args[0] as {
+      workflow: string;
+      input: string;
+      thread?: string;
+    };
+    expect(req.workflow).toBe('fix-issue');
+    expect(req.input).toBe('the login button is broken');
+    expect(req.thread).toBe('root');
+  });
+
+  it('the mic only shows where the browser can listen', async () => {
+    const { client: c } = client({ runs: [summary('root')], states: { root: state('root') } });
+    mount(c, { hash: '#/t/root' });
+    await screen.findByRole('textbox', { name: 'Message' });
+    expect(screen.queryByRole('button', { name: 'Voice' })).toBeNull(); // happy-dom has no SpeechRecognition
+  });
 });

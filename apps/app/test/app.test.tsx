@@ -258,8 +258,10 @@ describe('the sections', () => {
   it('Skills lists the workflows and runs one as a task', async () => {
     const { client: c, calls } = client();
     mount(c, { hash: '#/skills' });
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Run task' })).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'Run task' }));
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: 'Run task' })[0] as HTMLElement).toBeTruthy(),
+    );
+    fireEvent.click(screen.getAllByRole('button', { name: 'Run task' })[0] as HTMLElement);
     fireEvent.change(screen.getByLabelText('Request'), { target: { value: 'Add a footer' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
     await waitFor(() =>
