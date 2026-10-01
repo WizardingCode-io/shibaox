@@ -3,6 +3,8 @@ export interface CsvTable {
   header: string[];
   rows: string[][];
   delimiter: string;
+  /** Loose parsing met rows of uneven length (padded or widened to fit). */
+  ragged: boolean;
 }
 
 function split(line: string, delimiter: string): string[] {
@@ -31,8 +33,14 @@ function split(line: string, delimiter: string): string[] {
 /**
  * CSV or TSV as a table, or undefined when the text is not one: at least two rows, at least two
  * columns, every row with the header's column count (quoted cells with commas and `""` handled).
+ * With `loose` (a file the user opened, not the chat's guess) uneven rows are kept: short ones
+ * padded, long ones widen the table, and `ragged` says so.
  */
-export function parseCsv(text: string, delimiter?: string): CsvTable | undefined {
+export function parseCsv(
+  text: string,
+  delimiter?: string,
+  o: { loose?: boolean } = {},
+): CsvTable | undefined {
   const lines = text
     .replace(/\r\n?/g, '\n')
     .split('\n')
@@ -45,12 +53,21 @@ export function parseCsv(text: string, delimiter?: string): CsvTable | undefined
   const header = split(first, d);
   if (header.length < 2) return undefined;
   const rows: string[][] = [];
+  let ragged = false;
   for (const line of lines.slice(1)) {
     const cells = split(line, d);
-    if (cells.length !== header.length) return undefined;
+    if (cells.length !== header.length) {
+      if (!o.loose) return undefined;
+      ragged = true;
+    }
     rows.push(cells);
   }
-  return { header, rows, delimiter: d };
+  if (ragged) {
+    const width = Math.max(header.length, ...rows.map((r) => r.length));
+    const pad = (r: string[]) => [...r, ...Array.from({ length: width - r.length }, () => '')];
+    return { header: pad(header), rows: rows.map(pad), delimiter: d, ragged };
+  }
+  return { header, rows, delimiter: d, ragged };
 }
 
 /** Columns whose cells are all numbers (right-aligned in the table). */

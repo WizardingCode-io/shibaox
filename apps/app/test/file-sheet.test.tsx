@@ -74,7 +74,7 @@ describe('FileSheet', () => {
     await screen.findByRole('button', { name: 'Download' });
     expect(screen.queryByRole('button', { name: /Copy/ })).toBeNull();
     expect(ui.container.querySelector('.sx-code')).toBeNull();
-    expect(screen.getByText(/binary/i)).toBeTruthy();
+    expect(screen.getByText(/No preview/i)).toBeTruthy();
     ui.unmount();
     const img = sheet({
       path: 'pic.png',
@@ -194,5 +194,95 @@ describe('FileSheet', () => {
     expect(screen.queryByText(/Saved\./)).toBeNull();
     expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy();
     expect(screen.getByText('two')).toBeTruthy();
+  });
+
+  it('on the desktop, an inline file offers Open and Save as… through the bridge, and Reveal once saved', async () => {
+    const calls: string[] = [];
+    (window as unknown as { shibaoxDesktop?: unknown }).shibaoxDesktop = {
+      platform: 'darwin',
+      saveAs: async (name: string) => {
+        calls.push(`saveAs:${name}`);
+        return '/Users/me/Downloads/table.csv';
+      },
+      openWith: async (name: string) => {
+        calls.push(`openWith:${name}`);
+        return true;
+      },
+      reveal: async (path: string) => {
+        calls.push(`reveal:${path}`);
+      },
+    };
+    try {
+      render(
+        <FileSheet
+          inline={{ name: 'table.csv', content: 'a,b\n1,2', lang: 'csv' }}
+          save={{ runId: 'r1', workspace: '/w/proj', write: async () => {} }}
+          load={async () => {
+            throw new Error('not loaded');
+          }}
+          onClose={() => {}}
+          onDownload={() => {}}
+          onDownloadInline={() => {}}
+        />,
+      );
+      expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save as…' }));
+      await waitFor(() => expect(calls).toEqual(['openWith:table.csv', 'saveAs:table.csv']));
+      expect(screen.getByText(/in proj/)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(screen.getByText(/Saved\./)).toBeTruthy());
+      fireEvent.click(screen.getByRole('button', { name: 'Reveal in Finder' }));
+      await waitFor(() => expect(calls[2]).toBe('reveal:/w/proj/table.csv'));
+    } finally {
+      delete (window as unknown as { shibaoxDesktop?: unknown }).shibaoxDesktop;
+    }
+  });
+
+  it('previews a ragged CSV as a table, JSON pretty, HTML as code and says when there is no preview', async () => {
+    const { unmount } = render(
+      <FileSheet
+        inline={{ name: 'table.csv', content: 'a,b,c\n1,2\n3,4,5,6', lang: 'csv' }}
+        load={async () => {
+          throw new Error('x');
+        }}
+        onClose={() => {}}
+        onDownload={() => {}}
+        onDownloadInline={() => {}}
+      />,
+    );
+    expect(screen.getByRole('table')).toBeTruthy();
+    expect(screen.getByText(/uneven/i)).toBeTruthy();
+    unmount();
+    const json = render(
+      <FileSheet
+        inline={{ name: 'data.json', content: '{"a":1,"b":[1,2]}', lang: 'json' }}
+        load={async () => {
+          throw new Error('x');
+        }}
+        onClose={() => {}}
+        onDownload={() => {}}
+        onDownloadInline={() => {}}
+      />,
+    );
+    expect(json.container.querySelector('.sx-code')?.textContent).toContain('  "a": 1');
+    json.unmount();
+    const bin = render(
+      <FileSheet
+        runId="r1"
+        path="out/report.xlsx"
+        load={async () => ({
+          path: 'out/report.xlsx',
+          size: 10,
+          encoding: 'base64',
+          content: 'AAAA',
+          truncated: false,
+        })}
+        onClose={() => {}}
+        onDownload={() => {}}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText(/No preview for \.xlsx/)).toBeTruthy());
+    bin.unmount();
   });
 });

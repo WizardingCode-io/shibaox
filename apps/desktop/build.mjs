@@ -26,6 +26,17 @@ await build({
   sourcemap: true,
   logLevel: 'warning',
 });
+// the sandboxed preload is CommonJS (Electron loads it that way), electron stays external
+await build({
+  entryPoints: [join(here, 'src/preload.ts')],
+  bundle: true,
+  platform: 'node',
+  format: 'cjs',
+  target: 'node22',
+  external: ['electron'],
+  outfile: join(dist, 'preload.cjs'),
+  logLevel: 'warning',
+});
 const appDist = join(dirname(require.resolve('@wizardingcode/shibaox-app/package.json')), 'dist');
 if (!existsSync(join(appDist, 'index.html')))
   throw new Error(`the browser app is not built: ${appDist}`);

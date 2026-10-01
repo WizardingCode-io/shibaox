@@ -8,3 +8,4 @@ graphify-out/
 .idea/
 apps/desktop/release/
 apps/app/fidelity-out/
+.mcp.json

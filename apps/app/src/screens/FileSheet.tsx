@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { RunFileContent } from '../api/client.js';
+import { desktopBridge } from '../desktop.js';
 import { ds } from '../ds.js';
 import { numericColumns, parseCsv } from '../markdown/csv.js';
 import { highlight, languageOfFile } from '../markdown/highlight.js';
@@ -36,13 +37,16 @@ function Body(props: { file: RunFileContent; lang?: string }): JSX.Element {
       );
     return (
       <p className="muted">
-        A binary file ({f.mime ?? 'unknown type'}, {bytes(f.size)}
-        {f.truncated ? ', larger than the 2 MB shown here' : ''}): download it to open it.
+        No preview for .{ext || 'this kind'} ({f.mime ?? 'unknown type'}, {bytes(f.size)}
+        {f.truncated ? ', larger than the 2 MB shown here' : ''}): open it with the app that reads
+        it, or save it.
       </p>
     );
   }
-  if (ext === 'csv' || ext === 'tsv') {
-    const t = parseCsv(f.content, ext === 'tsv' ? '\t' : undefined);
+  if (ext === 'csv' || ext === 'tsv' || props.lang === 'csv' || props.lang === 'tsv') {
+    const t = parseCsv(f.content, ext === 'tsv' || props.lang === 'tsv' ? '\t' : undefined, {
+      loose: true,
+    });
     if (t) {
       const nums = numericColumns(t);
       return (
@@ -50,19 +54,33 @@ function Body(props: { file: RunFileContent; lang?: string }): JSX.Element {
           columns={t.header}
           rows={t.rows}
           align={nums.map((n) => (n ? 'right' : null))}
-          caption={`${t.rows.length} row${t.rows.length === 1 ? '' : 's'}${f.truncated ? ' · truncated' : ''}`}
+          caption={`${t.rows.length} row${t.rows.length === 1 ? '' : 's'}${t.ragged ? ' · uneven rows, shown as they are' : ''}${f.truncated ? ' · truncated' : ''}`}
         />
       );
     }
   }
-  if (ext === 'md' || ext === 'markdown') return <Markdown text={f.content} />;
+  if (ext === 'md' || ext === 'markdown' || props.lang === 'md' || props.lang === 'markdown')
+    return <Markdown text={f.content} />;
+  if (ext === 'json' || props.lang === 'json') {
+    let pretty = f.content;
+    try {
+      pretty = JSON.stringify(JSON.parse(f.content), null, 2);
+    } catch {
+      // not valid JSON: shown as written
+    }
+    return (
+      <S.CodeBlock language="json" code={pretty} filename={f.path.split('/').pop()}>
+        {highlight(pretty, 'json')}
+      </S.CodeBlock>
+    );
+  }
   const lang = languageOfFile(f.path) ?? props.lang;
   return (
     <S.CodeBlock
       language={lang ?? 'text'}
       code={f.content}
       filename={f.path.split('/').pop()}
-      wrap={!lang}
+      wrap={!lang || lang === 'text'}
     >
       {highlight(f.content, lang)}
     </S.CodeBlock>
@@ -148,10 +166,24 @@ export function FileSheet(props: {
     : file
       ? `${inline ? 'From the reply' : shownPath} · ${bytes(file.size)}${file.truncated ? ' · shown up to 2 MB' : ''}`
       : shownPath;
+  const desktop = desktopBridge();
+  const [busy, setBusy] = useState<string | undefined>(undefined);
   const download = () => {
     if (inline) props.onDownloadInline?.(inline.name, inline.content);
     else if (runId !== undefined && path !== undefined) props.onDownload(runId, path);
   };
+  // on the desktop: the app that reads the kind, and the native save dialog
+  const native = async (what: 'open' | 'saveAs') => {
+    if (!desktop || !file) return;
+    setBusy(what);
+    try {
+      if (what === 'open') await desktop.openWith(name, file.content, file.encoding);
+      else await desktop.saveAs(name, file.content, file.encoding);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+  const folder = props.save?.workspace.split('/').filter(Boolean).pop() ?? '';
   const doSave = async () => {
     if (!props.save || !inline || !savePath.trim()) return;
     setSaving(true);
@@ -190,7 +222,30 @@ export function FileSheet(props: {
               }}
             />
           ) : null}
-          <S.IconButton icon="download" label="Download" size="sm" onClick={download} />
+          {desktop ? (
+            <>
+              <S.Button
+                size="sm"
+                variant="secondary"
+                icon="external-link"
+                loading={busy === 'open'}
+                onClick={() => void native('open')}
+              >
+                Open
+              </S.Button>
+              <S.Button
+                size="sm"
+                variant="secondary"
+                icon="download"
+                loading={busy === 'saveAs'}
+                onClick={() => void native('saveAs')}
+              >
+                Save as…
+              </S.Button>
+            </>
+          ) : (
+            <S.IconButton icon="download" label="Download" size="sm" onClick={download} />
+          )}
         </>
       }
       footer={
@@ -204,7 +259,7 @@ export function FileSheet(props: {
           >
             <S.Input
               label="Save to project"
-              hint={saveError ?? `A path inside ${props.save.workspace}`}
+              hint={saveError ?? `A path in ${folder} (${props.save.workspace})`}
               error={saveError}
               value={savePath}
               onChange={(e) => setSavePath((e.target as HTMLInputElement).value)}
@@ -214,7 +269,19 @@ export function FileSheet(props: {
             </S.Button>
           </form>
         ) : saved ? (
-          <p className="muted">Saved. It is now a file of this conversation.</p>
+          <div className="row">
+            <p className="muted">Saved. It is now a file of this conversation.</p>
+            <span className="grow" />
+            {desktop && props.save ? (
+              <S.Button
+                size="sm"
+                variant="secondary"
+                onClick={() => void desktop.reveal(`${props.save?.workspace}/${saved}`)}
+              >
+                Reveal in Finder
+              </S.Button>
+            ) : null}
+          </div>
         ) : inline && props.saveNote ? (
           <p className="muted">{props.saveNote}</p>
         ) : undefined

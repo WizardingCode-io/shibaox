@@ -52,3 +52,22 @@ Verified in Playwright at 1180×700: the footer of Create routine is visible, th
   decisions with a link to each conversation. `shibaox doctor` gets a `decisions` line.
 - Each agent message shows the model that wrote it (muted, after the time): from the run's
   `usage` runtime event, else the run's chosen model, else nothing.
+
+## D. The side panel everywhere (added 2026-10-01, ships as 0.2.7)
+
+Andre: "este save tem que ser mais dinâmico e a side bar é mesmo para mostrar o exemplo… compatível com
+tudo: Chrome, CSV, Excel, md, txt, editor de código… o user tem que ver um preview."
+
+- **A preview for everything.** CSV/TSV as a table even when rows are ragged (`parseCsv` with
+  `loose`: short rows padded, long ones kept with extra columns; the caption says so), JSON pretty
+  and coloured, Markdown rendered, HTML/XML as coloured code, any code by extension or language,
+  plain text wrapped, images inline; anything else says "No preview for .xlsx" with the actions.
+- **The desktop app opens and saves natively.** A sandboxed preload exposes `window.shibaoxDesktop`
+  (`saveAs(name, content)`: the macOS save dialog, default ~/Downloads/<name>; `openWith(name,
+  content)`: writes to a temp folder and opens with the default app, Excel for .csv, the editor for
+  .js, the browser for .html; `reveal(path)`: shows a file in the Finder). The main process answers
+  only its own app's origin and never opens executable kinds (.command, .sh, .app, .pkg, .dmg, .jar,
+  .exe, .scpt…). In the browser the same actions are a download.
+- **The sheet's actions**: Copy · Open (desktop) · Save as… (desktop) / Download (browser) · Save to
+  project (a path inside the conversation's workspace, named by its folder) · Reveal in Finder once
+  saved (desktop).

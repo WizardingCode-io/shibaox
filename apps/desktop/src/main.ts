@@ -1,4 +1,4 @@
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startBridge } from '@wizardingcode/shibaox-bridge';
@@ -6,6 +6,7 @@ import {
   app,
   BrowserWindow,
   dialog,
+  ipcMain,
   Menu,
   session,
   shell,
@@ -13,6 +14,7 @@ import {
 } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { probeDaemon, startDaemonViaShell } from './daemon.js';
+import { openable, tempName } from './files.js';
 import { type BridgeHandle, type Launch, planLaunch, single } from './launch.js';
 import { homeRoot, readRemote, socketPath } from './paths.js';
 import { startUpdater, type Updater, type UpdateSource, type UpdateUi } from './updater.js';
@@ -115,7 +117,12 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     title: 'Shibaox',
     show: false,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: join(here, 'preload.cjs'),
+    },
   });
   w.once('ready-to-show', () => w.show());
   // links out of the app (a PR, the wiki) go to the browser; nothing else opens a window here
@@ -148,7 +155,9 @@ function createWindow(): BrowserWindow {
       if (current === undefined || w.webContents.getURL().includes('state=starting')) return;
       setTimeout(async () => {
         const marker = await w.webContents
-          .executeJavaScript('document.querySelector("aside") ? "shell" : "no-shell"')
+          .executeJavaScript(
+            '(document.querySelector("aside") ? "shell" : "no-shell") + " bridge=" + typeof window.shibaoxDesktop',
+          )
           .catch(() => 'error');
         console.log(`[shibaox] smoke: ${current?.kind} title=${w.getTitle()} ${marker}`);
         app.quit();
@@ -254,6 +263,56 @@ function installMenu(u: Updater): void {
   );
 }
 
+/**
+ * What the app may ask the desktop for (through the preload): the save dialog, "open with the
+ * app that reads it", the Finder. Only the app's own origin is answered, and kinds that would
+ * run instead of opening are refused: a daemon's page never gets to launch anything.
+ */
+function installFileBridge(): void {
+  const fromApp = (event: Electron.IpcMainInvokeEvent): boolean => {
+    const url = event.senderFrame?.url ?? '';
+    return (
+      current?.url !== undefined &&
+      url !== '' &&
+      new URL(url).origin === new URL(current.url).origin
+    );
+  };
+  type Payload = { name?: unknown; content?: unknown; encoding?: unknown; path?: unknown };
+  const text = (p: Payload) => {
+    const name = typeof p.name === 'string' ? tempName(p.name) : 'file.txt';
+    const content = typeof p.content === 'string' ? p.content : '';
+    const data =
+      p.encoding === 'base64' ? Buffer.from(content, 'base64') : Buffer.from(content, 'utf8');
+    return { name, data };
+  };
+  ipcMain.handle('shibaox:saveAs', async (event, raw: Payload) => {
+    if (!fromApp(event)) return undefined;
+    const { name, data } = text(raw);
+    const w = win && !win.isDestroyed() ? win : undefined;
+    const options = { defaultPath: join(app.getPath('downloads'), name) };
+    const r = w ? await dialog.showSaveDialog(w, options) : await dialog.showSaveDialog(options);
+    if (r.canceled || !r.filePath) return undefined;
+    writeFileSync(r.filePath, data);
+    return r.filePath;
+  });
+  ipcMain.handle('shibaox:openWith', async (event, raw: Payload) => {
+    if (!fromApp(event)) return false;
+    const { name, data } = text(raw);
+    if (!openable(name)) return false;
+    const dir = join(app.getPath('temp'), 'shibaox-open', String(Date.now()));
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, name);
+    writeFileSync(file, data);
+    const err = await shell.openPath(file);
+    if (err) log(`open with: ${err}`);
+    return err === '';
+  });
+  ipcMain.handle('shibaox:reveal', async (event, raw: Payload) => {
+    if (!fromApp(event) || typeof raw.path !== 'string') return;
+    shell.showItemInFolder(raw.path);
+  });
+}
+
 // Electron reports a failed load as a process warning that carries the whole address, token
 // included: the default printer goes, one that strips fragments takes its place.
 process.removeAllListeners('warning');
@@ -279,6 +338,7 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionCheckHandler(() => false);
     updater = startUpdates();
     installMenu(updater);
+    installFileBridge();
     win = createWindow();
     void show();
     app.on('activate', () => {
