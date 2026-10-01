@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadDaemonConfig } from '../src/config.js';
+import { HIGGSFIELD_MODES, loadDaemonConfig, writeDaemonConfig } from '../src/config.js';
 import { homePaths } from '../src/home.js';
 
 let dir: string;
@@ -98,5 +98,49 @@ describe('paths in daemon.yaml', () => {
       token_env: 'MY_TOKEN',
       tls: { cert: join(dir, 'c.pem'), key: join(dir, 'k.pem') },
     });
+  });
+});
+
+describe('partners.higgsfield.mode and the daemon.yaml writer', () => {
+  it('a missing file means auto; a bogus mode is refused', () => {
+    dir = mkdtempSync(join(tmpdir(), 'shx-home-'));
+    const p = join(dir, 'daemon.yaml');
+    expect(loadDaemonConfig(p).partners.higgsfield.mode).toBe('auto');
+    writeFileSync(p, 'partners: {}\n');
+    expect(loadDaemonConfig(p).partners.higgsfield.mode).toBe('auto');
+    writeFileSync(p, 'partners:\n  higgsfield: { signup_url: "https://x.y" }\n');
+    expect(loadDaemonConfig(p).partners.higgsfield.mode).toBe('auto');
+    writeFileSync(p, 'partners:\n  higgsfield: { mode: bogus }\n');
+    expect(() => loadDaemonConfig(p)).toThrow(/mode/);
+  });
+
+  it('writes the mode keeping comments and the listen block; creates a missing file', () => {
+    dir = mkdtempSync(join(tmpdir(), 'shx-home-'));
+    const p = join(dir, 'daemon.yaml');
+    writeFileSync(p, '# my daemon\nlisten: { port: 8443 } # remote\nmax_concurrent_runs: 3\n');
+    const c = writeDaemonConfig(p, { higgsfieldMode: 'api' });
+    expect(c.partners.higgsfield.mode).toBe('api');
+    expect(c.listen?.port).toBe(8443);
+    const text = readFileSync(p, 'utf8');
+    expect(text).toContain('# my daemon');
+    expect(text).toContain('# remote');
+    expect(loadDaemonConfig(p)).toMatchObject({
+      max_concurrent_runs: 3,
+      partners: { higgsfield: { mode: 'api' } },
+    });
+    const fresh = join(dir, 'sub', 'daemon.yaml');
+    expect(writeDaemonConfig(fresh, { higgsfieldMode: 'account' }).partners.higgsfield.mode).toBe(
+      'account',
+    );
+    expect(existsSync(fresh)).toBe(true);
+  });
+
+  it('refuses an invalid mode without touching the file', () => {
+    dir = mkdtempSync(join(tmpdir(), 'shx-home-'));
+    const p = join(dir, 'daemon.yaml');
+    writeFileSync(p, '# keep\nmax_concurrent_runs: 3\n');
+    expect(() => writeDaemonConfig(p, { higgsfieldMode: 'x' as never })).toThrow(/mode/);
+    expect(readFileSync(p, 'utf8')).toBe('# keep\nmax_concurrent_runs: 3\n');
+    expect(HIGGSFIELD_MODES).toEqual(['auto', 'account', 'api']);
   });
 });

@@ -1,7 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { parse } from 'yaml';
 import { z } from 'zod';
+import { readDoc, writeAtomic } from './yaml-file.js';
 
 /** A second, network listener next to the Unix socket: same API, bearer token required. */
 export const ListenSchema = z.object({
@@ -17,14 +18,25 @@ export type ListenConfig = z.infer<typeof ListenSchema>;
 /** Where "Create an account" sends people without a Higgsfield account (the maintainer's affiliate link). */
 export const HIGGSFIELD_SIGNUP_URL = 'https://higgsfield.ai?fpr=andre-4fae29';
 
-/** Where Shibaox sends people who need an account with a partner (an affiliate link). */
+/**
+ * How Higgsfield generates: `account` (the CLI login, plan credits, the remote MCP), `api` (a
+ * developer key from open.higgsfield.ai, REST through the daemon's tools) or `auto` (the API when
+ * a key is saved, else the account).
+ */
+export const HIGGSFIELD_MODES = ['auto', 'account', 'api'] as const;
+export type HiggsfieldMode = (typeof HIGGSFIELD_MODES)[number];
+
+/** Where Shibaox sends people who need an account with a partner (an affiliate link), and how Higgsfield is used. */
 export const PartnersSchema = z
   .object({
     higgsfield: z
-      .object({ signup_url: z.string().url().default(HIGGSFIELD_SIGNUP_URL) })
-      .default({ signup_url: HIGGSFIELD_SIGNUP_URL }),
+      .object({
+        signup_url: z.string().url().default(HIGGSFIELD_SIGNUP_URL),
+        mode: z.enum(HIGGSFIELD_MODES).default('auto'),
+      })
+      .default({ signup_url: HIGGSFIELD_SIGNUP_URL, mode: 'auto' }),
   })
-  .default({ higgsfield: { signup_url: HIGGSFIELD_SIGNUP_URL } });
+  .default({ higgsfield: { signup_url: HIGGSFIELD_SIGNUP_URL, mode: 'auto' } });
 
 export const DaemonConfigSchema = z.object({
   partners: PartnersSchema,
@@ -80,4 +92,32 @@ export function loadDaemonConfig(path: string): DaemonConfig {
     r.data.listen.tls.key = resolve(here, r.data.listen.tls.key);
   }
   return r.data;
+}
+
+/** What the daemon itself changes in `daemon.yaml` (everything else is the user's to edit). */
+export interface DaemonConfigPatch {
+  higgsfieldMode?: HiggsfieldMode;
+}
+
+/**
+ * Applies `patch` to `daemon.yaml`, keeping comments and every other key; the patched document
+ * is checked before anything touches the disk, so a refused change leaves the file as it was.
+ */
+export function writeDaemonConfig(path: string, patch: DaemonConfigPatch): DaemonConfig {
+  const doc = readDoc(path);
+  if (patch.higgsfieldMode !== undefined) {
+    if (!(HIGGSFIELD_MODES as readonly string[]).includes(patch.higgsfieldMode))
+      throw new Error(
+        `partners.higgsfield.mode must be one of ${HIGGSFIELD_MODES.join(', ')} (got "${String(patch.higgsfieldMode)}")`,
+      );
+    doc.setIn(['partners', 'higgsfield', 'mode'], patch.higgsfieldMode);
+  }
+  const r = DaemonConfigSchema.safeParse(doc.toJS() ?? {});
+  if (!r.success)
+    throw new Error(
+      `invalid daemon config ${path}: ${r.error.issues.map((i) => `${i.path.join('.')} ${i.message}`).join('; ')}`,
+    );
+  mkdirSync(dirname(resolve(path)), { recursive: true });
+  writeAtomic(path, doc.toString());
+  return loadDaemonConfig(path);
 }

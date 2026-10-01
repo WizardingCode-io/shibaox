@@ -1,7 +1,6 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadOrg, ModelsSchema, OrgFileSchema } from '@wizardingcode/shibaox-schemas';
-import { parseDocument } from 'yaml';
+import { type Doc, readDoc, writeAtomic } from './yaml-file.js';
 
 export type TierName = 'strong' | 'cheap' | 'decision';
 export const TIER_NAMES: TierName[] = ['strong', 'cheap', 'decision'];
@@ -115,21 +114,13 @@ function validate(patch: OrgConfigPatch): void {
     throw new Error('budget (per_run_usd) must be a positive number');
 }
 
-type Doc = ReturnType<typeof parseDocument>;
-/** A YAML file as a document (comments kept); an empty one when the file does not exist. */
-export const readDoc = (path: string): Doc =>
-  parseDocument(existsSync(path) ? readFileSync(path, 'utf8') : '');
+export { readDoc, writeAtomic };
+
 const setOrDelete = (doc: Doc, path: string[], v: string | number | null | undefined) => {
   if (v === undefined) return;
   if (v === null) {
     if (doc.hasIn(path)) doc.deleteIn(path);
   } else doc.setIn(path, v);
-};
-/** The file is replaced in one step: a run loading the org never sees a half-written file. */
-export const writeAtomic = (path: string, text: string) => {
-  const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, text);
-  renameSync(tmp, path);
 };
 
 /**
