@@ -302,7 +302,7 @@ describe('the sections', () => {
     );
   });
   it('Integrations: Higgsfield shows the account, the credits and the way in', async () => {
-    const { client: c } = client();
+    const { client: c, calls } = client();
     mount(c, { hash: '#/integrations' });
     await waitFor(() => expect(screen.getByText('Higgsfield')).toBeTruthy());
     expect(screen.getByText(/3\.5 credits/)).toBeTruthy();
@@ -312,6 +312,11 @@ describe('the sections', () => {
       'https://higgsfield.ai?fpr=andre-4fae29',
     );
     expect(screen.queryByRole('button', { name: 'Log in' })).toBeNull();
+    expect(screen.getByText(/affiliate link/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    await waitFor(() =>
+      expect(calls.filter((x) => x.name === 'higgsfield').length).toBeGreaterThan(1),
+    );
   });
   it('Integrations: Decisions says who decides and lists the latest ones', async () => {
     const { client: c } = client();

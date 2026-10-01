@@ -312,3 +312,19 @@ a.decision {
 a.decision:hover {
   background: var(--surface-hover);
 }
+
+/* an image of the run shown inline in a reply: click opens it in the panel */
+.inline-image {
+  display: block;
+  border: 0;
+  padding: 0;
+  margin: var(--space-2) 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+.inline-image img {
+  max-width: 100%;
+  max-height: 420px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+}

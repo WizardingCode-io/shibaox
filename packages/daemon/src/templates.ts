@@ -52,7 +52,7 @@ system_prompt: prompts/team-leader.md
 description: The orchestrator you talk to; it answers, acts, and dispatches the teams.
 model_tier: cheap
 capabilities: [orchestrate, memory]
-tools: [read, write, git, node, npm, pnpm, bun, python3, higgsfield, curl]
+tools: [read, write, git, node, npm, pnpm, bun, python3, higgsfield]
 # Higgsfield's tools (images, video, audio) and the skill that says how to use them
 mcp: [higgsfield]
 skills: [higgsfield]
@@ -224,17 +224,15 @@ server:
     - generate_audio_batch
     - generate_3d
     - jobs_wait
-    - job_status
+    - show_generation_by_ids
+    - show_generations
     - media_import_url
-    - media_upload
-    - show_medias
     - get_presets
     - execute_preset
     - list_voices
-    - show_generations
     - reframe
     - voice_change
-  timeout_ms: 120000
+  timeout_ms: 180000
 `,
   'org/skills/higgsfield/SKILL.md': `---
 name: higgsfield
@@ -245,39 +243,45 @@ description: Generate images, video, audio and 3D with Higgsfield and hand them 
 
 You can generate images, video, audio and 3D assets: never say you cannot. Higgsfield is
 reached through its tools (\`higgsfield__…\`, when the role lists the server) or through the
-\`higgsfield\` command. Credits are spent on the user's Higgsfield account; say what a job
-cost when the tool reports it.
+\`higgsfield\` command. Credits are real money on the user's Higgsfield account: one request per
+asked-for result, the cost said afterwards, never a retry on your own.
 
 ## Flow
 
-1. Pick the model. Defaults: images \`gpt_image_2_5\` (design, text, realism), cartoons and
-   illustration \`nano_banana_flash\`, video \`seedance_2_5\` (image-to-video too: pass the
-   reference as a media), audio \`seed_audio\`. Cheaper on request: \`nano_banana_2_lite\`,
-   \`kling3_0_turbo\`. When unsure, \`models_explore\` with \`action: recommend\`, the goal and the
-   input kind (text-only, reference image, image-to-video).
-2. Submit with the headless tools: \`generate_image_batch\` / \`generate_video_batch\` /
+1. Pick the model without exploring: images \`gpt_image_2_5\` (0.25 credits; design, text,
+   realism), cartoons and illustration \`nano_banana_flash\`, video \`seedance_2_5\` (image-to-video
+   too), audio \`seed_audio\`. Cheaper on request: \`nano_banana_2_lite\`, \`kling3_0_turbo\`. Use
+   \`models_explore\` only when the user names a model or asks for something those do not do
+   (\`action: get\` with \`model_id\` shows a model's parameters and media roles).
+2. Video and 3D cost many credits: before the first one in a conversation, say the model and
+   that it costs credits, and ask once unless the user already said to go ahead.
+3. Submit once with the headless tools: \`generate_image_batch\` / \`generate_video_batch\` /
    \`generate_audio_batch\` with \`requests: [{ index: 0, params: { model, prompt, aspect_ratio? } }]\`
-   (count stays 1; one request per generation). Reference media: a local file goes through
-   \`media_upload\`, a web URL through \`media_import_url\`; pass the returned media id in
-   \`medias\`, never a URL.
-3. Wait with \`jobs_wait\` (\`jobs: [{ index, job_id }]\`, up to 15 s per call; call again while
-   a job is still running; a video can take minutes).
-4. Save every result into the workspace with \`download_file(url, path)\`: \`outputs/<slug>.png\`
-   (\`.mp4\`, \`.mp3\`, \`.glb\`), a short slug from the prompt, \`-2\`, \`-3\` for variants. The file
-   shows in the conversation with a preview.
-5. Answer in one or two lines: what was generated, the file path, the model, the cost. No
-   raw ids, no JSON.
+   (one request per generation; \`count\` stays 1). A reference from the web: \`media_import_url\`
+   first, then \`medias: [{ value: <media_id>, role: <the role the model declares> }]\`; never a URL
+   in \`medias\`. A local file cannot be sent yet: say so and ask for a URL.
+   If the answer carries \`unlim_choice\` instead of jobs, nothing was submitted: ask the user
+   which option they want, then submit once.
+4. Wait with \`jobs_wait\` (\`jobs: [{ index, job_id }]\`, up to 15 s each call). Call it again
+   while a job runs, at most 12 times; then give the job id and stop. If a submit timed out or
+   you are not sure a job was created, look at \`show_generations\` first: never submit again.
+5. Save every result into the workspace with \`download_file(url, path)\`: \`outputs/<slug>.png\`
+   (\`.mp4\`, \`.mp3\`, \`.glb\`), a short slug from the prompt, \`-2\`, \`-3\` for variants. The file shows
+   in the conversation with a preview.
+6. Answer in one or two lines: what was generated, the file path, the model, the credits spent.
+   No raw ids, no JSON.
 
-With the command instead (\`higgsfield generate create <model> --prompt "…" --wait --json\`),
-read the result URL from the JSON and save it the same way; \`higgsfield model list --json\`
-lists models, \`higgsfield generate cost <model> --prompt "…"\` estimates credits.
+With the command instead (\`higgsfield generate create <model> --prompt "…" --wait --json\`), read
+the result URL from the JSON and save it the same way; \`higgsfield model list --json\` lists
+models, \`higgsfield generate cost <model> --prompt "…"\` estimates credits.
 
 ## When it fails
 
-- Not signed in (401, "Not authenticated", "Session expired"): tell the user to open
-  Integrations → Higgsfield and press Log in (or run \`higgsfield auth login\`), then retry.
-- No credits: say so and give the account link; do not retry.
-- A model rejects a parameter: check \`models_explore\` with \`action: get\` and resubmit once.
+- The tools are off this turn, 401, "Not authenticated": tell the user to open Integrations →
+  Higgsfield and press Log in (or run \`higgsfield auth login\`), then try again later.
+- No credits: say so and point to the account; do not retry.
+- A model rejects a parameter: read its parameters with \`models_explore\` (\`action: get\`) and
+  submit once more, corrected; a second rejection ends it, with the message to the user.
 `,
   'org/catalog/playwright.yaml': `id: playwright
 type: mcp

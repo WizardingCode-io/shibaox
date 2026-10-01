@@ -78,6 +78,7 @@ describe('GET /integrations/higgsfield', () => {
     const c = await daemon({
       exec: async () => ({ exitCode: 127, stdout: '', stderr: 'not found' }),
       mcp: async () => 'unreachable',
+      login: async () => ({ started: true }),
     });
     const v = await c.higgsfield();
     expect(v).toMatchObject({ cli: { installed: false }, loggedIn: false, mcp: 'unreachable' });
@@ -102,6 +103,10 @@ describe('GET /integrations/higgsfield', () => {
         return { exitCode: 1, stdout: '', stderr: 'unknown' };
       },
       mcp: async (token) => (token === 'oat_x' ? 'ok' : 'unauthorized'),
+      login: async () => {
+        calls.push(['higgsfield', 'auth', 'login']);
+        return { started: true };
+      },
     });
     const v = await c.higgsfield();
     expect(v).toMatchObject({
@@ -113,5 +118,64 @@ describe('GET /integrations/higgsfield', () => {
     const r = await c.higgsfieldLogin();
     expect(r).toMatchObject({ started: true });
     expect(calls.some((a) => a[1] === 'auth' && a[2] === 'login')).toBe(true);
+  });
+
+  it('a not-logged-in answer is not cached: the next read probes again', async () => {
+    let calls = 0;
+    const c = await daemon({
+      exec: async (argv) => {
+        if (argv[1] === 'version')
+          return { exitCode: 0, stdout: 'higgsfield 1.1.26\n', stderr: '' };
+        calls++;
+        return { exitCode: 1, stdout: '', stderr: 'Not authenticated' };
+      },
+      mcp: async () => 'unreachable',
+      login: async () => ({ started: true }),
+    });
+    await c.higgsfield();
+    await c.higgsfield();
+    expect(calls).toBeGreaterThanOrEqual(2);
+  });
+  it('the login endpoint answers a loopback client of the network listener, and returns what the CLI printed', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hf-listen-'));
+    tmp.push(dir);
+    scaffoldOrg(dir);
+    const home = homePaths({ SHIBAOX_HOME: join(dir, 'home') });
+    const d = new Daemon({
+      discovery: false,
+      home,
+      store: new MemoryEventStore(),
+      channels: [],
+      env: { SHIBAOX_DAEMON_TOKEN: 'secret-1' },
+      log: () => {},
+      version: '9.9.9',
+      vault: join(dir, 'vault'),
+      config: {
+        max_concurrent_runs: 2,
+        approval_timeout_minutes: 1,
+        channels: { macos: { enabled: false } },
+        projects: [],
+        listen: { host: '127.0.0.1', port: 0, token_env: 'SHIBAOX_DAEMON_TOKEN' },
+      } as never,
+      higgsfield: {
+        exec: async (argv) =>
+          argv[1] === 'version'
+            ? { exitCode: 0, stdout: 'higgsfield 1.1.26\n', stderr: '' }
+            : { exitCode: 1, stdout: '', stderr: 'Not authenticated' },
+        mcp: async () => 'unreachable',
+        login: async () => ({ started: true, url: 'https://higgsfield.ai/device?code=ABCD' }),
+      },
+    });
+    daemons.push(d);
+    await d.start();
+    const addr = d.listenAddress();
+    const remote = new DaemonClient({
+      baseUrl: `http://127.0.0.1:${addr?.port}`,
+      token: 'secret-1',
+    });
+    await expect(remote.higgsfieldLogin()).resolves.toMatchObject({
+      started: true,
+      url: 'https://higgsfield.ai/device?code=ABCD',
+    });
   });
 });

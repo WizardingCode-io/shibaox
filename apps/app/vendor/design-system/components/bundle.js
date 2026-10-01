@@ -334,6 +334,7 @@
       var enabled = []; items.forEach(function (it, i) { if (!it.disabled && it.id !== '-') enabled.push(i); });
       if (!enabled.length) return;
       touched.current = true;
+      if ((e.key === 'Enter' || e.key === ' ') && (active < 0 || !items[active] || items[active].disabled) && p.search) { e.preventDefault(); select(items[enabled[0]]); return; }
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         var i = enabled.indexOf(active), d = e.key === 'ArrowDown' ? 1 : -1;
@@ -342,7 +343,7 @@
     }
     return h('div', { className: cx('sx-menu', p.className), role: 'menu', tabIndex: -1, onKeyDown: onKey, 'aria-label': p.label },
       p.title ? h('div', { className: 'sx-menu__title' }, p.title) : null,
-      p.search ? h('div', { className: 'sx-menu__search' }, h(Icon, { name: 'search', size: 14 }), h('input', { type: 'search', className: 'sx-menu__input', placeholder: typeof p.search === 'string' ? p.search : 'Search…', 'aria-label': typeof p.search === 'string' ? p.search : 'Search', value: query, autoFocus: true, onChange: function (e) { q[1](e.target.value); touched.current = true; s[1](-1); }, onKeyDown: function (e) { if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') { onKey(e); } else { e.stopPropagation(); } } })) : null,
+      p.search ? h('div', { className: 'sx-menu__search' }, h(Icon, { name: 'search', size: 14 }), h('input', { type: 'search', className: 'sx-menu__input', placeholder: typeof p.search === 'string' ? p.search : 'Search…', 'aria-label': typeof p.search === 'string' ? p.search : 'Search', value: query, autoFocus: true, onChange: function (e) { q[1](e.target.value); touched.current = true; s[1](0); }, onKeyDown: function (e) { if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') { onKey(e); } else if (e.key !== 'Escape') { e.stopPropagation(); } } })) : null,
       p.search && items.length === 0 ? h('div', { className: 'sx-menu__empty' }, 'Nothing matches') : null,
       items.map(function (it, i) {
         if (it.id === '-') return h('div', { key: 'sep' + i, className: 'sx-menu__sep', role: 'separator' });

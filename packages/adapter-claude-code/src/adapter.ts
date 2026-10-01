@@ -5,6 +5,8 @@ import {
   type AgentTool,
   type ApprovalHandler,
   augmentPath,
+  BearerError,
+  bearerEnv,
   type Capability,
   conversationOf,
   type ExecutionContext,
@@ -90,6 +92,7 @@ export function buildSubprocessEnv(
     if (v !== undefined && (ENV_KEYS.includes(k) || ENV_PREFIXES.some((p) => k.startsWith(p))))
       env[k] = v;
   const out: Record<string, string> = { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: 'shibaox', ...extra };
+  out.PATH = augmentPath(out.PATH, out.HOME ?? source.HOME);
   if (opts.subscription) for (const k of API_KEY_VARS) delete out[k];
   return out;
 }
@@ -143,19 +146,31 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
 
     const { allowedTools, disallowedTools } = mapRoleTools(job.role);
     const extra = this.opts.extraTools?.(job) ?? [];
-    // http servers with a bearer command get their token now (a CLI's login stands in for a key)
-    const specs = await Promise.all(
-      (this.opts.mcpSpecs?.(job) ?? []).map((s) =>
-        withBearer(s, (argv) =>
-          runArgv({
-            argv,
-            cwd: job.workspace,
-            timeoutMs: 20_000,
-            env: { PATH: augmentPath(process.env.PATH, process.env.HOME) },
-          }),
-        ),
-      ),
-    );
+    // http servers with a bearer command get their token now (a CLI's login stands in for a
+    // key); one whose command fails is left out with a note, the task goes on
+    const specs: McpServerSpec[] = [];
+    const notes: string[] = [];
+    for (const s of this.opts.mcpSpecs?.(job) ?? [])
+      try {
+        specs.push(
+          await withBearer(s, (argv) =>
+            runArgv({
+              argv,
+              cwd: job.workspace,
+              timeoutMs: 20_000,
+              inheritEnv: false,
+              env: bearerEnv(),
+            }),
+          ),
+        );
+      } catch (e) {
+        if (!(e instanceof BearerError)) throw e;
+        ctx.log(`[claude-code] ${e.message}`);
+        notes.push(
+          `[note] mcp server "${e.serverId}" is not signed in (${e.message.split(': ').pop()}): its tools are off this turn.`,
+        );
+      }
+    for (const note of notes) yield { type: 'text', text: `${note}\n` };
     const own: McpServers = {
       ...this.opts.mcpServers?.(job),
       ...(extra.length > 0 ? { shibaox: sdkMcpServer('shibaox', extra) } : {}),

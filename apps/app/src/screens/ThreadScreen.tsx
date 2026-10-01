@@ -7,7 +7,8 @@ import {
   summarizeInput,
   type ThreadMessage,
 } from '@wizardingcode/shibaox-view';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { RunFileContent } from '../api/client.js';
 import { ds } from '../ds.js';
 import { clock, duration, RUN_STATUS_TONE, RUN_STATUS_WORD, shortModel } from '../format.js';
 import { useFollowScroll } from '../hooks/follow-scroll.js';
@@ -76,10 +77,42 @@ function ToolBlock(props: { block: Extract<Block, { kind: 'tool' }> }): JSX.Elem
 }
 
 /** The agent's turn as it happened: text as a document, tool calls and files in between. */
+/** A file of the run referred to as an image in the reply: shown inline once loaded. */
+function RunImage(props: {
+  runId: string;
+  path: string;
+  alt: string;
+  load: (runId: string, path: string) => Promise<RunFileContent>;
+  onOpen: () => void;
+}): JSX.Element {
+  const [src, setSrc] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    props
+      .load(props.runId, props.path)
+      .then((f) => {
+        if (live && f.encoding === 'base64' && f.mime?.startsWith('image/') && !f.truncated)
+          setSrc(`data:${f.mime};base64,${f.content}`);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [props.load, props.runId, props.path]);
+  if (!src) return <span className="muted">{props.alt || props.path}</span>;
+  return (
+    <button type="button" className="inline-image" onClick={props.onOpen} title={props.path}>
+      <img src={src} alt={props.alt || props.path} />
+    </button>
+  );
+}
+
 function Parts(props: {
   parts: MessagePart[];
   onFile: (path: string) => void;
   onOpenCode: (code: CodeOpen) => void;
+  /** Renders a Markdown image whose path is a file of the run. */
+  renderImage?: (path: string, alt: string) => ReactNode;
   /** The turn is still streaming: its last text part is treated as unfinished. */
   pending?: boolean;
   /** The run's workspace: absolute paths it reported are shown relative to it. */
@@ -97,6 +130,7 @@ function Parts(props: {
               text={p.text}
               pending={props.pending && i === all.length - 1}
               onOpenCode={props.onOpenCode}
+              renderImage={props.renderImage}
             />
           ) : p.kind === 'tool' ? (
             <ToolBlock key={p.key} block={p} />
@@ -193,6 +227,7 @@ function ChatTab(props: {
   inbox: InboxItem[];
   onFile: (runId: string, path: string) => void;
   onOpenCode: (code: CodeOpen) => void;
+  loadFile: (runId: string, path: string) => Promise<RunFileContent>;
   /** The run still streaming, if any. */
   live?: string;
 }): JSX.Element {
@@ -230,6 +265,15 @@ function ChatTab(props: {
                     workspace={state.states[m.runId]?.workspace}
                     onFile={(path) => props.onFile(m.runId, path)}
                     onOpenCode={props.onOpenCode}
+                    renderImage={(path, alt) => (
+                      <RunImage
+                        runId={m.runId}
+                        path={path}
+                        alt={alt}
+                        load={props.loadFile}
+                        onOpen={() => props.onFile(m.runId, path)}
+                      />
+                    )}
                   />
                 </S.Message>
               )}
@@ -663,6 +707,7 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
     () => /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/.test(location.origin),
     [],
   );
+  const loadWhole = useCallback((id: string, p: string) => store.loadWhole(id, p), [store]);
   const openCode = useCallback(
     (code: CodeOpen) =>
       setFile({ inline: { name: code.name, content: code.text, lang: code.lang } }),
@@ -705,6 +750,7 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
           live={live?.runId}
           onFile={(runId, path) => setFile({ runId, path })}
           onOpenCode={openCode}
+          loadFile={loadFile}
         />
       ) : null}
       {file ? (
@@ -716,7 +762,7 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
           }
           {...('inline' in file ? { inline: file.inline } : { runId: file.runId, path: file.path })}
           save={saveTarget}
-          loadWhole={(id, p) => store.loadWhole(id, p)}
+          loadWhole={loadWhole}
           localDaemon={localDaemon}
           saveNote={
             saveTarget ? undefined : 'Save to project comes back once the turn has finished.'

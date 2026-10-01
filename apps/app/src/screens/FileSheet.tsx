@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RunFileContent } from '../api/client.js';
 import { blobToBase64, desktopBridge } from '../desktop.js';
 import { ds } from '../ds.js';
@@ -25,15 +25,22 @@ const VIDEO = new Set(['mp4', 'webm', 'mov', 'm4v']);
 const AUDIO = new Set(['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac']);
 
 /** A video or audio file played from the whole download (a Blob URL, never the token). */
-function Media(props: { kind: 'video' | 'audio'; load: () => Promise<Blob> }): JSX.Element {
+function Media(props: {
+  kind: 'video' | 'audio';
+  /** Identifies the file: the load runs once per file, not per parent render. */
+  id: string;
+  load: () => Promise<Blob>;
+}): JSX.Element {
   const S = ds();
   const [url, setUrl] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
+  const loadRef = useRef(props.load);
+  loadRef.current = props.load;
   useEffect(() => {
     let live = true;
     let made: string | undefined;
-    props
-      .load()
+    loadRef
+      .current()
       .then((b) => {
         if (!live) return;
         made = URL.createObjectURL(b);
@@ -46,7 +53,7 @@ function Media(props: { kind: 'video' | 'audio'; load: () => Promise<Blob> }): J
       live = false;
       if (made) URL.revokeObjectURL(made);
     };
-  }, [props.load]);
+  }, [props.id]);
   if (error) return <p className="muted">{error}</p>;
   if (!url) return <S.ThinkingIndicator label="Fetching" />;
   return props.kind === 'video' ? (
@@ -68,7 +75,7 @@ function Body(props: {
   const f = props.file;
   const ext = f.path.split('.').pop()?.toLowerCase() ?? '';
   if (props.loadWhole && (VIDEO.has(ext) || AUDIO.has(ext)))
-    return <Media kind={VIDEO.has(ext) ? 'video' : 'audio'} load={props.loadWhole} />;
+    return <Media kind={VIDEO.has(ext) ? 'video' : 'audio'} id={f.path} load={props.loadWhole} />;
   if (f.encoding === 'base64') {
     if (f.mime?.startsWith('image/') && !f.truncated)
       return (

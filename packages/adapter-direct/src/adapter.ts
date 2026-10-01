@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import {
   type AgentTool,
   type ApprovalHandler,
+  BearerError,
   type Capability,
   conversationOf,
   type ExecutionContext,
@@ -164,7 +165,19 @@ export class DirectAdapter implements RuntimeAdapter {
         specs.map((s) => connectMcp(s, { log: ctx.log, cwd: job.workspace })),
       );
       for (const s of settled) if (s.status === 'fulfilled') connections.push(s.value);
-      const failed = settled.find((s) => s.status === 'rejected');
+      // a server whose bearer command failed (not signed in, the CLI missing) is skipped with a
+      // note the model sees; any other failure to start is the task's error
+      for (const s of settled)
+        if (s.status === 'rejected' && s.reason instanceof BearerError) {
+          ctx.log(`[direct] ${s.reason.message}`);
+          yield {
+            type: 'text',
+            text: `[note] mcp server "${s.reason.serverId}" is not signed in (${s.reason.message.split(': ').pop()}): its tools are off this turn.\n`,
+          };
+        }
+      const failed = settled.find(
+        (s) => s.status === 'rejected' && !(s.reason instanceof BearerError),
+      );
       if (failed && failed.status === 'rejected') {
         yield { type: 'error', message: describeError(failed.reason) };
         return;

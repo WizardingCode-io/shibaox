@@ -159,3 +159,5 @@ partners:
   higgsfield:
     signup_url: https://higgsfield.ai?fpr=andre-4fae29   # where "Create an account" sends people
 ```
+
+The default is the maintainer's affiliate link (the app says so next to the button; you pay the same). An org created before 0.2.8 has no `catalog/higgsfield.yaml` nor `skills/higgsfield/`: run `shibaox init` in the org's parent directory to add the missing files (existing ones are kept), then add `mcp: [higgsfield]`, `skills: [higgsfield]` and `higgsfield` under `tools` to `roles/assistant.yaml`.

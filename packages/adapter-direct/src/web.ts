@@ -92,18 +92,20 @@ export async function fetchText(raw: string, o: FetchTextOptions): Promise<Fetch
  */
 export async function fetchBytes(
   raw: string,
-  o: { timeoutMs: number; maxBytes: number; allow: readonly string[] },
+  o: { timeoutMs: number; maxBytes: number; allow: readonly string[]; allowHttp?: boolean },
 ): Promise<{ bytes: Buffer; mime?: string }> {
   let url = checkUrl(raw, o.allow);
-  if (url.protocol !== 'https:' && !/^(127\.0\.0\.1|localhost|\[::1\])$/.test(url.hostname))
-    throw new Error('download_file takes https URLs only');
   for (let hop = 0; ; hop++) {
+    // every hop, not only the first: a redirect never leads to plain http (or a metadata host)
+    if (url.protocol !== 'https:' && !o.allowHttp)
+      throw new Error('download_file takes https URLs only');
     const res = await fetch(url, {
       redirect: 'manual',
       signal: AbortSignal.timeout(o.timeoutMs),
       headers: { 'user-agent': 'shibaox', accept: '*/*' },
     });
     if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+      await res.body?.cancel().catch(() => undefined);
       if (hop >= 5) throw new Error('too many redirects');
       url = checkUrl(new URL(res.headers.get('location') ?? '', url).href, o.allow);
       continue;

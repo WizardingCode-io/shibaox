@@ -5,7 +5,7 @@ import {
 } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {
-  augmentPath,
+  bearerEnv,
   expandHeaders,
   type McpServerSpec,
   runArgv,
@@ -45,7 +45,8 @@ export async function connectMcp(
       argv,
       cwd: o.cwd ?? process.cwd(),
       timeoutMs: 20_000,
-      env: { PATH: augmentPath(process.env.PATH, process.env.HOME) },
+      inheritEnv: false,
+      env: bearerEnv(),
     }),
   );
   const client = new Client({ name: 'shibaox', version: '0' });

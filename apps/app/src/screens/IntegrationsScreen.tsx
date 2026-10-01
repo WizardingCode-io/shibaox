@@ -122,6 +122,7 @@ function Higgsfield(props: { view: HiggsfieldView }): JSX.Element {
   const store = useStore();
   const v = props.view;
   const [copied, setCopied] = useState(false);
+  const [login, setLogin] = useState<{ url?: string; output?: string } | undefined>(undefined);
   return (
     <S.Card
       icon="image"
@@ -157,7 +158,15 @@ function Higgsfield(props: { view: HiggsfieldView }): JSX.Element {
         )}
         <div className="row">
           {v.cli.installed && !v.loggedIn ? (
-            <S.Button variant="primary" size="sm" onClick={() => void store.higgsfieldLogin()}>
+            <S.Button
+              variant="primary"
+              size="sm"
+              onClick={() =>
+                void store.higgsfieldLogin().then((r) => {
+                  if (r) setLogin(r);
+                })
+              }
+            >
               Log in
             </S.Button>
           ) : null}
@@ -169,6 +178,9 @@ function Higgsfield(props: { view: HiggsfieldView }): JSX.Element {
           >
             Create an account
           </a>
+          <S.Button variant="quiet" size="sm" onClick={() => void store.loadIntegrations()}>
+            Check again
+          </S.Button>
           <a
             className="sx-btn sx-btn--quiet sx-btn--sm"
             href={v.site}
@@ -195,9 +207,18 @@ function Higgsfield(props: { view: HiggsfieldView }): JSX.Element {
             </S.Button>
           ) : null}
         </div>
+        {login?.url ? (
+          <p className="muted">
+            Finish the login here:{' '}
+            <a href={login.url} target="_blank" rel="noopener noreferrer">
+              {login.url}
+            </a>
+          </p>
+        ) : null}
         <p className="muted">
           Ask Shibaox for an image, a video or a voice: it generates it with your Higgsfield credits
-          and saves the file in the conversation.
+          and saves the file in the conversation. Create an account is an affiliate link: Shibaox's
+          maintainer earns a share, you pay the same.
         </p>
       </div>
     </S.Card>

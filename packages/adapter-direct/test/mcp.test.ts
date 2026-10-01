@@ -176,4 +176,27 @@ describe('MCP servers on a role (direct adapter)', () => {
     expect(system).toContain('## Skill: greet\nAlways greet in Portuguese.');
     expect(system).not.toContain('name: greet');
   });
+
+  it('a server whose bearer command fails is left out with a note; the task still runs', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI(() => ({ content: 'Fine without it.' }));
+    const spec: McpServerSpec = {
+      id: 'hf',
+      transport: 'http',
+      url: 'https://mcp.example/mcp',
+      env: {},
+      secrets: {},
+      headers: {},
+      bearerCommand: ['definitely-missing-cmd-xyz'],
+      timeoutMs: 1000,
+    };
+    const events = await collect(adapterWith(fake.baseURL, { mcpServers: () => [spec] }), job(ws));
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    expect(events.some((e) => e.type === 'result')).toBe(true);
+    expect(
+      events.some(
+        (e) => e.type === 'text' && /hf.*off this turn/i.test((e as { text: string }).text),
+      ),
+    ).toBe(true);
+  });
 });

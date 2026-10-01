@@ -624,11 +624,23 @@ export class AppStore {
   }
 
   /** Starts the Higgsfield browser login on the daemon's machine, then reads the status again. */
-  higgsfieldLogin(): Promise<boolean> {
-    return this.act(async () => {
-      await this.client.higgsfieldLogin();
-      await this.loadIntegrations();
-    });
+  higgsfieldLogin(): Promise<{ url?: string; output?: string } | undefined> {
+    return (async () => {
+      let r: { started: boolean; url?: string; output?: string } | undefined;
+      const ok = await this.act(async () => {
+        r = await this.client.higgsfieldLogin();
+      });
+      if (!ok) return undefined;
+      // the login finishes in the browser: read the status again for a while
+      void (async () => {
+        for (let i = 0; i < 40; i++) {
+          await new Promise((res) => setTimeout(res, 3000));
+          await this.loadIntegrations();
+          if (this.state.integrations?.higgsfield?.loggedIn) break;
+        }
+      })();
+      return r;
+    })();
   }
 
   loadSkills(): Promise<void> {

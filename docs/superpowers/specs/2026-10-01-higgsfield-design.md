@@ -18,11 +18,12 @@ official MCP and the CLI), fluid, with his affiliate link for people who need an
 - **Catalog entry `higgsfield`** (scaffold + Andre's org): `type: mcp`, http
   `https://mcp.higgsfield.ai/mcp`, `bearer_command: [higgsfield, auth, token]` (new McpServer field:
   a command whose stdout is the bearer token, run by the daemon before each connect, so the CLI's
-  OAuth login is the only login), `tools:` allowlist (models_explore, generate_image, generate_video,
-  generate_audio, generate_image_batch, generate_video_batch, jobs_wait, job_status, media_upload,
-  media_import_url, get_presets, execute_preset, list_voices, show_generations, reframe,
-  voice_change), `timeout_ms: 180000`.
-- **Role `assistant`**: `mcp: [higgsfield]`, `skills: [higgsfield]`, `tools: + higgsfield, curl`.
+  OAuth login is the only login), `tools:` allowlist (the headless subset: models_explore, generate_image_batch,
+  generate_video_batch, generate_audio_batch, generate_3d, jobs_wait, show_generation_by_ids,
+  show_generations, media_import_url, get_presets, execute_preset, list_voices, reframe,
+  voice_change), `timeout_ms: 180000`. A failing bearer command skips the server with a note;
+  the token is a secret of the connection (an env var for Claude Code), never on an argv.
+- **Role `assistant`**: `mcp: [higgsfield]`, `skills: [higgsfield]`, `tools: + higgsfield`.
 - **Skill `skills/higgsfield/SKILL.md`** (scaffold + Andre's org): when to use; defaults
   (gpt_image_2_5 images, seedance_2_5 video, nano_banana_flash cartoons, seed_audio audio;
   cheaper on request); flow: models_explore when unsure → generate_* → jobs_wait → download each

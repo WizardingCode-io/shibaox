@@ -6,6 +6,7 @@ import {
   type ApprovalCategory,
   type ApprovalHandler,
   argvHash,
+  augmentPath,
   classifyArgv,
   type ExecutionContext,
   ghPolicy,
@@ -34,6 +35,8 @@ export interface ToolArgs {
   /** Cap and timeout of `download_file` (default 200 MB, 120 s). */
   maxDownloadBytes?: number;
   downloadTimeoutMs?: number;
+  /** Tests only: let `download_file` fetch plain http from a local server. */
+  downloadAllowHttp?: boolean;
   role: Role;
   runId: string;
   nodeId: string;
@@ -125,6 +128,8 @@ function scrubbedEnv(): Record<string, string> {
     const v = process.env[k];
     if (v !== undefined) env[k] = v;
   }
+  // the user bins a service's PATH lacks (a CLI installed by hand), appended once
+  env.PATH = augmentPath(env.PATH, env.HOME);
   return env;
 }
 
@@ -360,6 +365,7 @@ export function buildTools(a: ToolArgs): ToolSet {
                         timeoutMs: a.downloadTimeoutMs ?? 120_000,
                         maxBytes: a.maxDownloadBytes ?? 200_000_000,
                         allow: network,
+                        allowHttp: a.downloadAllowHttp === true,
                       });
                       mkdirSync(dirname(p), { recursive: true });
                       writeFileSync(p, got.bytes);

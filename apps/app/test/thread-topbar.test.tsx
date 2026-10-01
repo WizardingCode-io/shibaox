@@ -279,5 +279,10 @@ describe('the reply is rendered as a document', () => {
     const after = within(menu).getAllByRole('menuitemradio');
     expect(after.length).toBeLessThan(before);
     expect(after.every((el) => /qwen/i.test(el.textContent ?? ''))).toBe(true);
+    // Enter right after typing picks the first match
+    fireEvent.keyDown(within(menu).getByRole('searchbox'), { key: 'Enter' });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Change model' }).textContent).toContain('qwen'),
+    );
   });
 });

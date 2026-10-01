@@ -21,7 +21,7 @@ import { macosChannel } from './channels/macos.js';
 import { OutboxWorker } from './channels/outbox.js';
 import { inboxToken, telegramChannel } from './channels/telegram.js';
 import type { Channel } from './channels/types.js';
-import { type DaemonConfig, loadDaemonConfig } from './config.js';
+import { type DaemonConfig, HIGGSFIELD_SIGNUP_URL, loadDaemonConfig } from './config.js';
 import { ensureDefaultOrg } from './default-org.js';
 import {
   defaultHiggsfieldProbe,
@@ -29,6 +29,7 @@ import {
   type HiggsfieldProbe,
   type HiggsfieldView,
   higgsfieldStatus,
+  type LoginStart,
 } from './higgsfield.js';
 import { type HomePaths, homePaths } from './home.js';
 import { type InboxId, InboxService } from './inbox.js';
@@ -401,16 +402,20 @@ export class Daemon {
   }
   /** The Higgsfield status (CLI, account, MCP), cached for a minute. */
   higgsfield(): Promise<HiggsfieldView> {
-    const signupUrl = this.config.partners.higgsfield.signup_url;
-    if (!this.higgsfieldCache || Date.now() - this.higgsfieldCache.at > 60_000)
-      this.higgsfieldCache = {
-        at: Date.now(),
-        view: higgsfieldStatus(this.higgsfieldProbe, { signupUrl }),
-      };
+    const signupUrl = this.config.partners?.higgsfield?.signup_url ?? HIGGSFIELD_SIGNUP_URL;
+    // a signed-in answer is kept a minute; "not signed in" is read again next time (the user
+    // may be logging in right now)
+    if (!this.higgsfieldCache || Date.now() - this.higgsfieldCache.at > 60_000) {
+      const view = higgsfieldStatus(this.higgsfieldProbe, { signupUrl });
+      this.higgsfieldCache = { at: Date.now(), view };
+      void view.then((v) => {
+        if (!v.loggedIn && this.higgsfieldCache?.view === view) this.higgsfieldCache = undefined;
+      });
+    }
     return this.higgsfieldCache.view;
   }
   /** Starts the Higgsfield browser login on this machine; 409 when the CLI is missing. */
-  async higgsfieldLogin(): Promise<{ started: boolean }> {
+  async higgsfieldLogin(): Promise<LoginStart> {
     const v = await this.higgsfield();
     if (!v.cli.installed)
       throw new HttpError(
@@ -418,11 +423,8 @@ export class Daemon {
         'no_cli',
         `The Higgsfield CLI is not installed: ${HIGGSFIELD_INSTALL}`,
       );
-    const probe = this.higgsfieldProbe;
-    if (probe.login) probe.login();
-    else void probe.exec(['higgsfield', 'auth', 'login']).catch(() => undefined);
     this.higgsfieldCache = undefined;
-    return { started: true };
+    return this.higgsfieldProbe.login();
   }
 
   /** Who decides (the home org's decision tier) and the latest decisions of the last 50 runs. */

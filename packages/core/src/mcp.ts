@@ -117,10 +117,34 @@ export interface BearerRun {
   stderr: string;
 }
 
+/** The env var a resolved bearer travels in (the header names it; Claude Code gets it in its env). */
+export const bearerVar = (id: string): string =>
+  `SHIBAOX_BEARER_${id.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
+
+/** The minimal environment a bearer command runs with: never the daemon's secrets. */
+export function bearerEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const out: Record<string, string> = { PATH: augmentPath(env.PATH, env.HOME) };
+  for (const k of ['HOME', 'USER', 'TMPDIR', 'LANG', 'XDG_CONFIG_HOME'] as const)
+    if (typeof env[k] === 'string') out[k] = env[k] as string;
+  return out;
+}
+
+/** A bearer command that failed: the server is skipped for the task, never the task failed. */
+export class BearerError extends Error {
+  constructor(
+    readonly serverId: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'BearerError';
+  }
+}
+
 /**
- * The spec with its bearer resolved: the command run once, its stdout (trimmed) in the
- * Authorization header, the command dropped so it is not run again. A failing command is an
- * error naming the server and what to run (the CLI login).
+ * The spec with its bearer resolved: the command run once, its token (the last line that is
+ * one word) kept as a secret named by `bearerVar` and referenced from the Authorization
+ * header, the command dropped so it is not run again. A failing command is a BearerError
+ * naming the server and the command, carrying stderr (clipped) but never stdout.
  */
 export async function withBearer(
   spec: McpServerSpec,
@@ -128,18 +152,37 @@ export async function withBearer(
 ): Promise<McpServerSpec> {
   const argv = spec.bearerCommand;
   if (!argv || argv.length === 0) return spec;
-  const r = await run(argv);
-  if (r.exitCode !== 0)
-    throw new Error(
-      `mcp server "${spec.id}": the bearer command (${argv.join(' ')}) failed: ${r.stderr.trim() || r.stdout.trim() || `exit ${r.exitCode}`}`,
+  let r: BearerRun;
+  try {
+    r = await run(argv);
+  } catch (e) {
+    throw new BearerError(
+      spec.id,
+      `mcp server "${spec.id}": the bearer command (${argv.join(' ')}) could not run: ${e instanceof Error ? e.message : String(e)}`,
     );
-  const token = r.stdout.trim().split('\n').pop()?.trim() ?? '';
+  }
+  if (r.exitCode !== 0)
+    throw new BearerError(
+      spec.id,
+      `mcp server "${spec.id}": the bearer command (${argv.join(' ')}) failed: ${r.stderr.trim().slice(0, 200) || `exit ${r.exitCode}`}`,
+    );
+  const token = r.stdout
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => /^\S+$/.test(l))
+    .pop();
   if (!token)
-    throw new Error(
+    throw new BearerError(
+      spec.id,
       `mcp server "${spec.id}": the bearer command (${argv.join(' ')}) printed no token`,
     );
+  const key = bearerVar(spec.id);
   const { bearerCommand: _dropped, ...rest } = spec;
-  return { ...rest, headers: { ...spec.headers, Authorization: `Bearer ${token}` } };
+  return {
+    ...rest,
+    secrets: { ...spec.secrets, [key]: token },
+    headers: { ...spec.headers, Authorization: `Bearer \${${key}}` },
+  };
 }
 
 /** The user bins a service's PATH lacks, appended once: where a CLI installed by hand lives. */

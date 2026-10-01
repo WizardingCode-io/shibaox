@@ -132,6 +132,7 @@ export function client(
       return {};
     },
     async higgsfield() {
+      rec('higgsfield');
       return {
         cli: { installed: true, version: '1.1.26' },
         loggedIn: true,

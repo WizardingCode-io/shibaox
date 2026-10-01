@@ -1,4 +1,9 @@
-import { AutoApproveApprovals, type TaskJob } from '@wizardingcode/shibaox-core';
+import {
+  AutoApproveApprovals,
+  type McpServerSpec,
+  type TaskJob,
+  withBearer,
+} from '@wizardingcode/shibaox-core';
 import { RoleSchema } from '@wizardingcode/shibaox-schemas';
 import { describe, expect, it } from 'vitest';
 import { ClaudeCodeAdapter, mcpAllowRules, mcpSecrets, mcpServerConfigs } from '../src/index.js';
@@ -118,5 +123,55 @@ describe('the adapter with catalog servers', () => {
     for await (const e of b.run(job(), { signal: new AbortController().signal, log: () => {} }))
       ok.push(e);
     expect(ok.at(-1)).toMatchObject({ type: 'result' });
+  });
+
+  it('a bearer resolved from a command reaches the subprocess env, never the mcp config', async () => {
+    const spec: McpServerSpec = {
+      id: 'hf',
+      transport: 'http',
+      url: 'https://mcp.example/mcp',
+      env: {},
+      secrets: {},
+      headers: {},
+      bearerCommand: ['fake-token-cmd'],
+      timeoutMs: 1000,
+    };
+    const resolved = await withBearer(spec, async () => ({
+      exitCode: 0,
+      stdout: 'oat_zz\n',
+      stderr: '',
+    }));
+    expect(JSON.stringify(mcpServerConfigs([resolved]))).not.toContain('oat_zz');
+    expect(mcpSecrets([resolved])).toEqual({ SHIBAOX_BEARER_HF: 'oat_zz' });
+  });
+  it('a server whose bearer command fails is left out with a warning; the turn still runs', async () => {
+    const q = fakeQuery(() => [msg.init({ mcp_servers: [] }), msg.success('ok')]);
+    const a = new ClaudeCodeAdapter({
+      approvals: new AutoApproveApprovals(),
+      queryFn: q,
+      mcpSpecs: () => [
+        {
+          id: 'hf',
+          transport: 'http',
+          url: 'https://mcp.example/mcp',
+          env: {},
+          secrets: {},
+          headers: {},
+          bearerCommand: ['definitely-missing-cmd-xyz'],
+          timeoutMs: 1000,
+        },
+      ],
+    });
+    const events: { type: string; message?: string }[] = [];
+    for await (const e of a.run(job(), { signal: new AbortController().signal, log: () => {} }))
+      events.push(e as { type: string; message?: string });
+    expect(q.calls).toHaveLength(1);
+    expect(Object.keys(q.calls[0]?.options?.mcpServers ?? {})).not.toContain('hf');
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    expect(
+      events.some(
+        (e) => e.type === 'text' && /hf.*off this turn/i.test((e as { text?: string }).text ?? ''),
+      ),
+    ).toBe(true);
   });
 });

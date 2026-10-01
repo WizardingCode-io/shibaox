@@ -48,7 +48,7 @@ const SAFE_HREF = /^(https?:|mailto:)/i;
 const href = (raw: string): string | undefined =>
   SAFE_HREF.test(raw.trim()) ? raw.trim() : undefined;
 
-function inline(tokens: Token[] | undefined, keyBase: string): ReactNode[] {
+function inline(tokens: Token[] | undefined, keyBase: string, ctx: Ctx = {}): ReactNode[] {
   const out: ReactNode[] = [];
   (tokens ?? []).forEach((t, i) => {
     const key = `${keyBase}.${i}`;
@@ -104,6 +104,14 @@ function inline(tokens: Token[] | undefined, keyBase: string): ReactNode[] {
         // never fetch what the model wrote: an image is a link to it
         const im = t as Tokens.Image;
         const h = href(im.href);
+        // a relative path is a file of the run: shown inline when the screen knows how
+        const rel = im.href.trim();
+        if (!h && ctx.renderImage && rel && !/^[a-z]+:/i.test(rel) && !rel.startsWith('/')) {
+          out.push(
+            <Fragment key={key}>{ctx.renderImage(rel.replace(/^\.\//, ''), im.text)}</Fragment>,
+          );
+          break;
+        }
         out.push(
           h ? (
             <a key={key} href={h} target="_blank" rel="noopener noreferrer">
@@ -133,6 +141,7 @@ export interface CodeOpen {
 }
 interface Ctx {
   onOpenCode?: (code: CodeOpen) => void;
+  renderImage?: (path: string, alt: string) => ReactNode;
 }
 
 function blocks(tokens: Token[], keyBase: string, ctx: Ctx = {}): ReactNode[] {
@@ -154,15 +163,15 @@ function blocks(tokens: Token[], keyBase: string, ctx: Ctx = {}): ReactNode[] {
       case 'heading': {
         const hd = t as Tokens.Heading;
         const Tag = `h${Math.min(Math.max(hd.depth, 1), 4)}` as 'h1' | 'h2' | 'h3' | 'h4';
-        out.push(<Tag key={key}>{inline(hd.tokens, key)}</Tag>);
+        out.push(<Tag key={key}>{inline(hd.tokens, key, ctx)}</Tag>);
         break;
       }
       case 'paragraph':
-        out.push(<p key={key}>{inline((t as Tokens.Paragraph).tokens, key)}</p>);
+        out.push(<p key={key}>{inline((t as Tokens.Paragraph).tokens, key, ctx)}</p>);
         break;
       case 'text': {
         const tt = t as Tokens.Text;
-        out.push(<p key={key}>{tt.tokens ? inline(tt.tokens, key) : tt.text}</p>);
+        out.push(<p key={key}>{tt.tokens ? inline(tt.tokens, key, ctx) : tt.text}</p>);
         break;
       }
       case 'code': {
@@ -246,9 +255,9 @@ function blocks(tokens: Token[], keyBase: string, ctx: Ctx = {}): ReactNode[] {
         out.push(
           <S.Table
             key={key}
-            columns={tb.header.map((c, j) => inline(c.tokens, `${key}.h${j}`))}
+            columns={tb.header.map((c, j) => inline(c.tokens, `${key}.h${j}`, ctx))}
             align={tb.align}
-            rows={tb.rows.map((r, j) => r.map((c, k) => inline(c.tokens, `${key}.${j}.${k}`)))}
+            rows={tb.rows.map((r, j) => r.map((c, k) => inline(c.tokens, `${key}.${j}.${k}`, ctx)))}
           />,
         );
         break;
@@ -278,15 +287,21 @@ export function Markdown(props: {
   plain?: boolean;
   /** With it, every code block and CSV table offers "Open": the block as a file in the side panel. */
   onOpenCode?: (code: CodeOpen) => void;
+  /** Renders an image whose path is a file of the run (a relative path); web images stay links. */
+  renderImage?: (path: string, alt: string) => ReactNode;
 }): JSX.Element {
   const onOpenCode = props.onOpenCode;
+  const renderImage = props.renderImage;
   const nodes = useMemo(() => {
     if (props.plain) {
       const lexer = new marked.Lexer({ gfm: true, breaks: true });
       return [<p key="plain">{inline(lexer.inlineTokens(props.text), 'plain')}</p>];
     }
     const text = props.pending ? props.text.replace(/\n[-=]{1,2}$/, '') : props.text;
-    return blocks(marked.lexer(text, { gfm: true, breaks: false }), 'md', { onOpenCode });
-  }, [props.text, props.pending, props.plain, onOpenCode]);
+    return blocks(marked.lexer(text, { gfm: true, breaks: false }), 'md', {
+      onOpenCode,
+      renderImage,
+    });
+  }, [props.text, props.pending, props.plain, onOpenCode, renderImage]);
   return <>{nodes}</>;
 }

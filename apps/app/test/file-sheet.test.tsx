@@ -358,4 +358,43 @@ describe('FileSheet', () => {
       delete (window as unknown as { shibaoxDesktop?: unknown }).shibaoxDesktop;
     }
   });
+
+  it('a video is fetched once: a parent re-render with a new loader function does not restart it', async () => {
+    let loads = 0;
+    const file = {
+      path: 'outputs/clip.mp4',
+      size: 10,
+      encoding: 'base64' as const,
+      content: 'AAAA',
+      truncated: false,
+    };
+    const props = {
+      runId: 'r1',
+      path: 'outputs/clip.mp4',
+      load: async () => file,
+      onClose: () => {},
+      onDownload: () => {},
+    };
+    const ui = render(
+      <FileSheet
+        {...props}
+        loadWhole={async () => {
+          loads++;
+          return new Blob([new Uint8Array(4)]);
+        }}
+      />,
+    );
+    await waitFor(() => expect(ui.container.querySelector('video')).toBeTruthy());
+    ui.rerender(
+      <FileSheet
+        {...props}
+        loadWhole={async () => {
+          loads++;
+          return new Blob([new Uint8Array(4)]);
+        }}
+      />,
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    expect(loads).toBe(1);
+  });
 });

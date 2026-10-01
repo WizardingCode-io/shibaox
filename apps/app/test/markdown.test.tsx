@@ -192,4 +192,20 @@ describe('Markdown', () => {
     render(<Markdown text={'```js\nlet a = 1;\n```'} />);
     expect(screen.queryByRole('button', { name: /open/i })).toBeNull();
   });
+
+  it('an image whose path is a file of the run renders through renderImage; web images stay links', () => {
+    const asked: string[] = [];
+    const ui = render(
+      <Markdown
+        text={'Done:\n\n![A shiba](outputs/shiba.png)\n\nAnd ![logo](https://example.com/logo.png)'}
+        renderImage={(path, alt) => {
+          asked.push(`${path}|${alt}`);
+          return <img alt={alt} src={`data:image/png;base64,${path}`} />;
+        }}
+      />,
+    );
+    expect(asked).toEqual(['outputs/shiba.png|A shiba']);
+    expect(ui.container.querySelector('img')?.getAttribute('alt')).toBe('A shiba');
+    expect(ui.container.querySelector('a[href="https://example.com/logo.png"]')).toBeTruthy();
+  });
 });

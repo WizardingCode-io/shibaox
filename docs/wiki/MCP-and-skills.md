@@ -64,3 +64,5 @@ shibaox mcp test <id> [--org dir] # starts it on the daemon, lists its tools, st
 - Playwright on Linux or in Docker: the default browser channel is Chrome; without it add `--browser chromium` to the args and run `npx playwright install chromium` as the daemon user once.
 - `did not answer in time`: raise `timeout_ms`; the first `npx -y` run downloads the package.
 - On the direct adapter a server's stderr goes to the daemon log, prefixed `[mcp <id>]`.
+
+`server.bearer_command` (http servers): a command whose stdout is the bearer token, run before each connection with a minimal environment; a CLI's login stands in for a key (Higgsfield: `[higgsfield, auth, token]`). A failing command skips the server for that task with a note. See [Security](Security).

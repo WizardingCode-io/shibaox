@@ -14,14 +14,17 @@ export const ListenSchema = z.object({
 });
 export type ListenConfig = z.infer<typeof ListenSchema>;
 
+/** Where "Create an account" sends people without a Higgsfield account (the maintainer's affiliate link). */
+export const HIGGSFIELD_SIGNUP_URL = 'https://higgsfield.ai?fpr=andre-4fae29';
+
 /** Where Shibaox sends people who need an account with a partner (an affiliate link). */
 export const PartnersSchema = z
   .object({
     higgsfield: z
-      .object({ signup_url: z.string().url().default('https://higgsfield.ai?fpr=andre-4fae29') })
-      .default({ signup_url: 'https://higgsfield.ai?fpr=andre-4fae29' }),
+      .object({ signup_url: z.string().url().default(HIGGSFIELD_SIGNUP_URL) })
+      .default({ signup_url: HIGGSFIELD_SIGNUP_URL }),
   })
-  .default({ higgsfield: { signup_url: 'https://higgsfield.ai?fpr=andre-4fae29' } });
+  .default({ higgsfield: { signup_url: HIGGSFIELD_SIGNUP_URL } });
 
 export const DaemonConfigSchema = z.object({
   partners: PartnersSchema,

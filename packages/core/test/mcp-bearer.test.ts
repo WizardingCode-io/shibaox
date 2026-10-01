@@ -28,14 +28,27 @@ describe('bearer from a command', () => {
       return { exitCode: 0, stdout: 'oat_abc\n', stderr: '' };
     });
     expect(ran).toEqual([['higgsfield', 'auth', 'token']]);
+    // the token travels as a secret (an env var for Claude Code), never written into the header text
+    expect(resolved.headers).toEqual({ Authorization: 'Bearer ${SHIBAOX_BEARER_HIGGSFIELD}' });
+    expect(resolved.secrets).toEqual({ SHIBAOX_BEARER_HIGGSFIELD: 'oat_abc' });
     expect(expandHeaders(resolved)).toEqual({ Authorization: 'Bearer oat_abc' });
     expect(resolved.bearerCommand).toBeUndefined(); // resolved: not run again
   });
-  it('a failing or empty command is a clear error naming the server', async () => {
+  it('a failing or empty command is a clear error naming the server, never carrying stdout', async () => {
     const spec = mcpServerSpec(entry, {});
     await expect(
       withBearer(spec, async () => ({ exitCode: 1, stdout: '', stderr: 'Not authenticated' })),
     ).rejects.toThrow(/higgsfield.*higgsfield auth token.*Not authenticated/);
+    await expect(
+      withBearer(spec, async () => ({ exitCode: 1, stdout: 'oat_leaked', stderr: '' })),
+    ).rejects.not.toThrow(/oat_leaked/);
+    // a notice around the token: the token is the last line that is one word
+    const r = await withBearer(spec, async () => ({
+      exitCode: 0,
+      stdout: 'warning: a new version is available\noat_real\nRun higgsfield upgrade to update\n',
+      stderr: '',
+    }));
+    expect(r.secrets.SHIBAOX_BEARER_HIGGSFIELD).toBe('oat_real');
     await expect(
       withBearer(spec, async () => ({ exitCode: 0, stdout: '  ', stderr: '' })),
     ).rejects.toThrow(/printed no token/);

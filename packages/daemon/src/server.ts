@@ -34,9 +34,13 @@ import type { RoutineDraft } from './runs/routine-draft.js';
 
 /** Requests that came over the network listener are marked by it. */
 const REMOTE = new WeakSet<IncomingMessage>();
+/** Whether the request came from this machine (a loopback peer of the listener). */
+const isLoopback = (req: IncomingMessage): boolean =>
+  /^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(req.socket.remoteAddress ?? '');
+
 const isRemote = (req: IncomingMessage) => REMOTE.has(req);
 
-import type { HiggsfieldView } from './higgsfield.js';
+import type { HiggsfieldView, LoginStart } from './higgsfield.js';
 import type { RunManager, SubmitRequest } from './run-manager.js';
 import { AUDIT_RUNTIME_TYPES, buildAudit, renderAuditMarkdown } from './runs/audit.js';
 import { mimeOf, RunFileError } from './runs/files.js';
@@ -139,7 +143,7 @@ export interface ServerDeps {
   mcpList: (org: string) => McpServerRow[];
   mcpTest: (id: string, org: string) => Promise<McpTestResult>;
   higgsfield: () => Promise<HiggsfieldView>;
-  higgsfieldLogin: () => Promise<{ started: boolean }>;
+  higgsfieldLogin: () => Promise<LoginStart>;
   /** Whether a network caller may start that org's servers (the daemon's own orgs only). */
   mcpRemoteAllowed: (org: string) => Promise<boolean>;
   setKey: (name: string, value: string) => void;
@@ -408,8 +412,9 @@ export class DaemonServer {
     if (method === 'GET' && path === '/integrations/higgsfield')
       return send(res, 200, await this.deps.higgsfield());
     if (method === 'POST' && path === '/integrations/higgsfield/login') {
-      // the browser login opens on the daemon's machine: only from there
-      if (isRemote(req))
+      // the browser login opens on the daemon's machine: the socket or a loopback client of the
+      // listener (this machine), never another host
+      if (isRemote(req) && !isLoopback(req))
         throw new HttpError(
           403,
           'forbidden',

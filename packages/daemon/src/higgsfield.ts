@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { augmentPath, runArgv } from '@wizardingcode/shibaox-core';
+import { bearerEnv, runArgv } from '@wizardingcode/shibaox-core';
 
 export const HIGGSFIELD_INSTALL =
   'curl -fsSL https://raw.githubusercontent.com/higgsfield-ai/cli/main/install.sh | sh';
@@ -17,17 +17,25 @@ export interface HiggsfieldView {
 }
 
 /** How the daemon talks to the Higgsfield CLI and MCP (tests inject fakes). */
+export interface LoginStart {
+  started: boolean;
+  /** A URL or device code the CLI printed (headless machines: open it anywhere). */
+  url?: string;
+  output?: string;
+}
 export interface HiggsfieldProbe {
   exec(argv: string[]): Promise<{ exitCode: number | null; stdout: string; stderr: string }>;
   mcp(token: string): Promise<'ok' | 'unauthorized' | 'unreachable'>;
-  /** Starts the browser login on this machine, detached (default: spawn). */
-  login?(): void;
+  /** Starts the browser login on this machine and reports what the CLI printed in its first seconds. */
+  login(): Promise<LoginStart>;
 }
 
 export function defaultHiggsfieldProbe(env: NodeJS.ProcessEnv): HiggsfieldProbe {
-  const PATH = augmentPath(env.PATH, env.HOME);
+  // the CLI runs with a minimal environment: never the daemon's keys
+  const minimal = bearerEnv(env);
   return {
-    exec: (argv) => runArgv({ argv, cwd: env.HOME ?? '/', timeoutMs: 15_000, env: { PATH } }),
+    exec: (argv) =>
+      runArgv({ argv, cwd: env.HOME ?? '/', timeoutMs: 5_000, inheritEnv: false, env: minimal }),
     mcp: async (token) => {
       try {
         const r = await fetch(HIGGSFIELD_MCP, {
@@ -55,14 +63,43 @@ export function defaultHiggsfieldProbe(env: NodeJS.ProcessEnv): HiggsfieldProbe 
         return 'unreachable';
       }
     },
-    login: () => {
-      const child = spawn('higgsfield', ['auth', 'login'], {
-        detached: true,
-        stdio: 'ignore',
-        env: { ...env, PATH },
-      });
-      child.unref();
-    },
+    login: () =>
+      new Promise<LoginStart>((resolve) => {
+        let out = '';
+        let child: ReturnType<typeof spawn>;
+        try {
+          child = spawn('higgsfield', ['auth', 'login'], {
+            detached: true,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            env: minimal,
+          });
+        } catch (e) {
+          resolve({ started: false, output: e instanceof Error ? e.message : String(e) });
+          return;
+        }
+        const done = (started: boolean) => {
+          const url = /https?:\/\/\S+/.exec(out)?.[0];
+          resolve({
+            started,
+            ...(url ? { url } : {}),
+            ...(out.trim() ? { output: out.trim().slice(0, 2000) } : {}),
+          });
+        };
+        child.on('error', () => done(false));
+        child.stdout?.on('data', (d: Buffer) => {
+          out += d.toString();
+        });
+        child.stderr?.on('data', (d: Buffer) => {
+          out += d.toString();
+        });
+        // the login goes on in the browser; what the CLI printed in its first seconds is enough
+        setTimeout(() => {
+          child.stdout?.destroy();
+          child.stderr?.destroy();
+          child.unref();
+          done(true);
+        }, 4_000);
+      }),
   };
 }
 
