@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import {
   copyFileSync,
   existsSync,
@@ -14,7 +13,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { bearerEnv } from '@wizardingcode/shibaox-core';
+import { bearerEnv, runArgv } from '@wizardingcode/shibaox-core';
 import { Id, loadOrg } from '@wizardingcode/shibaox-schemas';
 import { parse as parseYaml } from 'yaml';
 import { detachFromRoles, OrgEditError } from './org-edit.js';
@@ -29,17 +28,31 @@ export interface SkillRow {
   roles: string[];
 }
 
+/** A skill with its SKILL.md text (`GET /skills/:id`). */
+export interface SkillDetail extends SkillRow {
+  content: string;
+}
+
 /** Where skills come from: a git repository, a folder on the daemon's machine, or text. */
 export type SkillAddRequest =
   | { source: 'repo'; repo: string; path?: string; ids?: string[] }
   | { source: 'folder'; path: string }
   | { source: 'inline'; id: string; content: string };
 
+/** An installed skill; `omitted` lists its files left out for being over 1 MB. */
+export type SkillAdded = SkillRow & { omitted?: string[] };
+
 export interface SkillAddResult {
-  added: SkillRow[];
+  added: SkillAdded[];
   skipped: { id: string; reason: SkipReason }[];
 }
-export type SkipReason = 'exists' | 'invalid_id' | 'symlink' | 'too_large' | 'not_found';
+export type SkipReason =
+  | 'exists'
+  | 'invalid_id'
+  | 'symlink'
+  | 'too_large'
+  | 'not_found'
+  | 'copy_failed';
 
 /** A skill found in a repository (`path` is its directory, relative to the repository). */
 export interface DiscoveredSkill {
@@ -56,8 +69,14 @@ export interface SkillDiscovery {
 export const SKILL_FILE_MAX = 1_000_000;
 export const SKILL_TOTAL_MAX = 10_000_000;
 export const CLONE_MAX = 50_000_000;
+export const CLONE_MAX_FILES = 20_000;
 export const CLONE_TIMEOUT_MS = 60_000;
 const DISCOVER_TTL_MS = 10 * 60_000;
+const DISCOVER_FAIL_TTL_MS = 30_000;
+const DISCOVER_CACHE_MAX = 50;
+const STDERR_MAX = 4096;
+/** ls-tree output beyond this is more files than the cap allows anyway. */
+const LS_TREE_MAX = 32_000_000;
 const MAX_DEPTH = 6;
 
 /** `name` and `description` of a SKILL.md: its frontmatter, else the id and the first paragraph. */
@@ -93,8 +112,12 @@ const isRegularFile = (p: string) => {
   }
 };
 
+/** Whether a path was a symlink: on disk, or in the repository tree (checked out as a file). */
+type IsLink = (absPath: string) => boolean;
+const noLinks: IsLink = () => false;
+
 /** Directories holding a SKILL.md under `base` (never through a symlink, never inside `.git`). */
-function findSkillDirs(base: string): string[] {
+function findSkillDirs(base: string, isLink: IsLink = noLinks): string[] {
   const out: string[] = [];
   const walk = (dir: string, depth: number) => {
     if (existsSync(join(dir, 'SKILL.md'))) {
@@ -105,7 +128,7 @@ function findSkillDirs(base: string): string[] {
     for (const name of readdirSync(dir).sort()) {
       if (name.startsWith('.') || name === 'node_modules') continue;
       const p = join(dir, name);
-      if (lstatSync(p).isDirectory()) walk(p, depth + 1);
+      if (!isLink(p) && lstatSync(p).isDirectory()) walk(p, depth + 1);
     }
   };
   walk(base, 0);
@@ -113,21 +136,26 @@ function findSkillDirs(base: string): string[] {
 }
 
 /** The regular files of a skill directory (relative paths) within the caps; symlinks never. */
-function skillFiles(dir: string): { files: string[] } | { reason: SkipReason } {
+function skillFiles(
+  dir: string,
+  isLink: IsLink,
+): { files: string[]; omitted: string[] } | { reason: SkipReason } {
   const skillMd = join(dir, 'SKILL.md');
-  if (lstatSync(skillMd).isSymbolicLink()) return { reason: 'symlink' };
+  if (lstatSync(skillMd).isSymbolicLink() || isLink(skillMd)) return { reason: 'symlink' };
   if (!isRegularFile(skillMd) || lstatSync(skillMd).size > SKILL_FILE_MAX)
     return { reason: 'too_large' };
   const files: string[] = [];
+  const omitted: string[] = [];
   let total = 0;
   const walk = (d: string) => {
     for (const name of readdirSync(d).sort()) {
       if (name === '.git') continue;
       const p = join(d, name);
       const st = lstatSync(p);
-      if (st.isSymbolicLink()) continue;
+      if (st.isSymbolicLink() || isLink(p)) continue;
       if (st.isDirectory()) walk(p);
-      else if (st.isFile() && st.size <= SKILL_FILE_MAX) {
+      else if (st.isFile() && st.size > SKILL_FILE_MAX) omitted.push(relative(dir, p));
+      else if (st.isFile()) {
         total += st.size;
         files.push(relative(dir, p));
       }
@@ -135,31 +163,7 @@ function skillFiles(dir: string): { files: string[] } | { reason: SkipReason } {
   };
   walk(dir);
   if (total > SKILL_TOTAL_MAX) return { reason: 'too_large' };
-  return { files };
-}
-
-function dirSize(dir: string): number {
-  let total = 0;
-  const stack = [dir];
-  while (stack.length) {
-    const d = stack.pop() as string;
-    let names: string[];
-    try {
-      names = readdirSync(d);
-    } catch {
-      continue;
-    }
-    for (const n of names) {
-      try {
-        const st = lstatSync(join(d, n));
-        if (st.isDirectory()) stack.push(join(d, n));
-        else total += st.size;
-      } catch {
-        // gone while counting
-      }
-    }
-  }
-  return total;
+  return { files, omitted };
 }
 
 /** The URL git clones for `repo`: `owner/repo` (GitHub), an https URL, or (local callers) a file URL or path. */
@@ -176,7 +180,9 @@ export function repoUrl(repo: string, local: boolean): string {
   );
 }
 
-/** A relative path inside a repository (no `..`, not absolute). */
+const isFileRepo = (url: string) => !url.startsWith('https://');
+
+/** A relative path inside a repository (no `..`, not absolute, no glob characters). */
 function subPath(path: string | undefined): string {
   const p = (path ?? '')
     .trim()
@@ -185,24 +191,140 @@ function subPath(path: string | undefined): string {
   if (!p) return '';
   if (isAbsolute(p) || p.split(/[\\/]/).some((s) => s === '..' || s.startsWith('-')))
     throw new OrgEditError(400, 'bad_request', `"path" must be relative to the repository root`);
+  if (/[*?[\]!#\\\0\n]/.test(p))
+    throw new OrgEditError(400, 'bad_request', `"path" may not hold * ? [ ] ! # or \\`);
   return p;
+}
+
+/** One entry of `git ls-tree -r -l -z`. */
+export interface TreeEntry {
+  path: string;
+  mode: string;
+  type: string;
+}
+/** What a checkout would write: blob count and bytes, and the paths that are symlinks. */
+export interface TreeStats {
+  files: number;
+  bytes: number;
+  symlinks: string[];
+  entries: TreeEntry[];
+}
+
+/** Parses `git ls-tree -r -l -z` (`<mode> <type> <object> <size>\t<path>\0`); submodules count for nothing. */
+export function parseLsTree(out: string): TreeStats {
+  const stats: TreeStats = { files: 0, bytes: 0, symlinks: [], entries: [] };
+  for (const rec of out.split('\0')) {
+    if (!rec) continue;
+    const tab = rec.indexOf('\t');
+    if (tab < 0) continue;
+    const [mode = '', type = '', , size = '-'] = rec.slice(0, tab).trim().split(/\s+/);
+    const path = rec.slice(tab + 1);
+    stats.entries.push({ path, mode, type });
+    if (type !== 'blob') continue;
+    stats.files++;
+    stats.bytes += Number(size) || 0;
+    if (mode === '120000') stats.symlinks.push(path);
+  }
+  return stats;
+}
+
+/** Refuses (413) a tree over the byte or file cap. */
+export function checkTree(t: TreeStats, o: { maxBytes?: number; maxFiles?: number }): void {
+  const maxBytes = o.maxBytes ?? CLONE_MAX;
+  const maxFiles = o.maxFiles ?? CLONE_MAX_FILES;
+  if (t.files > maxFiles)
+    throw new OrgEditError(413, 'too_large', `the repository has more than ${maxFiles} files`);
+  if (t.bytes > maxBytes)
+    throw new OrgEditError(
+      413,
+      'too_large',
+      `the repository is larger than ${maxBytes / 1_000_000} MB`,
+    );
+}
+
+/**
+ * `git` with no credential helper, only https (and file, for local callers' file repositories),
+ * and symlinks checked out as plain files.
+ */
+export function gitArgv(args: string[], o: { file: boolean }): string[] {
+  return [
+    'git',
+    '-c',
+    'credential.helper=',
+    '-c',
+    'protocol.allow=never',
+    '-c',
+    'protocol.https.allow=always',
+    ...(o.file ? ['-c', 'protocol.file.allow=always'] : []),
+    '-c',
+    'core.symlinks=false',
+    ...args,
+  ];
+}
+
+/** The environment git runs with: PATH, HOME and the locale only; no user or system config. */
+export function gitEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  return {
+    ...bearerEnv(env),
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_LFS_SKIP_SMUDGE: '1',
+    GIT_LITERAL_PATHSPECS: '1',
+  };
 }
 
 export interface SkillsServiceOptions {
   /** The daemon's environment: git gets PATH (augmented), HOME and the locale only. */
   env: NodeJS.ProcessEnv;
   now?: () => number;
-  /** Called on every clone (tests count them). */
-  onClone?: (url: string) => void;
+  /** Called on every clone, inside the one-clone-at-a-time lock (tests count them). */
+  onClone?: (url: string) => void | Promise<void>;
   log?: (line: string) => void;
+  /** Where clones go (default: the system temp dir). */
+  tmpRoot?: string;
+  /** The checkout cap in bytes (default 50 MB) and in files (default 20 000). */
+  maxBytes?: number;
+  maxFiles?: number;
+  timeoutMs?: number;
+  /** Copies one file of a skill (tests inject failures). */
+  copyFile?: (from: string, to: string) => void;
 }
+
+type CacheEntry = { at: number; value?: SkillDiscovery; error?: unknown };
 
 /** The org's skills: listing, installing (repository, folder, text), discovery and removal. */
 export class SkillsService {
-  private readonly cache = new Map<string, { at: number; value: SkillDiscovery }>();
+  private readonly cache = new Map<string, CacheEntry>();
+  private readonly inflight = new Map<string, Promise<SkillDiscovery>>();
+  private readonly swept = new Set<string>();
+  private readonly abort = new AbortController();
+  /** One clone at a time per daemon. */
+  private lock: Promise<void> = Promise.resolve();
   constructor(private readonly o: SkillsServiceOptions) {}
 
+  /** Kills a clone in flight (the daemon is stopping); later clones are refused. */
+  close(): void {
+    this.abort.abort();
+  }
+
+  private now(): number {
+    return (this.o.now ?? Date.now)();
+  }
+
+  /** Removes `.<id>.partial-*` copies an interrupted install left, once per org per process. */
+  private sweep(root: string): void {
+    if (this.swept.has(root)) return;
+    this.swept.add(root);
+    const dir = join(root, 'skills');
+    if (!existsSync(dir)) return;
+    for (const name of readdirSync(dir))
+      if (/^\..+\.partial-\d+$/.test(name))
+        rmSync(join(dir, name), { recursive: true, force: true });
+  }
+
   list(root: string): SkillRow[] {
+    this.sweep(root);
     const org = loadOrg(root);
     const dir = join(root, 'skills');
     if (!existsSync(dir)) return [];
@@ -210,6 +332,17 @@ export class SkillsService {
       .filter((id) => Id.safeParse(id).success && isRegularFile(join(dir, id, 'SKILL.md')))
       .sort()
       .map((id) => this.row(root, id, org));
+  }
+
+  /** One skill with its SKILL.md text (at most 1 MB). */
+  get(root: string, id: string): SkillDetail {
+    if (!Id.safeParse(id).success)
+      throw new OrgEditError(400, 'bad_request', `"${id}" is not a skill id`);
+    this.sweep(root);
+    const md = join(root, 'skills', id, 'SKILL.md');
+    if (!isRegularFile(md)) throw new OrgEditError(404, 'not_found', `skill ${id} not found`);
+    const content = readFileSync(md, 'utf8').slice(0, SKILL_FILE_MAX);
+    return { ...this.row(root, id), content };
   }
 
   private row(root: string, id: string, org = loadOrg(root)): SkillRow {
@@ -225,16 +358,129 @@ export class SkillsService {
     };
   }
 
-  /** Clones `url` (depth 1, no submodules) into a temp dir, runs `use`, and removes the dir. */
-  private async withClone<T>(url: string, use: (dir: string) => T | Promise<T>): Promise<T> {
-    const tmp = mkdtempSync(join(tmpdir(), 'shibaox-skills-'));
+  private async exclusive<T>(f: () => Promise<T>): Promise<T> {
+    const prev = this.lock;
+    let release = () => {};
+    this.lock = new Promise<void>((r) => {
+      release = r;
+    });
+    await prev;
     try {
-      const dest = join(tmp, 'repo');
-      this.o.onClone?.(url);
-      await cloneShallow(url, dest, bearerEnv(this.o.env));
-      return await use(dest);
+      return await f();
     } finally {
-      rmSync(tmp, { recursive: true, force: true });
+      release();
+    }
+  }
+
+  /**
+   * Clones `url` into a temp dir (one clone at a time), checks the tree of `sub` against the caps
+   * before anything is checked out, checks out `sub` only, runs `use`, and removes the dir.
+   */
+  private withClone<T>(
+    url: string,
+    sub: string,
+    use: (dir: string, isLink: IsLink) => T | Promise<T>,
+  ): Promise<T> {
+    return this.exclusive(async () => {
+      const tmp = mkdtempSync(join(this.o.tmpRoot ?? tmpdir(), 'shibaox-skills-'));
+      try {
+        const dest = join(tmp, 'repo');
+        await this.o.onClone?.(url);
+        const tree = await this.clone(url, sub, tmp, dest);
+        const links = new Set(tree.symlinks.map((p) => join(dest, p)));
+        return await use(dest, (p) => links.has(p));
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+  }
+
+  private async clone(url: string, sub: string, cwd: string, dest: string): Promise<TreeStats> {
+    const deadline = Date.now() + (this.o.timeoutMs ?? CLONE_TIMEOUT_MS);
+    const file = isFileRepo(url);
+    const env = gitEnv(this.o.env);
+    const git = async (args: string[], at: string, maxStdoutBytes?: number) => {
+      if (this.abort.signal.aborted)
+        throw new OrgEditError(503, 'shutting_down', 'the daemon is stopping');
+      const r = await runArgv({
+        argv: gitArgv(args, { file }),
+        cwd: at,
+        env,
+        inheritEnv: false,
+        timeoutMs: Math.max(1, deadline - Date.now()),
+        signal: this.abort.signal,
+        maxStderrBytes: STDERR_MAX,
+        ...(maxStdoutBytes ? { maxStdoutBytes } : {}),
+      });
+      if (r.aborted) throw new OrgEditError(503, 'shutting_down', 'the daemon is stopping');
+      if (r.timedOut)
+        throw new OrgEditError(
+          413,
+          'too_large',
+          `the clone took longer than ${(this.o.timeoutMs ?? CLONE_TIMEOUT_MS) / 1000} s`,
+        );
+      if (r.overflow)
+        throw new OrgEditError(
+          413,
+          'too_large',
+          `the repository has more than ${this.o.maxFiles ?? CLONE_MAX_FILES} files`,
+        );
+      if (r.exitCode !== 0) {
+        const last = r.stderr.trim().split('\n').pop()?.slice(0, 300);
+        throw new OrgEditError(
+          502,
+          'clone_failed',
+          `git ${args[0]} failed: ${last || `exit ${r.exitCode}`}`,
+        );
+      }
+      return r.stdout;
+    };
+    await git(
+      [
+        'clone',
+        '--depth',
+        '1',
+        '--single-branch',
+        '--no-recurse-submodules',
+        '--no-checkout',
+        '--quiet',
+        '--',
+        url,
+        dest,
+      ],
+      cwd,
+    );
+    const tree = parseLsTree(
+      await git(
+        ['ls-tree', '-r', '-l', '-z', 'HEAD', ...(sub ? ['--', sub] : [])],
+        dest,
+        LS_TREE_MAX,
+      ),
+    );
+    if (sub) {
+      if (tree.entries.length === 0)
+        throw new OrgEditError(404, 'not_found', `path "${sub}" is not in the repository`);
+      const self = tree.entries.find((e) => e.path === sub);
+      if (self?.mode === '120000')
+        throw new OrgEditError(
+          400,
+          'bad_request',
+          `path "${sub}" is a symlink (it leaves the repository)`,
+        );
+      if (self) throw new OrgEditError(400, 'bad_request', `path "${sub}" is not a folder`);
+    }
+    checkTree(tree, { maxBytes: this.o.maxBytes, maxFiles: this.o.maxFiles });
+    if (sub) await git(['sparse-checkout', 'set', '--no-cone', `/${sub}/`], dest);
+    await git(['checkout', '--quiet'], dest);
+    return tree;
+  }
+
+  private remember(key: string, entry: CacheEntry): void {
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+    while (this.cache.size > DISCOVER_CACHE_MAX) {
+      const oldest = this.cache.keys().next().value as string;
+      this.cache.delete(oldest);
     }
   }
 
@@ -246,27 +492,49 @@ export class SkillsService {
     const url = repoUrl(repo, o.local);
     const sub = subPath(path);
     const key = `${url}#${sub}`;
-    const now = (this.o.now ?? Date.now)();
     const hit = this.cache.get(key);
-    if (hit && now - hit.at < DISCOVER_TTL_MS) return hit.value;
-    const value = await this.withClone(url, (dir) => {
-      const base = inside(dir, sub);
-      return {
-        repo,
-        skills: findSkillDirs(base).map((d) => {
-          const id = d === dir ? repoName(url) : basename(d);
-          const md = join(d, 'SKILL.md');
-          const text = isRegularFile(md) ? readFileSync(md, 'utf8').slice(0, SKILL_FILE_MAX) : '';
-          return { id, ...skillMeta(text, id), path: relative(dir, d) || '.' };
-        }),
-      };
-    });
-    this.cache.set(key, { at: now, value });
-    return value;
+    if (hit) {
+      const age = this.now() - hit.at;
+      if (hit.value && age < DISCOVER_TTL_MS) return hit.value;
+      if (hit.error && age < DISCOVER_FAIL_TTL_MS) throw hit.error;
+    }
+    const running = this.inflight.get(key);
+    if (running) return running;
+    const p = (async () => {
+      try {
+        const value = await this.withClone(url, sub, (dir, isLink) => {
+          const base = inside(dir, sub);
+          return {
+            repo,
+            skills: findSkillDirs(base, isLink)
+              .filter((d) => !isLink(join(d, 'SKILL.md')))
+              .map((d) => {
+                const id = d === dir ? repoName(url) : basename(d);
+                const md = join(d, 'SKILL.md');
+                const text = isRegularFile(md)
+                  ? readFileSync(md, 'utf8').slice(0, SKILL_FILE_MAX)
+                  : '';
+                return { id, ...skillMeta(text, id), path: relative(dir, d) || '.' };
+              }),
+          };
+        });
+        this.remember(key, { at: this.now(), value });
+        return value;
+      } catch (e) {
+        if (!(e instanceof OrgEditError && e.status === 503))
+          this.remember(key, { at: this.now(), error: e });
+        throw e;
+      } finally {
+        this.inflight.delete(key);
+      }
+    })();
+    this.inflight.set(key, p);
+    return p;
   }
 
   async add(root: string, req: SkillAddRequest, o: { local: boolean }): Promise<SkillAddResult> {
     loadOrg(root); // an org that does not load is not edited
+    this.sweep(root);
     if (req?.source === 'inline') return this.addInline(root, req);
     if (req?.source === 'folder') {
       if (!o.local)
@@ -280,7 +548,7 @@ export class SkillsService {
       if (!existsSync(req.path) || !lstatSync(req.path).isDirectory())
         throw new OrgEditError(404, 'not_found', `folder ${req.path} not found`);
       const base = realpathSync(req.path);
-      return this.install(root, findSkillDirs(base), (d) => basename(d));
+      return this.install(root, findSkillDirs(base), (d) => basename(d), noLinks);
     }
     if (req?.source === 'repo') {
       if (typeof req.repo !== 'string' || !req.repo.trim())
@@ -292,11 +560,12 @@ export class SkillsService {
         throw new OrgEditError(400, 'bad_request', '"ids" is a list of skill ids');
       const url = repoUrl(req.repo, o.local);
       const sub = subPath(req.path);
-      return this.withClone(url, (dir) =>
+      return this.withClone(url, sub, (dir, isLink) =>
         this.install(
           root,
-          findSkillDirs(inside(dir, sub)),
+          findSkillDirs(inside(dir, sub), isLink),
           (d) => (d === dir ? repoName(url) : basename(d)),
+          isLink,
           req.ids,
         ),
       );
@@ -329,11 +598,13 @@ export class SkillsService {
     root: string,
     dirs: string[],
     idFor: (dir: string) => string,
+    isLink: IsLink,
     ids?: string[],
   ): SkillAddResult {
     const result: SkillAddResult = { added: [], skipped: [] };
     const seen = new Set<string>();
     const skillsDir = join(root, 'skills');
+    const copy = this.o.copyFile ?? copyFileSync;
     mkdirSync(skillsDir, { recursive: true });
     for (const dir of dirs) {
       const id = idFor(dir);
@@ -348,7 +619,7 @@ export class SkillsService {
         result.skipped.push({ id, reason: 'exists' });
         continue;
       }
-      const listed = skillFiles(dir);
+      const listed = skillFiles(dir, isLink);
       if ('reason' in listed) {
         result.skipped.push({ id, reason: listed.reason });
         continue;
@@ -356,18 +627,30 @@ export class SkillsService {
       // copied aside, then renamed in one step: a run never sees half a skill
       const partial = join(skillsDir, `.${id}.partial-${process.pid}`);
       rmSync(partial, { recursive: true, force: true });
+      let copied = false;
       try {
+        mkdirSync(partial, { recursive: true });
         for (const rel of listed.files) {
           const to = join(partial, rel);
           if (!to.startsWith(partial + sep)) continue;
           mkdirSync(dirname(to), { recursive: true });
-          copyFileSync(join(dir, rel), to);
+          copy(join(dir, rel), to);
         }
         renameSync(partial, dest);
+        copied = true;
+      } catch (e) {
+        this.o.log?.(`skill ${id}: copy failed: ${e instanceof Error ? e.message : String(e)}`);
       } finally {
         rmSync(partial, { recursive: true, force: true });
       }
-      result.added.push(this.row(root, id));
+      if (!copied) {
+        result.skipped.push({ id, reason: 'copy_failed' });
+        continue;
+      }
+      result.added.push({
+        ...this.row(root, id),
+        ...(listed.omitted.length ? { omitted: listed.omitted } : {}),
+      });
     }
     for (const id of ids ?? []) if (!seen.has(id)) result.skipped.push({ id, reason: 'not_found' });
     return result;
@@ -377,6 +660,7 @@ export class SkillsService {
   remove(root: string, id: string, o: { detach: boolean }): { removed: true } {
     if (!Id.safeParse(id).success)
       throw new OrgEditError(400, 'bad_request', `"${id}" is not a skill id`);
+    this.sweep(root);
     const dir = join(root, 'skills', id);
     if (!existsSync(dir)) throw new OrgEditError(404, 'not_found', `skill ${id} not found`);
     const org = loadOrg(root);
@@ -416,79 +700,4 @@ function inside(dir: string, sub: string): string {
   if (real !== realDir && !real.startsWith(realDir + sep))
     throw new OrgEditError(400, 'bad_request', `path "${sub}" leaves the repository`);
   return real === realDir ? dir : base;
-}
-
-/**
- * `git clone --depth 1 --no-recurse-submodules` without a shell, with a minimal environment
- * (no keys of the daemon), no prompt, a 60 s timeout and a 50 MB cap on what lands on disk.
- */
-export function cloneShallow(
-  url: string,
-  dest: string,
-  env: Record<string, string>,
-  o: { timeoutMs?: number; maxBytes?: number } = {},
-): Promise<void> {
-  const timeoutMs = o.timeoutMs ?? CLONE_TIMEOUT_MS;
-  const maxBytes = o.maxBytes ?? CLONE_MAX;
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(
-      'git',
-      [
-        'clone',
-        '--depth',
-        '1',
-        '--single-branch',
-        '--no-recurse-submodules',
-        '--quiet',
-        '--',
-        url,
-        dest,
-      ],
-      {
-        env: { ...env, GIT_TERMINAL_PROMPT: '0', GIT_LFS_SKIP_SMUDGE: '1' },
-        stdio: ['ignore', 'ignore', 'pipe'],
-        detached: process.platform !== 'win32',
-      },
-    );
-    let stderr = '';
-    let failure: string | undefined;
-    child.stderr?.on('data', (d: Buffer) => {
-      stderr += d.toString();
-    });
-    const kill = (why: string) => {
-      failure ??= why;
-      try {
-        if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL');
-        else child.kill('SIGKILL');
-      } catch {
-        // already gone
-      }
-    };
-    const timer = setTimeout(
-      () => kill(`the clone took longer than ${timeoutMs / 1000} s`),
-      timeoutMs,
-    );
-    const poll = setInterval(() => {
-      if (dirSize(dest) > maxBytes)
-        kill(`the repository is larger than ${maxBytes / 1_000_000} MB`);
-    }, 250);
-    const done = (err?: string) => {
-      clearTimeout(timer);
-      clearInterval(poll);
-      if (!err && dirSize(dest) > maxBytes)
-        err = `the repository is larger than ${maxBytes / 1_000_000} MB`;
-      if (err)
-        reject(new OrgEditError(failure ? 413 : 502, failure ? 'too_large' : 'clone_failed', err));
-      else resolvePromise();
-    };
-    child.on('error', (e) => done(`git could not run: ${e.message}`));
-    child.on('close', (code) => {
-      if (failure) return done(failure);
-      if (code !== 0)
-        return done(
-          `git clone failed: ${stderr.trim().split('\n').pop()?.slice(0, 300) || `exit ${code}`}`,
-        );
-      done();
-    });
-  });
 }

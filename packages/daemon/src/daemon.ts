@@ -692,6 +692,8 @@ export class Daemon {
     this.stopping ??= (async () => {
       this.schedules?.stop();
       this.outbox?.stop();
+      // a skills clone in flight dies with its process group
+      this.skills.close();
       await this.runs.stop({ force: o.force, graceMs: o.force ? 0 : 60_000 });
       for (const c of this.channels) await c.stop?.();
       await this.server.close();

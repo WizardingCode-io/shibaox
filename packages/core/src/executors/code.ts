@@ -7,12 +7,22 @@ export interface CommandOptions {
   env?: Record<string, string>;
   /** Merge `process.env` under `env` (default true). When false the child sees only `env`. */
   inheritEnv?: boolean;
+  /** Kills the process group when aborted (the result has `aborted: true`). */
+  signal?: AbortSignal;
+  /** Keeps at most this many bytes of stderr (the rest is dropped; the process goes on). */
+  maxStderrBytes?: number;
+  /** Kills the process group once stdout passes this many bytes (the result has `overflow: true`). */
+  maxStdoutBytes?: number;
 }
 export interface CommandResult {
   exitCode: number | null;
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  /** Killed because stdout passed `maxStdoutBytes`. */
+  overflow?: boolean;
+  /** Killed by `signal`. */
+  aborted?: boolean;
 }
 
 export interface ArgvOptions extends Omit<CommandOptions, 'command'> {
@@ -53,28 +63,50 @@ function spawnAndCollect(
     let stdout = '';
     let stderr = '';
     let timedOut = false;
-    child.stdout?.on('data', (d: Buffer) => {
-      stdout += d.toString();
-    });
-    child.stderr?.on('data', (d: Buffer) => {
-      stderr += d.toString();
-    });
-    const timer = setTimeout(() => {
-      timedOut = true;
+    let overflow = false;
+    let aborted = false;
+    const killGroup = () => {
       try {
         if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL');
         else child.kill('SIGKILL');
       } catch {
-        // process already exited between the timer firing and the kill call
+        // process already exited between the trigger and the kill call
       }
+    };
+    child.stdout?.on('data', (d: Buffer) => {
+      if (overflow) return;
+      stdout += d.toString();
+      if (opts.maxStdoutBytes !== undefined && stdout.length > opts.maxStdoutBytes) {
+        overflow = true;
+        killGroup();
+      }
+    });
+    child.stderr?.on('data', (d: Buffer) => {
+      const max = opts.maxStderrBytes;
+      if (max !== undefined && stderr.length >= max) return;
+      stderr += d.toString();
+      if (max !== undefined && stderr.length > max) stderr = stderr.slice(0, max);
+    });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killGroup();
     }, opts.timeoutMs);
+    const onAbort = () => {
+      aborted = true;
+      killGroup();
+    };
+    if (opts.signal?.aborted) onAbort();
+    else opts.signal?.addEventListener('abort', onAbort, { once: true });
+    const extra = () => ({ ...(overflow ? { overflow } : {}), ...(aborted ? { aborted } : {}) });
     child.on('close', (code) => {
       clearTimeout(timer);
-      resolve({ exitCode: code, stdout, stderr, timedOut });
+      opts.signal?.removeEventListener('abort', onAbort);
+      resolve({ exitCode: code, stdout, stderr, timedOut, ...extra() });
     });
     child.on('error', (err) => {
       clearTimeout(timer);
-      resolve({ exitCode: null, stdout, stderr: `${stderr}${err.message}`, timedOut });
+      opts.signal?.removeEventListener('abort', onAbort);
+      resolve({ exitCode: null, stdout, stderr: `${stderr}${err.message}`, timedOut, ...extra() });
     });
   });
 }

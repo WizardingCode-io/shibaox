@@ -84,4 +84,45 @@ describe('stdin of a command', () => {
     expect(r.timedOut).toBe(false);
     expect(r.exitCode).toBe(0);
   });
+  it('caps stderr, stops on too much stdout, and is killed by an abort signal', async () => {
+    const big = await runArgv({
+      argv: [
+        'node',
+        '-e',
+        "process.stderr.write('e'.repeat(10000)); process.stdout.write('o'.repeat(10000))",
+      ],
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+      maxStderrBytes: 4096,
+    });
+    expect(big.stderr.length).toBe(4096);
+    expect(big.stdout.length).toBe(10000);
+    const over = await runArgv({
+      argv: ['node', '-e', "setInterval(() => process.stdout.write('o'.repeat(1000)), 1)"],
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+      maxStdoutBytes: 5000,
+    });
+    expect(over.overflow).toBe(true);
+    expect(over.timedOut).toBe(false);
+    const ac = new AbortController();
+    const started = Date.now();
+    const p = runArgv({
+      argv: ['sleep', '5'],
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+      signal: ac.signal,
+    });
+    setTimeout(() => ac.abort(), 100);
+    const a = await p;
+    expect(a.aborted).toBe(true);
+    expect(Date.now() - started).toBeLessThan(3000);
+    const pre = await runArgv({
+      argv: ['sleep', '5'],
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+      signal: AbortSignal.abort(),
+    });
+    expect(pre.aborted).toBe(true);
+  });
 });
