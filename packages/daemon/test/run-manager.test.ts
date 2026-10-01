@@ -1266,6 +1266,8 @@ describe('Higgsfield gating per task', () => {
 
   it('account mode: the MCP server and its upload, no API tools', async () => {
     const r = await run('account', { HIGGSFIELD_API_KEY: 'id:secret' });
+    // the tools were captured (the negative assertions below mean something)
+    expect(r?.tools.length).toBeGreaterThan(0);
     expect(r?.servers).toContain('higgsfield');
     expect(r?.tools).toContain('higgsfield_upload');
     expect(r?.tools.some((t) => t.startsWith('higgsfield_api_'))).toBe(false);
@@ -1274,6 +1276,8 @@ describe('Higgsfield gating per task', () => {
   it('api mode (or auto with a key): the API tools, no MCP server, no MCP upload', async () => {
     for (const mode of ['api', 'auto'] as const) {
       const r = await run(mode, { HIGGSFIELD_API_KEY: 'id:secret' });
+      // the tools were captured (the negative assertions below mean something)
+      expect(r?.tools.length).toBeGreaterThan(0);
       expect(r?.servers).not.toContain('higgsfield');
       expect(r?.tools).toEqual(
         expect.arrayContaining([
@@ -1287,8 +1291,48 @@ describe('Higgsfield gating per task', () => {
     }
   });
 
+  it('the plan is read once per task: the MCP server and the tools agree when the mode flips', async () => {
+    for (const first of ['api', 'account'] as const) {
+      let n = 0;
+      const other = first === 'api' ? 'account' : 'api';
+      const s = chatSetup();
+      const seen: { servers: string[]; tools: string[] }[] = [];
+      const q = fakeQuery(async function* ({ options }) {
+        seen.push({
+          servers: Object.keys(options.mcpServers ?? {}),
+          tools: toolNames((options.mcpServers as Record<string, unknown> | undefined)?.shibaox),
+        });
+        yield msg.init();
+        yield msg.success('hi');
+      });
+      const { manager: m } = manager(new MemoryEventStore(), {
+        queryFn: q,
+        vault: s.vault,
+        env: { HIGGSFIELD_API_KEY: 'id:secret' },
+        higgsfield: { mode: () => (n++ === 0 ? first : other) },
+      });
+      const { runId } = await m.submit({
+        orgRoot: s.orgRoot,
+        project: s.project,
+        workflow: 'chat',
+        input: 'x',
+        workspace: 'inplace',
+      });
+      await vi.waitFor(async () => expect(isTerminal((await m.state(runId)).status)).toBe(true), {
+        timeout: 10_000,
+      });
+      const r = seen[0];
+      expect(r?.tools.length).toBeGreaterThan(0);
+      const mcp = r?.servers.includes('higgsfield') ?? false;
+      const api = r?.tools.includes('higgsfield_api_generate') ?? false;
+      expect(mcp).not.toBe(api);
+    }
+  });
+
   it('auto without a key is the account', async () => {
     const r = await run('auto', {});
+    // the tools were captured (the negative assertions below mean something)
+    expect(r?.tools.length).toBeGreaterThan(0);
     expect(r?.servers).toContain('higgsfield');
     expect(r?.tools.some((t) => t.startsWith('higgsfield_api_'))).toBe(false);
   });
@@ -1323,5 +1367,61 @@ describe('Higgsfield gating per task', () => {
     await m.cancel(runId);
     expect(signal?.aborted).toBe(true);
     release();
+  });
+
+  it('cancelling a run cancels the Higgsfield request its tool is waiting on', async () => {
+    const s = chatSetup();
+    const calls: string[] = [];
+    const fakeFetch = (async (url: string | URL, init?: RequestInit) => {
+      const u = String(url);
+      calls.push(`${init?.method ?? 'GET'} ${u}`);
+      const body = u.endsWith('/cancel')
+        ? { status: 'canceled' }
+        : u.includes('/requests/')
+          ? { status: 'queued' }
+          : { request_id: 'req-1', status: 'queued' };
+      return new Response(JSON.stringify(body), { status: 200 });
+    }) as typeof fetch;
+    let toolResult: { isError?: boolean; content: { text: string }[] } | undefined;
+    const q = fakeQuery(async function* ({ options }) {
+      yield msg.init();
+      const srv = (options.mcpServers as Record<string, unknown>).shibaox as {
+        instance: {
+          _registeredTools: Record<
+            string,
+            { handler: (a: unknown, x: unknown) => Promise<unknown> }
+          >;
+        };
+      };
+      toolResult = (await srv.instance._registeredTools.higgsfield_api_generate?.handler(
+        { model_path: 'higgsfield-ai/soul/standard', input: { prompt: 'a cat' }, timeout_s: 900 },
+        {},
+      )) as typeof toolResult;
+      yield msg.success('done');
+    });
+    const { manager: m } = manager(new MemoryEventStore(), {
+      queryFn: q,
+      vault: s.vault,
+      // a base in the run's env (the vault is merged in it) never redirects the key
+      env: { HIGGSFIELD_API_KEY: 'id:secret', SHIBAOX_HIGGSFIELD_API_BASE: 'http://127.0.0.1:9' },
+      higgsfield: { mode: () => 'api', fetch: fakeFetch },
+    });
+    const { runId } = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'chat',
+      input: 'x',
+      workspace: 'inplace',
+    });
+    await vi.waitFor(
+      () => expect(calls.some((c) => c.includes('/requests/req-1/status'))).toBe(true),
+      {
+        timeout: 10_000,
+      },
+    );
+    await m.cancel(runId);
+    await vi.waitFor(() => expect(toolResult).toBeDefined(), { timeout: 3_000 });
+    expect(calls).toContain('POST https://api.higgsfield.ai/requests/req-1/cancel');
+    expect(toolResult?.isError).toBe(true);
   });
 });

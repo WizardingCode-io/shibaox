@@ -41,7 +41,7 @@ const isLoopback = (req: IncomingMessage): boolean =>
 
 const isRemote = (req: IncomingMessage) => REMOTE.has(req);
 
-import { HIGGSFIELD_MODES, type HiggsfieldMode } from './config.js';
+import { ConfigSyntaxError, HIGGSFIELD_MODES, type HiggsfieldMode } from './config.js';
 import type { HiggsfieldView, LoginStart } from './higgsfield.js';
 import type { PluginRow } from './plugins.js';
 import type { ConnectorTemplate } from './registry/connectors.js';
@@ -267,6 +267,7 @@ function toHttp(e: unknown): HttpError {
   if (e instanceof OrgEditError) return new HttpError(e.status, e.code, e.message, e.details);
   if (e instanceof NotFoundError) return new HttpError(404, 'not_found', e.message);
   if (e instanceof AlreadyResolvedError) return new HttpError(409, 'already_resolved', e.message);
+  if (e instanceof ConfigSyntaxError) return new HttpError(409, 'conflict', e.message);
   const message = e instanceof Error ? e.message : String(e);
   if (/ not found$/.test(message)) return new HttpError(404, 'not_found', message);
   if (

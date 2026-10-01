@@ -57,6 +57,14 @@ describe('Higgsfield in the scaffold', () => {
     const app = readFileSync(join(dir, 'org', 'skills', 'higgsfield-app', 'SKILL.md'), 'utf8');
     expect(app).toMatch(/^---\nname: higgsfield-app\n/);
     expect(app).toContain('Paste the API key copied from open.higgsfield.ai. Paste it as-is.');
+    // only the variables the official text names, and the generic wording
+    expect(app).not.toContain('HF_API_KEY');
+    expect(app).toMatch(/`HF_CREDENTIALS` for the TypeScript SDK/);
+    expect(app).toMatch(/`HF_KEY`\s+for the Python/);
+    expect(app).toContain('server-only environment variable');
+    // tool names a runtime may not have come with their generic fallback
+    expect(skill).toContain("`web_fetch` (or your runtime's fetch/download tool)");
+    expect(skill).toContain("`download_file(url, path)` (or your runtime's fetch/download tool)");
     expect(app).toContain('Connect API key');
     expect(app).toContain('higgsfield-ai/app-templates/studio');
     expect(app).toContain('pnpm dlx shadcn@latest init -t next');
@@ -252,6 +260,14 @@ describe('GET /integrations/higgsfield', () => {
     expect(d.config.partners.higgsfield.mode).toBe('api');
     await expect(c.setHiggsfieldMode('x' as never)).rejects.toMatchObject({ status: 400 });
     expect(readFileSync(home.config, 'utf8')).toBe(text);
+    // edited by hand into a broken file while the daemon runs: refused, untouched
+    const broken = '# mine\nmax_concurrent_runs: 2\npartners: {higgsfield: \n';
+    writeFileSync(home.config, broken);
+    await expect(c.setHiggsfieldMode('account')).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringMatching(/daemon\.yaml has a syntax error at line \d+: fix it first/),
+    });
+    expect(readFileSync(home.config, 'utf8')).toBe(broken);
   });
 
   it('PUT /integrations/higgsfield is refused to another machine and through a proxy', async () => {

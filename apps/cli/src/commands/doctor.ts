@@ -376,7 +376,8 @@ async function higgsfieldApiLine(env: NodeJS.ProcessEnv): Promise<CheckLine> {
     detail,
   });
   if (!key) return line(false, `no key (optional: ${HIGGSFIELD_API_KEYS_URL}) · mode ${mode}`);
-  const r = await higgsfieldApiCheck(key, apiBase(env));
+  // the base from the shell this command runs in, never the vault
+  const r = await higgsfieldApiCheck(key, apiBase(process.env));
   const now = `mode ${mode} → ${runtimeHiggsfieldMode(mode, true)}`;
   if (r.valid === true) return line(true, `key set, valid · ${now}`);
   if (r.valid === false) return line(false, `key set, rejected (${r.status ?? 401}) · ${now}`);

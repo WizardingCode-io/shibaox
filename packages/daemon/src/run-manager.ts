@@ -41,7 +41,7 @@ import {
   type WorkspaceMode,
 } from '@wizardingcode/shibaox-workspace';
 import type { DaemonConfig, HiggsfieldMode } from './config.js';
-import { apiBase, runtimeHiggsfieldMode } from './higgsfield.js';
+import { HIGGSFIELD_API, runtimeHiggsfieldMode } from './higgsfield.js';
 import type { InboxAnswer, InboxItem, InboxService } from './inbox.js';
 import { projectProtectedGlobs } from './protected.js';
 import { type DiffResult, diffWorkspace, worktreeBase } from './runs/diff.js';
@@ -60,7 +60,7 @@ import {
 } from './runs/files.js';
 import { type GraphMode, prepareGraph } from './runs/graph.js';
 import { higgsfieldApiTools } from './runs/higgsfield-api-tools.js';
-import { higgsfieldPlan } from './runs/higgsfield-gate.js';
+import { type HiggsfieldPlan, higgsfieldPlan } from './runs/higgsfield-gate.js';
 import { higgsfieldTools, uploadTimeoutMs } from './runs/higgsfield-tools.js';
 import { finishRun, vaultDir } from './runs/notes.js';
 import { memoryTools, orchestrationTools, toolsForRole } from './runs/orchestration.js';
@@ -168,7 +168,7 @@ export interface RunManagerOptions {
    * Higgsfield's mode (`partners.higgsfield.mode`), read when each task starts; `fetch` is the
    * API tools' (tests inject a fake).
    */
-  higgsfield?: { mode(): HiggsfieldMode; fetch?: typeof fetch };
+  higgsfield?: { mode(): HiggsfieldMode; fetch?: typeof fetch; base?: string };
   /** A run with an `origin` ended: the daemon reports it where it was asked for. */
   onFinished?: (
     state: RunState,
@@ -220,6 +220,8 @@ export class RunManager {
   private readonly inFlight = new Set<string>();
   /** Per running run: aborted on cancel/stop/end, so a tool waiting on Higgsfield stops too. */
   private readonly toolAborts = new Map<string, AbortController>();
+  /** Per task: the Higgsfield path chosen when it started. */
+  private readonly hfPlans = new WeakMap<TaskJob, HiggsfieldPlan>();
   private readonly now: () => string;
   private stopping = false;
   private pumping = false;
@@ -810,7 +812,7 @@ export class RunManager {
       );
       for (const s of p.settle) s.reject(e);
     } finally {
-      this.abortTools(p.runId, 'the run left the engine');
+      this.abortTools(p.runId, 'the run left the engine', true);
       this.inFlight.delete(p.runId);
       if (this.live.get(p.runId)?.token === token) this.live.delete(p.runId);
       if (result && isTerminal(result.status)) {
@@ -912,9 +914,7 @@ export class RunManager {
     const { engine, warnings } = buildRuntime({
       tools: this.taskTools(org, r),
       // the account's MCP never starts in API mode (decided per task)
-      skipMcp: (job, id) =>
-        id === 'higgsfield' &&
-        higgsfieldPlan(job.role, this.hfMode(), !!org.catalog.higgsfield?.server).skipMcp,
+      skipMcp: (job, id) => id === 'higgsfield' && this.hfPlan(org, job).skipMcp,
       model: r.model,
       org,
       store: this.opts.store,
@@ -1044,16 +1044,30 @@ export class RunManager {
     return runtimeHiggsfieldMode(this.opts.higgsfield?.mode() ?? 'auto', !!env.HIGGSFIELD_API_KEY);
   }
 
+  /** The task's Higgsfield plan, decided once per task (its MCP servers and tools agree). */
+  private hfPlan(org: Org, job: TaskJob): HiggsfieldPlan {
+    let plan = this.hfPlans.get(job);
+    if (!plan) {
+      plan = higgsfieldPlan(job.role, this.hfMode(), !!org.catalog.higgsfield?.server);
+      this.hfPlans.set(job, plan);
+    }
+    return plan;
+  }
+
   /** The signal a run's tools listen to: aborted when the run is cancelled, stopped or ends. */
   toolSignal(runId: string): AbortSignal | undefined {
     return this.toolAborts.get(runId)?.signal;
   }
 
-  private abortTools(runId: string, reason: string): void {
+  /**
+   * Aborts the run's tool signal; the aborted controller stays until the run leaves the engine
+   * (`release`), so a tool that reads it late still sees the abort.
+   */
+  private abortTools(runId: string, reason: string, release = false): void {
     const c = this.toolAborts.get(runId);
     if (!c) return;
-    this.toolAborts.delete(runId);
-    c.abort(new Error(reason));
+    if (!c.signal.aborted) c.abort(new Error(reason));
+    if (release) this.toolAborts.delete(runId);
   }
 
   /**
@@ -1067,18 +1081,22 @@ export class RunManager {
     runId: string | undefined,
   ): AgentTool[] {
     const entry = org.catalog.higgsfield;
-    const plan = higgsfieldPlan(job.role, this.hfMode(), !!entry?.server);
+    const plan = this.hfPlan(org, job);
     const env = this.opts.env ?? process.env;
-    if (plan.apiTools)
+    if (plan.apiTools) {
+      const signal = runId ? this.toolSignal(runId) : undefined;
       return higgsfieldApiTools({
         key: () => env.HIGGSFIELD_API_KEY || undefined,
         fetch: this.opts.higgsfield?.fetch ?? fetch,
-        base: apiBase(env),
+        // from the launch env (the daemon's `apiBase`), never the run env: it has the vault
+        base: this.opts.higgsfield?.base ?? HIGGSFIELD_API,
         workspace: job.workspace,
         protectedGlobs: projectProtectedGlobs(project),
-        signal: () => (runId ? this.toolSignal(runId) : undefined),
+        // captured now: the run's controller, even once it is aborted
+        signal: () => signal,
         log: this.opts.log,
       });
+    }
     if (plan.upload && entry)
       // a role with Higgsfield's server gets the upload the model cannot do itself
       return higgsfieldTools({

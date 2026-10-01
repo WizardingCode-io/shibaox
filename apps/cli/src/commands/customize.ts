@@ -38,6 +38,10 @@ export function skillSource(
   o: { id?: string[]; path?: string; folder?: boolean; builtin?: boolean; replace?: boolean },
 ): SkillAddRequest {
   if (o.builtin) return { source: 'builtin', id: source, ...(o.replace ? { replace: true } : {}) };
+  if (o.replace)
+    throw new Error(
+      '--replace works only with --builtin (it rewrites a skill shipped with Shibaox); to update another skill, remove it (skills rm) and add it again',
+    );
   if (o.folder || /^[./~]/.test(source)) {
     const path =
       source === '~' || source.startsWith('~/')
@@ -70,9 +74,10 @@ export async function skillsAdd(
   },
   out: Out,
 ): Promise<number> {
+  const request = skillSource(source, o);
   const client = await connect({ write: true });
   const root = await resolveOrg(client, o.org);
-  const r = await client.addSkills(root, skillSource(source, o));
+  const r = await client.addSkills(root, request);
   for (const a of r.added) out.line(`${o.replace ? 'written' : 'added'} ${a.id}  ${a.path}`);
   for (const s of r.skipped)
     out.line(

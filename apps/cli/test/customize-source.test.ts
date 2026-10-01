@@ -16,6 +16,11 @@ describe('skills add <id> --builtin', () => {
       replace: true,
     });
   });
+  it('--replace without --builtin is refused (it only rewrites a built-in skill)', () => {
+    expect(() => skillSource('anthropics/skills', { replace: true })).toThrow(
+      /--replace works only with --builtin/,
+    );
+  });
 });
 
 describe('skills add <source>', () => {

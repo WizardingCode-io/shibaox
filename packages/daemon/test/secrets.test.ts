@@ -98,4 +98,14 @@ describe('SecretsStore', () => {
     expect(row).toMatchObject({ set: true, source: 'vault', masked: 'id-1…cdef' });
     expect(JSON.stringify(s.list({}))).not.toContain('secret-abcdef');
   });
+
+  it("refuses SHIBAOX_* names (Shibaox's own settings) except its two built-in tokens", () => {
+    const { s } = store();
+    for (const name of ['SHIBAOX_HIGGSFIELD_API_BASE', 'SHIBAOX_JEV_BASE_URL', 'SHIBAOX_HOME'])
+      expect(() => s.set(name, 'http://other.test')).toThrow(/reserved for Shibaox's own settings/);
+    expect(s.get('SHIBAOX_HIGGSFIELD_API_BASE')).toBeUndefined();
+    s.set('SHIBAOX_TELEGRAM_TOKEN', '123:abc');
+    s.set('SHIBAOX_DAEMON_TOKEN', 'tok-1234567890');
+    expect(s.get('SHIBAOX_DAEMON_TOKEN')).toBe('tok-1234567890');
+  });
 });
