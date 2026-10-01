@@ -57,6 +57,14 @@ describe('Higgsfield in the scaffold', () => {
     const app = readFileSync(join(dir, 'org', 'skills', 'higgsfield-app', 'SKILL.md'), 'utf8');
     expect(app).toMatch(/^---\nname: higgsfield-app\n/);
     expect(app).toContain('Paste the API key copied from open.higgsfield.ai. Paste it as-is.');
+    // only the variables the official text names, and the generic wording
+    expect(app).not.toContain('HF_API_KEY');
+    expect(app).toMatch(/`HF_CREDENTIALS` for the TypeScript SDK/);
+    expect(app).toMatch(/`HF_KEY`\s+for the Python/);
+    expect(app).toContain('server-only environment variable');
+    // tool names a runtime may not have come with their generic fallback
+    expect(skill).toContain("`web_fetch` (or your runtime's fetch/download tool)");
+    expect(skill).toContain("`download_file(url, path)` (or your runtime's fetch/download tool)");
     expect(app).toContain('Connect API key');
     expect(app).toContain('higgsfield-ai/app-templates/studio');
     expect(app).toContain('pnpm dlx shadcn@latest init -t next');

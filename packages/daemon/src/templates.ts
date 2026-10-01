@@ -263,8 +263,9 @@ asked-for result, the cost or model said afterwards, never a retry on your own.
 1. Models: images \`higgsfield-ai/soul/standard\`; video \`kling-video/v2.5-turbo/pro/text-to-video\`
    or \`bytedance/seedance-2.0/text-to-video\`; image-to-video
    \`kling-video/v2.5-turbo/standard/image-to-video\`. Before any other model (or one whose input
-   you do not know), \`web_fetch\` https://docs.higgsfield.ai/docs/llms.txt, follow that model's own
-   llms.txt and its Input JSON Schema. Never invent a model path or a parameter.
+   you do not know), \`web_fetch\` (or your runtime's fetch/download tool)
+   https://docs.higgsfield.ai/docs/llms.txt, follow that model's own llms.txt and its Input JSON
+   Schema. Never invent a model path or a parameter.
 2. Video costs much more than an image: before the first video in a conversation, say the model
    and that it is billed to the developer account, and ask once unless the user already said go.
 3. References: a file the user attached (or an earlier output) goes through
@@ -275,8 +276,8 @@ asked-for result, the cost or model said afterwards, never a retry on your own.
    \`request_id\` at once for long videos; check later with \`higgsfield_api_status\`.
 5. Status \`unknown\` or \`canceled_by_timeout\`, or an error saying the request may or may not
    exist: never submit again. Check with \`higgsfield_api_status(request_id)\`, or tell the user.
-6. Save every result with \`download_file(url, path)\`: \`outputs/<slug>.png\` (\`.mp4\`, \`.mp3\`), a
-   short slug from the prompt, \`-2\`, \`-3\` for variants. Answer in one or two lines: what, the file
+6. Save every result with \`download_file(url, path)\` (or your runtime's fetch/download tool):
+   \`outputs/<slug>.png\` (\`.mp4\`, \`.mp3\`), a short slug from the prompt, \`-2\`, \`-3\` for variants. Answer in one or two lines: what, the file
    path, the model. No raw ids, no JSON.
 
 When it fails:
@@ -330,9 +331,9 @@ signed in, say so and point to Integrations → Higgsfield. The \`higgsfield\` c
 4. Wait with \`jobs_wait\` (\`jobs: [{ index, job_id }]\`, up to 15 s each call). Call it again
    while a job runs, at most 12 times; then give the job id and stop. If a submit timed out or
    you are not sure a job was created, look at \`show_generations\` first: never submit again.
-5. Save every result into the workspace with \`download_file(url, path)\`: \`outputs/<slug>.png\`
-   (\`.mp4\`, \`.mp3\`, \`.glb\`), a short slug from the prompt, \`-2\`, \`-3\` for variants. The file shows
-   in the conversation with a preview.
+5. Save every result into the workspace with \`download_file(url, path)\` (or your runtime's
+   fetch/download tool): \`outputs/<slug>.png\` (\`.mp4\`, \`.mp3\`, \`.glb\`), a short slug from the
+   prompt, \`-2\`, \`-3\` for variants. The file shows in the conversation with a preview.
 6. Answer in one or two lines: what was generated, the file path, the model, the credits spent.
    No raw ids, no JSON.
 
@@ -390,9 +391,9 @@ https://open.higgsfield.ai/api-keys).
   "Paste the API key copied from open.higgsfield.ai. Paste it as-is."
   One password field: never ask to split the key, never require a colon in the UI. Server-side
   requests keep the \`Key\` authorization scheme.
-- The key lives on the server only: an HTTP-only cookie (the template's flow) or a server-only
-  variable (\`HF_API_KEY\`, \`HF_CREDENTIALS\` for the JS SDK \`@higgsfield/client\`, \`HF_KEY\` for the
-  Python \`higgsfield-client\`) in \`.env.local\`, with a placeholder in \`.env.example\`. Never in
+- The key lives on the server only: an HTTP-only cookie (the template's flow) or a
+  server-only environment variable (\`HF_CREDENTIALS\` for the TypeScript SDK
+  \`@higgsfield/client\`, \`HF_KEY\` for the Python \`higgsfield-client\`) in \`.env.local\`, with a placeholder in \`.env.example\`. Never in
   localStorage/IndexedDB, a client bundle, a server action's return value or a log. Authenticated
   provider requests never leave from the browser.
 - Keep "Manage API key", "Replace API key" and "Remove API key".

@@ -115,6 +115,9 @@ describe('customize commands', () => {
     expect(replaced.stdout).toContain('written higgsfield-app');
     const unknown = await cli('skills', 'add', 'nope', '--builtin', '--org', org);
     expect(unknown.code).toBe(1);
+    const bad = await cli('skills', 'add', 'anthropics/skills', '--replace', '--org', org);
+    expect(bad.code).not.toBe(0);
+    expect(bad.stdout + bad.stderr).toMatch(/--replace works only with --builtin/);
   });
 
   it('mcp add (url and command), roles list, mcp rm, plugins', async () => {
