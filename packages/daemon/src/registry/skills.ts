@@ -27,14 +27,6 @@ const SOURCES: SkillSource[] = [
     description: 'Generation recipes for Higgsfield: images, video, product shots, characters.',
     categories: ['Design & media'],
   },
-  {
-    repo: 'WizardingCode-io/shibaox',
-    name: 'Shibaox templates',
-    vendor: 'Shibaox',
-    description: 'The skills the Shibaox org template ships with.',
-    path: 'org/skills',
-    categories: ['Shibaox'],
-  },
 ];
 
 export function skillSources(): SkillSource[] {

@@ -9,7 +9,8 @@
       "!**/.superpowers",
       "!docs/assets",
       "!apps/app/vendor",
-      "!apps/desktop/release"
+      "!apps/desktop/release",
+      "!.claude"
     ]
   },
   "formatter": {

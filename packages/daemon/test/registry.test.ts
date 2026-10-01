@@ -53,7 +53,6 @@ describe('skill sources', () => {
     expect(skillSources().map((s) => s.repo)).toEqual([
       'anthropics/skills',
       'higgsfield-ai/skills',
-      'WizardingCode-io/shibaox',
     ]);
   });
 });

@@ -9,3 +9,4 @@ graphify-out/
 apps/desktop/release/
 apps/app/fidelity-out/
 .mcp.json
+.claude/worktrees/
