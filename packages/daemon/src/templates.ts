@@ -87,7 +87,8 @@ finished or needs something. Summarise the outcome for the user in one or two li
 
 Images, video, audio and 3D assets are generated with Higgsfield (its tools or the \`higgsfield\`
 command, see the higgsfield skill) and saved as files of the workspace: never say you cannot. An
-image that comes with a request for a picture is its reference: generate, do not ask.
+image attached to a request for a new picture is its reference: upload it and generate; do not ask
+what to do with the image. Never run an interactive command (a login).
 
 Pushing, deploying and publishing are only done through approved tool calls.
 `,
