@@ -18,7 +18,7 @@ import { highlight } from '../markdown/highlight.js';
 import { type CodeOpen, Markdown } from '../markdown/render.js';
 import { navigate } from '../router.js';
 import { useAppState, useStore } from '../store/hooks.js';
-import { thumbKind, thumbOfFile, thumbOfRunFile } from '../thumbs.js';
+import { dropThumb, thumbKind, thumbOfFile, thumbOfRunFile } from '../thumbs.js';
 import { FileSheet, type InlineFile, type SaveTarget } from './FileSheet.js';
 
 const TOOL_ICON: Record<string, string> = {
@@ -85,6 +85,7 @@ function ThumbChip(props: {
   runId: string;
   path: string;
   mime?: string;
+  size?: number;
   status?: 'added' | 'modified' | 'deleted' | 'renamed';
   load: (runId: string, path: string) => Promise<RunFileContent>;
   loadWhole?: (runId: string, path: string) => Promise<Blob>;
@@ -93,23 +94,26 @@ function ThumbChip(props: {
   const S = ds();
   const [preview, setPreview] = useState<string | undefined>(undefined);
   const kind = thumbKind(props.path, props.mime);
-  const { runId, path, mime, load, loadWhole } = props;
+  const { runId, path, mime, size, load, loadWhole } = props;
   useEffect(() => {
     if (!kind) return;
     let live = true;
     let made: string | undefined;
-    thumbOfRunFile(runId, path, mime, load, loadWhole)
+    thumbOfRunFile(runId, path, { mime, size }, load, loadWhole)
       .then((url) => {
-        if (!live) return;
+        if (!live) {
+          dropThumb(url);
+          return;
+        }
         if (url?.startsWith('blob:')) made = url;
         setPreview(url);
       })
       .catch(() => undefined);
     return () => {
       live = false;
-      if (made) URL.revokeObjectURL(made);
+      dropThumb(made);
     };
-  }, [kind, runId, path, mime, load, loadWhole]);
+  }, [kind, runId, path, mime, size, load, loadWhole]);
   return (
     <S.FileChip
       path={props.path}
@@ -123,25 +127,40 @@ function ThumbChip(props: {
 /** Thumbnails of the files picked for the next message, made once per file. */
 function useFileThumbs(files: readonly File[]): Map<File, string> {
   const [thumbs, setThumbs] = useState<Map<File, string>>(new Map());
+  const known = useRef<Map<File, string>>(new Map());
   useEffect(() => {
     let live = true;
-    const made: string[] = [];
     void (async () => {
+      // files still here keep their thumbnail; new ones get theirs; gone ones are let go
       const next = new Map<File, string>();
       for (const f of files) {
-        const url = await thumbOfFile(f).catch(() => undefined);
-        if (url) {
-          next.set(f, url);
-          if (url.startsWith('blob:')) made.push(url);
+        const had = known.current.get(f);
+        if (had) {
+          next.set(f, had);
+          continue;
         }
+        const url = await thumbOfFile(f).catch(() => undefined);
+        if (!live) {
+          dropThumb(url);
+          return;
+        }
+        if (url) next.set(f, url);
       }
-      if (live) setThumbs(next);
+      for (const [f, url] of known.current) if (!next.has(f)) dropThumb(url);
+      known.current = next;
+      setThumbs(new Map(next));
     })();
     return () => {
       live = false;
-      for (const u of made) URL.revokeObjectURL(u);
     };
   }, [files]);
+  useEffect(
+    () => () => {
+      for (const url of known.current.values()) dropThumb(url);
+      known.current = new Map();
+    },
+    [],
+  );
   return thumbs;
 }
 
@@ -331,6 +350,7 @@ function ChatTab(props: {
                       runId={m.runId}
                       path={a.path}
                       mime={a.mime}
+                      size={a.size}
                       status="added"
                       load={props.loadFile}
                       loadWhole={props.loadWhole}

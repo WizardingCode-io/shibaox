@@ -59,7 +59,13 @@ function Media(props: {
   if (error) return <p className="muted">{error}</p>;
   if (!url) return <S.ThinkingIndicator label="Fetching" />;
   if (props.kind === 'image')
-    return <img src={url} alt="" style={{ maxWidth: '100%', borderRadius: 'var(--radius-md)' }} />;
+    return (
+      <img
+        src={url}
+        alt={props.id}
+        style={{ maxWidth: '100%', borderRadius: 'var(--radius-md)' }}
+      />
+    );
   return props.kind === 'video' ? (
     // biome-ignore lint/a11y/useMediaCaption: a generated clip has no captions
     <video controls src={url} style={{ maxWidth: '100%', borderRadius: 'var(--radius-md)' }} />

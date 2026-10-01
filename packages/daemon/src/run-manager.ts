@@ -467,16 +467,15 @@ export class RunManager {
     return readRunFile(state.workspace, path, { protectedGlobs: this.protectedFor(state) });
   }
 
-  /** One call on a catalog MCP server from the daemon itself (a fresh connection, closed after). */
-  private async callMcp(
+  /** Work on a catalog MCP server from the daemon itself: one connection, closed after. */
+  private async withMcp<T>(
     entry: CatalogEntry,
-    name: string,
-    args: Record<string, unknown>,
-  ): Promise<unknown> {
-    const spec = mcpServerSpec(entry, this.opts.env ?? process.env);
-    const c = await connectMcp({ ...spec, tools: undefined }, { log: this.opts.log });
+    f: (call: (name: string, args: Record<string, unknown>) => Promise<unknown>) => Promise<T>,
+  ): Promise<T> {
+    const { tools: _allowlist, ...spec } = mcpServerSpec(entry, this.opts.env ?? process.env);
+    const c = await connectMcp(spec, { log: this.opts.log });
     try {
-      return await c.call(name, args);
+      return await f((name, args) => c.call(name, args));
     } finally {
       await c.close();
     }
@@ -1018,17 +1017,17 @@ export class RunManager {
           ? higgsfieldTools({
               workspace: job.workspace,
               protectedGlobs: projectProtectedGlobs(project),
-              call: (name, args) =>
-                this.callMcp(org.catalog.higgsfield as CatalogEntry, name, args),
-              put: async (url, bytes, contentType) =>
-                (
-                  await fetch(url, {
-                    method: 'PUT',
-                    headers: { 'content-type': contentType },
-                    body: new Uint8Array(bytes),
-                    signal: AbortSignal.timeout(120_000),
-                  })
-                ).status,
+              withMcp: (f) => this.withMcp(org.catalog.higgsfield as CatalogEntry, f),
+              put: async (url, bytes, contentType) => {
+                // a minute plus a second per 100 KB, so a slow uplink gets a video through
+                const r = await fetch(url, {
+                  method: 'PUT',
+                  headers: { 'content-type': contentType, 'content-length': String(bytes.length) },
+                  body: bytes as unknown as BodyInit,
+                  signal: AbortSignal.timeout(Math.min(600_000, 60_000 + bytes.length / 100)),
+                });
+                return { status: r.status, body: await r.text().catch(() => '') };
+              },
             })
           : []),
       ],

@@ -249,11 +249,18 @@ asked-for result, the cost said afterwards, never a retry on your own.
 
 ## An image attached is a reference
 
-When the message comes with an image (or an earlier output) and asks for a picture, a change,
-"the same dog in…", "like this but…", that is an image-to-image request: upload the file with
-\`higgsfield_upload\`, generate with it as a reference (\`gpt_image_2_5\` edits with references;
-\`nano_banana_2_lite\` for cheap variations; \`seedream_v5_pro\` for a face kept faithful), and
-save the result. Do not ask what to do with the image.
+When a message attaches an image (or names an earlier output) and asks for a new image made
+from it ("the same dog in…", "like this but…", "put this in…"), the attachment is the reference:
+upload it with \`higgsfield_upload(path)\` and generate, without asking what the image is for.
+The first time a model takes a reference in a conversation, read its \`medias[].roles\` once with
+\`models_explore\` (\`action: get\`, \`model_id\`) and use that role (\`nano_banana_2_lite\` for cheap
+variations, \`seedream_v5_pro\` for a face kept faithful, \`gpt_image_2_5\` when it lists image
+references). Everything else still applies: one request, ask once before video or 3D. A message
+that only asks about the image (describe, check, extract) generates nothing.
+
+Never run \`higgsfield auth login\` or any other interactive command: when Higgsfield is not
+signed in, say so and point to Integrations → Higgsfield. The \`higgsfield\` command is for
+\`generate\`, \`model list\` and \`generate cost\` only; uploads go through \`higgsfield_upload\`.
 
 ## Flow
 
