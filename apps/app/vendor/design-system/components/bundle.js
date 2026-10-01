@@ -266,19 +266,21 @@
       p.action || null, p.onClose ? h(IconButton, { icon: 'x', label: 'Dismiss', size: 'sm', onClick: p.onClose }) : null);
   }
 
+  var hasFiles = function (e) { var t = e.dataTransfer; if (!t) return false; if (t.files && t.files.length) return true; var types = t.types; if (!types) return false; for (var i = 0; i < types.length; i++) if (types[i] === 'Files') return true; return false; };
   var SIZE = function (n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB'; };
   function Composer(p) {
     var inner = useState(p.defaultValue || ''), controlled = p.value !== undefined, v = controlled ? p.value : inner[0];
     var over = useState(false), fileInput = useRef(null);
     function setText(t) { if (!controlled) inner[1](t); if (p.onChange) p.onChange(t); }
     var canSend = !!(v.trim() || (p.attachments && p.attachments.length));
-    function send() { if (!canSend || p.busy) return; if (p.onSend) p.onSend(v); setText(''); }
+    // controlled text is cleared by the consumer once the message was taken; our own is cleared here
+    function send() { if (!canSend || p.busy) return; if (p.onSend) p.onSend(v); if (!controlled) inner[1](''); }
     function files(list) { var out = []; for (var i = 0; i < list.length; i++) out.push(list[i]); if (out.length && p.onAttach) p.onAttach(out); }
     var attachments = p.attachments || [];
     return h('div', { className: cx('sx-composer', p.busy && 'is-busy', (over[0] || p.dropping) && 'is-dropping'),
-        onDragOver: p.onAttach ? function (e) { e.preventDefault(); over[1](true); } : undefined,
-        onDragLeave: p.onAttach ? function () { over[1](false); } : undefined,
-        onDrop: p.onAttach ? function (e) { e.preventDefault(); over[1](false); files(e.dataTransfer && e.dataTransfer.files ? e.dataTransfer.files : []); } : undefined },
+        onDragOver: p.onAttach ? function (e) { if (!hasFiles(e)) return; e.preventDefault(); e.stopPropagation(); over[1](true); } : undefined,
+        onDragLeave: p.onAttach ? function (e) { if (e.currentTarget && e.relatedTarget && e.currentTarget.contains(e.relatedTarget)) return; over[1](false); } : undefined,
+        onDrop: p.onAttach ? function (e) { if (!hasFiles(e)) return; e.preventDefault(); e.stopPropagation(); over[1](false); files(e.dataTransfer.files); } : undefined },
       attachments.length ? h('div', { className: 'sx-composer__files', role: 'list', 'aria-label': 'Attachments' },
         attachments.map(function (a, i) {
           return h('span', { key: a.name + i, className: 'sx-composer__file', role: 'listitem' },

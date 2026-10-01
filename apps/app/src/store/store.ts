@@ -448,10 +448,11 @@ export class AppStore {
         const { runId } = await this.client.submitRun({
           orgRoot: prev.orgRoot ?? previous.orgRoot ?? '',
           project: prev.project ?? previous.project ?? prev.workspace,
-          // an action picked in the composer starts that workflow here instead of a chat turn
+          // an action picked in the composer starts that workflow as a task of this conversation
+          // (it lands in Tasks and its end reaches the orchestrator); a turn stays a chat turn
           workflow: o.workflow ?? previous.workflow,
           input: text,
-          ...(o.workflow ? {} : { messages }),
+          ...(o.workflow ? { parentRunId: previous.runId } : { messages }),
           ...(o.attachments && o.attachments.length > 0 ? { attachments: o.attachments } : {}),
           thread: rootId,
           ...(o.event ? { event: true } : {}),

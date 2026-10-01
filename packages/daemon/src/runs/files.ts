@@ -334,7 +334,38 @@ export function attachmentName(name: string): string {
     .replace(/[\0/]/g, '')
     .trim()
     .replace(/[.\s]+$/, '');
-  return !base || base === '.' || base === '..' ? 'file' : base;
+  if (!base || base === '.' || base === '..') return 'file';
+  // file systems stop at 255 bytes: a long stem is cut, the extension kept
+  const dot = base.lastIndexOf('.');
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  const ext = dot > 0 ? base.slice(dot, dot + 16) : '';
+  return stem.length > 120 ? `${stem.slice(0, 120)}${ext}` : base;
+}
+
+/** What `writeAttachments` will do, checked before any workspace exists: names, sizes, protection. */
+export function planAttachments(
+  attachments: readonly Attachment[],
+  o: { protectedGlobs?: string[] } = {},
+): { name: string; size: number; mime?: string }[] {
+  const globs = [...ALWAYS_PROTECTED, ...(o.protectedGlobs ?? [])];
+  const seen = new Set<string>();
+  const out: { name: string; size: number; mime?: string }[] = [];
+  for (const a of attachments) {
+    const name = attachmentName(a.name);
+    if (isProtected(`attachments/${name}`, globs))
+      throw new RunFileError('protected', `${name} is protected: it cannot be attached`);
+    const size = Math.floor((a.content.length * 3) / 4);
+    if (size > ATTACHMENTS_LIMIT)
+      throw new RunFileError('too_large', `${name} is larger than ${ATTACHMENTS_LIMIT} bytes`);
+    let candidate = name;
+    const dot = name.lastIndexOf('.');
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const ext = dot > 0 ? name.slice(dot) : '';
+    for (let n = 2; seen.has(candidate); n++) candidate = `${stem}-${n}${ext}`;
+    seen.add(candidate);
+    out.push({ name: candidate, size, ...(a.mime ? { mime: a.mime } : {}) });
+  }
+  return out;
 }
 
 /**
@@ -360,7 +391,7 @@ export async function writeAttachments(
     taken.add(candidate);
     const rel = `attachments/${candidate}`;
     const bytes = Buffer.from(a.content, 'base64');
-    const r = await writeRunFile(root, rel, bytes, o);
+    const r = await writeRunFile(root, rel, bytes, { ...o, maxBytes: ATTACHMENTS_LIMIT });
     out.push({ path: r.path, size: r.size, ...(a.mime ? { mime: a.mime } : {}) });
   }
   return out;

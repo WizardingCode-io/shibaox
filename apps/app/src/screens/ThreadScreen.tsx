@@ -9,7 +9,8 @@ import {
 } from '@wizardingcode/shibaox-view';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RunFileContent } from '../api/client.js';
-import { blobToBase64 } from '../desktop.js';
+import { addFiles, dragHasFiles, encodeFiles } from '../attachments.js';
+import { desktopBridge } from '../desktop.js';
 import { ds } from '../ds.js';
 import { clock, duration, RUN_STATUS_TONE, RUN_STATUS_WORD, shortModel } from '../format.js';
 import { useFollowScroll } from '../hooks/follow-scroll.js';
@@ -248,7 +249,19 @@ function ChatTab(props: {
         {props.messages.map((m) =>
           m.from === 'user' ? (
             <S.Message key={m.key} from="user">
-              <Markdown text={m.text} plain />
+              {m.text ? <Markdown text={m.text} plain /> : null}
+              {m.attachments?.length ? (
+                <div className="row" style={{ flexWrap: 'wrap', marginTop: m.text ? 6 : 0 }}>
+                  {m.attachments.map((a) => (
+                    <S.FileChip
+                      key={a.path}
+                      path={a.path}
+                      status="added"
+                      onClick={() => props.onFile(m.runId, a.path)}
+                    />
+                  ))}
+                </div>
+              ) : null}
             </S.Message>
           ) : (
             <div key={m.key} className="stack">
@@ -660,7 +673,10 @@ type Recognizer = {
 };
 
 /** The browser's speech recognition when it exists (Chrome): words land in the composer. */
-function useVoice(onWords: (words: string) => void): {
+function useVoice(
+  onWords: (words: string) => void,
+  onError: (reason: string) => void,
+): {
   available: boolean;
   listening: boolean;
   toggle: () => void;
@@ -669,9 +685,17 @@ function useVoice(onWords: (words: string) => void): {
     SpeechRecognition?: new () => Recognizer;
     webkitSpeechRecognition?: new () => Recognizer;
   };
-  const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+  // Electron defines the API but has no speech service behind it: no mic in the desktop app
+  const Ctor = desktopBridge() ? undefined : (w.SpeechRecognition ?? w.webkitSpeechRecognition);
   const [listening, setListening] = useState(false);
   const rec = useRef<Recognizer | undefined>(undefined);
+  useEffect(
+    () => () => {
+      rec.current?.stop();
+      rec.current = undefined;
+    },
+    [],
+  );
   const toggle = useCallback(() => {
     if (!Ctor) return;
     if (rec.current) {
@@ -694,11 +718,15 @@ function useVoice(onWords: (words: string) => void): {
       rec.current = undefined;
       setListening(false);
     };
-    r.onerror = r.onend;
+    r.onerror = () => {
+      rec.current = undefined;
+      setListening(false);
+      onError('The microphone could not listen here (no speech service, or no permission).');
+    };
     rec.current = r;
     r.start();
     setListening(true);
-  }, [Ctor, onWords]);
+  }, [Ctor, onWords, onError]);
   return { available: Boolean(Ctor), listening, toggle };
 }
 
@@ -758,34 +786,32 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
   const [dropping, setDropping] = useState(false);
   // a workflow picked in the actions menu: the next message starts it in this conversation
   const [pendingWorkflow, setPendingWorkflow] = useState<string | undefined>(undefined);
-  const voice = useVoice((words) => setText((t) => (t ? `${t} ${words}` : words)));
-  const attach = useCallback((picked: File[]) => {
-    setFiles((f) => [...f, ...picked].slice(0, 20));
-  }, []);
+  const onWords = useCallback((words: string) => setText((t) => (t ? `${t} ${words}` : words)), []);
+  const voice = useVoice(onWords, (reason) => store.notice(reason));
+  const attach = useCallback(
+    (picked: File[]) => {
+      const r = addFiles(files, picked);
+      if (r.notice) store.notice(r.notice);
+      else setFiles(r.files);
+    },
+    [files, store],
+  );
   const sendMessage = useCallback(
     async (raw: string) => {
-      const attachments = await Promise.all(
-        files.map(async (f) => ({
-          name: f.name,
-          content: await blobToBase64(f),
-          ...(f.type ? { mime: f.type } : {}),
-        })),
-      );
-      const total = attachments.reduce((n, a) => n + Math.floor((a.content.length * 3) / 4), 0);
-      if (total > 25 * 1024 * 1024) {
-        store.notice('Attachments add up to more than 25 MB: remove some.');
-        return;
-      }
       let message = raw.trim();
       let workflow: string | undefined;
-      if (pendingWorkflow) {
+      const prefix = pendingWorkflow ? `run ${pendingWorkflow}:` : '';
+      if (pendingWorkflow && message.toLowerCase().startsWith(prefix)) {
         workflow = pendingWorkflow;
-        message = message.replace(new RegExp(`^Run ${pendingWorkflow}:\\s*`, 'i'), '');
+        message = message.slice(prefix.length).trim();
       }
+      const attachments = await encodeFiles(files);
+      // the composer is cleared only once the daemon took the message: a failure keeps it all
+      const runId = await store.send(props.rootId, message, { attachments, workflow });
+      if (runId === undefined) return;
       setText('');
       setFiles([]);
       setPendingWorkflow(undefined);
-      await store.send(props.rootId, message, { attachments, workflow });
     },
     [files, pendingWorkflow, store, props.rootId],
   );
@@ -873,14 +899,16 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
     <main
       className="main"
       onDragOver={(e) => {
-        if (e.dataTransfer?.types?.includes('Files')) {
-          e.preventDefault();
-          setDropping(true);
-        }
+        if (!dragHasFiles(e.dataTransfer)) return;
+        e.preventDefault();
+        setDropping(true);
       }}
-      onDragLeave={() => setDropping(false)}
+      onDragLeave={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        setDropping(false);
+      }}
       onDrop={(e) => {
-        if (!e.dataTransfer?.files?.length) return;
+        if (!dragHasFiles(e.dataTransfer)) return;
         e.preventDefault();
         setDropping(false);
         attach([...e.dataTransfer.files]);
@@ -955,7 +983,11 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
                 : 'Ask Shibaox to do something…'
             }
             value={text}
-            onChange={setText}
+            onChange={(t) => {
+              setText(t);
+              if (pendingWorkflow && !t.toLowerCase().startsWith(`run ${pendingWorkflow}:`))
+                setPendingWorkflow(undefined);
+            }}
             attachments={files.map((f) => ({ name: f.name, size: f.size }))}
             onAttach={attach}
             onRemoveAttachment={(i) => setFiles((f) => f.filter((_, j) => j !== i))}

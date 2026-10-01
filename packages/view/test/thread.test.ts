@@ -168,4 +168,19 @@ describe('threadView', () => {
     const agent = v.messages.find((m) => m.from === 'agent');
     expect(agent?.model).toBeUndefined();
   });
+
+  it("the request text is the user's words: the attached-files block stays out of titles; the files come as a list", () => {
+    const input = {
+      spec: 'Read this\n\n[Attached files]\n- attachments/x.csv (8 B, text/csv)',
+      attachments: [{ path: 'attachments/x.csv', size: 8, mime: 'text/csv' }],
+    };
+    expect(requestText(input)).toBe('Read this');
+    const v = threadView([{ state: state({ input }), cards: [] }]);
+    expect(v.title).toBe('Read this');
+    expect(v.messages[0]).toMatchObject({
+      from: 'user',
+      text: 'Read this',
+      attachments: [{ path: 'attachments/x.csv', size: 8, mime: 'text/csv' }],
+    });
+  });
 });

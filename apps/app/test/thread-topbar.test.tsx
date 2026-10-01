@@ -340,4 +340,83 @@ describe('the reply is rendered as a document', () => {
     await screen.findByRole('textbox', { name: 'Message' });
     expect(screen.queryByRole('button', { name: 'Voice' })).toBeNull(); // happy-dom has no SpeechRecognition
   });
+
+  it('a drop on the composer itself adds each file once', async () => {
+    const { client: c } = client({ runs: [summary('root')], states: { root: state('root') } });
+    mount(c, { hash: '#/t/root' });
+    const box = await screen.findByRole('textbox', { name: 'Message' });
+    const file = new File(['x'], 'one.txt', { type: 'text/plain' });
+    fireEvent.drop(box, { dataTransfer: { files: [file], types: ['Files'] } });
+    await screen.findByText('one.txt');
+    expect(screen.getAllByText('one.txt')).toHaveLength(1);
+  });
+
+  it('a failed send keeps the text and the files', async () => {
+    const { client: c } = client({
+      runs: [summary('root')],
+      states: { root: state('root') },
+      failSubmit: true,
+    });
+    mount(c, { hash: '#/t/root' });
+    const box = (await screen.findByRole('textbox', { name: 'Message' })) as HTMLTextAreaElement;
+    fireEvent.drop(screen.getByRole('main'), {
+      dataTransfer: { files: [new File(['x'], 'keep.txt')], types: ['Files'] },
+    });
+    await screen.findByText('keep.txt');
+    fireEvent.change(box, { target: { value: 'Do not lose me' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(screen.getByText(/refused it/)).toBeTruthy());
+    expect(box.value).toBe('Do not lose me');
+    expect(screen.getByText('keep.txt')).toBeTruthy();
+  });
+
+  it('a picked workflow runs as a task of the conversation, so the next message is a chat turn again', async () => {
+    const { client: c, calls } = client({
+      runs: [summary('root')],
+      states: { root: state('root') },
+    });
+    mount(c, { hash: '#/t/root' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Actions' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /hello-feature/ }));
+    const box = screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: 'Run hello-feature: add /health' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(calls.find((x) => x.name === 'submitRun')).toBeTruthy());
+    const req = calls.find((x) => x.name === 'submitRun')?.args[0] as {
+      workflow: string;
+      parentRunId?: string;
+      thread?: string;
+    };
+    expect(req).toMatchObject({ workflow: 'hello-feature', parentRunId: 'root', thread: 'root' });
+  });
+
+  it('too many files are refused with a notice, none of them taken', async () => {
+    const { client: c } = client({ runs: [summary('root')], states: { root: state('root') } });
+    mount(c, { hash: '#/t/root' });
+    await screen.findByRole('textbox', { name: 'Message' });
+    const files = Array.from({ length: 21 }, (_, i) => new File(['x'], `f${i}.txt`));
+    fireEvent.drop(screen.getByRole('main'), { dataTransfer: { files, types: ['Files'] } });
+    await waitFor(() => expect(screen.getByText(/at most 20 files/i)).toBeTruthy());
+    expect(screen.queryByText('f0.txt')).toBeNull();
+  });
+
+  it('the mic stays hidden in the desktop app even when the browser engine claims speech recognition', async () => {
+    const g = globalThis as { webkitSpeechRecognition?: unknown; shibaoxDesktop?: unknown };
+    g.webkitSpeechRecognition = class {};
+    g.shibaoxDesktop = {
+      platform: 'darwin',
+      saveAs: async () => ({ ok: false, reason: 'x' }),
+      openWith: async () => ({ ok: false, reason: 'x' }),
+      reveal: async () => {},
+    };
+    try {
+      const { client: c } = client({ runs: [summary('root')], states: { root: state('root') } });
+      mount(c, { hash: '#/t/root' });
+      await screen.findByRole('textbox', { name: 'Message' });
+      expect(screen.queryByRole('button', { name: 'Voice' })).toBeNull();
+    } finally {
+      delete g.webkitSpeechRecognition;
+      delete g.shibaoxDesktop;
+    }
+  });
 });

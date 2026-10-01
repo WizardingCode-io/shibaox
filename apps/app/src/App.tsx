@@ -6,7 +6,7 @@ import {
   readConnection,
   saveConnection,
 } from './api/connection.js';
-import { blobToBase64 } from './desktop.js';
+import { addFiles, dragHasFiles, encodeFiles } from './attachments.js';
 import { ds } from './ds.js';
 import { useRoute } from './router.js';
 import { ChatsScreen } from './screens/ChatsScreen.js';
@@ -52,6 +52,19 @@ function Shell(props: { base: string; onDisconnect: () => void }): JSX.Element {
   const S = ds();
   const store = useStore();
   const [files, setFiles] = useState<File[]>([]);
+  const [newText, setNewText] = useState('');
+  // a file dropped anywhere else must never navigate the tab away from the app
+  useEffect(() => {
+    const guard = (e: DragEvent) => {
+      if (dragHasFiles(e.dataTransfer)) e.preventDefault();
+    };
+    document.addEventListener('dragover', guard);
+    document.addEventListener('drop', guard);
+    return () => {
+      document.removeEventListener('dragover', guard);
+      document.removeEventListener('drop', guard);
+    };
+  }, []);
   const state = useAppState();
   const route = useRoute();
   useEffect(() => applyTheme(state.settings.theme), [state.settings.theme]);
@@ -106,21 +119,23 @@ function Shell(props: { base: string; onDisconnect: () => void }): JSX.Element {
             <S.Composer
               placeholder="Ask Shibaox to do something…"
               model={state.settings.model?.split('/').pop()}
+              value={newText}
+              onChange={setNewText}
               attachments={files.map((f) => ({ name: f.name, size: f.size }))}
-              onAttach={(picked) => setFiles((f) => [...f, ...picked].slice(0, 20))}
+              onAttach={(picked) => {
+                const r = addFiles(files, picked);
+                if (r.notice) store.notice(r.notice);
+                else setFiles(r.files);
+              }}
               onRemoveAttachment={(i) => setFiles((f) => f.filter((_, j) => j !== i))}
               onSend={(text) =>
                 void (async () => {
-                  const attachments = await Promise.all(
-                    files.map(async (f) => ({
-                      name: f.name,
-                      content: await blobToBase64(f),
-                      ...(f.type ? { mime: f.type } : {}),
-                    })),
-                  );
-                  setFiles([]);
+                  const attachments = await encodeFiles(files);
                   const id = await store.newChat(text, attachments);
-                  if (id) window.location.hash = `#/t/${encodeURIComponent(id)}`;
+                  if (!id) return; // the toast says why; the text and files stay
+                  setNewText('');
+                  setFiles([]);
+                  window.location.hash = `#/t/${encodeURIComponent(id)}`;
                 })()
               }
             />

@@ -27,6 +27,8 @@ export interface ThreadMessage {
   pending?: boolean;
   /** The model that wrote the agent's turn (the run's `usage`), when the runtime named it. */
   model?: string;
+  /** Files the user sent with the message (the run's `input.attachments`). */
+  attachments?: { path: string; size: number; mime?: string }[];
   runId: string;
 }
 
@@ -115,6 +117,15 @@ export function threadView(turns: readonly ThreadTurn[]): ThreadView {
         text: request,
         parts: [{ kind: 'text', key: `${state.runId}:request`, text: request }],
         time: createdAt,
+        ...(Array.isArray(state.input.attachments) && state.input.attachments.length > 0
+          ? {
+              attachments: state.input.attachments as {
+                path: string;
+                size: number;
+                mime?: string;
+              }[],
+            }
+          : {}),
         blocks: [],
         runId: state.runId,
       });

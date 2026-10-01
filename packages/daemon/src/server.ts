@@ -169,7 +169,7 @@ const MAX_BODY = 1_000_000;
 /** A file written from the app: the 2 MB file cap plus JSON overhead. */
 const FILE_BODY_LIMIT = 3_000_000;
 /** A run submit with attachments: the 25 MB cap in base64 plus the message and the conversation. */
-const RUNS_BODY_LIMIT = 40_000_000;
+const RUNS_BODY_LIMIT = 48_000_000;
 const TEXT_LIMIT = 4096;
 
 function readBody(req: IncomingMessage, limit = MAX_BODY): Promise<unknown> {
@@ -541,7 +541,12 @@ export class DaemonServer {
             `attachments add up to more than ${ATTACHMENTS_LIMIT} bytes`,
           );
       }
-      return send(res, 200, await this.deps.runs.submit(body as unknown as SubmitRequest));
+      try {
+        return send(res, 200, await this.deps.runs.submit(body as unknown as SubmitRequest));
+      } catch (e) {
+        if (e instanceof RunFileError) throw new HttpError(e.status, e.code, e.message);
+        throw e;
+      }
     }
     if (method === 'POST' && path === '/runs/prune') {
       const body = asRecord(await readBody(req));

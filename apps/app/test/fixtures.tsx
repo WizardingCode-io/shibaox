@@ -65,6 +65,8 @@ export function client(
     runs?: RunSummaryPlus[];
     states?: Record<string, RunState>;
     frames?: Record<string, Envelope[]>;
+    /** submitRun rejects (a failed send). */
+    failSubmit?: boolean;
     inbox?: InboxItem[];
     routines?: unknown[];
   } = {},
@@ -93,6 +95,7 @@ export function client(
     },
     async submitRun(req) {
       rec('submitRun', req);
+      if (o.failSubmit) throw new Error('the daemon refused it');
       return { runId: 'new-1', warnings: [] };
     },
     async answer(id, a) {

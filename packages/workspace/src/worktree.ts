@@ -54,9 +54,10 @@ export async function worktreePreflight(
 }
 
 /** Entries added to the repository's `info/exclude`: run state and the knowledge graph. */
-export const EXCLUDED = ['.shibaox/', 'graphify-out/'];
+export const EXCLUDED = ['.shibaox/', 'graphify-out/', 'attachments/'];
 
-async function ensureExcluded(project: string): Promise<void> {
+/** Adds shibaox's own folders to the repository's local exclude file (never its .gitignore). */
+export async function ensureExcluded(project: string): Promise<void> {
   const commonDir = (await git(project, ['rev-parse', '--git-common-dir'])).trim();
   const gitCommonDir = resolve(project, commonDir);
   const infoDir = join(gitCommonDir, 'info');

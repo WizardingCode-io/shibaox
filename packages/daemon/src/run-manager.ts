@@ -30,7 +30,12 @@ import {
   type Org,
   type Workflow,
 } from '@wizardingcode/shibaox-schemas';
-import { createRunWorkspace, type WorkspaceMode } from '@wizardingcode/shibaox-workspace';
+import {
+  createRunWorkspace,
+  ensureExcluded,
+  removeRunWorkspace,
+  type WorkspaceMode,
+} from '@wizardingcode/shibaox-workspace';
 import type { DaemonConfig } from './config.js';
 import type { InboxAnswer, InboxItem, InboxService } from './inbox.js';
 import { projectProtectedGlobs } from './protected.js';
@@ -40,6 +45,7 @@ import {
   type Attachment,
   confine,
   listRunFiles,
+  planAttachments,
   type RunFile,
   type RunFileContent,
   RunFileError,
@@ -263,15 +269,28 @@ export class RunManager {
       approvals: req.approvals,
       warn: (w) => warnings.push(w),
     });
+    // the message's files are checked (names, sizes, protection) before any workspace exists
+    const planned =
+      req.attachments && req.attachments.length > 0
+        ? planAttachments(req.attachments, { protectedGlobs: projectProtectedGlobs(project) })
+        : [];
     const ws = await createRunWorkspace({ project, runId, mode });
     const workspace = ws.mode === 'worktree' ? join(ws.path, await gitPrefix(project)) : ws.path;
-    // the message's files go into the workspace first, and the message names them
-    const attached =
-      req.attachments && req.attachments.length > 0
-        ? await writeAttachments(workspace, req.attachments, {
-            protectedGlobs: projectProtectedGlobs(project),
-          })
-        : [];
+    // the message's files go into the workspace first, and the message names them; a failure
+    // leaves nothing behind (the worktree just made is removed)
+    let attached: { path: string; size: number; mime?: string }[] = [];
+    if (planned.length > 0 && req.attachments) {
+      try {
+        attached = await writeAttachments(workspace, req.attachments, {
+          protectedGlobs: projectProtectedGlobs(project),
+        });
+        await ensureExcluded(project).catch(() => undefined); // not a git repository: fine
+      } catch (e) {
+        if (ws.mode === 'worktree')
+          await removeRunWorkspace({ project, runId, deleteBranch: true }).catch(() => undefined);
+        throw e;
+      }
+    }
     const input =
       attached.length > 0
         ? `${req.input}\n\n[Attached files]\n${attached.map((f) => `- ${f.path} (${sizeWords(f.size)}${f.mime ? `, ${f.mime}` : ''})`).join('\n')}`
@@ -298,6 +317,7 @@ export class RunManager {
       workflow: req.workflow,
       input: {
         spec: input,
+        ...(attached.length > 0 ? { attachments: attached } : {}),
         ...(messages.length > 0 ? { messages } : {}),
         ...(req.event ? { event: true } : {}),
         ...(req.outputSchema ? { output_schema: req.outputSchema } : {}),
