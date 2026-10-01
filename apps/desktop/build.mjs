@@ -1,5 +1,6 @@
-// The main process bundled to one file (only `electron` stays external), the built browser app
-// copied next to it, the offline page too: the packaged app ships dist/ and nothing else.
+// The main process bundled to one file (only `electron` stays external; the CommonJS updater
+// gets a `require` of its own), the built browser app copied next to it, the offline page too:
+// the packaged app ships dist/ and nothing else.
 import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -18,6 +19,9 @@ await build({
   format: 'esm',
   target: 'node22',
   external: ['electron'],
+  banner: {
+    js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);",
+  },
   outfile: join(dist, 'main.mjs'),
   sourcemap: true,
   logLevel: 'warning',

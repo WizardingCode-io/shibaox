@@ -1,5 +1,6 @@
-# Builds the macOS desktop app (dmg, arm64 + x64) on every version tag and on demand, and
-# attaches it to a DRAFT release of that tag: nothing goes public until the release is published.
+# Builds the macOS desktop app (dmg + zip, arm64 + x64) on every version tag and on demand, and
+# attaches it, with latest-mac.yml (what installed apps update themselves from), to a DRAFT
+# release of that tag: nothing goes public, and no app updates, until the release is published.
 name: desktop
 on:
   push:
@@ -80,10 +81,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
         run: |
+          files="$(ls apps/desktop/release/Shibaox-*.dmg apps/desktop/release/Shibaox-*.zip apps/desktop/release/Shibaox-*.zip.blockmap apps/desktop/release/latest-mac.yml)"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" apps/desktop/release/Shibaox-*.dmg --clobber
+            gh release upload "$TAG" $files --clobber
           else
             gh release create "$TAG" --draft --title "shibaox ${TAG#v}" \
-              --notes "$( [ "$signed" = notarized ] && echo "Shibaox desktop app for macOS (signed and notarized)." || echo "Shibaox desktop app for macOS (not notarized: allow it once under System Settings, Privacy and Security, Open Anyway).") The CLI and daemon: npm i -g shibaox@${TAG#v}" \
-              apps/desktop/release/Shibaox-*.dmg
+              --notes "$( [ "$signed" = notarized ] && echo "Shibaox desktop app for macOS (signed and notarized; installed apps update to it on their own)." || echo "Shibaox desktop app for macOS (not notarized: allow it once under System Settings, Privacy and Security, Open Anyway).") The CLI and daemon: npm i -g shibaox@${TAG#v}" \
+              $files
           fi

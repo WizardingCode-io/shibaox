@@ -63,3 +63,5 @@ The desktop workflow (`.github/workflows/desktop.yml`) signs the app with a Deve
 3. Add the five secrets at Settings → Secrets and variables → Actions of the repository, then re-run the desktop workflow for the tag (`gh workflow run desktop.yml -f tag=v0.2.3`): it replaces the dmg on the release with the notarized one.
 
 `spctl --assess --type execute Shibaox.app` says `accepted` on a notarized build. Locally, `pnpm --filter @wizardingcode/shibaox-desktop dist` keeps signing ad hoc (no certificate needed).
+
+**Updates.** Installed apps update themselves with `electron-updater` from the GitHub releases: the workflow attaches, next to the dmg, the zip of each architecture, its blockmap and `latest-mac.yml`. The updater only sees published releases (never drafts or pre-releases), so an update goes out when the draft release of the tag is published; the app must be signed with the same Developer ID as the installed one, which an ad-hoc build is not (it logs the failed check and keeps running).

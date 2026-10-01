@@ -12,9 +12,18 @@ files:
   - dist/**
   - package.json
 npmRebuild: false
+# The zip and latest-mac.yml are what the app updates itself from (electron-updater over the
+# GitHub releases); the dmg is what people install by hand. Nothing is uploaded from here: the
+# desktop workflow attaches them to a draft release.
+publish:
+  provider: github
+  owner: WizardingCode-io
+  repo: shibaox
 mac:
   target:
     - target: dmg
+      arch: [arm64, x64]
+    - target: zip
       arch: [arm64, x64]
   category: public.app-category.developer-tools
   icon: build/icon.png

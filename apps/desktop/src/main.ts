@@ -1,10 +1,12 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startBridge } from '@wizardingcode/shibaox-bridge';
-import { app, BrowserWindow, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, session, shell } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import { probeDaemon, startDaemonViaShell } from './daemon.js';
 import { type BridgeHandle, type Launch, planLaunch, single } from './launch.js';
 import { homeRoot, readRemote, socketPath } from './paths.js';
+import { startUpdater, type Updater, type UpdateSource, type UpdateUi } from './updater.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const APP_DIST = join(here, 'app');
@@ -17,6 +19,7 @@ const SMOKE = process.env.SHIBAOX_DESKTOP_SMOKE === '1';
 let win: BrowserWindow | undefined;
 let bridge: BridgeHandle | undefined;
 let current: Launch | undefined;
+let updater: Updater | undefined;
 
 /** Never the token: URL fragments stay out of the logs. */
 const shown = (text: string) => text.replace(/#token=[^\s'"]+/g, '#token=…');
@@ -122,6 +125,81 @@ function createWindow(): BrowserWindow {
   return w;
 }
 
+/**
+ * Updates come from the GitHub releases of the repository (the zip and latest-mac.yml the
+ * desktop workflow attaches): checked after start and every few hours, downloaded in the
+ * background, installed on restart or on quit. A development build never checks.
+ */
+function startUpdates(): Updater {
+  const say = (level: string) => (m: unknown) => log(`updater ${level}: ${String(m)}`);
+  autoUpdater.logger = {
+    info: say('info'),
+    warn: say('warn'),
+    error: say('error'),
+    debug: say('debug'),
+  };
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  const source: UpdateSource = {
+    check: async () => {
+      const r = await autoUpdater.checkForUpdates();
+      return r?.isUpdateAvailable ? r.updateInfo.version : undefined;
+    },
+    onDownloaded: (cb) => {
+      autoUpdater.on('update-downloaded', (info) => cb(info.version));
+    },
+    install: () => autoUpdater.quitAndInstall(),
+  };
+  const ui: UpdateUi = {
+    ask: async (version) => {
+      const { response } = await dialog.showMessageBox({
+        type: 'info',
+        message: `Shibaox ${version} is ready`,
+        detail: 'Restart to update now. Later, it installs when you quit the app.',
+        buttons: ['Restart now', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+      });
+      return response === 0 ? 'restart' : 'later';
+    },
+    say: async (message) => {
+      await dialog.showMessageBox({ type: 'info', message, buttons: ['OK'] });
+    },
+  };
+  return startUpdater(source, ui, {
+    packaged: app.isPackaged && !SMOKE,
+    version: app.getVersion(),
+    log,
+  });
+}
+
+/** The macOS menu: the default roles plus "Check for Updates…". */
+function installMenu(u: Updater): void {
+  if (process.platform !== 'darwin') return;
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      {
+        label: 'Shibaox',
+        submenu: [
+          { role: 'about' },
+          { label: 'Check for Updates…', click: () => void u.checkNow() },
+          { type: 'separator' },
+          { role: 'services' },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit' },
+        ],
+      },
+      { role: 'editMenu' },
+      { role: 'viewMenu' },
+      { role: 'windowMenu' },
+    ]),
+  );
+}
+
 // Electron reports a failed load as a process warning that carries the whole address, token
 // included: the default printer goes, one that strips fragments takes its place.
 process.removeAllListeners('warning');
@@ -145,6 +223,8 @@ if (!app.requestSingleInstanceLock()) {
       callback(false),
     );
     session.defaultSession.setPermissionCheckHandler(() => false);
+    updater = startUpdates();
+    installMenu(updater);
     win = createWindow();
     void show();
     app.on('activate', () => {
@@ -158,6 +238,7 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform !== 'darwin' || SMOKE) app.quit();
   });
   app.on('before-quit', () => {
+    updater?.stop();
     void bridge?.close();
   });
 }
