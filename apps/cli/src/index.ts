@@ -3,6 +3,16 @@ import { ADAPTER_IDS, type AdapterId, type GraphMode } from '@wizardingcode/shib
 import { Command, InvalidArgumentError, Option } from 'commander';
 import { connect } from './client.js';
 import { appCommand } from './commands/app.js';
+import type { McpAddOptions } from './commands/customize.js';
+import {
+  mcpAdd,
+  mcpRemove,
+  pluginsCommand,
+  rolesList,
+  skillsAdd,
+  skillsList,
+  skillsRemove,
+} from './commands/customize.js';
 import {
   daemonInstall,
   daemonStart,
@@ -56,6 +66,9 @@ function parseBudget(v: string): number {
   if (!Number.isFinite(n) || n <= 0) throw new InvalidArgumentError('must be a positive number');
   return n;
 }
+
+/** A repeatable option: every value, in order. */
+const collect = (v: string, prev: string[]): string[] => [...prev, v];
 
 const exitWith = (code: number) => {
   process.exitCode = code;
@@ -328,6 +341,96 @@ mcp
   .option('--org <dir>', 'org directory')
   .action(async function (this: Command, id: string, o: { org?: string }) {
     exitWith(await mcpTest(id, o, out(this)));
+  });
+mcp
+  .command('add')
+  .description(
+    'add an MCP server to the org catalog (catalog/<id>.yaml) and give it to roles; values that start with - take the = form (--arg=-y)',
+  )
+  .argument('<id>', 'the catalog entry id (letters, digits, - and _)')
+  .option('--url <url>', 'an http server: its Streamable HTTP endpoint (https://…)')
+  .option('--command <cmd>', 'a stdio server: the program to start')
+  .option('--arg <arg>', 'an argument of the command (repeat it)', collect, [])
+  .option('--key <NAME>', 'a vault key the server needs (repeat it)', collect, [])
+  .option(
+    '--header <NAME=VALUE>',
+    `an http header; \${KEY} is filled from the vault (repeat it)`,
+    collect,
+    [],
+  )
+  .option('--bearer-command <cmd>', 'http: a command whose output is the bearer token (no shell)')
+  .option('--tool <name>', 'offer only these tools (repeat it)', collect, [])
+  .option('--role <role>', 'give it to this role (repeat it)', collect, [])
+  .option('--description <text>', 'what it is for (the catalog description)')
+  .option('--timeout <ms>', 'start/call timeout in milliseconds', parseBudget)
+  .option('--replace', 'overwrite an entry with the same id')
+  .option('--org <dir>', 'org directory')
+  .action(async function (this: Command, id: string, o: McpAddOptions) {
+    exitWith(await mcpAdd(id, o, out(this)));
+  });
+mcp
+  .command('rm')
+  .description('remove an MCP server from the catalog (it is taken off every role first)')
+  .argument('<id>', 'the catalog entry id')
+  .option('--org <dir>', 'org directory')
+  .action(async function (this: Command, id: string, o: { org?: string }) {
+    exitWith(await mcpRemove(id, o, out(this)));
+  });
+
+const skills = program
+  .command('skills')
+  .description('the skills of the org (skills/<id>/SKILL.md): list, install, remove');
+skills
+  .command('list')
+  .option(
+    '--org <dir>',
+    'org directory (default: ./org when it exists, else the org under ~/.shibaox)',
+  )
+  .action(async function (this: Command, o: { org?: string }) {
+    exitWith(await skillsList(o, out(this)));
+  });
+skills
+  .command('add')
+  .description(
+    'install skills from a repository (owner/repo[/path] or a git URL, cloned depth 1) or a folder on this machine',
+  )
+  .argument('<source>', 'owner/repo[/path], an https git URL, or a directory')
+  .option('--id <id>', 'install only this skill (repeat it)', collect, [])
+  .option('--path <path>', 'where the skills are inside the repository')
+  .option('--org <dir>', 'org directory')
+  .action(async function (
+    this: Command,
+    source: string,
+    o: { org?: string; id?: string[]; path?: string },
+  ) {
+    exitWith(await skillsAdd(source, o, out(this)));
+  });
+skills
+  .command('rm')
+  .description('remove a skill (refused while roles use it, unless --detach)')
+  .argument('<id>')
+  .option('--detach', 'take it off the roles that use it first')
+  .option('--org <dir>', 'org directory')
+  .action(async function (this: Command, id: string, o: { org?: string; detach?: boolean }) {
+    exitWith(await skillsRemove(id, o, out(this)));
+  });
+
+const roles = program.command('roles').description("the org's roles: model, MCP servers, skills");
+roles
+  .command('list')
+  .option(
+    '--org <dir>',
+    'org directory (default: ./org when it exists, else the org under ~/.shibaox)',
+  )
+  .action(async function (this: Command, o: { org?: string }) {
+    exitWith(await rolesList(o, out(this)));
+  });
+
+program
+  .command('plugins')
+  .description('Higgsfield, GitHub, Telegram and TypeSafe / Jev: what is set up, what is missing')
+  .action(async function (this: Command) {
+    exitWith(await pluginsCommand(out(this)));
   });
 
 const tiers = program
