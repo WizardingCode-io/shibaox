@@ -1,20 +1,19 @@
 import { render } from '@testing-library/react';
 import type { RunState } from '@wizardingcode/shibaox-core';
 import type {
+  ConnectorTemplate,
   Envelope,
   InboxItem,
-  McpServerRow,
-  RunSummaryPlus,
-} from '@wizardingcode/shibaox-daemon';
-import { App } from '../src/App.js';
-import type { RunFileContent } from '../src/api/client.js';
-import type {
-  ConnectorTemplate,
   PluginRow,
   RoleRow,
+  RunSummaryPlus,
   SkillRow,
   SkillSource,
-} from '../src/screens/customize/types.js';
+} from '@wizardingcode/shibaox-daemon';
+import type { McpServer } from '@wizardingcode/shibaox-schemas';
+import { App } from '../src/App.js';
+import type { RunFileContent } from '../src/api/client.js';
+import type { McpRow } from '../src/screens/customize/types.js';
 import { AppStore, type StoreClient } from '../src/store/store.js';
 
 export const summary = (id: string, o: Partial<RunSummaryPlus> = {}): RunSummaryPlus =>
@@ -100,6 +99,15 @@ export const ROLES: RoleRow[] = [
     skills: [],
   },
 ];
+/** A catalog server as the daemon answers with it (the schema's defaults applied). */
+export const server = (s: Partial<McpServer> & Pick<McpServer, 'transport'>): McpServer => ({
+  args: [],
+  env: {},
+  env_keys: [],
+  headers: {},
+  timeout_ms: 30_000,
+  ...s,
+});
 export const CONNECTORS: ConnectorTemplate[] = [
   {
     id: 'github',
@@ -115,13 +123,13 @@ export const CONNECTORS: ConnectorTemplate[] = [
         description: 'A GitHub token',
       },
     ],
-    server: {
+    server: server({
       transport: 'http',
       url: 'https://api.githubcopilot.com/mcp/',
       // biome-ignore lint/suspicious/noTemplateCurlyInString: the catalog's own ${KEY} placeholder
       headers: { Authorization: 'Bearer ${GH_TOKEN}' },
       env_keys: ['GH_TOKEN'],
-    },
+    }),
   },
   {
     id: 'firecrawl',
@@ -137,12 +145,12 @@ export const CONNECTORS: ConnectorTemplate[] = [
         description: 'Firecrawl API key',
       },
     ],
-    server: {
+    server: server({
       transport: 'stdio',
       command: 'npx',
       args: ['-y', 'firecrawl-mcp'],
       env_keys: ['FIRECRAWL_API_KEY'],
-    },
+    }),
   },
   {
     id: 'playwright',
@@ -152,7 +160,7 @@ export const CONNECTORS: ConnectorTemplate[] = [
     category: 'Browser',
     description: 'Drive a browser',
     keys: [],
-    server: { transport: 'stdio', command: 'npx', args: ['-y', '@playwright/mcp'] },
+    server: server({ transport: 'stdio', command: 'npx', args: ['-y', '@playwright/mcp'] }),
   },
   {
     id: 'notion',
@@ -162,8 +170,8 @@ export const CONNECTORS: ConnectorTemplate[] = [
     category: 'Productivity',
     description: 'Pages and databases',
     keys: [],
-    note: 'signs in on first use',
-    server: { transport: 'http', url: 'https://mcp.notion.com/mcp' },
+    note: 'Signs in on first use (OAuth in the browser); no key to set.',
+    server: server({ transport: 'http', url: 'https://mcp.notion.com/mcp' }),
   },
 ];
 export const SOURCES: SkillSource[] = [
@@ -263,7 +271,7 @@ export function client(
     skills?: SkillRow[];
     roles?: RoleRow[];
     plugins?: PluginRow[];
-    mcp?: McpServerRow[];
+    mcp?: McpRow[];
   } = {},
 ) {
   const calls: { name: string; args: unknown[] }[] = [];

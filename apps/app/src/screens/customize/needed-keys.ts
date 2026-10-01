@@ -1,6 +1,11 @@
-import type { KeyRow, McpServerRow, OrgConfig } from '@wizardingcode/shibaox-daemon';
+import type {
+  KeyRow,
+  McpServerRow,
+  OrgConfig,
+  PluginRow,
+  RoleRow,
+} from '@wizardingcode/shibaox-daemon';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
-import type { PluginRow, RoleRow } from './types.js';
 
 /** Who needs a key: a badge in the Keys tab (`tier strong`, `connector github`, `plugin telegram`). */
 export interface NeededBy {

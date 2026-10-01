@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadDesignSystem } from '../src/ds.js';
-import { client, mount } from './fixtures.js';
+import { client, mount, server } from './fixtures.js';
 
 beforeAll(() =>
   loadDesignSystem(
@@ -251,7 +251,7 @@ describe('Customize: Connectors', () => {
     expect(screen.getByText('GitHub')).toBeTruthy();
     expect(screen.getByLabelText('Playwright is added')).toBeTruthy();
     expect(screen.getAllByText('verified').length).toBe(2);
-    expect(screen.getByText(/signs in on first use/)).toBeTruthy();
+    expect(screen.getByText(/Signs in on first use/)).toBeTruthy();
     await pickCategory(/^Category/, 'Search');
     expect(screen.queryByText('GitHub')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Add Firecrawl' }));
@@ -277,12 +277,12 @@ describe('Customize: Connectors', () => {
           id: 'firecrawl',
           description: 'Scrape and crawl websites',
           tags: ['Search'],
-          server: {
+          server: server({
             transport: 'stdio',
             command: 'npx',
             args: ['-y', 'firecrawl-mcp'],
             env_keys: ['FIRECRAWL_API_KEY'],
-          },
+          }),
           roles: ['assistant'],
         },
       ]),

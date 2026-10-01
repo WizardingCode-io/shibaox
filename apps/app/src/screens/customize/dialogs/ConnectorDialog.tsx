@@ -1,9 +1,10 @@
+import type { ConnectorTemplate, McpAddRequest, RoleRow } from '@wizardingcode/shibaox-daemon';
+import type { McpServerInput } from '@wizardingcode/shibaox-schemas';
 import { useState } from 'react';
 import { ds } from '../../../ds.js';
 import { useAppState, useStore } from '../../../store/hooks.js';
 import { headerLines, ID_RE, words } from '../filter.js';
 import { RoleChecks } from '../parts.js';
-import type { AddMcpRequest, ConnectorTemplate, McpServerSpec, RoleRow } from '../types.js';
 
 // biome-ignore lint/suspicious/noTemplateCurlyInString: the catalog's own ${KEY} placeholder, expanded by the daemon
 const HEADER_EXAMPLE = 'Authorization: Bearer ${ACME_API_KEY}';
@@ -164,7 +165,7 @@ export const emptyCustom = (roles: RoleRow[]): CustomForm => ({
 });
 
 /** The request a custom connector form makes: only the fields that were filled. */
-export function customRequest(f: CustomForm, replace: boolean): AddMcpRequest {
+export function customRequest(f: CustomForm, replace: boolean): McpAddRequest {
   const keys = words(f.keys);
   const tools = words(f.tools);
   const timeout = Number.parseFloat(f.timeoutS);
@@ -173,7 +174,7 @@ export function customRequest(f: CustomForm, replace: boolean): AddMcpRequest {
     ...(tools.length ? { tools } : {}),
     ...(timeout > 0 ? { timeout_ms: Math.round(timeout * 1000) } : {}),
   };
-  let server: McpServerSpec;
+  let server: McpServerInput;
   if (f.transport === 'http') {
     const headers = headerLines(f.headers);
     const bearer = f.bearer.trim().split(/\s+/).filter(Boolean);

@@ -3,9 +3,13 @@ import type {
   Attachment,
   Envelope,
   InboxItem,
+  McpAddRequest,
   OrgConfigPatch,
+  RolePatch,
   RoutineInput,
   RunSummaryPlus,
+  SkillAddRequest,
+  SkillDiscovery,
   SubmitRequest,
 } from '@wizardingcode/shibaox-daemon';
 import {
@@ -19,13 +23,7 @@ import {
   threadView,
 } from '@wizardingcode/shibaox-view';
 import type { AppClient, RoutineDraft, RoutinePatch, RunFileContent } from '../api/client.js';
-import type {
-  AddMcpRequest,
-  AddSkillRequest,
-  AddSkillResult,
-  DiscoverResult,
-  RoleLinks,
-} from '../screens/customize/types.js';
+import type { AddSkillOutcome } from '../screens/customize/types.js';
 import { type AppState, initialState, type Settings, TERMINAL } from './state.js';
 
 /** The part of AppClient the store uses (a fake in tests). */
@@ -892,9 +890,9 @@ export class AppStore {
   }
 
   /** What a repository offers; the listing (or why it failed) is kept for Discover. */
-  async discoverSkills(repo: string, path?: string): Promise<DiscoverResult | { error: string }> {
+  async discoverSkills(repo: string, path?: string): Promise<SkillDiscovery | { error: string }> {
     const key = path ? `${repo}|${path}` : repo;
-    let r: DiscoverResult | { error: string };
+    let r: SkillDiscovery | { error: string };
     try {
       r = await this.client.discoverSkills(repo, path);
     } catch (e) {
@@ -905,8 +903,8 @@ export class AppStore {
     return r;
   }
   /** Installs or writes skills; the result says what was added and skipped (undefined: the toast says why). */
-  async addSkill(req: AddSkillRequest): Promise<AddSkillResult | undefined> {
-    let r: AddSkillResult | undefined;
+  async addSkill(req: SkillAddRequest): Promise<AddSkillOutcome | undefined> {
+    let r: AddSkillOutcome | undefined;
     const ok = await this.act(async () => {
       r = await this.client.addSkill(await this.orgRoot(), req);
       await this.loadCustomize();
@@ -920,14 +918,14 @@ export class AppStore {
     });
   }
   /** Replaces the lists of each role that changed, then reads the org again. */
-  setRoleLinks(changes: { id: string; links: RoleLinks }[]): Promise<boolean> {
+  setRoleLinks(changes: { id: string; links: RolePatch }[]): Promise<boolean> {
     return this.act(async () => {
       const org = await this.orgRoot();
       for (const ch of changes) await this.client.setRoleLinks(org, ch.id, ch.links);
       await this.loadCustomize();
     });
   }
-  addMcp(req: AddMcpRequest): Promise<boolean> {
+  addMcp(req: McpAddRequest): Promise<boolean> {
     return this.act(async () => {
       await this.client.addMcp(await this.orgRoot(), req);
       await this.loadCustomize();

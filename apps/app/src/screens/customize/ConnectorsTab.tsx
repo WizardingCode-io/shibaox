@@ -1,4 +1,4 @@
-import type { McpServerRow, McpTestResult } from '@wizardingcode/shibaox-daemon';
+import type { ConnectorTemplate, McpTestResult, RoleRow } from '@wizardingcode/shibaox-daemon';
 import { useState } from 'react';
 import { ds } from '../../ds.js';
 import { useAppState, useStore } from '../../store/hooks.js';
@@ -21,12 +21,7 @@ import {
   KeyBadge,
   Toolbar,
 } from './parts.js';
-import {
-  CONNECTOR_CATEGORIES,
-  type ConnectorTemplate,
-  type CustomizeView,
-  type RoleRow,
-} from './types.js';
+import { CONNECTOR_CATEGORIES, type CustomizeView, type McpRow } from './types.js';
 
 type Dialog =
   | { kind: 'template'; template: ConnectorTemplate }
@@ -35,7 +30,7 @@ type Dialog =
   | { kind: 'remove'; id: string };
 
 /** The Edit… form of a catalog server: what the row says, the registry's template for the rest. */
-function formOf(row: McpServerRow, roles: RoleRow[], t?: ConnectorTemplate): CustomForm {
+function formOf(row: McpRow, roles: RoleRow[], t?: ConnectorTemplate): CustomForm {
   const base = emptyCustom(roles);
   return {
     ...base,
@@ -57,7 +52,7 @@ function formOf(row: McpServerRow, roles: RoleRow[], t?: ConnectorTemplate): Cus
 
 /** One server of yours: where it is, who uses it, its keys, Test inline, and its menu. */
 function ServerCard(props: {
-  row: McpServerRow;
+  row: McpRow;
   result?: McpTestResult;
   onTested: (r: McpTestResult | undefined) => void;
   onMenu: (id: string) => void;

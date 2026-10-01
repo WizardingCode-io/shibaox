@@ -1,8 +1,8 @@
+import type { SkillRow } from '@wizardingcode/shibaox-daemon';
 import { useState } from 'react';
 import { ds } from '../../../ds.js';
 import { useStore } from '../../../store/hooks.js';
 import { ID_RE } from '../filter.js';
-import type { SkillRow } from '../types.js';
 
 const template = (id: string) => `---
 name: ${id || 'my-skill'}

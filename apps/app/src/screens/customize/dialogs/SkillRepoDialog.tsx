@@ -1,8 +1,8 @@
+import type { DiscoveredSkill, SkillRow } from '@wizardingcode/shibaox-daemon';
 import { useState } from 'react';
 import { ds } from '../../../ds.js';
 import { useAppState, useStore } from '../../../store/hooks.js';
 import { splitRepo } from '../filter.js';
-import type { DiscoveredSkill, SkillRow } from '../types.js';
 
 /** "From a repository": what `owner/repo[/path]` (or a git URL) offers, pick, install. */
 export function SkillRepoDialog(props: {

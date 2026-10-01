@@ -1,18 +1,23 @@
 import type { ProjectProfile, RunState } from '@wizardingcode/shibaox-core';
 import type {
   AuditDoc,
+  ConnectorTemplate,
   DecisionsView,
   Envelope,
   Health,
   HiggsfieldView,
   InboxItem,
   KeyRow,
+  McpAddRequest,
   McpServerRow,
   McpTestResult,
   OrgConfig,
   OrgConfigPatch,
   OrgInfo,
+  PluginRow,
   ProjectEntry,
+  RolePatch,
+  RoleRow,
   RoutineDraft,
   RoutineInput,
   RoutinePatch,
@@ -21,21 +26,14 @@ import type {
   RunFile,
   RunFileContent,
   RunSummaryPlus,
+  SkillAddRequest,
+  SkillDiscovery,
+  SkillRow,
+  SkillSource,
   SubmitRequest,
 } from '@wizardingcode/shibaox-daemon';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
-import type {
-  AddMcpRequest,
-  AddSkillRequest,
-  AddSkillResult,
-  ConnectorTemplate,
-  DiscoverResult,
-  PluginRow,
-  RoleLinks,
-  RoleRow,
-  SkillRow,
-  SkillSource,
-} from '../screens/customize/types.js';
+import type { AddSkillOutcome, McpRow, SkillDoc } from '../screens/customize/types.js';
 
 /** An error the daemon answered with (status, its code and message). */
 export class AppHttpError extends Error {
@@ -230,7 +228,7 @@ export class AppClient {
   setOrgConfig(root: string, patch: OrgConfigPatch): Promise<OrgConfig> {
     return this.json('PUT', `/orgs/config?org=${encodeURIComponent(root)}`, patch);
   }
-  mcpList(org: string): Promise<McpServerRow[]> {
+  mcpList(org: string): Promise<McpRow[]> {
     return this.json('GET', `/mcp?org=${encodeURIComponent(org)}`);
   }
   mcpTest(id: string, org: string): Promise<McpTestResult> {
@@ -243,11 +241,11 @@ export class AppClient {
     return this.json('GET', `/skills?org=${encodeURIComponent(org)}`);
   }
   /** Installs skills from a repository or a folder, or writes one. */
-  addSkill(org: string, req: AddSkillRequest): Promise<AddSkillResult> {
+  addSkill(org: string, req: SkillAddRequest): Promise<AddSkillOutcome> {
     return this.json('POST', `/skills?org=${encodeURIComponent(org)}`, req);
   }
   /** What a repository offers (a cached shallow clone on the daemon). */
-  discoverSkills(repo: string, path?: string): Promise<DiscoverResult> {
+  discoverSkills(repo: string, path?: string): Promise<SkillDiscovery> {
     const p = new URLSearchParams({ repo });
     if (path) p.set('path', path);
     return this.json('GET', `/skills/discover?${p.toString()}`);
@@ -263,7 +261,7 @@ export class AppClient {
     return this.json('GET', `/roles?org=${encodeURIComponent(org)}`);
   }
   /** Replaces a role's `mcp:` and/or `skills:` lists. */
-  setRoleLinks(org: string, id: string, links: RoleLinks): Promise<RoleRow> {
+  setRoleLinks(org: string, id: string, links: RolePatch): Promise<RoleRow> {
     return this.json(
       'PUT',
       `/roles/${encodeURIComponent(id)}?org=${encodeURIComponent(org)}`,
@@ -271,7 +269,7 @@ export class AppClient {
     );
   }
   /** Writes `catalog/<id>.yaml` for an MCP server and attaches it to the roles. */
-  addMcp(org: string, req: AddMcpRequest): Promise<McpServerRow> {
+  addMcp(org: string, req: McpAddRequest): Promise<McpServerRow> {
     return this.json('POST', `/mcp?org=${encodeURIComponent(org)}`, req);
   }
   /** Removes a connector after detaching it from every role. */

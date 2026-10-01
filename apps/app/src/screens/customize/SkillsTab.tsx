@@ -1,3 +1,4 @@
+import type { DiscoveredSkill, SkillRow, SkillSource } from '@wizardingcode/shibaox-daemon';
 import { useEffect, useMemo, useState } from 'react';
 import { ds } from '../../ds.js';
 import { Markdown } from '../../markdown/render.js';
@@ -8,7 +9,7 @@ import { SkillRepoDialog } from './dialogs/SkillRepoDialog.js';
 import { SkillFolderDialog, SkillWriteDialog } from './dialogs/SkillWriteDialog.js';
 import { inCategory, matches } from './filter.js';
 import { AddMenu, AddOrAdded, CardMenu, CategoryMenu, Empty, goTo, Toolbar } from './parts.js';
-import type { CustomizeView, DiscoveredSkill, SkillRow, SkillSource } from './types.js';
+import type { CustomizeView } from './types.js';
 
 const sourceKey = (s: SkillSource) => (s.path ? `${s.repo}|${s.path}` : s.repo);
 

@@ -1,7 +1,8 @@
+import type { RoleRow } from '@wizardingcode/shibaox-daemon';
 import { type ReactNode, useState } from 'react';
 import { ds } from '../../ds.js';
 import { customizePath, navigate } from '../../router.js';
-import type { CustomizeTab, CustomizeView, RoleRow } from './types.js';
+import type { CustomizeTab, CustomizeView } from './types.js';
 
 type MenuItem = Parameters<Window['Shibaox']['Menu']>[0]['items'][number];
 

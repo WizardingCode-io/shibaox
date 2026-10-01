@@ -1,8 +1,13 @@
-import type { KeyRow, McpServerRow, OrgConfig } from '@wizardingcode/shibaox-daemon';
+import type {
+  KeyRow,
+  McpServerRow,
+  OrgConfig,
+  PluginRow,
+  RoleRow,
+} from '@wizardingcode/shibaox-daemon';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import { describe, expect, it } from 'vitest';
 import { neededKeys, providerKey } from '../src/screens/customize/needed-keys.js';
-import type { PluginRow, RoleRow } from '../src/screens/customize/types.js';
 
 const keys: KeyRow[] = [
   { name: 'TYPESAFE_API_KEY', description: 'Jev decisions and checks (TypeSafe)', set: false },

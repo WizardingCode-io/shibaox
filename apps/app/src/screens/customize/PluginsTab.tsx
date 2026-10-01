@@ -1,3 +1,4 @@
+import type { ConnectorTemplate, PluginRow } from '@wizardingcode/shibaox-daemon';
 import { useState } from 'react';
 import { ds } from '../../ds.js';
 import { useAppState, useStore } from '../../store/hooks.js';
@@ -5,7 +6,7 @@ import { TemplateDialog } from './dialogs/ConnectorDialog.js';
 import { RolesDialog } from './dialogs/RolesDialog.js';
 import { matches } from './filter.js';
 import { AddMenu, Empty, goTo, KeyBadge, Toolbar } from './parts.js';
-import type { ConnectorTemplate, CustomizeView, PluginRow } from './types.js';
+import type { CustomizeView } from './types.js';
 
 type IconName = Parameters<Window['Shibaox']['Icon']>[0]['name'];
 const ICON: Record<string, IconName> = {
