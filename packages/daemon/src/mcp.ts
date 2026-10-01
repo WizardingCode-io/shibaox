@@ -26,8 +26,8 @@ export interface McpServerRow {
   roles: string[];
   /** The vault keys it needs (`env_keys` and every `${KEY}` of a header), and whether each is set. */
   keys: { name: string; present: boolean }[];
-  /** The server as loaded (header `${KEY}` placeholders kept, never expanded): what Edit prefills. */
-  server: McpServer;
+  /** The server as loaded (header `${KEY}` placeholders kept, never expanded): what Edit prefills. Always set by the daemon (optional in the type for older fakes). */
+  server?: McpServer;
 }
 
 /** `env_keys` plus the `${KEY}` placeholders of the header values, in that order, once each. */

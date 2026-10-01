@@ -298,6 +298,6 @@ describe('customize API hardening', () => {
   it('GET /mcp rows carry the raw server', async () => {
     const { org, client } = await setup();
     const rows: McpServerRow[] = await client.mcpList(org);
-    expect(rows.find((r) => r.id === 'higgsfield')?.server.transport).toBe('http');
+    expect(rows.find((r) => r.id === 'higgsfield')?.server?.transport).toBe('http');
   });
 });
