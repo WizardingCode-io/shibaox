@@ -17,6 +17,7 @@ interface Fake {
   lines: string[];
   timers: { ms: number; fn: () => void; repeat: boolean }[];
   downloaded?: (version: string) => void;
+  failed?: (reason: string) => void;
   fire(i: number): void;
 }
 
@@ -42,6 +43,9 @@ function fake(
       },
       onDownloaded: (cb) => {
         f.downloaded = cb;
+      },
+      onError: (cb) => {
+        f.failed = cb;
       },
       install: () => {
         f.installs++;
@@ -147,8 +151,89 @@ describe('the desktop updater', () => {
     expect(broken.said).toEqual([]);
     expect(broken.lines.join('\n')).toContain('ENOTFOUND github.com');
     await u.checkNow();
-    expect(broken.said[0]).toMatch(/could not check.*ENOTFOUND/i);
+    expect(broken.said[0]).toMatch(/could not check.*connection/i);
     expect(broken.said[0]).not.toContain('Headers');
+  });
+
+  it('an update that fails after its download is forgotten: no Restart offer, the manual check says why', async () => {
+    const f = fake({ found: async () => '0.2.6' });
+    const u = startUpdater(f.source, f.ui, f.opts);
+    f.downloaded?.('0.2.6');
+    await tick();
+    expect(f.asked).toEqual(['0.2.6']);
+    f.failed?.('Code signature at URL … did not pass validation');
+    f.ui.ask = async (v) => {
+      f.asked.push(v);
+      return 'restart';
+    };
+    await u.checkNow();
+    expect(f.installs).toBe(0);
+    expect(f.asked).toEqual(['0.2.6']);
+    expect(f.said[0]).toMatch(/could not .*0\.2\.6.*did not pass validation/i);
+    expect(f.lines.join('\n')).toContain('did not pass validation');
+  });
+
+  it('a manual check with a version waiting checks first: a newer one wins, the same one is offered again', async () => {
+    let latest = '0.2.6';
+    const f = fake({ found: async () => latest });
+    const u = startUpdater(f.source, f.ui, f.opts);
+    f.downloaded?.('0.2.6');
+    await tick();
+    expect(f.asked).toEqual(['0.2.6']);
+    latest = '0.2.7';
+    await u.checkNow();
+    expect(f.checks).toBe(1);
+    expect(f.said[0]).toMatch(/0\.2\.7.*download/i);
+    expect(f.asked).toEqual(['0.2.6']);
+    latest = '0.2.6';
+    await u.checkNow();
+    expect(f.asked).toEqual(['0.2.6', '0.2.6']);
+  });
+
+  it('dialogs never stack: the ready prompt waits for an open message', async () => {
+    const f = fake({ found: async () => '0.2.6' });
+    let release: (() => void) | undefined;
+    const order: string[] = [];
+    f.ui.say = async (m) => {
+      order.push(`say:${m.slice(0, 13)}`);
+      await new Promise<void>((r) => {
+        release = r;
+      });
+    };
+    f.ui.ask = async (v) => {
+      order.push(`ask:${v}`);
+      return 'later';
+    };
+    const u = startUpdater(f.source, f.ui, f.opts);
+    const manual = u.checkNow();
+    await tick();
+    f.downloaded?.('0.2.6');
+    await tick();
+    expect(order).toEqual(['say:Shibaox 0.2.6']);
+    release?.();
+    await manual;
+    await tick();
+    expect(order).toEqual(['say:Shibaox 0.2.6', 'ask:0.2.6']);
+  });
+
+  it('the manual check puts the usual failures in plain words', async () => {
+    const cases: [string, RegExp][] = [
+      [
+        'Cannot find latest-mac.yml in the latest release artifacts (https://github.com/x/y/releases/download/v0.2.3/latest-mac.yml): HttpError: 404',
+        /latest release .*no update/i,
+      ],
+      ['net::ERR_INTERNET_DISCONNECTED', /offline|connection/i],
+      ['getaddrinfo ENOTFOUND github.com', /offline|connection/i],
+    ];
+    for (const [message, words] of cases) {
+      const f = fake({
+        found: async () => {
+          throw new Error(message);
+        },
+      });
+      await startUpdater(f.source, f.ui, f.opts).checkNow();
+      expect(f.said[0]).toMatch(words);
+    }
   });
 
   it('stop() clears the timers', () => {

@@ -68,7 +68,7 @@ jobs:
           else
             echo "no Apple secrets: signing ad hoc"
             cd apps/desktop
-            pnpm exec electron-builder --mac --publish never -c.mac.identity=- -c.mac.hardenedRuntime=false
+            pnpm exec electron-builder --mac --publish never -c.mac.identity=- -c.mac.hardenedRuntime=false -c.extraMetadata.shibaoxUpdates=false
             echo "signed=adhoc" >> "$GITHUB_ENV"
           fi
       - name: check the signature
@@ -81,7 +81,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
         run: |
-          files="$(ls apps/desktop/release/Shibaox-*.dmg apps/desktop/release/Shibaox-*.zip apps/desktop/release/Shibaox-*.zip.blockmap apps/desktop/release/latest-mac.yml)"
+          # an ad-hoc build cannot update installed apps (Squirrel refuses it): only its dmg goes up
+          if [ "$signed" = notarized ]; then
+            files="$(ls apps/desktop/release/Shibaox-*.dmg apps/desktop/release/Shibaox-*.zip apps/desktop/release/Shibaox-*.zip.blockmap apps/desktop/release/latest-mac.yml)"
+          else
+            files="$(ls apps/desktop/release/Shibaox-*.dmg)"
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" $files --clobber
           else

@@ -60,8 +60,8 @@ The desktop workflow (`.github/workflows/desktop.yml`) signs the app with a Deve
    - `APPLE_API_KEY_ID`: the key's ID.
    - `APPLE_API_ISSUER`: the issuer ID shown on that page.
    - `APPLE_API_KEY_P8`: the contents of the `.p8` file.
-3. Add the five secrets at Settings → Secrets and variables → Actions of the repository, then re-run the desktop workflow for the tag (`gh workflow run desktop.yml -f tag=v0.2.3`): it replaces the dmg on the release with the notarized one.
+3. Add the five secrets at Settings → Secrets and variables → Actions of the repository, then re-run the desktop workflow for the tag (`gh workflow run desktop.yml -f tag=v0.2.3`): it replaces the dmg on the release with the notarized one, and adds the update files (below). A re-run on a release that is already published goes live at once.
 
 `spctl --assess --type execute Shibaox.app` says `accepted` on a notarized build. Locally, `pnpm --filter @wizardingcode/shibaox-desktop dist` keeps signing ad hoc (no certificate needed).
 
-**Updates.** Installed apps update themselves with `electron-updater` from the GitHub releases: the workflow attaches, next to the dmg, the zip of each architecture, its blockmap and `latest-mac.yml`. The updater only sees published releases (never drafts or pre-releases), so an update goes out when the draft release of the tag is published; the app must be signed with the same Developer ID as the installed one, which an ad-hoc build is not (it logs the failed check and keeps running).
+**Updates.** Installed apps update themselves with `electron-updater` from the GitHub releases: the workflow attaches, next to the dmg, the zip of each architecture, its blockmap and `latest-mac.yml`. The updater only sees published releases (never drafts or pre-releases), so an update goes out when the draft release of the tag is published. Only a Developer ID build can update installed apps: an ad-hoc build (`pnpm dist`, a workflow run without the Apple secrets) is packaged with `shibaoxUpdates: false` and never checks, and the workflow attaches only its dmg. What the updater did is appended to `~/.shibaox/desktop.log`.

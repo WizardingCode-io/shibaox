@@ -1,7 +1,16 @@
+import { appendFileSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startBridge } from '@wizardingcode/shibaox-bridge';
-import { app, BrowserWindow, dialog, Menu, session, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  Menu,
+  session,
+  shell,
+  autoUpdater as squirrel,
+} from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { probeDaemon, startDaemonViaShell } from './daemon.js';
 import { type BridgeHandle, type Launch, planLaunch, single } from './launch.js';
@@ -26,6 +35,29 @@ const shown = (text: string) => text.replace(/#token=[^\s'"]+/g, '#token=…');
 const log = (line: string) => {
   if (SMOKE || process.env.SHIBAOX_DESKTOP_DEBUG) console.log(`[shibaox] ${shown(line)}`);
 };
+/** What a user can show when updates fail: appended to ~/.shibaox/desktop.log (never a token). */
+const persist = (line: string) => {
+  log(line);
+  try {
+    appendFileSync(join(homeRoot(), 'desktop.log'), `${new Date().toISOString()} ${shown(line)}\n`);
+  } catch {
+    // no home directory to write to: the line stays in the debug output
+  }
+};
+
+/** Ad-hoc builds (`pnpm dist`, a workflow run without the Apple secrets) are packaged with
+ * `shibaoxUpdates: false`: Squirrel would refuse their updates, so they never check. */
+function updatesEnabled(): boolean {
+  if (!app.isPackaged || SMOKE) return false;
+  try {
+    const pkg = JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')) as {
+      shibaoxUpdates?: boolean;
+    };
+    return pkg.shibaoxUpdates !== false;
+  } catch {
+    return false;
+  }
+}
 
 async function launch(): Promise<Launch> {
   const root = homeRoot();
@@ -131,30 +163,51 @@ function createWindow(): BrowserWindow {
  * background, installed on restart or on quit. A development build never checks.
  */
 function startUpdates(): Updater {
-  const say = (level: string) => (m: unknown) => log(`updater ${level}: ${String(m)}`);
+  const say = (level: string, keep: boolean) => (m: unknown) =>
+    (keep ? persist : log)(`updater ${level}: ${String(m).split('\n')[0]}`);
   autoUpdater.logger = {
-    info: say('info'),
-    warn: say('warn'),
-    error: say('error'),
-    debug: say('debug'),
+    info: say('info', false),
+    warn: say('warn', true),
+    error: say('error', true),
+    debug: say('debug', false),
   };
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+  let version: string | undefined; // the version being downloaded
   const source: UpdateSource = {
     check: async () => {
       const r = await autoUpdater.checkForUpdates();
-      return r?.isUpdateAvailable ? r.updateInfo.version : undefined;
+      if (!r?.isUpdateAvailable) return undefined;
+      version = r.updateInfo.version;
+      // the download runs on; its failure is reported by the error events, not left dangling
+      r.downloadPromise?.catch(() => {});
+      return version;
     },
+    // electron-updater's own `update-downloaded` only means "zip on disk": the update is ready
+    // once Squirrel (Electron's updater) has fetched and validated it
     onDownloaded: (cb) => {
-      autoUpdater.on('update-downloaded', (info) => cb(info.version));
+      squirrel.on('update-downloaded', () => {
+        if (version) cb(version);
+      });
+    },
+    onError: (cb) => {
+      const report = (e: unknown) => cb(e instanceof Error ? e.message : String(e));
+      autoUpdater.on('error', report);
+      squirrel.on('error', report);
     },
     install: () => autoUpdater.quitAndInstall(),
   };
+  const parent = () => (win && !win.isDestroyed() && win.isVisible() ? win : undefined);
+  const box = (options: Electron.MessageBoxOptions) => {
+    const w = parent();
+    return w ? dialog.showMessageBox(w, options) : dialog.showMessageBox(options);
+  };
   const ui: UpdateUi = {
-    ask: async (version) => {
-      const { response } = await dialog.showMessageBox({
+    ask: async (v) => {
+      app.focus();
+      const { response } = await box({
         type: 'info',
-        message: `Shibaox ${version} is ready`,
+        message: `Shibaox ${v} is ready`,
         detail: 'Restart to update now. Later, it installs when you quit the app.',
         buttons: ['Restart now', 'Later'],
         defaultId: 0,
@@ -163,13 +216,13 @@ function startUpdates(): Updater {
       return response === 0 ? 'restart' : 'later';
     },
     say: async (message) => {
-      await dialog.showMessageBox({ type: 'info', message, buttons: ['OK'] });
+      await box({ type: 'info', message, buttons: ['OK'] });
     },
   };
   return startUpdater(source, ui, {
-    packaged: app.isPackaged && !SMOKE,
+    packaged: updatesEnabled(),
     version: app.getVersion(),
-    log,
+    log: persist,
   });
 }
 
@@ -193,6 +246,7 @@ function installMenu(u: Updater): void {
           { role: 'quit' },
         ],
       },
+      { role: 'fileMenu' },
       { role: 'editMenu' },
       { role: 'viewMenu' },
       { role: 'windowMenu' },
