@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { AppClient } from './api/client.js';
 import {
   type Connection,
@@ -8,6 +8,7 @@ import {
 } from './api/connection.js';
 import { addFiles, dragHasFiles, encodeFiles } from './attachments.js';
 import { ds } from './ds.js';
+import { useFileThumbs, useVoice } from './hooks/attachments.js';
 import { useRoute } from './router.js';
 import { ChatsScreen } from './screens/ChatsScreen.js';
 import { ConnectScreen } from './screens/ConnectScreen.js';
@@ -21,6 +22,7 @@ import { SoonScreen } from './screens/SoonScreen.js';
 import { ThreadScreen } from './screens/ThreadScreen.js';
 import { StoreContext, useAppState, useStore } from './store/hooks.js';
 import { AppStore, type StoreClient } from './store/store.js';
+import { thumbKind } from './thumbs.js';
 
 interface StorageLike {
   getItem(k: string): string | null;
@@ -53,6 +55,9 @@ function Shell(props: { base: string; onDisconnect: () => void }): JSX.Element {
   const store = useStore();
   const [files, setFiles] = useState<File[]>([]);
   const [newText, setNewText] = useState('');
+  const homeThumbs = useFileThumbs(files);
+  const homeWords = useCallback((w: string) => setNewText((t) => (t ? `${t} ${w}` : w)), []);
+  const homeVoice = useVoice(homeWords, (reason) => store.notice(reason));
   // a file dropped anywhere else must never navigate the tab away from the app
   useEffect(() => {
     const guard = (e: DragEvent) => {
@@ -121,7 +126,16 @@ function Shell(props: { base: string; onDisconnect: () => void }): JSX.Element {
               model={state.settings.model?.split('/').pop()}
               value={newText}
               onChange={setNewText}
-              attachments={files.map((f) => ({ name: f.name, size: f.size }))}
+              attachments={files.map((f) => ({
+                name: f.name,
+                size: f.size,
+                ...(homeThumbs.get(f)
+                  ? { preview: homeThumbs.get(f), previewKind: thumbKind(f.name, f.type) }
+                  : {}),
+              }))}
+              voice={homeVoice.available}
+              listening={homeVoice.listening}
+              onVoice={homeVoice.available ? homeVoice.toggle : undefined}
               onAttach={(picked) => {
                 const r = addFiles(files, picked);
                 if (r.notice) store.notice(r.notice);

@@ -375,4 +375,21 @@ describe('the sections: the review fixes', () => {
       expect(screen.getByRole('button', { name: 'Change model' }).textContent).toContain('qwen'),
     );
   });
+
+  it('the home composer shows a thumbnail for an attached image and carries it into the first message', async () => {
+    const { client: c, calls } = client();
+    mount(c, { hash: '#/' });
+    const box = await screen.findByRole('textbox', { name: 'Message' });
+    const file = new File([new Uint8Array([1, 2, 3])], 'shot.png', { type: 'image/png' });
+    fireEvent.drop(box, { dataTransfer: { files: [file], types: ['Files'] } });
+    await screen.findByText('shot.png');
+    await waitFor(() => expect(document.querySelector('.sx-composer__thumb')).toBeTruthy());
+    fireEvent.change(box, { target: { value: 'What is this?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(calls.find((x) => x.name === 'submitRun')).toBeTruthy());
+    const req = calls.find((x) => x.name === 'submitRun')?.args[0] as {
+      attachments?: { name: string }[];
+    };
+    expect(req.attachments?.map((a) => a.name)).toEqual(['shot.png']);
+  });
 });
