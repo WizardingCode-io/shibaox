@@ -48,6 +48,8 @@ describe('the command environment PATH', () => {
     expect(env.PATH).toBe('/usr/bin:/bin:/Users/me/.local/bin:/opt/homebrew/bin:/usr/local/bin');
     const again = commandEnv({ PATH: env.PATH ?? '', HOME: '/Users/me' });
     expect(again.PATH).toBe(env.PATH);
+    // an env without a PATH keeps the process's own (the system bins stay reachable)
+    expect(commandEnv({}).PATH).toContain('/usr/bin');
   });
 });
 
