@@ -102,4 +102,42 @@ describe('Markdown', () => {
     const plain = render(<Markdown text={'```\njust a line, with a comma\n```'} />);
     expect(plain.container.querySelector('.sx-code')).toBeTruthy();
   });
+
+  it('task list items show their text only, never the [x] mark', () => {
+    const ui = render(<Markdown text={'- [x] done\n- [ ] later'} />);
+    const items = [...ui.container.querySelectorAll('li.is-task')];
+    expect(items.map((li) => li.textContent?.trim())).toEqual(['done', 'later']);
+    expect(ui.container.querySelector('li.is-task span p')).toBeNull();
+  });
+
+  it('plain mode (user messages): line breaks kept, inline marks only, no blocks', () => {
+    const ui = render(<Markdown text={'# todo\n---\nline one\nline two **bold** `x`'} plain />);
+    expect(ui.container.querySelector('h1')).toBeNull();
+    expect(ui.container.querySelector('hr')).toBeNull();
+    expect(ui.container.querySelectorAll('br').length).toBeGreaterThanOrEqual(2);
+    expect(ui.container.querySelector('strong')?.textContent).toBe('bold');
+    expect(ui.container.querySelector('code')?.textContent).toBe('x');
+    expect(ui.container.textContent).toContain('# todo');
+  });
+
+  it('entities the model wrote are decoded; javascript: and protocol-relative links are not links', () => {
+    const ui = render(
+      <Markdown
+        text={
+          'Tom &amp; Jerry &rarr; 2 &lt; 3\n\n[a](javascript:alert(1)) [b](//evil.example) [c](/runs)'
+        }
+      />,
+    );
+    expect(ui.container.textContent).toContain('Tom & Jerry → 2 < 3');
+    expect(ui.container.querySelector('a')).toBeNull();
+    expect(ui.container.textContent).toContain('a');
+  });
+
+  it('while streaming, a dash on the last line is not a setext heading yet', () => {
+    const ui = render(<Markdown text={'Intro\n-'} pending />);
+    expect(ui.container.querySelector('h2')).toBeNull();
+    expect(ui.container.querySelector('p')?.textContent).toBe('Intro');
+    const done = render(<Markdown text={'Intro\n- item'} pending />);
+    expect(done.container.querySelector('li')?.textContent).toBe('item');
+  });
 });

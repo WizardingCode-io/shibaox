@@ -75,17 +75,13 @@ export function languageOfFile(path: string): string | undefined {
 /** highlight.js scope → the design system's token class. */
 function tokenClass(scope: string): string | undefined {
   const parts = scope.split(/\s+/).map((p) => p.replace(/^hljs-/, ''));
+  if (parts.includes('language_')) return 'tok-keyword'; // this, super, console
   for (const p of parts) {
     if (p === 'function_' || p === 'function' || p === 'section' || p === 'selector-id')
       return 'tok-function';
-    if (
-      p === 'class_' ||
-      p === 'type' ||
-      p === 'class' ||
-      p === 'selector-class' ||
-      p === 'built_in'
-    )
+    if (p === 'class_' || p === 'type' || p === 'class' || p === 'selector-class')
       return 'tok-type';
+    if (p === 'built_in') return 'tok-keyword';
   }
   const first = parts[0] ?? '';
   switch (first) {
@@ -120,9 +116,10 @@ function tokenClass(scope: string): string | undefined {
     case 'template-variable':
     case 'selector-attr':
     case 'selector-pseudo':
-    case 'params':
     case 'bullet':
       return 'tok-attr';
+    case 'params':
+      return undefined;
     case 'punctuation':
     case 'operator':
       return 'tok-punct';

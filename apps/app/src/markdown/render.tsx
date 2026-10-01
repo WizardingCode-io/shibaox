@@ -4,18 +4,46 @@ import { ds } from '../ds.js';
 import { numericColumns, parseCsv } from './csv.js';
 import { highlight } from './highlight.js';
 
-const ENTITIES: Record<string, string> = {
-  '&amp;': '&',
-  '&lt;': '<',
-  '&gt;': '>',
-  '&quot;': '"',
-  '&#x27;': "'",
-  '&#39;': "'",
+const NAMED: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: '\u00a0',
+  rarr: '→',
+  larr: '←',
+  uarr: '↑',
+  darr: '↓',
+  hellip: '…',
+  mdash: '—',
+  ndash: '–',
+  laquo: '«',
+  raquo: '»',
+  copy: '©',
+  reg: '®',
+  trade: '™',
+  times: '×',
+  middot: '·',
+  bull: '•',
+  deg: '°',
+  euro: '€',
+  pound: '£',
 };
+/** Entities, whether marked escaped them or the model typed them: the target is a text node either way. */
 const decodeEntities = (s: string) =>
-  s.replace(/&(?:amp|lt|gt|quot|#x27|#39);/g, (m) => ENTITIES[m] ?? m);
+  s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, body: string) => {
+    if (body[0] === '#') {
+      const code =
+        body[1]?.toLowerCase() === 'x' ? Number.parseInt(body.slice(2), 16) : Number(body.slice(1));
+      return Number.isFinite(code) && code > 0 && code < 0x110000 ? String.fromCodePoint(code) : m;
+    }
+    return NAMED[body] ?? NAMED[body.toLowerCase()] ?? m;
+  });
 
-const SAFE_HREF = /^(https?:|mailto:|#|\/)/i;
+/** Links the model may write: web and mail only (no app routes, no protocol-relative hosts, no scripts). */
+const SAFE_HREF = /^(https?:|mailto:)/i;
+
 const href = (raw: string): string | undefined =>
   SAFE_HREF.test(raw.trim()) ? raw.trim() : undefined;
 
@@ -27,9 +55,11 @@ function inline(tokens: Token[] | undefined, keyBase: string): ReactNode[] {
       case 'text': {
         const tt = t as Tokens.Text;
         if (tt.tokens?.length) out.push(<Fragment key={key}>{inline(tt.tokens, key)}</Fragment>);
-        else out.push(tt.escaped ? decodeEntities(tt.text) : tt.text);
+        else out.push(decodeEntities(tt.text));
         break;
       }
+      case 'checkbox':
+        break; // the task list item draws its own box
       case 'escape':
         out.push(decodeEntities((t as Tokens.Escape).text));
         break;
@@ -100,6 +130,7 @@ function blocks(tokens: Token[], keyBase: string): ReactNode[] {
     const key = `${keyBase}.${i}`;
     switch (t.type) {
       case 'space':
+      case 'checkbox':
         break;
       case 'heading': {
         const hd = t as Tokens.Heading;
@@ -164,7 +195,7 @@ function blocks(tokens: Token[], keyBase: string): ReactNode[] {
                   <input type="checkbox" checked={!!it.checked} disabled readOnly />
                 ) : null}
                 {it.task ? (
-                  <span>{blocks(it.tokens, `${key}.${j}`)}</span>
+                  <div>{blocks(it.tokens, `${key}.${j}`)}</div>
                 ) : (
                   blocks(it.tokens, `${key}.${j}`)
                 )}
@@ -203,10 +234,20 @@ function blocks(tokens: Token[], keyBase: string): ReactNode[] {
  * fenced code (CodeBlock with the brand's syntax colours), links that open elsewhere. Markup
  * the model writes stays text. Re-parsed only when the text changes.
  */
-export function Markdown(props: { text: string }): JSX.Element {
-  const nodes = useMemo(
-    () => blocks(marked.lexer(props.text, { gfm: true, breaks: false }), 'md'),
-    [props.text],
-  );
+export function Markdown(props: {
+  text: string;
+  /** Still streaming: a lone `-`/`=` on the last line is not a heading underline yet. */
+  pending?: boolean;
+  /** The user's own words: inline marks and line breaks only, never blocks (a `# todo` stays text). */
+  plain?: boolean;
+}): JSX.Element {
+  const nodes = useMemo(() => {
+    if (props.plain) {
+      const lexer = new marked.Lexer({ gfm: true, breaks: true });
+      return [<p key="plain">{inline(lexer.inlineTokens(props.text), 'plain')}</p>];
+    }
+    const text = props.pending ? props.text.replace(/\n[-=]{1,2}$/, '') : props.text;
+    return blocks(marked.lexer(text, { gfm: true, breaks: false }), 'md');
+  }, [props.text, props.pending, props.plain]);
   return <>{nodes}</>;
 }

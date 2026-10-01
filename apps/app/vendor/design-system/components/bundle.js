@@ -142,14 +142,14 @@
   function CodeBlock(p) {
     var s = useState(false), clip = useState(true);
     var raw = p.code !== undefined ? p.code : (typeof p.children === 'string' ? p.children : '');
-    function copy() { try { navigator.clipboard.writeText(String(raw)); } catch (e) {} s[1](true); setTimeout(function () { s[1](false); }, 1400); }
+    function copy() { var c = navigator.clipboard; if (!c || !c.writeText) return; c.writeText(String(raw)).then(function () { s[1](true); setTimeout(function () { s[1](false); }, 1400); }, function () {}); }
     var lines = raw ? raw.split('\n').length : 0;
-    var clippable = p.maxHeight && lines > 12;
+    var clippable = p.maxHeight && (lines > 12 || raw.length > 1500);
     return h('div', { className: cx('sx-code', p.wrap && 'sx-code--wrap', clippable && clip[0] && 'is-clipped', p.className), style: p.maxHeight ? { '--code-max': typeof p.maxHeight === 'number' ? p.maxHeight + 'px' : p.maxHeight } : undefined },
       h('div', { className: 'sx-code__bar' },
         h('div', null, p.filename ? h('span', { className: 'sx-code__file' }, p.filename) : null, h('span', null, p.language || 'text')),
         h('div', null,
-          clippable ? h('button', { type: 'button', className: 'sx-code__copy', onClick: function () { clip[1](!clip[0]); } }, clip[0] ? 'Show all (' + lines + ' lines)' : 'Show less') : null,
+          clippable ? h('button', { type: 'button', className: 'sx-code__copy', 'aria-expanded': !clip[0], onClick: function () { clip[1](!clip[0]); } }, clip[0] ? 'Show all (' + lines + ' lines)' : 'Show less') : null,
           h('button', { type: 'button', className: 'sx-code__copy', onClick: copy }, h(Icon, { name: s[0] ? 'check' : 'copy', size: 14 }), s[0] ? 'Copied' : 'Copy'))),
       h('pre', { className: 'sx-code__pre' }, h('code', null, p.children)));
   }
@@ -276,7 +276,7 @@
     var s = useState(start >= 0 ? start : items.findIndex(function (it) { return !it.disabled && it.id !== '-'; })), active = s[0];
     var touched = useRef(false);
     // items often arrive after the menu opened (a list fetched on demand): follow the checked one until the user moves
-    useEffect(function () { if (!touched.current && start >= 0) s[1](start); }, [start]);
+    useEffect(function () { if (touched.current) return; if (start >= 0) s[1](start); else s[1](items.findIndex(function (it) { return !it.disabled && it.id !== '-'; })); }, [start, items.length]);
     function select(it) { if (it.disabled) return; if (p.onSelect) p.onSelect(it.id); if (p.onClose) p.onClose(); }
     function onKey(e) {
       var enabled = []; items.forEach(function (it, i) { if (!it.disabled && it.id !== '-') enabled.push(i); });

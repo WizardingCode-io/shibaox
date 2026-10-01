@@ -62,14 +62,15 @@ export function messageParts(cards: readonly Card[]): MessagePart[] {
   };
   for (const c of cards) {
     if (c.kind !== 'node') continue;
+    flush(); // another node's words never glue onto the previous node's
     for (const b of c.blocks) {
       if (b.kind === 'text') {
         if (b.parentId) continue; // what a sub-agent said belongs to its tool call
         if (run) run.text += b.text;
-        else run = { key: b.key, text: b.text };
+        else run = { key: `${c.nodeId}:${b.key}`, text: b.text };
       } else {
         flush();
-        parts.push(b);
+        parts.push(b.kind === 'file' ? { ...b, key: `${c.nodeId}:${b.key}` } : b);
       }
     }
   }

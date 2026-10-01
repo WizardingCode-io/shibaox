@@ -138,4 +138,15 @@ describe('threadView', () => {
     expect(agent?.text).toContain('Fixed.');
     expect(agent?.blocks).toHaveLength(2);
   });
+
+  it('parts of two task nodes stay apart, with keys of their own', () => {
+    const cards: Card[] = [
+      node([{ kind: 'text', key: 'text:0', text: 'Done.' }]),
+      { ...node([{ kind: 'text', key: 'text:0', text: 'Next.' }]), key: 'node:b', nodeId: 'b' },
+    ];
+    const v = threadView([{ state: state({}), cards }]);
+    const parts = v.messages[1]?.parts ?? [];
+    expect(parts.map((p) => (p.kind === 'text' ? p.text : p.kind))).toEqual(['Done.', 'Next.']);
+    expect(new Set(parts.map((p) => p.key)).size).toBe(2);
+  });
 });

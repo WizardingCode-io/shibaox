@@ -37,7 +37,7 @@
   --code-keyword: #a94a0a; /* Code: keywords, built-ins, literals (shiba-strong). */
   --code-string: #266e43; /* Code: strings and regexps (matcha). */
   --code-number: #2a63c4; /* Code: numbers (info). */
-  --code-comment: #8b7a6a; /* Code: comments — quieter than ink-muted, still 4.5:1 on surface-sunken. */
+  --code-comment: #776757; /* Code: comments — quieter than ink-muted, 4.65:1 on surface-sunken. */
   --code-function: #6b3fa0; /* Code: function and method names. */
   --code-type: #0f6f7a; /* Code: types, classes, tags. */
   --code-attr: #8a5e00; /* Code: attributes, properties, variables (warning). */

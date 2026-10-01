@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ds } from '../ds.js';
 import { clock, duration, RUN_STATUS_TONE, RUN_STATUS_WORD, shortModel } from '../format.js';
 import { useFollowScroll } from '../hooks/follow-scroll.js';
+import { highlight } from '../markdown/highlight.js';
 import { Markdown } from '../markdown/render.js';
 import { navigate } from '../router.js';
 import { useAppState, useStore } from '../store/hooks.js';
@@ -44,6 +45,12 @@ function ToolBlock(props: { block: Extract<Block, { kind: 'tool' }> }): JSX.Elem
       : typeof b.output === 'string'
         ? b.output
         : JSON.stringify(b.output, null, 2);
+  const shown =
+    output === undefined
+      ? ''
+      : output.length > 20000
+        ? `${output.slice(0, 20000)}\n… (${output.length} characters)`
+        : output;
   return (
     <S.ToolCall
       tool={b.name}
@@ -55,10 +62,13 @@ function ToolBlock(props: { block: Extract<Block, { kind: 'tool' }> }): JSX.Elem
       defaultOpen={b.status === 'error'}
     >
       {output !== undefined ? (
-        <S.CodeBlock language={typeof b.output === 'string' ? 'text' : 'json'} wrap maxHeight={240}>
-          {output.length > 20000
-            ? `${output.slice(0, 20000)}\n… (${output.length} characters)`
-            : output}
+        <S.CodeBlock
+          language={typeof b.output === 'string' ? 'text' : 'json'}
+          code={shown}
+          wrap
+          maxHeight={240}
+        >
+          {typeof b.output === 'string' ? shown : highlight(shown, 'json')}
         </S.CodeBlock>
       ) : undefined}
     </S.ToolCall>
@@ -66,15 +76,20 @@ function ToolBlock(props: { block: Extract<Block, { kind: 'tool' }> }): JSX.Elem
 }
 
 /** The agent's turn as it happened: text as a document, tool calls and files in between. */
-function Parts(props: { parts: MessagePart[]; onFile: (path: string) => void }): JSX.Element {
+function Parts(props: {
+  parts: MessagePart[];
+  onFile: (path: string) => void;
+  /** The turn is still streaming: its last text part is treated as unfinished. */
+  pending?: boolean;
+}): JSX.Element {
   const S = ds();
   return (
     <>
       {props.parts
         .filter((p) => !(p.kind === 'tool' && INTERNAL_TOOLS.has(p.name)))
-        .map((p) =>
+        .map((p, i, all) =>
           p.kind === 'text' ? (
-            <Markdown key={p.key} text={p.text} />
+            <Markdown key={p.key} text={p.text} pending={props.pending && i === all.length - 1} />
           ) : p.kind === 'tool' ? (
             <ToolBlock key={p.key} block={p} />
           ) : (
@@ -159,6 +174,8 @@ function ChatTab(props: {
   messages: ThreadMessage[];
   inbox: InboxItem[];
   onFile: (runId: string, path: string) => void;
+  /** The run still streaming, if any. */
+  live?: string;
 }): JSX.Element {
   const S = ds();
   const scroll = useRef<HTMLDivElement>(null);
@@ -175,7 +192,7 @@ function ChatTab(props: {
         {props.messages.map((m) =>
           m.from === 'user' ? (
             <S.Message key={m.key} from="user">
-              <Markdown text={m.text} />
+              <Markdown text={m.text} plain />
             </S.Message>
           ) : (
             <div key={m.key} className="stack">
@@ -186,7 +203,11 @@ function ChatTab(props: {
                   time={m.pending ? undefined : clock(m.time)}
                   mood={m.pending ? 'working' : 'default'}
                 >
-                  <Parts parts={m.parts} onFile={(path) => props.onFile(m.runId, path)} />
+                  <Parts
+                    parts={m.parts}
+                    pending={m.pending || props.live === m.runId}
+                    onFile={(path) => props.onFile(m.runId, path)}
+                  />
                 </S.Message>
               )}
               {byRun(m.runId).map((i) =>
@@ -616,6 +637,7 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
           rootId={props.rootId}
           messages={view?.messages ?? []}
           inbox={inbox}
+          live={live?.runId}
           onFile={(runId, path) => setFile({ runId, path })}
         />
       ) : null}

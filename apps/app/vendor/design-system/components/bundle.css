@@ -267,6 +267,6 @@ body { margin: 0; font-family: var(--font-sans); font-size: 15px; line-height: 2
 /* Scrollbars — thin, the brand's neutrals, on every scrolling region (tokens: scrollbar-*) */
 * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track); }
 /* the stronger thumb only on the region under the pointer: mark app scroll regions with sx-scroll */
-.sx-scroll:hover, .sx-menu:hover, .sx-code__pre:hover, textarea:hover { scrollbar-color: var(--scrollbar-thumb-hover) var(--scrollbar-track); }
+.sx-scroll:hover, .sx-menu:hover, .sx-code__pre:hover, .sx-table-wrap:hover, textarea:hover { scrollbar-color: var(--scrollbar-thumb-hover) var(--scrollbar-track); }
 
 @media (prefers-reduced-motion: reduce) { .sx-wave__bar, .sx-shimmer__c { animation: none !important; } .sx-shimmer__c { color: inherit; } }

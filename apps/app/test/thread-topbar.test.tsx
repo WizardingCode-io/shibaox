@@ -231,4 +231,16 @@ describe('the reply is rendered as a document', () => {
     fireEvent.click(within(sheet).getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog', { name: 'clientes.csv' })).toBeNull();
   });
+
+  it('a user message keeps its line breaks', async () => {
+    const { client: c } = client({
+      runs: [summary('root')],
+      states: { root: state('root', { input: { spec: 'first line\nsecond line' } }) },
+    });
+    const ui = mount(c, { hash: '#/t/root' });
+    await waitFor(() => expect(ui.container.querySelector('.sx-msg--user')).toBeTruthy());
+    const user = ui.container.querySelector('.sx-msg--user') as HTMLElement;
+    expect(user.textContent).toContain('second line');
+    expect(user.querySelector('br')).toBeTruthy();
+  });
 });
