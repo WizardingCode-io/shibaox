@@ -1,9 +1,9 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { QueryFn } from '@wizardingcode/shibaox-adapter-claude-code';
 import {
-  AutoApproveApprovals,
+  type ApprovalHandler,
   AutoApproveHuman,
   compactConversation,
   detectSetupCommand,
@@ -441,6 +441,40 @@ export class RunManager {
     return { ...c, size: st.size };
   }
 
+  /** Approves every tool request itself, writing the request and the answer like the inbox would. */
+  private autoApprovals(): ApprovalHandler {
+    return {
+      request: async (req) => {
+        const approvalId = randomUUID();
+        const at = this.now();
+        await this.opts.store.append({
+          type: 'ToolApprovalRequested',
+          runId: req.runId,
+          nodeId: req.nodeId,
+          at,
+          approvalId,
+          role: req.role,
+          tool: req.tool,
+          program: req.program,
+          category: req.category,
+          command: req.command,
+          argvHash: createHash('sha256').update(req.argv.join('\0')).digest('hex').slice(0, 16),
+        });
+        await this.opts.store.append({
+          type: 'ToolApprovalResolved',
+          runId: req.runId,
+          nodeId: req.nodeId,
+          at: this.now(),
+          approvalId,
+          approved: true,
+          note: 'auto-approved (the routine policy)',
+          via: 'auto',
+        });
+        return { approved: true, note: 'auto-approved (the routine policy)' };
+      },
+    };
+  }
+
   private protectedFor(state: RunState): string[] {
     try {
       return projectProtectedGlobs(projectOf(state));
@@ -750,15 +784,15 @@ export class RunManager {
       warn: (w: string) => void;
     },
   ): RunEngine {
-    const policy = r.approvals ?? 'inbox';
+    const policy = r.approvals === 'auto' || r.approvals === 'skip' ? r.approvals : 'inbox';
     const { engine, warnings } = buildRuntime({
       tools: this.taskTools(org, r),
       model: r.model,
       org,
       store: this.opts.store,
-      // `auto`: tool approvals answer themselves; `skip`: the workflow's human steps too
+      // `auto`: tool approvals answer themselves (on the record); `skip`: the workflow's human steps too
       human: policy === 'skip' ? new AutoApproveHuman() : this.opts.inbox,
-      approvals: policy === 'inbox' ? this.opts.inbox : new AutoApproveApprovals(),
+      approvals: policy === 'inbox' ? this.opts.inbox : this.autoApprovals(),
       log: this.opts.log,
       adapter: r.adapter,
       workflow: r.workflow,

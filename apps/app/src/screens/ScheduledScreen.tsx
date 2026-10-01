@@ -1,7 +1,7 @@
 import type { RoutineView } from '@wizardingcode/shibaox-daemon';
 import type { RoutineApprovals } from '@wizardingcode/shibaox-schemas';
 import { triggerWords } from '@wizardingcode/shibaox-view';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ds } from '../ds.js';
 import { money, RUN_STATUS_WORD, relative, when } from '../format.js';
 import { navigate } from '../router.js';
@@ -161,6 +161,7 @@ export function ScheduledScreen(): JSX.Element {
   >(undefined);
   const [sentence, setSentence] = useState('');
   const [drafting, setDrafting] = useState(false);
+  const draftToken = useRef(0);
   useEffect(() => {
     void store.loadRoutines();
   }, [store]);
@@ -176,9 +177,32 @@ export function ScheduledScreen(): JSX.Element {
     return sortBy(routines.filter(hit), sort);
   }, [routines, query, sort]);
   const save =
-    (id?: string) =>
+    (id?: string, before?: RoutineForm) =>
     async (f: RoutineForm): Promise<boolean> => {
-      const body = {
+      const watcher = f.trigger.type !== 'cron' && f.trigger.type !== 'manual';
+      if (id) {
+        // an edit sends null for an optional field the user emptied (the org's tiers, no budget);
+        // a field that was empty before and still is stays out, so a cron turned watcher takes
+        // the daemon's own guards (fire on change, the daily cap)
+        const cleared = <T,>(now: T | undefined, was: T | undefined): T | null | undefined =>
+          now === undefined && was !== undefined ? null : now;
+        return store.updateRoutine(id, {
+          name: f.name,
+          description: f.description || (before?.description ? null : undefined),
+          input: f.input,
+          trigger: f.trigger,
+          workflow: f.workflow,
+          ...(f.project ? { project: f.project } : {}),
+          model: cleared(f.model, before?.model),
+          approvals: f.approvals as RoutineApprovals,
+          adapter: cleared(f.adapter, before?.adapter),
+          budgetUsd: cleared(f.budgetUsd, before?.budgetUsd),
+          maxDailyUsd: cleared(f.maxDailyUsd, before?.maxDailyUsd),
+          ...(watcher && f.mode ? { mode: f.mode } : {}),
+          ...(watcher && f.intervalS ? { intervalS: f.intervalS } : {}),
+        });
+      }
+      return store.addRoutine({
         name: f.name,
         description: f.description || undefined,
         input: f.input,
@@ -190,10 +214,9 @@ export function ScheduledScreen(): JSX.Element {
         adapter: f.adapter,
         budgetUsd: f.budgetUsd,
         maxDailyUsd: f.maxDailyUsd,
-        mode: f.mode,
-        intervalS: f.intervalS,
-      };
-      return id ? store.updateRoutine(id, body) : store.addRoutine(body);
+        ...(watcher && f.mode ? { mode: f.mode } : {}),
+        ...(watcher && f.intervalS ? { intervalS: f.intervalS } : {}),
+      });
     };
   return (
     <main className="main">
@@ -345,7 +368,7 @@ export function ScheduledScreen(): JSX.Element {
           title="Edit routine"
           initial={dialog.form}
           fromOrg={dialog.fromOrg}
-          onSave={save(dialog.id)}
+          onSave={save(dialog.id, dialog.form)}
           onClose={() => setDialog(undefined)}
         />
       ) : null}
@@ -355,10 +378,19 @@ export function ScheduledScreen(): JSX.Element {
           title="Create with Shibaox"
           description="Say what to watch and what to do; a draft opens for you to check and save."
           icon="zap"
-          onClose={() => setDialog(undefined)}
+          onClose={() => {
+            draftToken.current++;
+            setDialog(undefined);
+          }}
           footer={
             <>
-              <S.Button variant="quiet" onClick={() => setDialog(undefined)}>
+              <S.Button
+                variant="quiet"
+                onClick={() => {
+                  draftToken.current++;
+                  setDialog(undefined);
+                }}
+              >
                 Cancel
               </S.Button>
               <S.Button
@@ -367,9 +399,11 @@ export function ScheduledScreen(): JSX.Element {
                 loading={drafting}
                 onClick={() => {
                   setDrafting(true);
+                  const token = ++draftToken.current;
                   void store.draftRoutine(sentence.trim()).then((d) => {
                     setDrafting(false);
-                    if (!d) return;
+                    // cancelled meanwhile: the answer is not wanted any more
+                    if (!d || token !== draftToken.current) return;
                     setDialog({
                       kind: 'create',
                       form: {

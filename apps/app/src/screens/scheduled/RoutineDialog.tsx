@@ -276,10 +276,17 @@ export function RoutineDialog(props: {
     ...models.map((m) => ({ id: m.ref, label: shortModel(m.ref) ?? m.ref, hint: m.provider })),
   ];
   const approval = APPROVALS.find((a) => a.id === form.approvals) ?? APPROVALS[0];
-  const valid =
-    form.name.trim() !== '' &&
-    form.input.trim() !== '' &&
-    (freq.kind !== 'cron' || freq.cron.trim() !== '');
+  const watching =
+    freq.kind === 'cron'
+      ? freq.cron.trim() !== ''
+      : freq.kind === 'url'
+        ? freq.url.trim() !== ''
+        : freq.kind === 'file'
+          ? freq.path.trim() !== ''
+          : freq.kind === 'command'
+            ? freq.command.trim() !== ''
+            : true;
+  const valid = form.name.trim() !== '' && form.input.trim() !== '' && watching;
   const submit = async () => {
     if (!valid || saving) return;
     setSaving(true);
@@ -354,7 +361,11 @@ export function RoutineDialog(props: {
         label="Frequency"
         value={freq.kind}
         options={FREQUENCIES.map((f) => ({ id: f.id, label: f.label, hint: f.hint }))}
-        onChange={(id) => setFreq(defaultFor(id as Frequency['kind']))}
+        onChange={(id) => {
+          setFreq(defaultFor(id as Frequency['kind']));
+          // the daemon picks the guards of the new kind (on_change, the daily cap)
+          setForm({ ...form, mode: undefined, intervalS: undefined });
+        }}
       />
       <FrequencyFields value={freq} onChange={setFreq} />
       <p className="muted">
@@ -445,7 +456,9 @@ export function RoutineDialog(props: {
           ) : null}
         </div>
       ) : null}
-      {error ? <p className="note">{error}</p> : null}
+      {error ? (
+        <p className="note">{state.error ? `The daemon refused it: ${state.error}` : error}</p>
+      ) : null}
     </S.Dialog>
   );
 }

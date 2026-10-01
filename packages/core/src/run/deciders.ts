@@ -49,7 +49,7 @@ export interface HumanHandler {
 }
 export class AutoApproveHuman implements HumanHandler {
   async ask(): Promise<HumanAnswer> {
-    return { approved: true, note: 'auto-approved' };
+    return { approved: true, note: 'auto-approved', via: 'auto' };
   }
 }
 export class DeferHuman implements HumanHandler {

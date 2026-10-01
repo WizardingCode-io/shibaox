@@ -1153,6 +1153,16 @@ describe('runtime buffer after a run ends', () => {
     expect(asked.some((a) => a.includes('"allow"'))).toBe(true);
     expect((await inbox.list()).filter((i) => i.kind === 'approval')).toHaveLength(0);
     expect((await m.state(runId)).approvals).toBe('auto');
+    // the automatic answer is on the record like a human one would be
+    const events = await store.read(runId);
+    expect(
+      events.some(
+        (e) => e.type === 'ToolApprovalRequested' && e.command === 'git push origin main',
+      ),
+    ).toBe(true);
+    expect(
+      events.some((e) => e.type === 'ToolApprovalResolved' && e.via === 'auto' && e.approved),
+    ).toBe(true);
     const skip = await m.submit({
       orgRoot: s.orgRoot,
       project: s.project,
@@ -1165,5 +1175,7 @@ describe('runtime buffer after a run ends', () => {
       timeout: 10_000,
     });
     expect(await inbox.list()).toHaveLength(1); // only the first run's human step waits
+    const skipped = await store.read(skip.runId);
+    expect(skipped.some((e) => e.type === 'HumanResponded' && e.via === 'auto')).toBe(true);
   });
 });

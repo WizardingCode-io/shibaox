@@ -483,6 +483,9 @@ export class DaemonServer {
           throw new HttpError(400, 'bad_request', `"${k}" must be a directory path`);
       if (body.setup !== undefined && (typeof body.setup !== 'string' || !body.setup.trim()))
         throw new HttpError(400, 'bad_request', '"setup" is auto, off, or a command');
+      // a run that never asks: the same policy a routine carries (the token is shell anyway)
+      if (body.approvals !== undefined && !RoutineApprovalsSchema.safeParse(body.approvals).success)
+        throw new HttpError(400, 'bad_request', '"approvals" takes inbox, auto or skip');
       return send(res, 200, await this.deps.runs.submit(body as unknown as SubmitRequest));
     }
     if (method === 'POST' && path === '/runs/prune') {
@@ -824,37 +827,45 @@ export class DaemonServer {
             );
           patch.trigger = t.data;
         }
-        for (const k of [
-          'name',
-          'description',
-          'project',
-          'workflow',
-          'input',
-          'adapter',
-          'model',
-        ] as const)
+        for (const k of ['project', 'workflow', 'input'] as const)
+          if (body[k] !== undefined) {
+            if (typeof body[k] !== 'string' || (k !== 'input' && !(body[k] as string).trim()))
+              throw new HttpError(400, 'bad_request', `"${k}" must be a non-empty string`);
+            patch[k] = body[k] as string;
+          }
+        // null (or '') clears an optional field
+        for (const k of ['name', 'description', 'adapter', 'model'] as const)
           if (body[k] !== undefined) {
             if (body[k] !== null && typeof body[k] !== 'string')
-              throw new HttpError(400, 'bad_request', `"${k}" must be a string`);
-            (patch as Record<string, unknown>)[k] = body[k] === null ? undefined : str(k);
+              throw new HttpError(400, 'bad_request', `"${k}" must be a string or null`);
+            patch[k] = body[k] === null ? null : str(k);
           }
         if (body.approvals !== undefined) {
-          if (!RoutineApprovalsSchema.safeParse(body.approvals).success)
+          if (body.approvals !== null && !RoutineApprovalsSchema.safeParse(body.approvals).success)
             throw new HttpError(400, 'bad_request', '"approvals" takes inbox, auto or skip');
-          patch.approvals = body.approvals as RoutineApprovals;
+          patch.approvals = (body.approvals as RoutineApprovals | null) ?? null;
         }
-        for (const k of ['budgetUsd', 'maxDailyUsd', 'intervalS'] as const)
+        for (const k of ['budgetUsd', 'maxDailyUsd'] as const)
           if (body[k] !== undefined) {
-            if (typeof body[k] !== 'number' || (body[k] as number) <= 0)
-              throw new HttpError(400, 'bad_request', `"${k}" must be a positive number`);
-            patch[k] = num(k);
+            if (body[k] !== null && (typeof body[k] !== 'number' || (body[k] as number) <= 0))
+              throw new HttpError(400, 'bad_request', `"${k}" must be a positive number or null`);
+            patch[k] = body[k] === null ? null : num(k);
           }
+        if (body.intervalS !== undefined) {
+          if (typeof body.intervalS !== 'number' || body.intervalS <= 0)
+            throw new HttpError(400, 'bad_request', '"intervalS" must be a positive number');
+          patch.intervalS = body.intervalS;
+        }
         if (body.mode !== undefined) {
           if (body.mode !== 'always' && body.mode !== 'on_change')
             throw new HttpError(400, 'bad_request', '"mode" takes always or on_change');
           patch.mode = body.mode;
         }
-        if (body.enabled !== undefined) patch.enabled = body.enabled === true;
+        if (body.enabled !== undefined) {
+          if (typeof body.enabled !== 'boolean')
+            throw new HttpError(400, 'bad_request', '"enabled" must be true or false');
+          patch.enabled = body.enabled;
+        }
         try {
           return send(res, 200, api.update(id, patch));
         } catch (e) {

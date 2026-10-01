@@ -129,8 +129,8 @@ export function fromTrigger(t: RoutineTrigger): Frequency {
           const time = `${pad(Number(hour))}:${pad(Number(min))}`;
           if (dom === '*' && dow === '*') return { kind: 'daily', time };
           if (dom === '*' && dow === '1-5') return { kind: 'weekdays', time };
-          if (dom === '*' && num(dow) && Number(dow) <= 6)
-            return { kind: 'weekly', time, day: Number(dow) };
+          if (dom === '*' && num(dow) && Number(dow) <= 7)
+            return { kind: 'weekly', time, day: Number(dow) % 7 };
           if (num(dom) && dow === '*') return { kind: 'monthly', time, dayOfMonth: Number(dom) };
         }
       }

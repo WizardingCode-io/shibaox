@@ -172,9 +172,12 @@ export async function routineUpdate(
   out: Out,
 ): Promise<number> {
   const patch: Record<string, unknown> = {};
+  const client = await connect({ write: true });
+  const before = await client.routine(id);
   try {
     if (o.on !== undefined) {
-      const project = o.project ? resolve(o.project) : process.cwd();
+      // a file path is relative to the project the routine works on, not to this shell
+      const project = o.project ? resolve(o.project) : before.project;
       patch.trigger = parseOn(o.on, { label: o.label, repo: o.repo, branch: o.branch, project });
     }
     if (o.approvals !== undefined) patch.approvals = approvalsOf(o.approvals);
@@ -200,14 +203,15 @@ export async function routineUpdate(
     intervalS: o.every,
     mode: o.mode,
   }))
-    if (v !== undefined) patch[k] = v;
+    if (v !== undefined) patch[k] = v === '' ? null : v; // "" clears an optional field
   if (Object.keys(patch).length === 0) {
     out.line('Nothing to change: give at least one flag (shibaox routine update --help)');
     return 1;
   }
-  const client = await connect({ write: true });
-  const r = await client.updateRoutine(id, patch);
-  out.line(`Updated routine ${id}${r.source === 'api' ? '' : ''}`);
+  const r = await client.updateRoutine(id, patch as Parameters<typeof client.updateRoutine>[1]);
+  out.line(
+    `Updated routine ${id}${before.source === 'org' ? ' (edited by hand: the org file no longer applies to it)' : ''}`,
+  );
   out.obj(r);
   return 0;
 }

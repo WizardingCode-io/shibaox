@@ -64,26 +64,18 @@ export type RoutineInput = Pick<
     >
   >;
 
-/** What the API may change on a routine (its state fields stay the daemon's). */
+/** What the API may change on a routine (`null` clears an optional field; state fields stay the daemon's). */
 export type RoutinePatch = Partial<
-  Pick<
-    RoutineRow,
-    | 'name'
-    | 'description'
-    | 'trigger'
-    | 'project'
-    | 'workflow'
-    | 'input'
-    | 'adapter'
-    | 'model'
-    | 'approvals'
-    | 'budgetUsd'
-    | 'maxDailyUsd'
-    | 'mode'
-    | 'intervalS'
-    | 'enabled'
-  >
->;
+  Pick<RoutineRow, 'trigger' | 'project' | 'workflow' | 'input' | 'mode' | 'intervalS' | 'enabled'>
+> & {
+  name?: string | null;
+  description?: string | null;
+  adapter?: string | null;
+  model?: string | null;
+  approvals?: RoutineRow['approvals'] | null;
+  budgetUsd?: number | null;
+  maxDailyUsd?: number | null;
+};
 
 /** A routine as the screens show it: when it runs next and how its last run went. */
 export interface RoutineView extends RoutineRow {
@@ -181,53 +173,72 @@ export class Routines {
   update(id: string, patch: RoutinePatch): RoutineRow {
     const r = this.must(id);
     if (patch.trigger) checkTrigger(patch.trigger);
-    if (patch.approvals !== undefined && !RoutineApprovalsSchema.safeParse(patch.approvals).success)
+    if (
+      patch.approvals !== undefined &&
+      patch.approvals !== null &&
+      !RoutineApprovalsSchema.safeParse(patch.approvals).success
+    )
       throw new Error('approvals: inbox, auto or skip');
     if (patch.mode !== undefined && patch.mode !== 'always' && patch.mode !== 'on_change')
       throw new Error('mode: always or on_change');
-    const next: RoutinePatch & { source?: 'api' } = { ...patch };
-    if (next.intervalS !== undefined) next.intervalS = Math.max(MIN_INTERVAL_S, next.intervalS);
+    if (patch.project !== undefined && !patch.project.trim())
+      throw new Error('project: a directory path');
+    if (patch.workflow !== undefined && !patch.workflow.trim())
+      throw new Error('workflow: a workflow name');
+    if (patch.model && !patch.model.includes('/')) throw new Error('model: provider/model');
+    const next: Record<string, unknown> = { ...patch };
+    // an empty string clears an optional field, like null
+    for (const k of ['name', 'description', 'adapter', 'model'] as const)
+      if (next[k] === '') next[k] = null;
+    if (typeof next.intervalS === 'number')
+      next.intervalS = Math.max(MIN_INTERVAL_S, next.intervalS);
+    // a trigger that changes kind takes the guards of its kind unless they are given too
+    const trigger = patch.trigger ?? r.trigger;
+    if (patch.trigger && isWatcher(patch.trigger) !== isWatcher(r.trigger)) {
+      if (patch.mode === undefined) next.mode = isWatcher(trigger) ? 'on_change' : 'always';
+      if (patch.maxDailyUsd === undefined && isWatcher(trigger) && r.maxDailyUsd === undefined)
+        next.maxDailyUsd = DEFAULT_WATCHER_DAILY_USD;
+    }
+    if (next.maxDailyUsd === null && isWatcher(trigger))
+      next.maxDailyUsd = DEFAULT_WATCHER_DAILY_USD;
     if (r.source === 'org') {
       next.source = 'api';
       this.opts.log(`routine ${id}: edited by hand, the org file no longer applies to it`);
     }
-    this.opts.repo.update(id, next);
+    this.opts.repo.update(id, next as Parameters<RoutinesRepo['update']>[1]);
     return this.must(id);
   }
 
-  /** Every routine with its next run and its last run. */
+  /** Every routine with its next run and its last run (one state read per routine that ran). */
   async views(): Promise<RoutineView[]> {
-    const runs = await this.opts.runs.list();
-    const now = this.now();
-    return this.opts.repo.list().map((r) => {
-      const own = runs
-        .filter((x) => x.origin === `routine:${r.id}`)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      const last = own[0];
-      return {
-        ...r,
-        nextRunAt: nextRunOf(r, now),
-        words: triggerWords(r.trigger),
-        ...(last
-          ? {
-              lastRun: {
-                runId: last.runId,
-                status: last.status,
-                spentUsd: last.spentUsd ?? 0,
-                createdAt: last.createdAt,
-                updatedAt: last.updatedAt,
-              },
-            }
-          : {}),
-      };
-    });
+    return Promise.all(this.opts.repo.list().map((r) => this.viewOf(r)));
   }
 
   async view(id: string): Promise<RoutineView> {
-    this.must(id);
-    const v = (await this.views()).find((x) => x.id === id);
-    if (!v) throw new Error(`routine ${id} not found`);
-    return v;
+    return this.viewOf(this.must(id));
+  }
+
+  private async viewOf(r: RoutineRow): Promise<RoutineView> {
+    const now = this.now();
+    let lastRun: RoutineView['lastRun'];
+    if (r.lastRunId)
+      try {
+        const st = await this.opts.runs.state(r.lastRunId);
+        lastRun = {
+          runId: r.lastRunId,
+          status: st.status,
+          spentUsd: st.spentUsd ?? 0,
+          createdAt: r.lastFiredAt ?? '',
+        };
+      } catch {
+        lastRun = undefined; // pruned: nothing to show
+      }
+    return {
+      ...r,
+      nextRunAt: nextRunOf(r, now),
+      words: triggerWords(r.trigger),
+      ...(lastRun ? { lastRun } : {}),
+    };
   }
 
   setEnabled(id: string, enabled: boolean): RoutineRow {

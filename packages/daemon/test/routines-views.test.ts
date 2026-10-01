@@ -28,7 +28,11 @@ function setup() {
       runs.set(runId, { status: 'running', spentUsd: 0, createdAt: new Date(t).toISOString() });
       return { runId, warnings: [] };
     },
-    state: async (runId: string) => ({ runId, status: runs.get(runId)?.status ?? 'completed' }),
+    state: async (runId: string) => {
+      const r = runs.get(runId);
+      if (!r) throw new Error(`run ${runId} not found`);
+      return { runId, status: r.status, spentUsd: r.spentUsd };
+    },
     list: async () =>
       [...runs.entries()].map(([runId, r], i) => ({
         runId,
@@ -135,5 +139,27 @@ describe('routines: manual, model, approvals', () => {
     expect(by[watcher.id]?.nextRunAt).toBe('2026-10-01T09:31:00.000Z');
     expect(by[manual.id]?.lastRun).toMatchObject({ runId, status: 'completed', spentUsd: 0.12 });
     expect(by[cron.id]?.lastRun).toBeUndefined();
+  });
+
+  it('update clears a field with null, refuses empty paths and bad models, and gives a watcher its guards', () => {
+    const { routines, repo } = setup();
+    const r = routines.add({
+      ...base,
+      trigger: { type: 'cron', cron: '0 9 * * 1' },
+      model: 'openai/gpt-5',
+      description: 'd',
+    });
+    routines.update(r.id, { model: null, description: '' });
+    expect(repo.get(r.id)?.model).toBeUndefined();
+    expect(repo.get(r.id)?.description).toBeUndefined();
+    expect(() => routines.update(r.id, { project: '' })).toThrow(/project/);
+    expect(() => routines.update(r.id, { workflow: ' ' })).toThrow(/workflow/);
+    expect(() => routines.update(r.id, { model: 'gpt-5' })).toThrow(/provider\/model/);
+    // cron → GitHub watcher: on_change and the daily cap, unless given
+    const u = routines.update(r.id, { trigger: { type: 'github', watch: 'issues' } });
+    expect(u.mode).toBe('on_change');
+    expect(u.maxDailyUsd).toBe(10);
+    const back = routines.update(r.id, { trigger: { type: 'cron', cron: '0 9 * * 1' } });
+    expect(back.mode).toBe('always');
   });
 });

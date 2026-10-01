@@ -123,4 +123,35 @@ describe('the routines API: edit, views, drafts', () => {
       bad.client.draftRoutine({ text: 'x', orgRoot: bad.org, project: bad.dir }),
     ).rejects.toMatchObject({ status: 502 });
   });
+
+  it('PUT clears with null, refuses empty paths and non-boolean enabled; POST /runs validates approvals', async () => {
+    const { org, client, dir } = await daemonWith();
+    const r = await client.addRoutine({
+      trigger: { type: 'manual' },
+      orgRoot: org,
+      project: dir,
+      workflow: 'chat',
+      input: 'x',
+      model: 'openai/gpt-5',
+    });
+    const cleared = await client.updateRoutine(r.id, { model: null, description: null });
+    expect(cleared.model).toBeUndefined();
+    await expect(client.updateRoutine(r.id, { project: '' })).rejects.toMatchObject({
+      status: 400,
+    });
+    await expect(client.updateRoutine(r.id, { enabled: 'yes' as never })).rejects.toMatchObject({
+      status: 400,
+    });
+    await expect(
+      client.submitRun({
+        orgRoot: org,
+        project: dir,
+        workflow: 'chat',
+        input: 'x',
+        adapter: 'mock',
+        workspace: 'inplace',
+        approvals: 'yolo' as never,
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
 });

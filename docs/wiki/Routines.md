@@ -18,7 +18,7 @@ Watchers look every `every` seconds (default 120, at least 30) and fire in mode 
 
 ## Manual routines
 
-`on: { manual: true }` (`--on manual`, or **Frequency: Manual** in the app) is a routine that never fires on its own: a task kept ready, run from the app, the CLI (`shibaox routine run <id>`) or Telegram whenever you want it, with its instructions, model and policy saved.
+`on: { manual: true }` (`--on manual`, or **Frequency: Manual** in the app) is a routine that never fires on its own: a task kept ready, run from the app or the CLI (`shibaox routine run <id>`) whenever you want it, with its instructions, model and policy saved.
 
 ## Approvals per routine
 
@@ -28,7 +28,7 @@ A routine says how its runs handle approvals (`approvals`, **Permissions** in th
 - `auto`: those tool approvals are answered by Shibaox itself; the workflow's human steps (`approve-push`, `approve-merge`…) still wait for you.
 - `skip`: nothing waits, human steps included. The run never pauses.
 
-The policy travels to every run the routine's run dispatches, and is written on each run (`shibaox audit` shows "Approvals: auto"). `auto` and `skip` are for work you would let run while you sleep; a routine from the org files carries the same field.
+The policy travels to every run the routine's run dispatches, and is written on each run: `shibaox audit` shows "Approvals: auto", and every approval Shibaox answered itself is on the record like a human one (`via: auto`). `auto` and `skip` are for work you would let run while you sleep; a routine from the org files carries the same field. `POST /runs` takes the same `approvals` field (`shibaox run` does not expose it): a client with the daemon token can start a run that never asks, which is the access the token already is (see [Security](Security)).
 
 ## Guards
 
@@ -66,7 +66,7 @@ max_daily_usd: 5
 
 ## Editing, drafts and views
 
-`PUT /routines/:id` (`shibaox routine update <id> --on … --input … --model … --approvals …`, or **Edit** on a card) changes the given fields. A routine that came from `org/routines/*.yaml` and is edited this way stops following its file (it becomes `api`): what you changed would otherwise be undone by the next sync.
+`PUT /routines/:id` (`shibaox routine update <id> --on … --input … --model … --approvals …`, or **Edit** on a card) changes the given fields; `null` (or `""` on the command line) clears an optional one (the model back to the org's tiers, no budget). A trigger that changes kind takes the guards of its kind unless you set them: a cron turned watcher fires on change with the $10 daily cap. A routine that came from `org/routines/*.yaml` and is edited this way stops following its file (it becomes `api`): what you changed would otherwise be undone by the next sync.
 
 `GET /routines` answers with views: each routine with `words` (its trigger in words: "Weekdays at 09:00", "On issues labelled bug in acme/app"), `nextRunAt` (the next cron occurrence, a watcher's next look, `null` for paused and manual ones) and `lastRun` (id, status, cost, when).
 

@@ -208,4 +208,48 @@ describe('Scheduled', () => {
     });
     expect(drafted.textContent).toContain('Weekdays at 09:00');
   });
+
+  it('editing back to the org tiers clears the model; a cron turned watcher leaves the mode to the daemon', async () => {
+    const { client: c, calls } = client({
+      routines: [view({ source: 'api', model: 'openai/gpt-5', description: 'd' })],
+    });
+    mount(c, { hash: '#/scheduled' });
+    await screen.findByText('Weekly scan');
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Weekly scan' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Edit' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit routine' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Model' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /org's tiers/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Frequency' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /GitHub issues/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(calls.find((x) => x.name === 'updateRoutine')).toBeTruthy());
+    const patch = calls.find((x) => x.name === 'updateRoutine')?.args[1] as Record<string, unknown>;
+    expect(patch.model).toBeNull();
+    expect(patch.trigger).toEqual({ type: 'github', watch: 'issues' });
+    expect(patch.mode).toBeUndefined();
+    expect(patch.maxDailyUsd).toBeUndefined();
+  });
+
+  it('Save stays off while a watcher has nothing to watch', async () => {
+    const { client: c } = client();
+    mount(c, { hash: '#/scheduled' });
+    await open('Set up manually');
+    const dialog = await screen.findByRole('dialog', { name: 'Create routine' });
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Page' } });
+    fireEvent.change(within(dialog).getByLabelText('Instructions'), {
+      target: { value: 'Tell me' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Frequency' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /page changes/ }));
+    expect(
+      (within(dialog).getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText('URL'), {
+      target: { value: 'https://example.com' },
+    });
+    expect(
+      (within(dialog).getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
 });

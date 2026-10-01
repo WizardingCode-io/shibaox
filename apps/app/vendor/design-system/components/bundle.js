@@ -171,7 +171,7 @@
     onClose.current = p.onClose;
     useEffect(function () {
       if (!p.open) return;
-      function onKey(e) { if (e.key === 'Escape' && onClose.current) onClose.current(); }
+      function onKey(e) { if (e.key === 'Escape' && !e.defaultPrevented && onClose.current) { e.preventDefault(); onClose.current(); } }
       document.addEventListener('keydown', onKey);
       var root = ref.current;
       if (root) { var first = root.querySelector('.sx-sheet__body [tabindex], .sx-sheet__body button, .sx-sheet__close'); try { (first || root).focus({ preventScroll: true }); } catch (_) {} }
@@ -218,10 +218,10 @@
     onClose.current = p.onClose;
     useEffect(function () {
       if (!p.open) return;
-      function onKey(e) { if (e.key === 'Escape' && onClose.current) onClose.current(); }
+      function onKey(e) { if (e.key === 'Escape' && !e.defaultPrevented && onClose.current) { e.preventDefault(); onClose.current(); } }
       document.addEventListener('keydown', onKey);
       var root = ref.current;
-      if (root) { var first = root.querySelector('input, textarea, select, button.sx-select, button'); try { (first || root).focus({ preventScroll: true }); } catch (_) {} }
+      if (root) { var first = root.querySelector('input, textarea, select, button.sx-select, .sx-dialog__foot button, button'); try { (first || root).focus({ preventScroll: true }); } catch (_) {} }
       return function () { document.removeEventListener('keydown', onKey); };
     }, [p.open]);
     if (!p.open) return null;
@@ -291,7 +291,8 @@
       if (!p.open) return;
       var root = ref.current;
       function close() { if (onClose.current) onClose.current(); }
-      function onKey(e) { if (e.key === 'Escape') close(); }
+      // the top layer takes the Escape: a dialog underneath ignores an event a popover handled
+      function onKey(e) { if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); close(); } }
       function onDown(e) { if (root && !root.contains(e.target)) close(); }
       document.addEventListener('keydown', onKey);
       document.addEventListener('mousedown', onDown);
