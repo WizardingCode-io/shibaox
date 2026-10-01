@@ -1,6 +1,7 @@
 import type { ProjectProfile, RunState } from '@wizardingcode/shibaox-core';
 import type {
   AuditDoc,
+  DecisionsView,
   Envelope,
   Health,
   InboxItem,
@@ -95,6 +96,10 @@ export class AppClient {
     return this.json('POST', '/runs', req);
   }
   /** The files a run created or changed (its diff plus what it reported). */
+  /** Who decides and the latest decisions across runs. */
+  decisions(): Promise<DecisionsView> {
+    return this.json('GET', '/decisions');
+  }
   files(id: string): Promise<{ root: string; files: RunFile[] }> {
     return this.json('GET', `/runs/${encodeURIComponent(id)}/files`);
   }

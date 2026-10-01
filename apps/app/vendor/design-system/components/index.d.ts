@@ -27,7 +27,7 @@ export interface AvatarProps { kind?: 'agent' | 'user'; size?: number; mood?: Mo
 export declare function Avatar(props: AvatarProps): React.ReactElement;
 export interface MascotProps { mood?: Mood; size?: number; crop?: boolean; label?: string; className?: string }
 export declare function Mascot(props: MascotProps): React.ReactElement;
-export interface MessageProps { from?: 'user' | 'agent'; name?: string; time?: string; mood?: Mood; children?: React.ReactNode }
+export interface MessageProps { from?: 'user' | 'agent'; name?: string; time?: string; /** The model that wrote an agent turn, after the time (mono, faint). */ model?: string; mood?: Mood; children?: React.ReactNode }
 export declare function Message(props: MessageProps): React.ReactElement;
 export interface ToolCallProps { tool: string; summary?: string; status?: 'running' | 'done' | 'error' | 'approval'; icon?: IconName; duration?: string; args?: object | string; defaultOpen?: boolean; onApprove?: () => void; onDeny?: () => void; children?: React.ReactNode }
 export declare function ToolCall(props: ToolCallProps): React.ReactElement;

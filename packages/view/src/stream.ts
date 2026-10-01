@@ -54,6 +54,8 @@ export type Card =
       status: NodeStatus;
       choice?: string;
       confidence?: number;
+      /** Who decided (`jev`, `model:<ref>`, `scripted`). */
+      by?: string;
     }
   | {
       kind: 'human';
@@ -197,7 +199,14 @@ function newCard(state: RunState | undefined, nodeId: string): Card {
         report: st?.report ? failures(st.report.checks) : undefined,
       };
     case 'decide':
-      return { kind: 'decide', key: `card:${nodeId}`, nodeId, status, choice: st?.choice };
+      return {
+        kind: 'decide',
+        key: `card:${nodeId}`,
+        nodeId,
+        status,
+        choice: st?.choice,
+        by: st?.decidedBy,
+      };
     case 'human':
       return {
         kind: 'human',
@@ -315,6 +324,7 @@ export function reduceTimeline(state: RunState | undefined, frames: Envelope[]):
           if (c.kind === 'decide') {
             c.choice = ev.choice as string;
             c.confidence = ev.confidence as number | undefined;
+            c.by = ev.by as string | undefined;
           }
           cost(c, ev);
           break;

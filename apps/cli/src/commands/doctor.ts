@@ -5,12 +5,15 @@ import {
   DaemonClient,
   DaemonHttpError,
   DaemonUnavailableError,
+  deciderInfo,
   homePaths,
   loadDaemonConfig,
+  registryFor,
   SecretsStore,
   serviceKind,
   serviceStatus,
 } from '@wizardingcode/shibaox-daemon';
+import { loadOrg } from '@wizardingcode/shibaox-schemas';
 import { remoteTarget } from '../remote.js';
 import { CLI_VERSION } from '../version.js';
 import { staleServiceHint } from './daemon.js';
@@ -122,6 +125,7 @@ export async function doctorCommand(): Promise<number> {
   const claudeOk = lines.some((l) => l.name === 'claude auth' && l.ok);
   const vault = new SecretsStore(homePaths().secrets);
   const withVault = vault.env(process.env);
+  lines.push(decisionsLine(withVault));
   for (const env of ['ANTHROPIC_API_KEY', 'TYPESAFE_API_KEY', 'OPENROUTER_API_KEY']) {
     const set = Boolean(withVault[env]);
     lines.push({
@@ -286,6 +290,36 @@ async function claudeAuthLine(): Promise<CheckLine> {
       ok: true,
       detail: r.stdout.trim().split('\n')[0] ?? 'logged in',
       required: false,
+    };
+  }
+}
+
+/** Who decides for the home org (`tiers.decision`), and whether that model or key is usable. */
+function decisionsLine(env: NodeJS.ProcessEnv): CheckLine {
+  const paths = homePaths();
+  if (!existsSync(join(paths.org, 'org.yaml')))
+    return {
+      name: 'decisions',
+      ok: false,
+      required: false,
+      detail: 'no home org yet (shibaox init)',
+    };
+  try {
+    const info = deciderInfo(loadOrg(paths.org), env, registryFor(env));
+    const what =
+      info.kind === 'jev' ? `Jev (TypeSafe), ${info.ref}` : (info.ref ?? 'no decision tier');
+    return {
+      name: 'decisions',
+      ok: info.usable,
+      required: false,
+      detail: info.usable ? `${what} (usable)` : `${what}: ${info.reason ?? 'not usable'}`,
+    };
+  } catch (e) {
+    return {
+      name: 'decisions',
+      ok: false,
+      required: false,
+      detail: e instanceof Error ? e.message : String(e),
     };
   }
 }

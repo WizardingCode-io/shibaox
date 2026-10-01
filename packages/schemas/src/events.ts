@@ -154,6 +154,8 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     choice: z.string(),
     confidence: z.number().min(0).max(1).optional(),
     cost: CostSchema.optional(),
+    /** Who decided: `jev` (TypeSafe's typed API), `model:<ref>` (an LLM decider), `scripted`… (since 0.2.6). */
+    by: z.string().optional(),
   }),
   z.object({ ...node, type: z.literal('HumanRequested'), action: z.string(), prompt: z.string() }),
   z.object({

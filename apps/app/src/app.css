@@ -301,3 +301,14 @@ pre.out {
 .save-row > :first-child {
   flex: 1;
 }
+
+/* a decision row in Integrations: a link into its conversation */
+a.decision {
+  color: inherit;
+  text-decoration: none;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+a.decision:hover {
+  background: var(--surface-hover);
+}

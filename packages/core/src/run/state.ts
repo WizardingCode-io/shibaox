@@ -32,6 +32,8 @@ export interface NodeState {
   output?: unknown;
   summary?: string;
   choice?: string;
+  /** Who made a decide node's choice (`jev`, `model:<ref>`, `scripted`). */
+  decidedBy?: string;
   report?: GateReport;
   error?: string;
   /** Index (0-based) in the replayed event log of the latest NodeStarted. */

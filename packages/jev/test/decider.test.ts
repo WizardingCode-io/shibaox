@@ -27,7 +27,7 @@ describe('JevDecider', () => {
     }));
     const d = new JevDecider(new JevClient({ apiKey: 'k', baseURL: fake.baseURL }));
     const r = await d.decide(req);
-    expect(r).toMatchObject({ choice: 'ship', confidence: 0.91 });
+    expect(r).toMatchObject({ choice: 'ship', confidence: 0.91, by: 'jev' });
     expect(r.cost?.usd).toBeGreaterThan(0);
     const sent = fake.requests[0] as {
       questions: { decision: { criteria: Record<string, string> } };
@@ -47,6 +47,7 @@ describe('JevDecider', () => {
       decide: async () => ({
         choice: 'rework',
         confidence: 1,
+        by: 'fallback',
         cost: { usd: 0.5, inputTokens: 100, outputTokens: 10 },
       }),
     };
@@ -56,6 +57,7 @@ describe('JevDecider', () => {
     });
     const r = await d.decide(req);
     expect(r.choice).toBe('rework');
+    expect(r.by).toBe('fallback');
     const jevInputTokens = Math.max(1, Math.ceil(JSON.stringify(fake.requests[0]).length / 4));
     expect(r.cost?.inputTokens).toBe(100 + jevInputTokens);
     expect(r.cost?.outputTokens).toBe(10);

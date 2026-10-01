@@ -125,6 +125,7 @@ describe('LeadDecider', () => {
       context: { input: {}, previousOutputs: {} },
     });
     expect(r.choice).toBe('rework');
+    expect(r.by).toBe('model:fake/m');
   });
 
   it('fails instead of guessing when the model returns no structured decision', async () => {

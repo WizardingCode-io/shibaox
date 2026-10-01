@@ -118,6 +118,9 @@ function fakeClient() {
       rec('files', id);
       return { root: '/p', files: [] };
     },
+    async decisions() {
+      return { decider: { kind: 'none' as const, usable: false }, decisions: [] };
+    },
     async writeFile(id: string, path: string, content: string) {
       rec('writeFile', id, path, content);
       return { path, size: content.length };

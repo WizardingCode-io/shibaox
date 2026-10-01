@@ -50,7 +50,7 @@
 | `shibaox remote set <url> [token]`, `show`, `clear` | send every command to a daemon on another machine (`~/.shibaox/remote.json`, 0600; the token from stdin when omitted) |
 | `shibaox routine add <workflow> --on <trigger> --org <dir> --project <path> [--input] [--name] [--description] [--model <ref>] [--approvals inbox\|auto\|skip] [--label] [--repo] [--branch] [--every <s>] [--mode always\|on_change] [--max-daily <usd>] [--adapter] [--budget]`, `update <id> [the same flags except --org; "" clears a field]`, `list`, `show <id>`, `run <id>`, `pause <id>`, `resume <id>`, `rm <id>`, `sync --org <dir>` | what the daemon does on its own: `--on cron:<expr>`, `github:issues\|prs\|checks`, `url:<https://…>`, `file:<path>`, `command:<cmd>`, `manual`; `show` says when it runs next and how its last run went; see [Routines](Routines) |
 | `shibaox schedule add "<cron>" <workflow> [--org] [--project] [--input]`, `list`, `rm <id>`, `run <id>` | the cron subset of routines, under its older name |
-| `shibaox doctor` | prerequisites, the daemon, the service, the install, keys, Telegram, the Claude login |
+| `shibaox doctor` | prerequisites, the daemon, the service, the install, who decides (the home org's decision tier and whether it is usable), keys, Telegram, the Claude login |
 | `shibaox upgrade` | updates an installer checkout and restarts the daemon |
 
 ## Project

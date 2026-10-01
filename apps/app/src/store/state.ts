@@ -1,5 +1,6 @@
 import type { ProjectProfile, RunState, RunStatus } from '@wizardingcode/shibaox-core';
 import type {
+  DecisionsView,
   Health,
   InboxItem,
   KeyRow,
@@ -60,6 +61,7 @@ export interface AppState {
     models: ModelChoice[];
     keys: KeyRow[];
     config?: OrgConfig;
+    decisions?: DecisionsView;
   };
   /** A model chosen for the next turns of a thread (`provider/model`). */
   threadModels: Record<string, string>;

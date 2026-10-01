@@ -107,6 +107,7 @@ body { margin: 0; font-family: var(--font-sans); font-size: 15px; line-height: 2
 .sx-msg--user .sx-msg__col { align-items: flex-end; }
 .sx-msg__meta { display: flex; gap: var(--space-2); font-size: 12px; line-height: 16px; color: var(--ink-muted); }
 .sx-msg__name { font-weight: 600; color: var(--ink); }
+.sx-msg__model { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
 .sx-msg__body { font-size: 15px; line-height: 24px; color: var(--ink); }
 .sx-msg__body > * { margin: 0; }
 .sx-msg__body > * + * { margin-top: var(--space-3); }

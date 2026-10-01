@@ -111,7 +111,7 @@
     return h('div', { className: cx('sx-msg', 'sx-msg--' + from) },
       from === 'agent' ? h(Avatar, { kind: 'agent', mood: p.mood, size: 32 }) : null,
       h('div', { className: 'sx-msg__col' },
-        (p.name || p.time) ? h('div', { className: 'sx-msg__meta' }, p.name ? h('span', { className: 'sx-msg__name' }, p.name) : null, p.time ? h('span', null, p.time) : null) : null,
+        (p.name || p.time || p.model) ? h('div', { className: 'sx-msg__meta' }, p.name ? h('span', { className: 'sx-msg__name' }, p.name) : null, p.time ? h('span', null, p.time) : null, p.model ? h('span', { className: 'sx-msg__model', title: 'The model that wrote this' }, p.model) : null) : null,
         h('div', { className: 'sx-msg__body' }, p.children)));
   }
 

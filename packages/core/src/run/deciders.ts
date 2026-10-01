@@ -18,6 +18,8 @@ export interface Decision {
   choice: string;
   confidence?: number;
   cost?: Cost;
+  /** Who decided: `jev`, `model:<ref>`, `scripted`; shown with the decision. */
+  by?: string;
 }
 export interface Decider {
   decide(req: DecisionRequest): Promise<Decision>;
@@ -31,7 +33,7 @@ export class ScriptedDecider implements Decider {
   async decide(req: DecisionRequest): Promise<Decision> {
     const choice = this.choices[req.nodeId] ?? this.fallback ?? req.options[0];
     if (!choice) throw new Error(`no scripted choice for node ${req.nodeId}`);
-    return { choice, confidence: 1 };
+    return { choice, confidence: 1, by: 'scripted' };
   }
 }
 

@@ -701,6 +701,7 @@ export class RunEngine {
             choice: d.choice,
             confidence: d.confidence,
             cost: d.cost,
+            by: d.by,
           });
           return;
         }

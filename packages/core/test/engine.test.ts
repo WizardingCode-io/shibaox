@@ -392,7 +392,7 @@ describe('RunEngine', () => {
     const calls: string[] = [];
     const { engine, store } = engineFor(scaffold(orgFiles('true')), {
       decider: {
-        decide: async () => ({ choice: choices.shift() ?? 'ship' }),
+        decide: async () => ({ choice: choices.shift() ?? 'ship', by: 'test-lead' }),
       },
       adapters: {
         mock: new MockAdapter((j) => {
@@ -412,6 +412,11 @@ describe('RunEngine', () => {
     expect(events.flatMap((e) => (e.type === 'DecisionMade' ? [e.choice] : []))).toEqual([
       'rework',
       'ship',
+    ]);
+    // who decided travels with the event (the app shows it)
+    expect(events.flatMap((e) => (e.type === 'DecisionMade' ? [e.by] : []))).toEqual([
+      'test-lead',
+      'test-lead',
     ]);
     expect(events.filter((e) => e.type === 'HumanResponded')).toHaveLength(1);
   });

@@ -131,6 +131,26 @@ export function client(
       rec('resume', id);
       return {};
     },
+    async decisions() {
+      return {
+        decider: {
+          kind: 'model' as const,
+          ref: 'openrouter/typesafe/jev-router',
+          usable: false,
+          reason: 'missing OPENROUTER_API_KEY',
+        },
+        decisions: [
+          {
+            runId: 'root',
+            nodeId: 'judge',
+            choice: 'ship',
+            confidence: 0.91,
+            by: 'model:openrouter/typesafe/jev-router',
+            at: '2026-10-01T10:00:00.000Z',
+          },
+        ],
+      };
+    },
     async models() {
       return [
         {

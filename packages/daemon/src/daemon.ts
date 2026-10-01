@@ -33,7 +33,13 @@ import { profileFor } from './runs/profile.js';
 import { buildRunReport } from './runs/report.js';
 import { draftPrompt, parseDraft, routineDraftWriter } from './runs/routine-draft.js';
 import { orgSummarizer } from './runs/summarize.js';
-import { commandEnv, registryFor } from './runtime.js';
+import {
+  commandEnv,
+  type DecisionRow,
+  type DecisionsView,
+  deciderInfo,
+  registryFor,
+} from './runtime.js';
 import { SecretsStore } from './secrets.js';
 import {
   DaemonServer,
@@ -264,6 +270,7 @@ export class Daemon {
           log: opts.log,
         }),
       models: () => this.models(),
+      decisions: (limit) => this.decisions(limit),
       defaultOrg: () => this.defaultOrg(),
       projects: () => this.projects(),
       heartbeatMs: opts.heartbeatMs,
@@ -374,6 +381,33 @@ export class Daemon {
         this.modelsInFlight = undefined;
       });
     return this.modelsInFlight;
+  }
+
+  /** Who decides (the home org's decision tier) and the latest decisions of the last 50 runs. */
+  async decisions(limit = 20): Promise<DecisionsView> {
+    const { root } = await this.defaultOrg();
+    const decider = deciderInfo(
+      loadOrg(root),
+      this.env,
+      registryFor(this.env, this.opts.extraProviders),
+    );
+    const runs = (await this.store.listRuns())
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, 50);
+    const decisions: DecisionRow[] = [];
+    for (const r of runs)
+      for (const e of await this.store.read(r.runId))
+        if (e.type === 'DecisionMade')
+          decisions.push({
+            runId: r.runId,
+            nodeId: e.nodeId,
+            choice: e.choice,
+            ...(e.confidence !== undefined ? { confidence: e.confidence } : {}),
+            ...(e.by ? { by: e.by } : {}),
+            at: e.at,
+          });
+    decisions.sort((a, b) => b.at.localeCompare(a.at));
+    return { decider, decisions: decisions.slice(0, Math.max(1, Math.min(limit, 100))) };
   }
 
   /**

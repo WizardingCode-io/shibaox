@@ -301,6 +301,32 @@ describe('the sections', () => {
       }),
     );
   });
+  it('Integrations: Decisions says who decides and lists the latest ones', async () => {
+    const { client: c } = client();
+    mount(c, { hash: '#/integrations' });
+    await waitFor(() => expect(screen.getByText('Decisions')).toBeTruthy());
+    expect(screen.getAllByText(/openrouter\/typesafe\/jev-router/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/missing OPENROUTER_API_KEY/)).toBeTruthy();
+    const row = screen.getByRole('link', { name: /judge/ });
+    expect(row.textContent).toMatch(/ship/);
+    expect(row.textContent).toMatch(/91%/);
+    expect(row.getAttribute('href')).toBe('#/t/root');
+  });
+  it('the agent message names the model that wrote it', async () => {
+    const { client: c } = client({
+      runs: [summary('root')],
+      states: { root: state('root') },
+      frames: {
+        root: [
+          rtFrame(1, 'reply', { type: 'usage', model: 'lmstudio/qwen3-coder' }),
+          rtFrame(2, 'reply', { type: 'text', text: 'Done.' }),
+        ],
+      },
+    });
+    mount(c, { hash: '#/t/root' });
+    await waitFor(() => expect(screen.getByText('Done.')).toBeTruthy());
+    expect(screen.getByText('qwen3-coder')).toBeTruthy();
+  });
   it('a conversation can pick its model for the next turns', async () => {
     const { client: c, calls } = client({
       runs: [summary('root')],

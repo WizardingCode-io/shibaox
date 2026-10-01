@@ -221,6 +221,7 @@ function ChatTab(props: {
                   from="agent"
                   name="Shibaox"
                   time={m.pending ? undefined : clock(m.time)}
+                  model={shortModel(m.model)}
                   mood={m.pending ? 'working' : 'default'}
                 >
                   <Parts
@@ -483,8 +484,10 @@ function LogsTab(props: { rootId: string }): JSX.Element {
         };
       case 'decide':
         return {
-          title: `decision ${c.nodeId}`,
-          description: c.choice,
+          title: `Decision · ${c.nodeId}`,
+          description: c.choice
+            ? `${c.choice}${c.confidence !== undefined ? ` · ${Math.round(c.confidence * 100)}% sure` : ''}${c.by ? ` · by ${c.by}` : ''}`
+            : undefined,
           tone: 'info',
           word: c.status,
         };

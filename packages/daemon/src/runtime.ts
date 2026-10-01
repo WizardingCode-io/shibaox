@@ -395,3 +395,47 @@ export function buildRuntime(o: RuntimeOptions) {
   });
   return { engine, warnings, registry, adapter };
 }
+
+/** Who decides for this org, as the app and `shibaox doctor` show it. */
+export interface DeciderInfo {
+  /** `model`: an LLM decider on `tiers.decision` (a ref such as openrouter/typesafe/jev-router); `jev`: TypeSafe's typed API (TYPESAFE_API_KEY); `none`: decide nodes pick their first option. */
+  kind: 'jev' | 'model' | 'none';
+  ref?: string;
+  usable: boolean;
+  reason?: string;
+}
+
+export function deciderInfo(
+  org: Org,
+  env: NodeJS.ProcessEnv,
+  registry: ProviderRegistry,
+): DeciderInfo {
+  const ref = org.models.tiers.decision;
+  if (ref?.includes('/')) {
+    const why = unusable(registry, ref);
+    return { kind: 'model', ref, usable: why === undefined, ...(why ? { reason: why } : {}) };
+  }
+  if (env.TYPESAFE_API_KEY) return { kind: 'jev', ref: ref || 'jev-latest', usable: true };
+  return {
+    kind: 'none',
+    ...(ref ? { ref } : {}),
+    usable: false,
+    reason: ref
+      ? 'TYPESAFE_API_KEY is not set: decide nodes pick their first option'
+      : 'no decision tier (models.yaml, tiers.decision): decide nodes pick their first option',
+  };
+}
+
+/** One decision of a run, for the list in Integrations. */
+export interface DecisionRow {
+  runId: string;
+  nodeId: string;
+  choice: string;
+  confidence?: number;
+  by?: string;
+  at: string;
+}
+export interface DecisionsView {
+  decider: DeciderInfo;
+  decisions: DecisionRow[];
+}

@@ -174,6 +174,7 @@ function applyEvent(s: RunState, event: NonCreatedEvent, idx: number): RunState 
         status: 'completed',
         finishedIdx: idx,
         choice: event.choice,
+        decidedBy: event.by,
         output: { choice: event.choice, confidence: event.confidence },
       });
     case 'HumanRequested':

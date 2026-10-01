@@ -39,6 +39,7 @@ const isRemote = (req: IncomingMessage) => REMOTE.has(req);
 import type { RunManager, SubmitRequest } from './run-manager.js';
 import { AUDIT_RUNTIME_TYPES, buildAudit, renderAuditMarkdown } from './runs/audit.js';
 import { mimeOf, RunFileError } from './runs/files.js';
+import type { DecisionsView } from './runtime.js';
 import type { RuntimeEnvelope } from './runtime-buffer.js';
 import type { KeyRow } from './secrets.js';
 
@@ -126,6 +127,7 @@ export interface ServerDeps {
   profile: (path: string, orgRoot?: string) => ProjectProfile;
   /** The models of the catalog and the local servers, and whether this daemon can use them. */
   models: () => Promise<ModelChoice[]>;
+  decisions: (limit?: number) => Promise<DecisionsView>;
   /** The org under the shibaox home, created on first use. */
   defaultOrg: () => Promise<{ root: string; created: boolean }>;
   /** Where runs may work: `daemon.yaml projects`, recent runs, the home workspace. */
@@ -398,6 +400,10 @@ export class DaemonServer {
     if ((method === 'GET' || method === 'HEAD') && (path === '/app' || path.startsWith('/app/')))
       return serveAppFile(this.deps.appDist(), path, res);
     if (method === 'GET' && path === '/models') return send(res, 200, await this.deps.models());
+    if (method === 'GET' && path === '/decisions') {
+      const limit = Number(url.searchParams.get('limit') ?? '20');
+      return send(res, 200, await this.deps.decisions(Number.isFinite(limit) ? limit : 20));
+    }
     if (path === '/orgs/config' && (method === 'GET' || method === 'PUT')) {
       const org = url.searchParams.get('org') ?? '';
       if (!org) throw new HttpError(400, 'bad_request', '"org" is required');

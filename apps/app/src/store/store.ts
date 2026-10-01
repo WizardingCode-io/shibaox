@@ -41,6 +41,7 @@ export type StoreClient = Pick<
   | 'files'
   | 'fileContent'
   | 'writeFile'
+  | 'decisions'
   | 'fileBlob'
   | 'routines'
   | 'runRoutine'
@@ -699,10 +700,11 @@ export class AppStore {
           failed.push(message(e));
           return fallback;
         });
-      const [mcp, models, keys, config] = await Promise.all([
+      const [mcp, models, keys, decisions, config] = await Promise.all([
         part(this.client.mcpList(d.orgRoot), [] as Awaited<ReturnType<StoreClient['mcpList']>>),
         part(this.client.models(), [] as Awaited<ReturnType<StoreClient['models']>>),
         part(this.client.keys(), [] as Awaited<ReturnType<StoreClient['keys']>>),
+        part(this.client.decisions(), undefined),
         part(
           this.client.orgConfig(d.orgRoot),
           undefined as Awaited<ReturnType<StoreClient['orgConfig']>> | undefined,
@@ -710,7 +712,14 @@ export class AppStore {
       ]);
       if (failed.length) this.set({ error: failed[0] });
       this.set({
-        integrations: { org: d.orgRoot, mcp, models, keys, config: config ?? undefined },
+        integrations: {
+          org: d.orgRoot,
+          mcp,
+          models,
+          keys,
+          config: config ?? undefined,
+          decisions: decisions ?? undefined,
+        },
       });
     }).then(() => undefined);
   }

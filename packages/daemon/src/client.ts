@@ -12,6 +12,7 @@ import type { AuditDoc } from './runs/audit.js';
 import type { DiffResult } from './runs/diff.js';
 import type { RunFile, RunFileContent } from './runs/files.js';
 import type { RoutineDraft } from './runs/routine-draft.js';
+import type { DecisionsView } from './runtime.js';
 import type { KeyRow } from './secrets.js';
 import type { Envelope, Health, ProjectEntry } from './server.js';
 
@@ -212,6 +213,10 @@ export class DaemonClient {
     return this.json('DELETE', `/keys/${encodeURIComponent(name)}`);
   }
   /** The models a run can be pointed at (`/model`), with whether the daemon can use them. */
+  /** Who decides and the latest decisions across runs. */
+  decisions(limit?: number): Promise<DecisionsView> {
+    return this.json('GET', `/decisions${limit ? `?limit=${limit}` : ''}`);
+  }
   models(): Promise<ModelChoice[]> {
     return this.json('GET', '/models');
   }

@@ -36,6 +36,7 @@ export class LeadDecider implements Decider {
     return {
       choice: r.output.choice,
       confidence: 1,
+      by: `model:${this.ref}`,
       cost: {
         usd: r.cost ?? 0,
         inputTokens: r.usage.inputTokens,

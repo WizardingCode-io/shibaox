@@ -37,6 +37,6 @@ export class JevDecider implements Decider {
         `jev decision below confidence threshold (${a.confidence} < ${threshold}) and no fallback decider configured`,
       );
     }
-    return { choice: a.choice, confidence: a.confidence, cost };
+    return { choice: a.choice, confidence: a.confidence, cost, by: 'jev' };
   }
 }

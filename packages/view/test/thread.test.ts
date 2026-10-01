@@ -149,4 +149,15 @@ describe('threadView', () => {
     expect(parts.map((p) => (p.kind === 'text' ? p.text : p.kind))).toEqual(['Done.', 'Next.']);
     expect(new Set(parts.map((p) => p.key)).size).toBe(2);
   });
+
+  it('the agent message names the model that wrote it (the run usage)', () => {
+    const cards: Card[] = [
+      {
+        ...(node([{ kind: 'text', key: 'x', text: 'Hi' }]) as Card),
+        usage: { model: 'lmstudio/qwen3-coder', contextTokens: 10 },
+      } as Card,
+    ];
+    const v = threadView([{ state: state({}), cards }]);
+    expect(v.messages[1]).toMatchObject({ from: 'agent', model: 'lmstudio/qwen3-coder' });
+  });
 });

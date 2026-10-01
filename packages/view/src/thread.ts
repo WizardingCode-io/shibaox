@@ -2,6 +2,7 @@ import type { RunState } from '@wizardingcode/shibaox-core';
 import { isEventTurn } from './conversation.js';
 import { requestText } from './request.js';
 import type { Block, Card } from './stream.js';
+import { runUsage } from './stream.js';
 
 /** The words of the design system's AgentStatus. */
 export type AgentStatus = 'online' | 'working' | 'waiting' | 'idle' | 'error';
@@ -24,6 +25,8 @@ export interface ThreadMessage {
   blocks: Block[];
   /** The agent has not answered yet (its run is still going). */
   pending?: boolean;
+  /** The model that wrote the agent's turn (the run's `usage`), when the runtime named it. */
+  model?: string;
   runId: string;
 }
 
@@ -131,6 +134,7 @@ export function threadView(turns: readonly ThreadTurn[]): ThreadView {
         time: updatedAt,
         blocks,
         pending: live && !text,
+        model: runUsage(cards)?.model ?? state.model,
         runId: state.runId,
       });
   }

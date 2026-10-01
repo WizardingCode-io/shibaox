@@ -1,4 +1,4 @@
-import type { KeyRow, McpServerRow } from '@wizardingcode/shibaox-daemon';
+import type { DecisionsView, KeyRow, McpServerRow } from '@wizardingcode/shibaox-daemon';
 import { useEffect, useState } from 'react';
 import { ds } from '../ds.js';
 import { useAppState, useStore } from '../store/hooks.js';
@@ -111,6 +111,55 @@ const TIERS: { id: 'strong' | 'cheap' | 'decision'; label: string }[] = [
   { id: 'decision', label: 'Decision' },
 ];
 
+/** Who decides for the org, and the latest decisions with a way into their conversations. */
+function Decisions(props: { view: DecisionsView }): JSX.Element {
+  const S = ds();
+  const { decider, decisions } = props.view;
+  const who =
+    decider.kind === 'model'
+      ? `Decisions and the judge go through ${decider.ref}`
+      : decider.kind === 'jev'
+        ? `Decisions go through Jev, TypeSafe's typed API${decider.ref ? ` (${decider.ref})` : ''}`
+        : 'No decider is configured';
+  return (
+    <div className="stack">
+      <p className="muted">
+        <span className="mono">{who}</span>
+        {' · '}
+        {decider.usable ? (
+          <S.Badge tone="matcha">configured</S.Badge>
+        ) : (
+          <S.Badge tone="warning">not usable: {decider.reason}</S.Badge>
+        )}
+      </p>
+      {decisions.length === 0 ? (
+        <p className="muted">
+          No decision yet. A chat has none: decide nodes and gates with a judge (hello-feature's
+          judge, a review check) use the decider; the result shows here and in the Tasks tab of its
+          conversation.
+        </p>
+      ) : (
+        decisions.map((d) => (
+          <a
+            key={`${d.runId}:${d.nodeId}:${d.at}`}
+            href={`#/t/${d.runId}`}
+            className="row decision"
+          >
+            <span className="mono">{d.nodeId}</span>
+            <span>{d.choice}</span>
+            {d.confidence !== undefined ? (
+              <span className="muted">{Math.round(d.confidence * 100)}%</span>
+            ) : null}
+            {d.by ? <span className="muted">by {d.by}</span> : null}
+            <span className="grow" />
+            <span className="muted">{new Date(d.at).toLocaleString()}</span>
+          </a>
+        ))
+      )}
+    </div>
+  );
+}
+
 function Tiers(): JSX.Element {
   const S = ds();
   const store = useStore();
@@ -216,6 +265,12 @@ export function IntegrationsScreen(): JSX.Element {
             <KeyLine key={k.name} row={k} />
           ))}
         </div>
+        <h3>Decisions</h3>
+        {i?.decisions ? (
+          <Decisions view={i.decisions} />
+        ) : (
+          <p className="muted">Reading the daemon…</p>
+        )}
         <h3>Tiers</h3>
         {i?.config ? <Tiers /> : <p className="muted">Reading the org…</p>}
       </div>
