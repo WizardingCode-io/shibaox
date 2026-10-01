@@ -149,7 +149,7 @@ Written by `shibaox remote set <url> <token>` (0600): `{ "baseUrl": "http://box:
 | `SHIBAOX_APP` | the installer checkout (`shibaox upgrade`) |
 | `TYPESAFE_API_KEY`, `SHIBAOX_JEV_BASE_URL` | Jev through TypeSafe |
 | `HIGGSFIELD_API_KEY` | Higgsfield's API mode (the vault is the better place) |
-| `SHIBAOX_HIGGSFIELD_API_BASE` | another base URL for Higgsfield's API (tests, the doctor's probe) |
+| `SHIBAOX_HIGGSFIELD_API_BASE` | another base URL for Higgsfield's API (tests, the doctor's probe): https, or http on `127.0.0.1`/`localhost`/`[::1]`; read from the launch environment only (the vault refuses `SHIBAOX_*` names other than the Telegram and daemon tokens) |
 | `SHIBAOX_REAL_TESTS=1` | enables the real-call tests |
 
 Provider keys belong in the vault (`shibaox keys set`); the environment stays a fallback.
@@ -163,7 +163,7 @@ partners:
     mode: auto      # auto (the API when HIGGSFIELD_API_KEY is saved, else the account) | account | api
 ```
 
-`mode` picks how Higgsfield generates ([MCP and skills](MCP-and-skills#plugins--higgsfield-account-or-api)); the app's **Use for generation** and `shibaox plugins higgsfield-mode <mode>` write it, keeping the file's comments and other keys. It is read when each task starts.
+`mode` picks how Higgsfield generates ([MCP and skills](MCP-and-skills#plugins--higgsfield-account-or-api)); the app's **Use for generation** and `shibaox plugins higgsfield-mode <mode>` write it, keeping the file's comments, other keys, its file mode and a symlink (the target is rewritten). A `daemon.yaml` with a YAML syntax error is not rewritten: the change is refused (409, "daemon.yaml has a syntax error at line N: fix it first"). It is read when each task starts.
 
 The default is the maintainer's affiliate link (the app says so next to the button; you pay the same). An org created before 0.2.8 has no `catalog/higgsfield.yaml` nor `skills/higgsfield/`: run `shibaox init` in the org's parent directory to add the missing files (existing ones are kept), then add `mcp: [higgsfield]`, `skills: [higgsfield]` and `higgsfield` under `tools` to `roles/assistant.yaml`.
 
