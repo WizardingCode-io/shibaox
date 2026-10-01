@@ -2,6 +2,7 @@ import type { DiscoveredSkill, SkillRow, SkillSource } from '@wizardingcode/shib
 import { useEffect, useMemo, useState } from 'react';
 import { ds } from '../../ds.js';
 import { Markdown } from '../../markdown/render.js';
+import { navigate } from '../../router.js';
 import { useAppState, useStore } from '../../store/hooks.js';
 import { ConfirmDialog } from './dialogs/ConfirmDialog.js';
 import { RolesDialog } from './dialogs/RolesDialog.js';
@@ -36,7 +37,7 @@ function RunTask(props: { workflow: string; onDone: () => void }): JSX.Element {
           })
           .then((id) => {
             if (!id) return;
-            window.location.hash = `#/t/${encodeURIComponent(id)}`;
+            navigate(`#/t/${encodeURIComponent(id)}`);
             props.onDone();
           });
       }}
@@ -176,7 +177,7 @@ type Dialog =
   | { kind: 'write' };
 
 /** Skills: yours (with the roles that use them) and the built-in sources to discover. */
-export function SkillsTab(props: { view: CustomizeView }): JSX.Element {
+export function SkillsTab(props: { view: CustomizeView; local?: boolean }): JSX.Element {
   const S = ds();
   const store = useStore();
   const state = useAppState();
@@ -436,7 +437,11 @@ export function SkillsTab(props: { view: CustomizeView }): JSX.Element {
         <SkillSheet skill={dialog.skill} onClose={() => setDialog(undefined)} />
       ) : null}
       {dialog?.kind === 'repo' ? (
-        <SkillRepoDialog onClose={() => setDialog(undefined)} onAdded={onAdded} />
+        <SkillRepoDialog
+          local={props.local === true}
+          onClose={() => setDialog(undefined)}
+          onAdded={onAdded}
+        />
       ) : null}
       {dialog?.kind === 'folder' ? (
         <SkillFolderDialog onClose={() => setDialog(undefined)} onAdded={onAdded} />

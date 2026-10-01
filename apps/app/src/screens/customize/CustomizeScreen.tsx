@@ -17,6 +17,8 @@ export function CustomizeScreen(props: {
   tab: CustomizeTab;
   view: CustomizeView;
   focusKey?: string;
+  /** The daemon runs on this machine (a file URL or a path may name a skill repository). */
+  local?: boolean;
 }): JSX.Element {
   const S = ds();
   const store = useStore();
@@ -42,8 +44,15 @@ export function CustomizeScreen(props: {
         ) : null}
       </div>
       <div className="page sx-scroll">
-        {props.tab === 'skills' ? (
-          <SkillsTab view={props.view} />
+        {!state.customize && state.customizeError ? (
+          <div className="row">
+            <p className="note">{`Could not read the org: ${state.customizeError}`}</p>
+            <S.Button size="sm" variant="secondary" onClick={() => void store.loadCustomize()}>
+              Retry
+            </S.Button>
+          </div>
+        ) : props.tab === 'skills' ? (
+          <SkillsTab view={props.view} local={props.local} />
         ) : props.tab === 'connectors' ? (
           <ConnectorsTab view={props.view} />
         ) : props.tab === 'plugins' ? (

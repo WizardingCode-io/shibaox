@@ -183,7 +183,12 @@ export function neededKeys(input: NeededKeysInput): {
       name,
       description: k?.description ?? '',
       set: k?.set ?? present.get(name) ?? false,
-      ...(k?.source ? { source: k.source } : {}),
+      // a key the vault does not list but the daemon sees: it comes from the environment
+      ...(k?.source
+        ? { source: k.source }
+        : !k && present.get(name)
+          ? { source: 'env' as const }
+          : {}),
       ...(k?.masked ? { masked: k.masked } : {}),
       neededBy: needs.get(name) ?? [],
       models: [],

@@ -16,7 +16,13 @@ const defaultRoles = (roles: RoleRow[]) =>
   roles.some((r) => r.id === 'assistant') ? ['assistant'] : [];
 
 /** A key a connector needs: set (a badge), or a password field with Save and where to get one. */
-function KeyField(props: { name: string; description?: string; signupUrl?: string }): JSX.Element {
+function KeyField(props: {
+  name: string;
+  description?: string;
+  signupUrl?: string;
+  /** The server works without it. */
+  optional?: boolean;
+}): JSX.Element {
   const S = ds();
   const store = useStore();
   const state = useAppState();
@@ -26,6 +32,7 @@ function KeyField(props: { name: string; description?: string; signupUrl?: strin
     <div className="stack">
       <div className="row">
         <span className="mono">{props.name}</span>
+        {props.optional ? <S.Badge>optional</S.Badge> : null}
         {props.description ? <span className="muted">{props.description}</span> : null}
         <span className="grow" />
         {row?.set ? (
@@ -121,6 +128,7 @@ export function TemplateDialog(props: {
         <p className="muted">
           {`by ${t.vendor} · ${t.server.transport === 'http' ? t.server.url : [t.server.command, ...(t.server.args ?? [])].join(' ')}`}
         </p>
+        {t.keys.length && t.note ? <p className="muted">{t.note}</p> : null}
         {t.keys.length ? (
           t.keys.map((k) => (
             <KeyField
@@ -128,10 +136,11 @@ export function TemplateDialog(props: {
               name={k.name}
               description={k.description}
               signupUrl={k.signupUrl}
+              optional={k.optional}
             />
           ))
         ) : (
-          <p className="muted">{t.note ? `No key: it ${t.note}.` : 'It needs no key.'}</p>
+          <p className="muted">{t.note ?? 'It needs no key.'}</p>
         )}
         <RoleChecks roles={props.roles} value={roles} onChange={setRoles} />
       </div>

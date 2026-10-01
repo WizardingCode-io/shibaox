@@ -219,7 +219,7 @@ export function ConnectorsTab(props: { view: CustomizeView }): JSX.Element {
                     <S.Badge>{t.category}</S.Badge>
                     {t.keys.map((k) => (
                       <span key={k.name} className="mono">
-                        {k.name}
+                        {k.optional ? `${k.name} (optional)` : k.name}
                       </span>
                     ))}
                     {t.note ? <span>{t.note}</span> : null}

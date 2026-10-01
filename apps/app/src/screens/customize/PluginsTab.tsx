@@ -38,7 +38,9 @@ function PluginCard(props: {
   const state = useAppState();
   const c = state.customize;
   const p = props.p;
-  const hf = p.id === 'higgsfield' ? c?.higgsfield : undefined;
+  // the command an install action copies; shown whole while the CLI is not there
+  const installCommand = p.actions.find((a) => a.id === 'install' && a.command)?.command;
+  const cliMissing = p.checks.some((ch) => /^CLI installed/.test(ch.label) && !ch.ok);
   const [login, setLogin] = useState<{ url?: string } | undefined>(undefined);
   const [copied, setCopied] = useState(false);
   const [adding, setAdding] = useState<string | undefined>(undefined);
@@ -113,7 +115,7 @@ function PluginCard(props: {
           {a.label}
         </a>
       );
-    const command = a.id === 'install' ? (a.command ?? hf?.installCommand) : undefined;
+    const command = a.id === 'install' ? a.command : undefined;
     if (!command) return null;
     return (
       <S.Button key={a.id} size="sm" variant="secondary" onClick={() => install(command)}>
@@ -150,22 +152,15 @@ function PluginCard(props: {
                 <span className={ch.ok ? 'ok' : 'bad'}>
                   <S.Icon name={ch.ok ? 'check-circle' : 'triangle-alert'} size={16} />
                 </span>
-                <span>{ch.label}</span>
-                {ch.detail ? <span className="muted">{ch.detail}</span> : null}
+                <span className="checklist__label">{ch.label}</span>
+                {ch.detail ? <span className="muted checklist__detail">{ch.detail}</span> : null}
               </li>
             ))}
           </ul>
         ) : null}
-        {hf?.loggedIn && hf.account ? (
-          <p className="muted">
-            <span className="mono">{hf.account.email}</span>
-            {` · ${hf.account.plan} plan · `}
-            <strong>{`${hf.account.credits} credits`}</strong>
-          </p>
-        ) : null}
-        {hf && !hf.cli.installed ? (
-          <S.CodeBlock language="bash" code={hf.installCommand}>
-            {hf.installCommand}
+        {cliMissing && installCommand ? (
+          <S.CodeBlock language="bash" code={installCommand}>
+            {installCommand}
           </S.CodeBlock>
         ) : null}
         <div className="row">

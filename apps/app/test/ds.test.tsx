@@ -66,7 +66,7 @@ describe('the design system: Customize additions', () => {
     };
     render(<Demo />);
     const group = screen.getByRole('radiogroup', { name: 'Show' });
-    const yours = within(group).getByRole('radio', { name: 'Yours' });
+    const yours = within(group).getByRole('radio', { name: 'Yours (needs attention)' });
     const discover = within(group).getByRole('radio', { name: 'Discover' });
     expect(yours.getAttribute('aria-checked')).toBe('true');
     expect(yours.getAttribute('tabindex')).toBe('0');

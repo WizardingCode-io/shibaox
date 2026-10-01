@@ -669,7 +669,8 @@ export class AppStore {
         for (let i = 0; i < 40; i++) {
           await new Promise((res) => setTimeout(res, 3000));
           await this.refreshHiggsfield();
-          if (this.state.customize?.higgsfield?.loggedIn) break;
+          const hf = this.state.customize?.plugins.find((p) => p.id === 'higgsfield');
+          if (hf?.checks.some((c) => c.label === 'Logged in' && c.ok)) break;
         }
       })();
       return r;
@@ -794,18 +795,28 @@ export class AppStore {
 
   /**
    * Everything Customize shows, fetched in parallel: a part the daemon cannot answer stays
-   * empty and its message becomes the toast; the rest still loads.
+   * empty and its message becomes the toast; the rest still loads. Without an org there is
+   * nothing to show: `customizeError` says why. Higgsfield is read once, by the plugins.
    */
   loadCustomize(): Promise<void> {
-    return this.load(async () => {
-      const org = await this.orgRoot();
+    return (async () => {
+      let org: string;
+      try {
+        org = await this.orgRoot();
+      } catch (e) {
+        if (isUnauthorized(e)) this.set({ unauthorized: true });
+        this.set({ customizeError: message(e) });
+        return;
+      }
       const failed: string[] = [];
-      const part = <T>(what: Promise<T>, fallback: T): Promise<T> =>
+      const part = <T>(what: Promise<T>, fallback: T, onFail?: (m: string) => void): Promise<T> =>
         what.catch((e: unknown) => {
           if (isUnauthorized(e)) this.set({ unauthorized: true });
           failed.push(message(e));
+          onFail?.(message(e));
           return fallback;
         });
+      let decisionsError: string | undefined;
       const c = this.client;
       const [
         skills,
@@ -815,7 +826,6 @@ export class AppStore {
         keys,
         config,
         decisions,
-        higgsfield,
         plugins,
         connectors,
         sources,
@@ -830,8 +840,9 @@ export class AppStore {
           c.orgConfig(org),
           undefined as Awaited<ReturnType<StoreClient['orgConfig']>> | undefined,
         ),
-        part(c.decisions(), undefined),
-        part(c.higgsfield(), undefined),
+        part(c.decisions(), undefined, (m) => {
+          decisionsError = m;
+        }),
         part(c.plugins(), [] as Awaited<ReturnType<StoreClient['plugins']>>),
         part(c.registryConnectors(), [] as Awaited<ReturnType<StoreClient['registryConnectors']>>),
         part(c.registrySkills(), [] as Awaited<ReturnType<StoreClient['registrySkills']>>),
@@ -843,7 +854,8 @@ export class AppStore {
         description: info?.descriptions?.[name] ?? '',
         conversation: info?.single.includes(name) ?? false,
       }));
-      this.set({
+      this.set((s) => ({
+        customizeError: undefined,
         customize: {
           org,
           skills,
@@ -853,43 +865,30 @@ export class AppStore {
           keys,
           config: config ?? undefined,
           decisions: decisions ?? undefined,
-          higgsfield: higgsfield ?? undefined,
+          ...(decisionsError ? { decisionsError } : {}),
           plugins,
           registry: { connectors, skills: sources },
           workflows,
         },
         // the thread's and the routine dialog's lists ride along
         integrations: {
+          ...s.integrations,
           org,
           mcp,
           models,
           keys,
           config: config ?? undefined,
           decisions: decisions ?? undefined,
-          higgsfield: higgsfield ?? undefined,
         },
         ...(info ? { skills: { org, workflows, catalog: info.catalog ?? [] } } : {}),
-      });
-    }).then(() => undefined);
+      }));
+    })();
   }
 
-  /** The Higgsfield status and the plugins again (after a login in the browser). */
+  /** The plugins again (Higgsfield's status among them), after a login in the browser. */
   async refreshHiggsfield(): Promise<void> {
-    const [higgsfield, plugins] = await Promise.all([
-      this.client.higgsfield().catch(() => undefined),
-      this.client.plugins().catch(() => undefined),
-    ]);
-    this.set((s) =>
-      s.customize
-        ? {
-            customize: {
-              ...s.customize,
-              ...(higgsfield ? { higgsfield } : {}),
-              ...(plugins ? { plugins } : {}),
-            },
-          }
-        : {},
-    );
+    const plugins = await this.client.plugins().catch(() => undefined);
+    if (plugins) this.set((s) => (s.customize ? { customize: { ...s.customize, plugins } } : {}));
   }
 
   /**

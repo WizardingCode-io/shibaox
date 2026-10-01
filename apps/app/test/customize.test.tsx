@@ -72,8 +72,8 @@ describe('Customize: Skills', () => {
     expect(screen.getByText('PDF')).toBeTruthy();
     expect(screen.getByText(/Used by: assistant/)).toBeTruthy();
     expect(screen.getByText('Not used by any role')).toBeTruthy();
-    expect(radio('Yours').getAttribute('aria-checked')).toBe('true');
-    expect(radio('Yours').querySelector('.sx-seg__dot')).toBeTruthy();
+    expect(radio('Yours (needs attention)').getAttribute('aria-checked')).toBe('true');
+    expect(radio('Yours (needs attention)').querySelector('.sx-seg__dot')).toBeTruthy();
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search skills' }), {
       target: { value: 'brand' },
     });
@@ -95,6 +95,50 @@ describe('Customize: Skills', () => {
         input: 'Add a footer',
       }),
     );
+  });
+
+  it('a run task opens its thread', async () => {
+    const { client: c } = client();
+    mount(c, { hash: '#/customize' });
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Run task' }))[0] as HTMLElement);
+    fireEvent.change(screen.getByLabelText('Request'), { target: { value: 'Add a footer' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/t/new-1'));
+  });
+
+  it('an org that cannot be found says so (never Reading… forever) and retries', async () => {
+    const { client: c } = client({ fail: ['defaultOrg'] });
+    mount(c, { hash: '#/customize' });
+    expect(await screen.findByText(/Could not read the org: defaultOrg failed/)).toBeTruthy();
+    expect(screen.queryByText(/Reading/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+  });
+
+  it('one failing route is the toast; the rest of the tab loads', async () => {
+    const { client: c, calls } = client({ fail: ['registrySkills'] });
+    mount(c, { hash: '#/customize' });
+    expect(await screen.findByText('Brand voice')).toBeTruthy();
+    expect(await screen.findByText(/registrySkills failed/)).toBeTruthy();
+    // the plugins probe Higgsfield already: it is not read twice
+    expect(calls.some((x) => x.name === 'higgsfield')).toBe(false);
+  });
+
+  it('a repository must be owner/repo or an https URL (a file URL for a local daemon only)', async () => {
+    const { client: c } = client();
+    mount(c, { hash: '#/customize' });
+    await screen.findByText('Brand voice');
+    await openAdd('From a repository');
+    const dialog = await screen.findByRole('dialog', { name: 'Add skills from a repository' });
+    const look = within(dialog).getByRole('button', { name: 'Look' }) as HTMLButtonElement;
+    for (const bad of ['git@github.com:acme/tools.git', 'file:///Users/me/skills', 'acme']) {
+      fireEvent.change(within(dialog).getByLabelText('Repository'), { target: { value: bad } });
+      expect(look.disabled).toBe(true);
+    }
+    expect(within(dialog).getByText(/owner\/repo or an https/)).toBeTruthy();
+    for (const good of ['acme/tools', 'acme/tools/skills', 'https://git.acme.dev/tools.git']) {
+      fireEvent.change(within(dialog).getByLabelText('Repository'), { target: { value: good } });
+      expect(look.disabled).toBe(false);
+    }
   });
 
   it('an empty org says how to add a skill', async () => {
@@ -348,7 +392,7 @@ describe('Customize: Connectors', () => {
     await screen.findByText('playwright');
     expect(screen.getByText(/npx -y @playwright\/mcp/)).toBeTruthy();
     expect(screen.getByText(/Roles: browser-qa/)).toBeTruthy();
-    expect(radio('Yours').querySelector('.sx-seg__dot')).toBeTruthy();
+    expect(radio('Yours (needs attention)').querySelector('.sx-seg__dot')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Test' }));
     expect(await screen.findByText(/1 tool: browser_navigate/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'PW_TOKEN missing' }));
@@ -398,6 +442,75 @@ describe('Customize: Connectors', () => {
         },
       ]),
     );
+  });
+
+  it('Yours: a failed Test puts the dot on Yours; the category filter has Custom', async () => {
+    const { client: c } = client({
+      mcpTestFails: true,
+      mcp: [
+        {
+          id: 'playwright',
+          description: 'A browser',
+          transport: 'stdio',
+          target: 'npx -y @playwright/mcp',
+          roles: [],
+          keys: [],
+        },
+        {
+          id: 'acme',
+          description: 'Acme search',
+          transport: 'http',
+          target: 'https://mcp.acme.dev/mcp',
+          roles: [],
+          keys: [],
+        },
+      ],
+    });
+    mount(c, { hash: '#/customize&tab=connectors' });
+    await screen.findByText('acme');
+    expect(radio('Yours').querySelector('.sx-seg__dot')).toBeNull();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Test' })[1] as HTMLElement);
+    expect(await screen.findByText('spawn npx ENOENT')).toBeTruthy();
+    expect(radio('Yours (needs attention)').querySelector('.sx-seg__dot')).toBeTruthy();
+    await pickCategory(/^Category/, 'Custom');
+    expect(screen.queryByText('playwright')).toBeNull();
+    expect(screen.getByText('acme')).toBeTruthy();
+    await pickCategory(/^Category/, 'Browser');
+    expect(screen.getByText('playwright')).toBeTruthy();
+    expect(screen.queryByText('acme')).toBeNull();
+  });
+
+  it('a template note is said as written; an optional key says so', async () => {
+    const { client: c } = client();
+    mount(c, { hash: '#/customize&tab=connectors&view=discover' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Add Notion' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Add Notion' });
+    expect(
+      within(dialog).getByText('Signs in on first use (OAuth in the browser); no key to set.'),
+    ).toBeTruthy();
+  });
+
+  it('a connector id follows the daemon rule', async () => {
+    const { client: c } = client();
+    mount(c, { hash: '#/customize&tab=connectors' });
+    await screen.findByText('playwright');
+    await openAdd('Custom connector');
+    const dialog = await screen.findByRole('dialog', { name: 'Add a custom connector' });
+    fireEvent.change(within(dialog).getByLabelText('URL'), {
+      target: { value: 'https://mcp.acme.dev/mcp' },
+    });
+    const add = within(dialog).getByRole('button', { name: 'Add' }) as HTMLButtonElement;
+    for (const [id, why] of [
+      ['acme:search', /No ":" or "__"/],
+      ['acme__x', /No ":" or "__"/],
+      ['shibaox', /reserved/],
+    ] as const) {
+      fireEvent.change(within(dialog).getByLabelText('Id'), { target: { value: id } });
+      expect(add.disabled).toBe(true);
+      expect(within(dialog).getByText(why)).toBeTruthy();
+    }
+    fireEvent.change(within(dialog).getByLabelText('Id'), { target: { value: 'acme' } });
+    expect(add.disabled).toBe(false);
   });
 
   it('a custom connector posts exactly what the form says', async () => {
@@ -621,10 +734,10 @@ describe('Customize: Plugins', () => {
     expect(screen.getByText(/affiliate link/i)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
     await waitFor(() => expect(calls.some((x) => x.name === 'higgsfieldLogin')).toBe(true));
-    const reads = calls.filter((x) => x.name === 'higgsfield').length;
+    const reads = calls.filter((x) => x.name === 'plugins').length;
     fireEvent.click(screen.getAllByRole('button', { name: 'Check again' })[0] as HTMLElement);
     await waitFor(() =>
-      expect(calls.filter((x) => x.name === 'higgsfield').length).toBeGreaterThan(reads),
+      expect(calls.filter((x) => x.name === 'plugins').length).toBeGreaterThan(reads),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Add skill higgsfield' }));
     await waitFor(() =>
@@ -733,6 +846,37 @@ describe('Customize: Keys', () => {
     await waitFor(() => expect(call(calls, 'unsetKey')).toEqual(['GH_TOKEN']));
   });
 
+  it('a key only in the environment says so, with no Unset', async () => {
+    const { client: c } = client({
+      mcp: [
+        {
+          id: 'playwright',
+          description: 'A browser',
+          transport: 'stdio',
+          target: 'npx -y @playwright/mcp',
+          roles: [],
+          keys: [{ name: 'PW_TOKEN', present: true }],
+        },
+      ],
+    });
+    mount(c, { hash: '#/customize&tab=keys' });
+    await waitFor(() => expect(firstCells('Needed now')).toContain('PW_TOKEN'));
+    const row = within(block('Needed now'))
+      .getAllByRole('row')
+      .find((r) => r.querySelector('td')?.textContent === 'PW_TOKEN') as HTMLElement;
+    expect(within(row).getByText('from the environment')).toBeTruthy();
+    expect(within(row).queryByRole('button', { name: /Unset/ })).toBeNull();
+  });
+
+  it('Providers: the keys in use; Show all providers lists the rest', async () => {
+    const { client: c } = client();
+    mount(c, { hash: '#/customize&tab=keys' });
+    await waitFor(() => expect(firstCells('Providers').length).toBeGreaterThan(0));
+    expect(within(block('Providers')).queryByText('MISTRAL_API_KEY')).toBeNull();
+    fireEvent.click(within(block('Providers')).getByRole('switch'));
+    expect(within(block('Providers')).getByText('MISTRAL_API_KEY')).toBeTruthy();
+  });
+
   it('?key= focuses that row; Other adds a custom key with a valid name', async () => {
     const { client: c, calls } = client();
     mount(c, { hash: '#/customize&tab=keys&key=PW_TOKEN' });
@@ -789,6 +933,24 @@ describe('Customize: Models', () => {
     const row = screen.getByRole('link', { name: /judge/ });
     expect(row.textContent).toMatch(/91%/);
     expect(row.getAttribute('href')).toBe('#/t/root');
+  });
+
+  it('Missing runtime: the models whose runtime is not there', async () => {
+    const { client: c } = client();
+    mount(c, { hash: '#/customize&tab=models' });
+    await screen.findByText('lmstudio/qwen');
+    fireEvent.click(radio('Missing runtime'));
+    expect(screen.getByText('claude-code/opus')).toBeTruthy();
+    expect(screen.getByText('no runtime (claude)')).toBeTruthy();
+    expect(screen.queryByText('openai/gpt-5')).toBeNull();
+    expect(screen.queryByText('lmstudio/qwen')).toBeNull();
+  });
+
+  it('decisions that cannot be read say so', async () => {
+    const { client: c } = client({ fail: ['decisions'] });
+    mount(c, { hash: '#/customize&tab=models' });
+    expect(await screen.findByText(/The decisions could not be read/)).toBeTruthy();
+    expect(screen.queryByText('Reading the daemon…')).toBeNull();
   });
 
   it('a missing key badge goes to Keys with the key focused', async () => {

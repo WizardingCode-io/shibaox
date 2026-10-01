@@ -232,8 +232,8 @@ export const PLUGINS: PluginRow[] = [
     status: 'partial',
     checks: [
       { label: 'CLI installed', ok: true, detail: '1.1.26' },
-      { label: 'Logged in', ok: false },
-      { label: 'MCP', ok: false, detail: 'unauthorized' },
+      { label: 'Logged in', ok: true, detail: 'andre@example.com · plus · 3.5 credits' },
+      { label: 'MCP reachable', ok: false, detail: 'unauthorized' },
     ],
     keys: [],
     actions: [
@@ -306,6 +306,10 @@ export function client(
     inUse?: string[];
     /** discoverSkills fails this many times first. */
     discoverFails?: number;
+    /** mcpTest answers a failure. */
+    mcpTestFails?: boolean;
+    /** These methods of the client fail (`<name> failed`). */
+    fail?: (keyof StoreClient)[];
   } = {},
 ) {
   const calls: { name: string; args: unknown[] }[] = [];
@@ -444,6 +448,15 @@ export function client(
           provider: 'openrouter',
           model: 'meta/llama-3.3-70b',
           configured: true,
+          contextWindow: 131_072,
+          pricing: { input_per_m: 0.12, output_per_m: 0.3 },
+        },
+        {
+          ref: 'claude-code/opus',
+          provider: 'claude-code',
+          model: 'opus',
+          configured: false,
+          runtime: 'claude',
         },
       ];
     },
@@ -534,6 +547,7 @@ export function client(
           description: 'Telegram bot (channels.telegram)',
           set: false,
         },
+        { name: 'MISTRAL_API_KEY', description: 'Mistral', set: false },
       ];
     },
     async setKey(name, value) {
@@ -655,6 +669,7 @@ export function client(
     },
     async mcpTest(id, org) {
       rec('mcpTest', id, org);
+      if (o.mcpTestFails) return { ok: false, error: 'spawn npx ENOENT' };
       return { ok: true, tools: [{ name: 'browser_navigate', description: 'Open a page' }] };
     },
     async projectProfile(path) {
@@ -671,6 +686,10 @@ export function client(
       } as never;
     },
   };
+  for (const name of o.fail ?? [])
+    (c as unknown as Record<string, unknown>)[name] = async () => {
+      throw new Error(`${name} failed`);
+    };
   return { client: c, calls };
 }
 

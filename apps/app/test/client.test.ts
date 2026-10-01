@@ -202,7 +202,7 @@ describe('AppClient: Customize', () => {
   });
 
   it('reads one skill with its SKILL.md; an error keeps the extra fields of its body', async () => {
-    const f = fakeFetch((url, init) =>
+    const f = fakeFetch((_url, init) =>
       init.method === 'DELETE'
         ? json(
             {

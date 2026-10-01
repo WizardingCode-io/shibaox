@@ -98,7 +98,8 @@
     return h('div', { className: cx('sx-seg', p.className), role: 'radiogroup', 'aria-label': p.label }, items.map(function (it, i) {
       var sel = it.id === p.value;
       return h('button', { key: it.id, ref: function (el) { refs.current[i] = el; }, type: 'button', role: 'radio', 'aria-checked': sel, tabIndex: sel || (current < 0 && i === 0) ? 0 : -1, className: cx('sx-seg__item', sel && 'is-active'), onClick: function () { pick(i); }, onKeyDown: function (e) { onKey(e, i); } },
-        it.label, it.dot ? h('span', { className: 'sx-seg__dot', 'aria-hidden': true }) : null);
+        it.label, it.dot ? h('span', { className: 'sx-seg__dot', 'aria-hidden': true }) : null,
+        it.dot ? h('span', { className: 'sx-vh' }, ' (' + (it.dotLabel || 'needs attention') + ')') : null);
     }));
   }
 

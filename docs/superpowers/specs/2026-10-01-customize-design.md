@@ -41,9 +41,20 @@ the right: `+` to add (Discover), `✓` when already yours, or a `…` menu (You
   with the same "Run task" form (unchanged behaviour).
 - **Discover**: cards from the built-in skill sources (see Registries) grouped by source with a
   category filter; `+` installs the skill (clone depth 1, copy the folder) and opens the Roles
-  dialog right away. Search also filters the source listing.
-- **+ Add** menu: **From a repository** (Dialog: GitHub `owner/repo[/path]` or git URL, lists
-  what it finds, pick which to install), **From a folder** (Dialog with the local path; the
+  dialog right away. Search also filters the source listing. The discovered `path`s start at the
+  repository root: the source's `path` is stripped first; the categories are the source names
+  and the first folder under the source path that actually occurs (none for a flat source), and
+  the meta line never shows the bare source path. A source is read once at a time (the store
+  keeps the requests in flight); a failed one shows why with **Retry**.
+- **Results**: when `added` is empty the dialog stays open and lists each skipped id with its
+  reason (`exists`, `invalid_id`, `symlink`, `too_large`, `not_found`, `copy_failed`); when some
+  were added, the skipped ones and `added[].omitted` (files over 1 MB) are a toast.
+- **Open** renders the SKILL.md from `GET /skills/:id?org=` (Markdown, frontmatter dropped) with
+  its path and Copy path. **Remove** that the daemon refuses with 409 `{roles}` asks
+  "used by … — detach?" and retries with `detach=1`.
+- **+ Add** menu: **From a repository** (Dialog: GitHub `owner/repo[/path]` or an `https://`
+  git URL, or for a daemon on the loopback a `file://` URL or an absolute path, as the daemon's
+  `repoUrl` accepts; lists what it finds, pick which to install), **From a folder** (Dialog with the local path; the
   daemon copies it; local daemon only), **Write a skill** (Dialog: id + Textarea with a
   SKILL.md template; saved as `org/skills/<id>/SKILL.md`).
 
@@ -53,15 +64,21 @@ the right: `+` to add (Discover), `✓` when already yours, or a `…` menu (You
   description, meta: transport + target (mono, ellipsis), `Roles: …`, keys as small badges
   (`matcha` present, `warning` missing → click goes to Keys with the key focused). Action:
   **Test** (inline result: n tools or the error) and a `…` menu: **Roles…**, **Edit…** (same
-  Dialog as Add custom, pre-filled), **Remove** (detaches from roles first, confirm).
+  Dialog as Add custom, pre-filled from the row's raw `server`: args as a list, env, headers,
+  bearer_command, tools, timeout_ms kept; saved with `replace:true` and `roles` = the ones
+  ticked, which the daemon makes the exact attachment set), **Remove** (detaches from roles
+  first, confirm).
 - **Discover**: the built-in connector registry (see Registries) as cards with category
   filter (`Code`, `Browser`, `Data`, `Docs`, `Design & media`, `Productivity`, `Infra`,
   `Search`), `by <vendor>`, `verified` badge for official servers. `+` opens a short Dialog
   "Add <name>": the keys it needs (inline set when missing, with the signup link), the roles
   to attach (checkboxes, `assistant` checked by default), **Add**. Already-added ones show `✓`.
-- **+ Add** menu: **Custom connector** (Dialog: Name/id, transport `http`|`stdio`, URL or
-  command + args, keys needed (names), headers (http), bearer command (http), tools allowlist,
-  timeout, roles) → `POST /mcp`; **From the registry** jumps to Discover.
+- **+ Add** menu: **Custom connector** (Dialog: id (the schemas' `Id` and core's
+  `mcpIdProblem`: no `:` or `__`, not `shibaox`/`graphify`), transport `http`|`stdio`, URL or
+  one command + its arguments one per line + `NAME=value` environment, keys needed (names),
+  headers (http; `${KEY}` explained on the field), bearer command (http), tools allowlist,
+  timeout, roles) → `POST /mcp`; **From the registry** jumps to Discover. A template's `note`
+  shows as written; `optional` keys say so.
 
 ### Plugins tab (partner integrations with their own setup)
 
@@ -72,7 +89,12 @@ MCP ok/unauthorized/unreachable; actions Install command (copy), Log in, Create 
 (affiliate), Open; "brings: connector `higgsfield`, skill `higgsfield`" with add buttons),
 **GitHub** (`gh` present + `GH_TOKEN`/`GITHUB_TOKEN`; brings the github loop), **Telegram**
 (`SHIBAOX_TELEGRAM_TOKEN`; link to the channel docs), **TypeSafe / Jev** (`TYPESAFE_API_KEY`,
-decider status from `/decisions`). Status comes from `GET /plugins`. Yours/Discover applies:
+decider status from `/decisions`). Status comes from `GET /plugins` (which probes Higgsfield:
+the screen does not read `/integrations/higgsfield` again). Actions: `login` POSTs through the
+store, only `http(s)` hrefs are links (new tab, `rel=noopener noreferrer`), `install` copies its
+`command`, anything else is hidden. Keys named together in one check ("GH_TOKEN or
+GITHUB_TOKEN") are one need met by either; a plugin that is `off` adds nothing to Needed now.
+Plugins has no category filter. Yours/Discover applies:
 Yours = plugins with something configured; Discover = the rest. No "+ Add" here (plugins
 are built in; the menu says so and links to the connector/skill paths).
 

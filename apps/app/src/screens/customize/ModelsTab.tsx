@@ -237,6 +237,8 @@ export function ModelsTab(): JSX.Element {
         <h3>Decisions</h3>
         {c.decisions ? (
           <Decisions view={c.decisions} />
+        ) : c.decisionsError ? (
+          <p className="note">{`The decisions could not be read: ${c.decisionsError}`}</p>
         ) : (
           <p className="muted">Reading the daemon…</p>
         )}
