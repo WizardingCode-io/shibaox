@@ -29,6 +29,7 @@ import { createRunWorkspace, type WorkspaceMode } from '@wizardingcode/shibaox-w
 import type { DaemonConfig } from './config.js';
 import type { InboxAnswer, InboxItem, InboxService } from './inbox.js';
 import { type DiffResult, diffWorkspace, worktreeBase } from './runs/diff.js';
+import { listRunFiles, type RunFile, type RunFileContent, readRunFile } from './runs/files.js';
 import { type GraphMode, prepareGraph } from './runs/graph.js';
 import { finishRun, vaultDir } from './runs/notes.js';
 import { memoryTools, orchestrationTools, toolsForRole } from './runs/orchestration.js';
@@ -383,6 +384,24 @@ export class RunManager {
         ? await worktreeBase(state.workspace, project).catch(() => undefined)
         : undefined;
     return diffWorkspace(state.workspace, { base });
+  }
+
+  /** The files a run touched: its diff plus what it reported, with sizes (404 once the workspace is gone). */
+  async files(runId: string): Promise<{ root: string; files: RunFile[] } | undefined> {
+    const state = await this.state(runId);
+    if (!existsSync(state.workspace)) return undefined;
+    const diff = await this.diff(runId).catch(() => undefined);
+    const changed = this.runtimeEvents(runId, 0, ['file_changed']).flatMap((e) => {
+      const ev = e.event as { type: string; path?: string };
+      return typeof ev.path === 'string' ? [ev.path] : [];
+    });
+    return { root: state.workspace, files: await listRunFiles(state.workspace, diff, changed) };
+  }
+
+  /** One file of the run's workspace (never outside it). */
+  async fileContent(runId: string, path: string): Promise<RunFileContent> {
+    const state = await this.state(runId);
+    return readRunFile(state.workspace, path);
   }
 
   async list(

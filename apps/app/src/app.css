@@ -121,6 +121,21 @@ body {
   flex-direction: column;
   gap: 6px;
 }
+/* the files a conversation produced, under the top bar (only when there are files) */
+.outputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 24px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  flex: none;
+}
+.outputs__label {
+  flex: none;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
 .page {
   flex: 1;
   min-height: 0;

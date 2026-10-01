@@ -114,6 +114,18 @@ function fakeClient() {
       if (id === 'boom') throw new Error('nothing to steer');
       return runs.get(id)?.state as RunState;
     },
+    async files(id: string) {
+      rec('files', id);
+      return { root: '/p', files: [] };
+    },
+    async fileContent(id: string, path: string) {
+      rec('fileContent', id, path);
+      return { path, size: 5, encoding: 'utf8' as const, content: 'name\n', truncated: false };
+    },
+    async fileBlob(id: string, path: string) {
+      rec('fileBlob', id, path);
+      return new Blob(['name\n']);
+    },
     async auditMarkdown(id: string) {
       rec('auditMarkdown', id);
       return `# Audit of ${id}`;

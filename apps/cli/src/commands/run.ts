@@ -313,3 +313,40 @@ export async function auditCommand(
   process.stdout.write(text);
   return 0;
 }
+
+/** `shibaox files <runId> [path]`: the files a run touched, or one of them (to stdout or a file). */
+export async function filesCommand(
+  runId: string,
+  path: string | undefined,
+  o: { out?: string },
+  out: Out,
+): Promise<number> {
+  const client = await connect();
+  if (!path) {
+    const r = await client.files(runId);
+    for (const f of r.files)
+      out.line(
+        `${f.status.padEnd(8)} ${f.path}${f.size !== undefined ? ` (${f.size} B)` : ''}${
+          f.additions !== undefined ? ` +${f.additions} -${f.deletions ?? 0}` : ''
+        }`,
+      );
+    if (r.files.length === 0) out.line('No files changed in this run.');
+    out.obj(r);
+    return 0;
+  }
+  const f = await client.fileContent(runId, path);
+  const data = f.encoding === 'base64' ? Buffer.from(f.content, 'base64') : f.content;
+  if (o.out) {
+    writeFileSync(o.out, data);
+    out.line(`Wrote ${path} of ${runId} to ${o.out}${f.truncated ? ' (truncated at 2 MB)' : ''}`);
+    out.obj({ runId, path, file: o.out, size: f.size, truncated: f.truncated });
+    return 0;
+  }
+  if (f.encoding === 'base64') {
+    out.line(`${path} is binary (${f.size} B): use --out <file> to save it`);
+    out.obj({ runId, path, size: f.size, mime: f.mime });
+    return 1;
+  }
+  process.stdout.write(data);
+  return 0;
+}

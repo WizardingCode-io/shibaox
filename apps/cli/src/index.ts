@@ -33,6 +33,7 @@ import {
 import {
   auditCommand,
   cancelCommand,
+  filesCommand,
   followAny,
   replayCommand,
   resumeCommand,
@@ -241,6 +242,20 @@ program
   .option('--out <file>', 'write to this file instead of stdout')
   .action(async function (this: Command, runId: string, o: { format?: string; out?: string }) {
     exitWith(await auditCommand(runId, o, out(this)));
+  });
+program
+  .command('files')
+  .argument('<runId>')
+  .argument('[path]', 'one file of the run workspace to print (or save with --out)')
+  .description('the files a run created or changed; with a path, its content')
+  .option('--out <file>', 'save the file here instead of printing it')
+  .action(async function (
+    this: Command,
+    runId: string,
+    path: string | undefined,
+    o: { out?: string },
+  ) {
+    exitWith(await filesCommand(runId, path, o, out(this)));
   });
 program
   .command('replay')

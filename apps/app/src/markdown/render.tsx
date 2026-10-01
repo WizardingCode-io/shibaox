@@ -1,6 +1,7 @@
 import { marked, type Token, type Tokens } from 'marked';
 import { Fragment, type ReactNode, useMemo } from 'react';
 import { ds } from '../ds.js';
+import { numericColumns, parseCsv } from './csv.js';
 import { highlight } from './highlight.js';
 
 const ENTITIES: Record<string, string> = {
@@ -117,6 +118,24 @@ function blocks(tokens: Token[], keyBase: string): ReactNode[] {
       case 'code': {
         const c = t as Tokens.Code;
         const lang = (c.lang ?? '').trim().split(/\s+/)[0] || undefined;
+        // a block of comma- or tab-separated values reads as a table, not as code
+        const csv =
+          lang === 'csv' || lang === 'tsv' || lang === undefined
+            ? parseCsv(c.text, lang === 'tsv' ? '\t' : undefined)
+            : undefined;
+        if (csv && (lang !== undefined || csv.rows.length >= 1)) {
+          const nums = numericColumns(csv);
+          out.push(
+            <S.Table
+              key={key}
+              columns={csv.header}
+              rows={csv.rows}
+              align={nums.map((n) => (n ? 'right' : null))}
+              caption={`${csv.rows.length} row${csv.rows.length === 1 ? '' : 's'} · ${lang ?? 'csv'}`}
+            />,
+          );
+          break;
+        }
         out.push(
           <S.CodeBlock key={key} language={lang ?? 'text'} code={c.text} maxHeight={480}>
             {highlight(c.text, lang)}

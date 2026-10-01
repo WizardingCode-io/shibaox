@@ -17,7 +17,7 @@ import {
   type ThreadView,
   threadView,
 } from '@wizardingcode/shibaox-view';
-import type { AppClient } from '../api/client.js';
+import type { AppClient, RunFileContent } from '../api/client.js';
 import { type AppState, initialState, type Settings, TERMINAL } from './state.js';
 
 /** The part of AppClient the store uses (a fake in tests). */
@@ -38,6 +38,9 @@ export type StoreClient = Pick<
   | 'orgInfo'
   | 'stream'
   | 'auditMarkdown'
+  | 'files'
+  | 'fileContent'
+  | 'fileBlob'
   | 'routines'
   | 'runRoutine'
   | 'pauseRoutine'
@@ -629,6 +632,30 @@ export class AppStore {
         },
       }));
     }).then(() => undefined);
+  }
+
+  /** One file a run produced, for the file sheet. */
+  loadFile(runId: string, path: string): Promise<RunFileContent> {
+    return this.client.fileContent(runId, path);
+  }
+
+  /** Saves a file of a run through the browser's download (a Blob URL, never the token). */
+  async downloadFile(runId: string, path: string): Promise<boolean> {
+    try {
+      const blob = await this.client.fileBlob(runId, path);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = path.split('/').pop() ?? 'file';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      return true;
+    } catch (e) {
+      this.set({ error: message(e) });
+      return false;
+    }
   }
 
   loadIntegrations(): Promise<void> {

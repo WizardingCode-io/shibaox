@@ -19,6 +19,7 @@ export * from './routines.js';
 export * from './run-manager.js';
 export * from './runs/audit.js';
 export * from './runs/diff.js';
+export * from './runs/files.js';
 export * from './runs/graph.js';
 export * from './runs/notes.js';
 export * from './runs/orchestration.js';

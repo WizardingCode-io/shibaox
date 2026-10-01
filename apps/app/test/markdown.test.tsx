@@ -88,4 +88,18 @@ describe('Markdown', () => {
     expect((boxes[0] as HTMLInputElement).checked).toBe(true);
     expect((boxes[0] as HTMLInputElement).disabled).toBe(true);
   });
+
+  it('a fence without a language whose body is CSV becomes a Table; a labelled csv fence too', () => {
+    const ui = render(
+      <Markdown text={'Here:\n\n```\nname,age,ltv\nAna,37,12000\nRui,29,900\n```\n'} />,
+    );
+    const table = ui.container.querySelector('table.sx-table') as HTMLElement;
+    expect(table).toBeTruthy();
+    expect(table.querySelectorAll('thead th')).toHaveLength(3);
+    expect(table.querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(table.querySelector('tbody td.is-num')?.textContent).toBe('37');
+    expect(ui.container.querySelector('.sx-code')).toBeNull();
+    const plain = render(<Markdown text={'```\njust a line, with a comma\n```'} />);
+    expect(plain.container.querySelector('.sx-code')).toBeTruthy();
+  });
 });

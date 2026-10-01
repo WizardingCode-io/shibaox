@@ -214,4 +214,26 @@ describe('the connection', () => {
       }),
     ).toEqual({ base: 'https://vps:7433', token: 't' });
   });
+  it('lists and reads the files of a run, and fetches a download as a blob with the token', async () => {
+    const f = fakeFetch((url) =>
+      url.includes('/files/content?path=out%2Fa.csv&download=1')
+        ? new Response('name\n', { status: 200, headers: { 'content-type': 'text/csv' } })
+        : url.includes('/files/content?path=out%2Fa.csv')
+          ? json({
+              path: 'out/a.csv',
+              size: 5,
+              encoding: 'utf8',
+              content: 'name\n',
+              truncated: false,
+            })
+          : json({ root: '/p', files: [{ path: 'out/a.csv', status: 'added', size: 5 }] }),
+    );
+    const c = new AppClient('http://d', 'tok', { fetch: f.fetch });
+    expect((await c.files('r1')).files[0]?.path).toBe('out/a.csv');
+    expect((await c.fileContent('r1', 'out/a.csv')).content).toBe('name\n');
+    const blob = await c.fileBlob('r1', 'out/a.csv');
+    expect(await blob.text()).toBe('name\n');
+    for (const call of f.calls)
+      expect(new Headers(call.init.headers).get('authorization')).toBe('Bearer tok');
+  });
 });

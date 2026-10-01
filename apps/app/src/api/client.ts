@@ -13,6 +13,8 @@ import type {
   ProjectEntry,
   RoutineInput,
   RoutineRow,
+  RunFile,
+  RunFileContent,
   RunSummaryPlus,
   SubmitRequest,
 } from '@wizardingcode/shibaox-daemon';
@@ -34,6 +36,8 @@ export class AppHttpError extends Error {
  * The daemon's API from the browser: JSON over `fetch` with the bearer token, and the run
  * event stream (SSE) read through `fetch` too, since `EventSource` cannot send a header.
  */
+export type { RunFile, RunFileContent };
+
 export class AppClient {
   readonly base: string;
   private readonly fetchImpl: typeof fetch;
@@ -86,6 +90,34 @@ export class AppClient {
   }
   submitRun(req: SubmitRequest): Promise<{ runId: string; warnings: string[] }> {
     return this.json('POST', '/runs', req);
+  }
+  /** The files a run created or changed (its diff plus what it reported). */
+  files(id: string): Promise<{ root: string; files: RunFile[] }> {
+    return this.json('GET', `/runs/${encodeURIComponent(id)}/files`);
+  }
+  /** One file of the run's workspace: text, or base64 for binaries; 403 outside it. */
+  fileContent(id: string, path: string): Promise<RunFileContent> {
+    return this.json(
+      'GET',
+      `/runs/${encodeURIComponent(id)}/files/content?path=${encodeURIComponent(path)}`,
+    );
+  }
+  /** The file as a Blob for a download (the token travels in the header, never in a URL). */
+  async fileBlob(id: string, path: string): Promise<Blob> {
+    const r = await this.fetchImpl(
+      `${this.base}/runs/${encodeURIComponent(id)}/files/content?path=${encodeURIComponent(path)}&download=1`,
+      { method: 'GET', headers: this.headers() },
+    );
+    if (r.status >= 400) {
+      let err: { code?: string; message?: string } | undefined;
+      try {
+        err = ((await r.json()) as { error?: { code?: string; message?: string } }).error;
+      } catch {
+        err = undefined;
+      }
+      throw new AppHttpError(r.status, err?.code ?? 'error', err?.message ?? `HTTP ${r.status}`);
+    }
+    return r.blob();
   }
   audit(id: string): Promise<AuditDoc> {
     return this.json('GET', `/runs/${encodeURIComponent(id)}/audit`);

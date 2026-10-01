@@ -103,6 +103,18 @@ export function client(
       rec('steer', id, s);
       return o.states?.[id] as RunState;
     },
+    async files(id) {
+      rec('files', id);
+      return { root: '/p', files: [] };
+    },
+    async fileContent(id, path) {
+      rec('fileContent', id, path);
+      return { path, size: 5, encoding: 'utf8' as const, content: 'name\n', truncated: false };
+    },
+    async fileBlob(id, path) {
+      rec('fileBlob', id, path);
+      return new Blob(['name\n']);
+    },
     async auditMarkdown(id) {
       rec('auditMarkdown', id);
       return `# Audit ${id}`;

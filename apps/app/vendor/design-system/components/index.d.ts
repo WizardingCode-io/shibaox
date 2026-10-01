@@ -1,5 +1,5 @@
 import type * as React from 'react';
-type IconName = 'message-square' | 'send-horizontal' | 'plus' | 'paperclip' | 'mic' | 'terminal' | 'globe' | 'file-text' | 'folder' | 'brain' | 'clock' | 'zap' | 'plug' | 'history' | 'wrench' | 'settings' | 'search' | 'copy' | 'play' | 'square' | 'check' | 'x' | 'triangle-alert' | 'info' | 'chevron-right' | 'chevron-down' | 'arrow-up';
+type IconName = 'message-square' | 'send-horizontal' | 'plus' | 'paperclip' | 'mic' | 'terminal' | 'globe' | 'file-text' | 'folder' | 'brain' | 'clock' | 'zap' | 'plug' | 'history' | 'wrench' | 'settings' | 'search' | 'copy' | 'play' | 'square' | 'check' | 'x' | 'triangle-alert' | 'info' | 'chevron-right' | 'chevron-down' | 'arrow-up' | 'download' | 'external-link' | 'table' | 'image' | 'code';
 type Tone = 'neutral' | 'shiba' | 'matcha' | 'info' | 'warning' | 'danger';
 type Mood = 'default' | 'happy' | 'thinking' | 'working' | 'sleeping' | 'error';
 type Status = 'online' | 'working' | 'waiting' | 'idle' | 'error';
@@ -39,6 +39,10 @@ export interface CardProps { icon?: IconName; title?: string; description?: stri
 export declare function Card(props: CardProps): React.ReactElement;
 export interface TableProps { columns?: React.ReactNode[]; rows: React.ReactNode[][]; align?: ('left' | 'center' | 'right' | null | undefined)[]; dense?: boolean; caption?: React.ReactNode; className?: string }
 export declare function Table(props: TableProps): React.ReactElement;
+export interface FileChipProps { path: string; name?: string; status?: 'added' | 'modified' | 'deleted' | 'renamed'; meta?: string; icon?: IconName; onClick?: () => void; className?: string }
+export declare function FileChip(props: FileChipProps): React.ReactElement;
+export interface SheetProps { open: boolean; onClose?: () => void; title?: React.ReactNode; subtitle?: React.ReactNode; icon?: IconName; label?: string; actions?: React.ReactNode; footer?: React.ReactNode; width?: number | string; className?: string; children?: React.ReactNode }
+export declare function Sheet(props: SheetProps): React.ReactElement | null;
 export interface KbdProps { children: React.ReactNode }
 export declare function Kbd(props: KbdProps): React.ReactElement;
 export interface IconProps { name: IconName; size?: number; strokeWidth?: number; label?: string; className?: string }
@@ -56,4 +60,4 @@ export interface MenuProps extends MenuListProps { open: boolean; anchor?: React
 export declare function Menu(props: MenuProps): React.ReactElement;
 /** @deprecated a decorative 14px Wave, kept for compatibility */
 export declare function Spinner(props?: { size?: number }): React.ReactElement;
-declare global { interface Window { Shibaox: { Button: typeof Button; IconButton: typeof IconButton; Input: typeof Input; Switch: typeof Switch; Composer: typeof Composer; Tabs: typeof Tabs; NavItem: typeof NavItem; Badge: typeof Badge; AgentStatus: typeof AgentStatus; Toast: typeof Toast; Avatar: typeof Avatar; Mascot: typeof Mascot; Message: typeof Message; ToolCall: typeof ToolCall; ThinkingIndicator: typeof ThinkingIndicator; CodeBlock: typeof CodeBlock; Card: typeof Card; Kbd: typeof Kbd; Icon: typeof Icon; Spinner: typeof Spinner; Wave: typeof Wave; TextShimmer: typeof TextShimmer; Popover: typeof Popover; MenuList: typeof MenuList; Menu: typeof Menu; Table: typeof Table } } }
+declare global { interface Window { Shibaox: { Button: typeof Button; IconButton: typeof IconButton; Input: typeof Input; Switch: typeof Switch; Composer: typeof Composer; Tabs: typeof Tabs; NavItem: typeof NavItem; Badge: typeof Badge; AgentStatus: typeof AgentStatus; Toast: typeof Toast; Avatar: typeof Avatar; Mascot: typeof Mascot; Message: typeof Message; ToolCall: typeof ToolCall; ThinkingIndicator: typeof ThinkingIndicator; CodeBlock: typeof CodeBlock; Card: typeof Card; Kbd: typeof Kbd; Icon: typeof Icon; Spinner: typeof Spinner; Wave: typeof Wave; TextShimmer: typeof TextShimmer; Popover: typeof Popover; MenuList: typeof MenuList; Menu: typeof Menu; Table: typeof Table; Sheet: typeof Sheet; FileChip: typeof FileChip } } }

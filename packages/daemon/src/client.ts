@@ -10,6 +10,7 @@ import type { RoutineInput } from './routines.js';
 import type { RunSummaryPlus, SubmitRequest } from './run-manager.js';
 import type { AuditDoc } from './runs/audit.js';
 import type { DiffResult } from './runs/diff.js';
+import type { RunFile, RunFileContent } from './runs/files.js';
 import type { KeyRow } from './secrets.js';
 import type { Envelope, Health, ProjectEntry } from './server.js';
 
@@ -218,6 +219,41 @@ export class DaemonClient {
     const p = new URLSearchParams({ path });
     if (orgRoot) p.set('org', orgRoot);
     return this.json('GET', `/projects/profile?${p.toString()}`);
+  }
+  /** The files a run touched (its diff plus what it reported), with sizes. */
+  files(id: string): Promise<{ root: string; files: RunFile[] }> {
+    return this.json('GET', `/runs/${encodeURIComponent(id)}/files`);
+  }
+  /** One file of the run's workspace; 403 outside it, 404 when missing. */
+  fileContent(id: string, path: string): Promise<RunFileContent> {
+    return this.json(
+      'GET',
+      `/runs/${encodeURIComponent(id)}/files/content?path=${encodeURIComponent(path)}`,
+    );
+  }
+  /** A raw GET (headers and text body) for downloads and the like. */
+  fetchRaw(
+    path: string,
+  ): Promise<{ status: number; headers: Record<string, string>; body: string }> {
+    return new Promise((resolve, reject) => {
+      const req = this.request(this.options(path, 'GET'), (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => {
+          const headers: Record<string, string> = {};
+          for (const [k, v] of Object.entries(res.headers))
+            if (typeof v === 'string') headers[k] = v;
+          resolve({
+            status: res.statusCode ?? 0,
+            headers,
+            body: Buffer.concat(chunks).toString('utf8'),
+          });
+        });
+        res.on('error', (e) => reject(new DaemonUnavailableError(this.socketPath, e)));
+      });
+      req.on('error', (e) => reject(new DaemonUnavailableError(this.socketPath, e)));
+      req.end();
+    });
   }
   /** The run's checkout diff against HEAD (404 `no_workspace` once the directory is gone). */
   diff(id: string): Promise<DiffResult> {

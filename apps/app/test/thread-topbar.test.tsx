@@ -205,4 +205,30 @@ describe('the reply is rendered as a document', () => {
     expect(order).toEqual(['Looking.', 'tool', 'Here:', 'code']);
     expect(body.textContent).not.toContain('```');
   });
+
+  it('a file the run wrote is a chip in the message and in the Outputs row; clicking opens it in the sheet', async () => {
+    const { client: c, calls } = client({
+      runs: [summary('root')],
+      states: { root: state('root') },
+      frames: {
+        root: [
+          runFrame(1, 'NodeStarted', { nodeId: 'reply' }),
+          rtFrame(1, 'reply', { type: 'text', text: 'Saved it.' }),
+          rtFrame(2, 'reply', { type: 'file_changed', path: 'out/clientes.csv' }),
+        ],
+      },
+    });
+    const ui = mount(c, { hash: '#/t/root' });
+    const chips = await screen.findAllByRole('button', { name: /clientes\.csv/ });
+    expect(chips.length).toBe(2); // the message and the Outputs row
+    expect(ui.container.querySelector('.outputs')?.textContent).toContain('Outputs · 1');
+    fireEvent.click(chips[1] as HTMLElement);
+    const sheet = await screen.findByRole('dialog', { name: 'clientes.csv' });
+    await waitFor(() => expect(sheet.textContent).toContain('name'));
+    expect(calls.find((x) => x.name === 'fileContent')?.args).toEqual(['root', 'out/clientes.csv']);
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Download' }));
+    await waitFor(() => expect(calls.find((x) => x.name === 'fileBlob')).toBeTruthy());
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog', { name: 'clientes.csv' })).toBeNull();
+  });
 });

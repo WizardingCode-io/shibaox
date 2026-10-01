@@ -14,6 +14,7 @@ import { useFollowScroll } from '../hooks/follow-scroll.js';
 import { Markdown } from '../markdown/render.js';
 import { navigate } from '../router.js';
 import { useAppState, useStore } from '../store/hooks.js';
+import { FileSheet } from './FileSheet.js';
 
 const TOOL_ICON: Record<string, string> = {
   browser: 'globe',
@@ -65,7 +66,7 @@ function ToolBlock(props: { block: Extract<Block, { kind: 'tool' }> }): JSX.Elem
 }
 
 /** The agent's turn as it happened: text as a document, tool calls and files in between. */
-function Parts(props: { parts: MessagePart[] }): JSX.Element {
+function Parts(props: { parts: MessagePart[]; onFile: (path: string) => void }): JSX.Element {
   const S = ds();
   return (
     <>
@@ -77,11 +78,26 @@ function Parts(props: { parts: MessagePart[] }): JSX.Element {
           ) : p.kind === 'tool' ? (
             <ToolBlock key={p.key} block={p} />
           ) : (
-            <S.ToolCall key={p.key} tool="file" summary={p.path} status="done" icon="file-text" />
+            <div key={p.key}>
+              <S.FileChip path={p.path} status="added" onClick={() => props.onFile(p.path)} />
+            </div>
           ),
         )}
     </>
   );
+}
+
+/** Every file the conversation produced, by run: the Outputs row under the top bar. */
+function outputsOf(messages: ThreadMessage[]): { runId: string; path: string }[] {
+  const seen = new Set<string>();
+  const out: { runId: string; path: string }[] = [];
+  for (const m of messages)
+    for (const p of m.parts)
+      if (p.kind === 'file' && !seen.has(p.path)) {
+        seen.add(p.path);
+        out.push({ runId: m.runId, path: p.path });
+      }
+  return out;
 }
 
 /** A pending approval of a command or a file write, as the mockup's ToolCall with Approve/Deny. */
@@ -142,6 +158,7 @@ function ChatTab(props: {
   rootId: string;
   messages: ThreadMessage[];
   inbox: InboxItem[];
+  onFile: (runId: string, path: string) => void;
 }): JSX.Element {
   const S = ds();
   const scroll = useRef<HTMLDivElement>(null);
@@ -169,7 +186,7 @@ function ChatTab(props: {
                   time={m.pending ? undefined : clock(m.time)}
                   mood={m.pending ? 'working' : 'default'}
                 >
-                  <Parts parts={m.parts} />
+                  <Parts parts={m.parts} onFile={(path) => props.onFile(m.runId, path)} />
                 </S.Message>
               )}
               {byRun(m.runId).map((i) =>
@@ -537,6 +554,11 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
   const state = useAppState();
   const [tab, setTab] = useState<'chat' | 'tasks' | 'logs'>('chat');
   const [modelOpen, setModelOpen] = useState(false);
+  const [file, setFile] = useState<{ runId: string; path: string } | undefined>(undefined);
+  const loadFile = useCallback(
+    (runId: string, path: string) => store.loadFile(runId, path),
+    [store],
+  );
   useEffect(() => {
     store.openThread(props.rootId);
     return () => store.openThread(undefined);
@@ -559,6 +581,7 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
   const closeModel = useCallback(() => setModelOpen(false), []);
   const modelMenu = useModelMenu(props.rootId, currentRef, modelOpen, closeModel);
   const busy = live !== undefined || state.busy[props.rootId] === true;
+  const outputs = useMemo(() => outputsOf(view?.messages ?? []), [view?.messages]);
   const runningTasks = store
     .tasksOf(props.rootId)
     .filter((t) => !['completed', 'failed', 'cancelled'].includes(t.status)).length;
@@ -580,8 +603,30 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
           onChange={(id) => setTab(id as typeof tab)}
         />
       </div>
+      {tab === 'chat' && outputs.length > 0 ? (
+        <div className="outputs">
+          <span className="outputs__label">Outputs · {outputs.length}</span>
+          {outputs.map((o) => (
+            <S.FileChip key={`${o.runId}:${o.path}`} path={o.path} onClick={() => setFile(o)} />
+          ))}
+        </div>
+      ) : null}
       {tab === 'chat' ? (
-        <ChatTab rootId={props.rootId} messages={view?.messages ?? []} inbox={inbox} />
+        <ChatTab
+          rootId={props.rootId}
+          messages={view?.messages ?? []}
+          inbox={inbox}
+          onFile={(runId, path) => setFile({ runId, path })}
+        />
+      ) : null}
+      {file ? (
+        <FileSheet
+          runId={file.runId}
+          path={file.path}
+          load={loadFile}
+          onClose={() => setFile(undefined)}
+          onDownload={(runId, path) => void store.downloadFile(runId, path)}
+        />
       ) : null}
       {tab === 'tasks' ? <TasksTab rootId={props.rootId} inbox={inbox} /> : null}
       {tab === 'logs' ? <LogsTab rootId={props.rootId} /> : null}
