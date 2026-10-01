@@ -113,5 +113,10 @@ describe('shibaox routine: manual, model, approvals, update, show', () => {
     expect(shown.stdout).toContain('model openai/gpt-5');
     const nothing = await cli(env, 'routine', 'update', row.id);
     expect(nothing.code).toBe(1);
+    // back to manual: no watcher interval or mode on a routine that only runs by hand
+    await cli(env, 'routine', 'update', row.id, '--on', 'manual');
+    const manual = await cli(env, 'routine', 'show', row.id);
+    expect(manual.stdout).toContain('trigger: manual\n');
+    expect(manual.stdout).not.toContain('every ');
   });
 });

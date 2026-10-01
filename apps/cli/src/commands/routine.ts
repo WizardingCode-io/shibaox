@@ -223,7 +223,7 @@ export async function routineShow(id: string, out: Out): Promise<number> {
     `${r.id}${r.name ? ` · ${r.name}` : ''}${r.source === 'org' ? ' · from org/routines' : ''}`,
   );
   out.line(
-    `trigger: ${describeTrigger(r.trigger)}${r.trigger.type === 'cron' ? '' : ` · every ${r.intervalS}s · ${r.mode}`}`,
+    `trigger: ${describeTrigger(r.trigger)}${r.trigger.type === 'cron' || r.trigger.type === 'manual' ? '' : ` · every ${r.intervalS}s · ${r.mode}`}`,
   );
   out.line(`workflow: ${r.workflow} · project: ${r.project} · org: ${r.orgRoot}`);
   if (r.input) out.line(`input: ${r.input.split('\n')[0]}`);
