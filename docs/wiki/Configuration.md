@@ -148,6 +148,8 @@ Written by `shibaox remote set <url> <token>` (0600): `{ "baseUrl": "http://box:
 | `SHIBAOX_NO_MOTION=1` | no animations in the dashboard |
 | `SHIBAOX_APP` | the installer checkout (`shibaox upgrade`) |
 | `TYPESAFE_API_KEY`, `SHIBAOX_JEV_BASE_URL` | Jev through TypeSafe |
+| `HIGGSFIELD_API_KEY` | Higgsfield's API mode (the vault is the better place) |
+| `SHIBAOX_HIGGSFIELD_API_BASE` | another base URL for Higgsfield's API (tests, the doctor's probe) |
 | `SHIBAOX_REAL_TESTS=1` | enables the real-call tests |
 
 Provider keys belong in the vault (`shibaox keys set`); the environment stays a fallback.
@@ -158,6 +160,11 @@ Provider keys belong in the vault (`shibaox keys set`); the environment stays a 
 partners:
   higgsfield:
     signup_url: https://higgsfield.ai?fpr=andre-4fae29   # where "Create an account" sends people
+    mode: auto      # auto (the API when HIGGSFIELD_API_KEY is saved, else the account) | account | api
 ```
 
+`mode` picks how Higgsfield generates ([MCP and skills](MCP-and-skills#plugins--higgsfield-account-or-api)); the app's **Use for generation** and `shibaox plugins higgsfield-mode <mode>` write it, keeping the file's comments and other keys. It is read when each task starts.
+
 The default is the maintainer's affiliate link (the app says so next to the button; you pay the same). An org created before 0.2.8 has no `catalog/higgsfield.yaml` nor `skills/higgsfield/`: run `shibaox init` in the org's parent directory to add the missing files (existing ones are kept), then add `mcp: [higgsfield]`, `skills: [higgsfield]` and `higgsfield` under `tools` to `roles/assistant.yaml`.
+
+An org created before 0.2.13 has a `higgsfield` skill that does not know the API mode (`shibaox doctor` says so): `shibaox skills add higgsfield --builtin --replace` rewrites it, and `shibaox skills add higgsfield-app --builtin` (or Plugins → Higgsfield → API → Brings) adds the app-building skill; then list it in `roles/assistant.yaml` (`skills: [higgsfield, higgsfield-app]`) and add to `prompts/assistant.md`: "When asked to build an app or product on Higgsfield, follow the higgsfield-app skill."
