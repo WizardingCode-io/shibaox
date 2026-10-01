@@ -24,6 +24,8 @@ export function triggerLabel(t: RoutineTrigger): string {
       return `file ${t.path}`;
     case 'command':
       return `command ${t.command}`;
+    case 'manual':
+      return 'manual';
   }
 }
 
