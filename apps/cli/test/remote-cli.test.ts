@@ -51,7 +51,7 @@ async function remoteDaemon() {
     channels: [],
     env: { SHIBAOX_DAEMON_TOKEN: 'tok' },
     log: () => {},
-    version: '0.2.13',
+    version: '0.2.14',
     discovery: false,
     config: {
       max_concurrent_runs: 2,
@@ -86,7 +86,7 @@ describe('shibaox remote', () => {
     });
     const status = await cli('daemon', 'status');
     expect(status.code, status.stderr).toBe(0);
-    expect(status.stdout).toContain('version 0.2.13');
+    expect(status.stdout).toContain('version 0.2.14');
     expect(status.stdout).toContain(`remote: ${baseUrl}`);
     expect(status.stdout).not.toContain('socket:');
     const runs = await cli('runs', '--json');
@@ -117,7 +117,7 @@ describe('shibaox remote', () => {
       SHIBAOX_REMOTE: baseUrl,
       SHIBAOX_REMOTE_TOKEN: 'tok',
     })('doctor');
-    expect(good.stdout).toMatch(new RegExp(`daemon.*remote ${baseUrl}.*version 0\\.2\\.13`));
+    expect(good.stdout).toMatch(new RegExp(`daemon.*remote ${baseUrl}.*version 0\\.2\\.14`));
     expect(good.stdout).not.toContain('restart it'); // no restart nag about a daemon we cannot restart
     const noToken = await cliIn({ SHIBAOX_HOME: clientHome, HOME: dir, SHIBAOX_REMOTE: baseUrl })(
       'doctor',
@@ -185,7 +185,7 @@ describe('shibaox serve', () => {
       channels: [],
       env: {},
       log: () => {},
-      version: '0.2.13',
+      version: '0.2.14',
       discovery: false,
     });
     daemons.push(running);
