@@ -197,7 +197,7 @@ export function ScheduledScreen(): JSX.Element {
           Add routine
         </S.Button>
       </div>
-      <div className="page">
+      <div className="page sx-scroll">
         {adding ? <AddRoutine onDone={() => setAdding(false)} /> : null}
         {routines.length === 0 && !adding ? (
           <div className="empty">

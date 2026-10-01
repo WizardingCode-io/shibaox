@@ -61,7 +61,7 @@ export function Sidebar(props: { route: Route; onNewChat: () => void }): JSX.Ele
         />
       ))}
       <div className="grp">Recent</div>
-      <div className="recent">
+      <div className="recent sx-scroll">
         {threads.map((t) => (
           <S.NavItem
             key={t.runId}

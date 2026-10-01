@@ -1,7 +1,6 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import type { RunState } from '@wizardingcode/shibaox-core';
 import type { InboxItem } from '@wizardingcode/shibaox-daemon';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadDesignSystem } from '../src/ds.js';

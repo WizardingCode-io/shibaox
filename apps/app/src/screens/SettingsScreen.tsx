@@ -11,7 +11,7 @@ export function SettingsScreen(props: { base: string; onDisconnect: () => void }
       <div className="top">
         <h2>Settings</h2>
       </div>
-      <div className="page">
+      <div className="page sx-scroll">
         <h3>Theme</h3>
         <S.Tabs
           items={[

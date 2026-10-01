@@ -153,7 +153,7 @@ function ChatTab(props: {
   const turnRuns = new Set(props.messages.map((m) => m.runId));
   const fromTasks = props.inbox.filter((i) => !turnRuns.has(i.runId));
   return (
-    <div className="scroll" ref={scroll}>
+    <div className="scroll sx-scroll" ref={scroll}>
       <div className="thread">
         {props.messages.map((m) =>
           m.from === 'user' ? (
@@ -208,7 +208,7 @@ function ChatTab(props: {
           <S.Button
             className="jump"
             size="sm"
-            variant="quiet"
+            variant="secondary"
             icon="chevron-down"
             onClick={follow.jump}
           >
@@ -327,7 +327,7 @@ function TasksTab(props: { rootId: string; inbox: InboxItem[] }): JSX.Element {
   const tasks = store.tasksOf(props.rootId);
   const [steering, setSteering] = useState<string | undefined>(undefined);
   return (
-    <div className="page">
+    <div className="page sx-scroll">
       {tasks.length === 0 ? (
         <p className="muted">No runs were dispatched in this conversation yet.</p>
       ) : null}
@@ -451,7 +451,7 @@ function LogsTab(props: { rootId: string }): JSX.Element {
     }
   };
   return (
-    <div className="page">
+    <div className="page sx-scroll">
       <div className="row">
         <span className="muted">Every node, gate, decision and approval of this conversation.</span>
         <span className="grow" />

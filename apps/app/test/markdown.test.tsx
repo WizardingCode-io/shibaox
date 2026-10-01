@@ -49,9 +49,7 @@ describe('Markdown', () => {
   });
 
   it('a GFM table becomes the design system Table', () => {
-    const ui = render(
-      <Markdown text={'| name | age |\n| --- | --- |\n| Ana | 37 |\n| Rui | 29 |\n'} />,
-    );
+    render(<Markdown text={'| name | age |\n| --- | --- |\n| Ana | 37 |\n| Rui | 29 |\n'} />);
     const table = screen.getByRole('table');
     expect(table.className).toContain('sx-table');
     expect(table.querySelectorAll('thead th')).toHaveLength(2);

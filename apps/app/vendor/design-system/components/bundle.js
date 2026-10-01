@@ -193,7 +193,7 @@
         h(IconButton, { icon: 'plus', label: 'Attach', size: 'sm' }),
         h(IconButton, { icon: 'zap', label: 'Skills', size: 'sm' }),
         p.model && (p.onModelClick || p.modelMenu)
-          ? h(Popover, { open: !!p.modelMenu, onClose: p.onModelMenuClose || p.onModelClick, placement: 'up', role: 'menu', label: 'Model',
+          ? h(Popover, { open: !!p.modelMenu, onClose: p.onModelMenuClose || p.onModelClick, placement: 'up', role: 'presentation',
               anchor: h('button', { type: 'button', className: 'sx-composer__model sx-composer__model--btn', 'aria-label': 'Change model', 'aria-haspopup': 'menu', 'aria-expanded': !!p.modelMenu, onClick: p.onModelClick }, p.model, h(Icon, { name: 'chevron-down', size: 12 })) },
               p.modelMenu || null)
           : p.model ? h('span', { className: 'sx-composer__model' }, p.model) : null,
@@ -204,44 +204,61 @@
   }
 
   function Popover(p) {
-    var ref = useRef(null);
+    var ref = useRef(null), onClose = useRef(p.onClose);
+    onClose.current = p.onClose;
     useEffect(function () {
       if (!p.open) return;
-      function onKey(e) { if (e.key === 'Escape') { e.stopPropagation(); if (p.onClose) p.onClose(); } }
-      function onDown(e) { if (ref.current && !ref.current.contains(e.target) && p.onClose) p.onClose(); }
+      var root = ref.current;
+      function close() { if (onClose.current) onClose.current(); }
+      function onKey(e) { if (e.key === 'Escape') close(); }
+      function onDown(e) { if (root && !root.contains(e.target)) close(); }
       document.addEventListener('keydown', onKey);
       document.addEventListener('mousedown', onDown);
-      var panel = ref.current && ref.current.querySelector('.sx-popover__panel');
+      var panel = root && root.querySelector('.sx-popover__panel');
       if (panel && !panel.contains(document.activeElement)) {
-        var first = panel.querySelector('input, textarea, select, .sx-menu, button');
+        var first = panel.querySelector('.sx-menu__item.is-active, input, textarea, select, [role="menu"], button');
         try { (first || panel).focus({ preventScroll: true }); } catch (_) {}
       }
-      return function () { document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onDown); };
-    }, [p.open, p.onClose]);
+      return function () {
+        document.removeEventListener('keydown', onKey);
+        document.removeEventListener('mousedown', onDown);
+        // the keyboard goes back to the trigger unless the user already moved it elsewhere
+        var active = document.activeElement;
+        if (root && (!active || active === document.body || (panel && panel.contains(active)))) {
+          var anchor = root.querySelector('button, [tabindex]');
+          if (anchor && anchor !== panel) try { anchor.focus({ preventScroll: true }); } catch (_) {}
+        }
+      };
+    }, [p.open]);
     return h('span', { className: cx('sx-popover', p.align === 'end' && 'sx-popover--end', p.placement === 'up' && 'sx-popover--up', p.className), ref: ref },
       p.anchor || null,
       p.open ? h('div', { className: 'sx-popover__panel', role: p.role || 'dialog', 'aria-label': p.label, tabIndex: -1, style: p.width ? { width: p.width } : undefined }, p.children) : null);
   }
 
   function MenuList(p) {
-    var s = useState(-1), active = s[0];
     var items = p.items || [];
     var radio = items.some(function (it) { return it.checked !== undefined; });
+    var start = items.findIndex(function (it) { return it.checked; });
+    var s = useState(start >= 0 ? start : items.findIndex(function (it) { return !it.disabled && it.id !== '-'; })), active = s[0];
+    var touched = useRef(false);
+    // items often arrive after the menu opened (a list fetched on demand): follow the checked one until the user moves
+    useEffect(function () { if (!touched.current && start >= 0) s[1](start); }, [start]);
     function select(it) { if (it.disabled) return; if (p.onSelect) p.onSelect(it.id); if (p.onClose) p.onClose(); }
     function onKey(e) {
       var enabled = []; items.forEach(function (it, i) { if (!it.disabled && it.id !== '-') enabled.push(i); });
       if (!enabled.length) return;
+      touched.current = true;
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         var i = enabled.indexOf(active), d = e.key === 'ArrowDown' ? 1 : -1;
         s[1](enabled[i < 0 ? (d > 0 ? 0 : enabled.length - 1) : (i + d + enabled.length) % enabled.length]);
       } else if ((e.key === 'Enter' || e.key === ' ') && active >= 0) { e.preventDefault(); select(items[active]); }
     }
-    return h('div', { className: cx('sx-menu', p.className), tabIndex: -1, onKeyDown: onKey, 'aria-label': p.label },
+    return h('div', { className: cx('sx-menu', p.className), role: 'menu', tabIndex: -1, onKeyDown: onKey, 'aria-label': p.label },
       p.title ? h('div', { className: 'sx-menu__title' }, p.title) : null,
       items.map(function (it, i) {
         if (it.id === '-') return h('div', { key: 'sep' + i, className: 'sx-menu__sep', role: 'separator' });
-        return h('button', { key: it.id, type: 'button', role: radio ? 'menuitemradio' : 'menuitem', 'aria-checked': radio ? !!it.checked : undefined, className: cx('sx-menu__item', i === active && 'is-active', it.tone === 'danger' && 'sx-menu__item--danger'), disabled: it.disabled, onMouseEnter: function () { s[1](i); }, onClick: function () { select(it); } },
+        return h('button', { key: it.id, type: 'button', role: radio ? 'menuitemradio' : 'menuitem', 'aria-checked': radio ? !!it.checked : undefined, className: cx('sx-menu__item', i === active && 'is-active', it.tone === 'danger' && 'sx-menu__item--danger'), disabled: it.disabled, onMouseEnter: function () { touched.current = true; s[1](i); }, onClick: function () { select(it); } },
           it.icon ? h(Icon, { name: it.icon, size: 16 }) : null,
           h('span', { className: 'sx-menu__text' }, h('span', { className: 'sx-menu__label' }, it.label), it.hint ? h('span', { className: 'sx-menu__hint' }, it.hint) : null),
           it.checked ? h(Icon, { name: 'check', size: 16, className: 'sx-menu__check' }) : null);
@@ -249,7 +266,7 @@
   }
 
   function Menu(p) {
-    return h(Popover, { open: p.open, onClose: p.onClose, anchor: p.anchor, align: p.align, placement: p.placement, role: 'menu', label: p.label, width: p.width, className: p.className },
+    return h(Popover, { open: p.open, onClose: p.onClose, anchor: p.anchor, align: p.align, placement: p.placement, role: 'presentation', width: p.width, className: p.className },
       h(MenuList, { items: p.items, onSelect: p.onSelect, onClose: p.onClose, title: p.title }));
   }
 

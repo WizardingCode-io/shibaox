@@ -34,10 +34,16 @@ const TYPES = {
   '.png': 'image/png',
 };
 const server = createServer((req, res) => {
-  const path = decodeURIComponent((req.url ?? '/').split('?')[0]);
+  let path = '/';
+  try {
+    path = decodeURIComponent((req.url ?? '/').split('?')[0]);
+  } catch {
+    res.writeHead(400);
+    return res.end();
+  }
   const prefix = Object.keys(roots).find((k) => path.startsWith(k));
   const file = prefix ? resolve(roots[prefix], path.slice(prefix.length)) : undefined;
-  if (!file || !file.startsWith(roots[prefix]) || !existsSync(file)) {
+  if (!file?.startsWith(`${roots[prefix]}/`) || !existsSync(file)) {
     res.writeHead(404);
     return res.end();
   }
@@ -125,13 +131,22 @@ const measure = async (name, url, prepare) => {
   return JSON.parse(body.slice(body.indexOf('{'), body.lastIndexOf('}') + 1));
 };
 const results = {};
-for (const theme of ['dark', 'light']) {
-  results[`mockup-${theme}`] = await measure(`mockup-${theme}`, `${base}/out/mockup-${theme}.html`);
-  results[`app-${theme}`] = await measure(
-    `app-${theme}`,
-    appUrl,
-    `() => { document.documentElement.dataset.theme = '${theme}'; const a = document.querySelector('.recent .sx-nav'); if (a) a.click(); }`,
-  );
+for (const [w, hgt] of [
+  [1440, 900],
+  [1180, 760],
+]) {
+  await c.call('browser_resize', { width: w, height: hgt });
+  for (const theme of ['dark', 'light']) {
+    results[`mockup-${theme}-${w}`] = await measure(
+      `mockup-${theme}-${w}`,
+      `${base}/out/mockup-${theme}.html`,
+    );
+    results[`app-${theme}-${w}`] = await measure(
+      `app-${theme}-${w}`,
+      appUrl,
+      `() => { document.documentElement.dataset.theme = '${theme}'; const a = document.querySelector('.recent .sx-nav'); if (a) a.click(); }`,
+    );
+  }
 }
 writeFileSync(join(out, 'measures.json'), JSON.stringify(results, null, 2));
 const flat = (o, p = '') =>
@@ -140,12 +155,21 @@ const flat = (o, p = '') =>
       ? flat(v, `${p}${k}.`)
       : [[`${p}${k}`, Array.isArray(v) ? v.join(',') : String(v)]],
   );
-const a = Object.fromEntries(flat(results['mockup-dark']));
-const b = Object.fromEntries(flat(results['app-dark']));
-console.log('measure | mockup | app');
-for (const k of Object.keys(a))
-  if (!k.endsWith('.x') && !k.endsWith('.y') && !k.startsWith('msgAgent') && !k.startsWith('tool'))
-    if (a[k] !== b[k]) console.log(`${k} | ${a[k]} | ${b[k]}`);
+for (const w of [1440, 1180]) {
+  const a = Object.fromEntries(flat(results[`mockup-dark-${w}`]));
+  const b = Object.fromEntries(flat(results[`app-dark-${w}`]));
+  console.log(
+    `\n## ${w} px wide: measure | mockup | app (differences only; content-dependent widths are expected)`,
+  );
+  for (const k of Object.keys(a))
+    if (
+      !k.endsWith('.x') &&
+      !k.endsWith('.y') &&
+      !k.startsWith('msgAgent') &&
+      !k.startsWith('tool')
+    )
+      if (a[k] !== b[k]) console.log(`${k} | ${a[k]} | ${b[k]}`);
+}
 console.log(`screenshots and measures.json in ${out}`);
 await c.close();
 server.close();

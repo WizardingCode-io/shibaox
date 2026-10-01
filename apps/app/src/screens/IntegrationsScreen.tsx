@@ -183,7 +183,7 @@ export function IntegrationsScreen(): JSX.Element {
         <h2>Integrations</h2>
         {i ? <span className="muted">{i.org}</span> : null}
       </div>
-      <div className="page">
+      <div className="page sx-scroll">
         <h3>MCP servers</h3>
         {i?.mcp.length === 0 ? (
           <p className="muted">No catalog entry of type mcp in this org.</p>

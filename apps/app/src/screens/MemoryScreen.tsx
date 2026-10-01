@@ -18,7 +18,7 @@ export function MemoryScreen(): JSX.Element {
       <div className="top">
         <h2>Memory</h2>
       </div>
-      <div className="page">
+      <div className="page sx-scroll">
         <h3>The project</h3>
         {p ? (
           <S.Card

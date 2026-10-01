@@ -66,7 +66,7 @@ function Shell(props: { base: string; onDisconnect: () => void }): JSX.Element {
     <div className="app">
       <Sidebar route={route} onNewChat={newChat} />
       {route.name === 'thread' ? (
-        <ThreadScreen rootId={route.id} />
+        <ThreadScreen key={route.id} rootId={route.id} />
       ) : route.name === 'chats' ? (
         <ChatsScreen />
       ) : route.name === 'settings' ? (
@@ -89,7 +89,7 @@ function Shell(props: { base: string; onDisconnect: () => void }): JSX.Element {
             <h2>New chat</h2>
             <S.AgentStatus status={state.reachable ? 'online' : 'error'} />
           </div>
-          <div className="scroll">
+          <div className="scroll sx-scroll">
             <div className="thread">
               <div className="empty">
                 <h2>{draft ? 'A fresh start' : 'What should Shibaox do?'}</h2>

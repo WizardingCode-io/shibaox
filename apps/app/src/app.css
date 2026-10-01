@@ -87,7 +87,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 0 1 auto;
-  min-width: 80px;
+  min-width: 120px;
 }
 .grow {
   flex: 1;
@@ -204,8 +204,20 @@ body {
   align-self: center;
   z-index: var(--z-sticky);
   box-shadow: var(--shadow-md);
+}
+/* the routine form's native selects, until the Select of the design system lands (item D) */
+.sx-select {
+  height: var(--control-md, 36px);
+  padding: 0 var(--space-3, 12px);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   background: var(--surface);
-  border: 1px solid var(--line);
+  color: var(--ink);
+  font: 500 14px / 1 var(--font-sans);
+}
+.sx-select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 .toasts {
   position: fixed;

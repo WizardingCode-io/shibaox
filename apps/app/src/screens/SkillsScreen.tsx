@@ -75,7 +75,7 @@ export function SkillsScreen(): JSX.Element {
         <h2>Skills</h2>
         {skills ? <span className="muted">{skills.org}</span> : null}
       </div>
-      <div className="page">
+      <div className="page sx-scroll">
         <h3>Workflows</h3>
         {(skills?.workflows ?? []).map((w) => (
           <S.Card

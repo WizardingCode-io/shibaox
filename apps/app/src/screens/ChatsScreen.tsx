@@ -14,7 +14,7 @@ export function ChatsScreen(): JSX.Element {
       <div className="top">
         <h2>Chats</h2>
       </div>
-      <div className="page">
+      <div className="page sx-scroll">
         {threads.length === 0 ? (
           <div className="empty">
             <h2>No conversations yet</h2>
