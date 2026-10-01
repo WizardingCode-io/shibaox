@@ -58,3 +58,5 @@ export const CatalogEntrySchema = z.object({
   server: McpServerSchema.optional(),
 });
 export type CatalogEntry = z.infer<typeof CatalogEntrySchema>;
+/** A server as written (defaults not applied yet): what the app and the CLI send. */
+export type McpServerInput = z.input<typeof McpServerSchema>;
