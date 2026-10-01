@@ -131,6 +131,22 @@ export function client(
       rec('resume', id);
       return {};
     },
+    async higgsfield() {
+      return {
+        cli: { installed: true, version: '1.1.26' },
+        loggedIn: true,
+        account: { email: 'andre@example.com', plan: 'plus', credits: 3.5 },
+        mcp: 'ok' as const,
+        signupUrl: 'https://higgsfield.ai?fpr=andre-4fae29',
+        installCommand:
+          'curl -fsSL https://raw.githubusercontent.com/higgsfield-ai/cli/main/install.sh | sh',
+        site: 'https://higgsfield.ai',
+      };
+    },
+    async higgsfieldLogin() {
+      rec('higgsfieldLogin');
+      return { started: true };
+    },
     async decisions() {
       return {
         decider: {
@@ -173,6 +189,18 @@ export function client(
           model: 'gpt-5',
           configured: false,
           missing: ['OPENAI_API_KEY'],
+        },
+        {
+          ref: 'openrouter/mistralai/mistral-large',
+          provider: 'openrouter',
+          model: 'mistralai/mistral-large',
+          configured: true,
+        },
+        {
+          ref: 'openrouter/meta/llama-3.3-70b',
+          provider: 'openrouter',
+          model: 'meta/llama-3.3-70b',
+          configured: true,
         },
       ];
     },

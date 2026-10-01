@@ -301,6 +301,18 @@ describe('the sections', () => {
       }),
     );
   });
+  it('Integrations: Higgsfield shows the account, the credits and the way in', async () => {
+    const { client: c } = client();
+    mount(c, { hash: '#/integrations' });
+    await waitFor(() => expect(screen.getByText('Higgsfield')).toBeTruthy());
+    expect(screen.getByText(/3\.5 credits/)).toBeTruthy();
+    expect(screen.getByText('andre@example.com')).toBeTruthy();
+    expect(screen.getByText('MCP connected')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Create an account' }).getAttribute('href')).toBe(
+      'https://higgsfield.ai?fpr=andre-4fae29',
+    );
+    expect(screen.queryByRole('button', { name: 'Log in' })).toBeNull();
+  });
   it('Integrations: Decisions says who decides and lists the latest ones', async () => {
     const { client: c } = client();
     mount(c, { hash: '#/integrations' });

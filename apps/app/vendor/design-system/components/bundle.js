@@ -319,7 +319,10 @@
   }
 
   function MenuList(p) {
-    var items = p.items || [];
+    var q = useState(''), query = q[0];
+    var all = p.items || [];
+    // a search field above long lists: items whose label or hint carry the words
+    var items = p.search && query.trim() ? all.filter(function (it) { if (it.id === '-') return false; var hay = ((it.label || '') + ' ' + (it.hint || '')).toLowerCase(); return query.trim().toLowerCase().split(/\s+/).every(function (w) { return hay.indexOf(w) >= 0; }); }) : all;
     var radio = items.some(function (it) { return it.checked !== undefined; });
     var start = items.findIndex(function (it) { return it.checked; });
     var s = useState(start >= 0 ? start : items.findIndex(function (it) { return !it.disabled && it.id !== '-'; })), active = s[0];
@@ -339,6 +342,8 @@
     }
     return h('div', { className: cx('sx-menu', p.className), role: 'menu', tabIndex: -1, onKeyDown: onKey, 'aria-label': p.label },
       p.title ? h('div', { className: 'sx-menu__title' }, p.title) : null,
+      p.search ? h('div', { className: 'sx-menu__search' }, h(Icon, { name: 'search', size: 14 }), h('input', { type: 'search', className: 'sx-menu__input', placeholder: typeof p.search === 'string' ? p.search : 'Search…', 'aria-label': typeof p.search === 'string' ? p.search : 'Search', value: query, autoFocus: true, onChange: function (e) { q[1](e.target.value); touched.current = true; s[1](-1); }, onKeyDown: function (e) { if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') { onKey(e); } else { e.stopPropagation(); } } })) : null,
+      p.search && items.length === 0 ? h('div', { className: 'sx-menu__empty' }, 'Nothing matches') : null,
       items.map(function (it, i) {
         if (it.id === '-') return h('div', { key: 'sep' + i, className: 'sx-menu__sep', role: 'separator' });
         return h('button', { key: it.id, type: 'button', role: radio ? 'menuitemradio' : 'menuitem', 'aria-checked': radio ? !!it.checked : undefined, className: cx('sx-menu__item', i === active && 'is-active', it.tone === 'danger' && 'sx-menu__item--danger'), disabled: it.disabled, onMouseEnter: function () { touched.current = true; s[1](i); }, onClick: function () { select(it); } },

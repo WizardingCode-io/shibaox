@@ -281,6 +281,10 @@ body { margin: 0; font-family: var(--font-sans); font-size: 15px; line-height: 2
 .sx-popover--up .sx-popover__panel { top: auto; bottom: calc(100% + 6px); }
 .sx-popover__panel:focus-visible { outline: none; }
 .sx-menu { display: flex; flex-direction: column; gap: 2px; outline: 0; max-height: 320px; overflow: auto; }
+.sx-menu__search { display: flex; align-items: center; gap: var(--space-2); margin: 2px var(--space-2) 4px; padding: 0 var(--space-2); height: 32px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-sunken); color: var(--ink-muted); }
+.sx-menu__input { flex: 1; min-width: 0; font: inherit; font-size: 13px; border: 0; outline: 0; background: transparent; color: var(--ink); }
+.sx-menu__input::placeholder { color: var(--ink-faint); }
+.sx-menu__empty { font-size: 13px; color: var(--ink-muted); padding: 8px var(--space-3); }
 .sx-menu__title { font-size: 11px; font-weight: 600; line-height: 16px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-muted); padding: 6px var(--space-3) 4px; }
 .sx-menu__item { font: inherit; font-size: 13px; font-weight: 500; line-height: 16px; display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: 34px; padding: 6px var(--space-3); border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ink); cursor: pointer; text-align: left; box-sizing: border-box; }
 .sx-menu__item:hover, .sx-menu__item.is-active { background: var(--surface-hover); }

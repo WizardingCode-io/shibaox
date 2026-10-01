@@ -1,0 +1,115 @@
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { MemoryEventStore } from '@wizardingcode/shibaox-core';
+import { loadOrg } from '@wizardingcode/shibaox-schemas';
+import { afterEach, describe, expect, it } from 'vitest';
+import { DaemonClient } from '../src/client.js';
+import { Daemon } from '../src/daemon.js';
+import { homePaths } from '../src/home.js';
+import { commandEnv } from '../src/runtime.js';
+import { scaffoldOrg } from '../src/templates.js';
+
+const tmp: string[] = [];
+const daemons: Daemon[] = [];
+afterEach(async () => {
+  for (const d of daemons.splice(0)) await d.stop({ force: true }).catch(() => undefined);
+  for (const d of tmp.splice(0)) rmSync(d, { recursive: true, force: true });
+});
+
+describe('Higgsfield in the scaffold', () => {
+  it('a new org has the Higgsfield server, its skill, and an assistant that uses both', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hf-'));
+    tmp.push(dir);
+    scaffoldOrg(dir);
+    const org = loadOrg(join(dir, 'org'));
+    const hf = org.catalog.higgsfield;
+    expect(hf?.server).toMatchObject({
+      transport: 'http',
+      url: 'https://mcp.higgsfield.ai/mcp',
+      bearer_command: ['higgsfield', 'auth', 'token'],
+    });
+    expect(hf?.server?.tools).toContain('generate_image_batch');
+    expect(hf?.server?.tools).not.toContain('use_higgsfield');
+    const assistant = org.roles.assistant;
+    expect(assistant?.mcp).toContain('higgsfield');
+    expect(assistant?.skills).toContain('higgsfield');
+    expect(assistant?.tools).toContain('higgsfield');
+    const skill = readFileSync(join(dir, 'org', 'skills', 'higgsfield', 'SKILL.md'), 'utf8');
+    expect(skill).toMatch(/download_file/);
+    expect(skill).toMatch(/never say you cannot/i);
+    expect(readFileSync(join(dir, 'org', 'prompts', 'assistant.md'), 'utf8')).toMatch(/Higgsfield/);
+  });
+});
+
+describe('the command environment PATH', () => {
+  it('adds the user bins the service PATH lacks, once, after what is there', () => {
+    const env = commandEnv({ PATH: '/usr/bin:/bin', HOME: '/Users/me' });
+    expect(env.PATH).toBe('/usr/bin:/bin:/Users/me/.local/bin:/opt/homebrew/bin:/usr/local/bin');
+    const again = commandEnv({ PATH: env.PATH ?? '', HOME: '/Users/me' });
+    expect(again.PATH).toBe(env.PATH);
+  });
+});
+
+describe('GET /integrations/higgsfield', () => {
+  async function daemon(probe: ConstructorParameters<typeof Daemon>[0]['higgsfield']) {
+    const dir = mkdtempSync(join(tmpdir(), 'hf-srv-'));
+    tmp.push(dir);
+    scaffoldOrg(dir);
+    const home = homePaths({ SHIBAOX_HOME: join(dir, 'home') });
+    const d = new Daemon({
+      discovery: false,
+      home,
+      store: new MemoryEventStore(),
+      channels: [],
+      env: {},
+      log: () => {},
+      version: '9.9.9',
+      vault: join(dir, 'vault'),
+      higgsfield: probe,
+    });
+    daemons.push(d);
+    await d.start();
+    return new DaemonClient(home.socket);
+  }
+  it('says the CLI is missing, with the install command and the account link', async () => {
+    const c = await daemon({
+      exec: async () => ({ exitCode: 127, stdout: '', stderr: 'not found' }),
+      mcp: async () => 'unreachable',
+    });
+    const v = await c.higgsfield();
+    expect(v).toMatchObject({ cli: { installed: false }, loggedIn: false, mcp: 'unreachable' });
+    expect(v.installCommand).toContain('install.sh');
+    expect(v.signupUrl).toBe('https://higgsfield.ai?fpr=andre-4fae29');
+    await expect(c.higgsfieldLogin()).rejects.toMatchObject({ status: 409 });
+  });
+  it('with the CLI logged in: version, account, credits, and the MCP reachable', async () => {
+    const calls: string[][] = [];
+    const c = await daemon({
+      exec: async (argv) => {
+        calls.push(argv);
+        if (argv[1] === 'version')
+          return { exitCode: 0, stdout: 'higgsfield 1.1.26 (abc) built 2026-09-18\n', stderr: '' };
+        if (argv[1] === 'account')
+          return {
+            exitCode: 0,
+            stdout: '{"credits": 3.5, "email": "a@b.c", "subscription_plan_type": "plus"}\n',
+            stderr: '',
+          };
+        if (argv[1] === 'auth') return { exitCode: 0, stdout: 'oat_x\n', stderr: '' };
+        return { exitCode: 1, stdout: '', stderr: 'unknown' };
+      },
+      mcp: async (token) => (token === 'oat_x' ? 'ok' : 'unauthorized'),
+    });
+    const v = await c.higgsfield();
+    expect(v).toMatchObject({
+      cli: { installed: true, version: '1.1.26' },
+      loggedIn: true,
+      account: { email: 'a@b.c', plan: 'plus', credits: 3.5 },
+      mcp: 'ok',
+    });
+    const r = await c.higgsfieldLogin();
+    expect(r).toMatchObject({ started: true });
+    expect(calls.some((a) => a[1] === 'auth' && a[2] === 'login')).toBe(true);
+  });
+});

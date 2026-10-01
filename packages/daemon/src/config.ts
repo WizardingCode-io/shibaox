@@ -14,7 +14,17 @@ export const ListenSchema = z.object({
 });
 export type ListenConfig = z.infer<typeof ListenSchema>;
 
+/** Where Shibaox sends people who need an account with a partner (an affiliate link). */
+export const PartnersSchema = z
+  .object({
+    higgsfield: z
+      .object({ signup_url: z.string().url().default('https://higgsfield.ai?fpr=andre-4fae29') })
+      .default({ signup_url: 'https://higgsfield.ai?fpr=andre-4fae29' }),
+  })
+  .default({ higgsfield: { signup_url: 'https://higgsfield.ai?fpr=andre-4fae29' } });
+
 export const DaemonConfigSchema = z.object({
+  partners: PartnersSchema,
   /** Runs that may execute at once across all orgs. */
   max_concurrent_runs: z.number().int().positive().default(4),
   listen: ListenSchema.optional(),

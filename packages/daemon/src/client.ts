@@ -3,6 +3,7 @@ import { request as httpsRequest } from 'node:https';
 import type { ProjectProfile, RunState } from '@wizardingcode/shibaox-core';
 import type { RoutineRow, ScheduleRow } from '@wizardingcode/shibaox-persistence-sqlite';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
+import type { HiggsfieldView } from './higgsfield.js';
 import type { InboxItem } from './inbox.js';
 import type { McpServerRow, McpTestResult } from './mcp.js';
 import type { OrgConfig, OrgConfigPatch, OrgInfo } from './org-config.js';
@@ -213,6 +214,14 @@ export class DaemonClient {
     return this.json('DELETE', `/keys/${encodeURIComponent(name)}`);
   }
   /** The models a run can be pointed at (`/model`), with whether the daemon can use them. */
+  /** The Higgsfield status: the CLI, the account, the MCP. */
+  higgsfield(): Promise<HiggsfieldView> {
+    return this.json('GET', '/integrations/higgsfield');
+  }
+  /** Starts the Higgsfield browser login on the daemon's machine. */
+  higgsfieldLogin(): Promise<{ started: boolean }> {
+    return this.json('POST', '/integrations/higgsfield/login');
+  }
   /** Who decides and the latest decisions across runs. */
   decisions(limit?: number): Promise<DecisionsView> {
     return this.json('GET', `/decisions${limit ? `?limit=${limit}` : ''}`);

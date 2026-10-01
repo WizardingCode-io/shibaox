@@ -1,4 +1,9 @@
-import type { DecisionsView, KeyRow, McpServerRow } from '@wizardingcode/shibaox-daemon';
+import type {
+  DecisionsView,
+  HiggsfieldView,
+  KeyRow,
+  McpServerRow,
+} from '@wizardingcode/shibaox-daemon';
 import { useEffect, useState } from 'react';
 import { ds } from '../ds.js';
 import { useAppState, useStore } from '../store/hooks.js';
@@ -110,6 +115,94 @@ const TIERS: { id: 'strong' | 'cheap' | 'decision'; label: string }[] = [
   { id: 'cheap', label: 'Cheap' },
   { id: 'decision', label: 'Decision' },
 ];
+
+/** Images, video and audio: the Higgsfield CLI, who is logged in, the credits, and the way in. */
+function Higgsfield(props: { view: HiggsfieldView }): JSX.Element {
+  const S = ds();
+  const store = useStore();
+  const v = props.view;
+  const [copied, setCopied] = useState(false);
+  return (
+    <S.Card
+      icon="image"
+      title="Higgsfield"
+      description="Images, video, audio and 3D from 40+ models"
+    >
+      <div className="stack">
+        {!v.cli.installed ? (
+          <>
+            <p className="muted">
+              The Higgsfield CLI is not installed on the daemon's machine. Install it in a terminal,
+              then come back here to log in:
+            </p>
+            <S.CodeBlock language="bash" code={v.installCommand}>
+              {v.installCommand}
+            </S.CodeBlock>
+          </>
+        ) : !v.loggedIn ? (
+          <p className="muted">
+            CLI {v.cli.version ?? 'installed'} · not logged in. Log in opens Higgsfield in the
+            browser of the daemon's machine.
+          </p>
+        ) : (
+          <p className="muted">
+            CLI {v.cli.version ?? ''} · <span className="mono">{v.account?.email}</span> ·{' '}
+            {v.account?.plan} plan · <strong>{v.account?.credits} credits</strong> ·{' '}
+            {v.mcp === 'ok' ? (
+              <S.Badge tone="matcha">MCP connected</S.Badge>
+            ) : (
+              <S.Badge tone="warning">MCP {v.mcp}</S.Badge>
+            )}
+          </p>
+        )}
+        <div className="row">
+          {v.cli.installed && !v.loggedIn ? (
+            <S.Button variant="primary" size="sm" onClick={() => void store.higgsfieldLogin()}>
+              Log in
+            </S.Button>
+          ) : null}
+          <a
+            className="sx-btn sx-btn--secondary sx-btn--sm"
+            href={v.signupUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Create an account
+          </a>
+          <a
+            className="sx-btn sx-btn--quiet sx-btn--sm"
+            href={v.site}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open Higgsfield
+          </a>
+          {!v.cli.installed ? (
+            <S.Button
+              variant="quiet"
+              size="sm"
+              onClick={() => {
+                try {
+                  void navigator.clipboard?.writeText(v.installCommand);
+                } catch {
+                  // no clipboard
+                }
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1400);
+              }}
+            >
+              {copied ? 'Copied' : 'Copy the install command'}
+            </S.Button>
+          ) : null}
+        </div>
+        <p className="muted">
+          Ask Shibaox for an image, a video or a voice: it generates it with your Higgsfield credits
+          and saves the file in the conversation.
+        </p>
+      </div>
+    </S.Card>
+  );
+}
 
 /** Who decides for the org, and the latest decisions with a way into their conversations. */
 function Decisions(props: { view: DecisionsView }): JSX.Element {
@@ -265,6 +358,12 @@ export function IntegrationsScreen(): JSX.Element {
             <KeyLine key={k.name} row={k} />
           ))}
         </div>
+        <h3>Higgsfield</h3>
+        {i?.higgsfield ? (
+          <Higgsfield view={i.higgsfield} />
+        ) : (
+          <p className="muted">Reading the daemon…</p>
+        )}
         <h3>Decisions</h3>
         {i?.decisions ? (
           <Decisions view={i.decisions} />

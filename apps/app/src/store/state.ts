@@ -2,6 +2,7 @@ import type { ProjectProfile, RunState, RunStatus } from '@wizardingcode/shibaox
 import type {
   DecisionsView,
   Health,
+  HiggsfieldView,
   InboxItem,
   KeyRow,
   McpServerRow,
@@ -62,6 +63,7 @@ export interface AppState {
     keys: KeyRow[];
     config?: OrgConfig;
     decisions?: DecisionsView;
+    higgsfield?: HiggsfieldView;
   };
   /** A model chosen for the next turns of a thread (`provider/model`). */
   threadModels: Record<string, string>;

@@ -85,3 +85,48 @@ export async function fetchText(raw: string, o: FetchTextOptions): Promise<Fetch
     };
   }
 }
+
+/**
+ * A file over https (http only on loopback) for `download_file`: redirects followed like
+ * fetchText, the body refused past `maxBytes` before it is read whole.
+ */
+export async function fetchBytes(
+  raw: string,
+  o: { timeoutMs: number; maxBytes: number; allow: readonly string[] },
+): Promise<{ bytes: Buffer; mime?: string }> {
+  let url = checkUrl(raw, o.allow);
+  if (url.protocol !== 'https:' && !/^(127\.0\.0\.1|localhost|\[::1\])$/.test(url.hostname))
+    throw new Error('download_file takes https URLs only');
+  for (let hop = 0; ; hop++) {
+    const res = await fetch(url, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(o.timeoutMs),
+      headers: { 'user-agent': 'shibaox', accept: '*/*' },
+    });
+    if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+      if (hop >= 5) throw new Error('too many redirects');
+      url = checkUrl(new URL(res.headers.get('location') ?? '', url).href, o.allow);
+      continue;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${url.hostname}`);
+    const declared = Number(res.headers.get('content-length') ?? '0');
+    if (declared > o.maxBytes)
+      throw new Error(`the file is ${declared} bytes; the cap is ${o.maxBytes}`);
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error('no body');
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > o.maxBytes) {
+        await reader.cancel();
+        throw new Error(`the file is larger than ${o.maxBytes} bytes`);
+      }
+      chunks.push(Buffer.from(value));
+    }
+    const mime = res.headers.get('content-type')?.split(';')[0]?.trim();
+    return { bytes: Buffer.concat(chunks), ...(mime ? { mime } : {}) };
+  }
+}

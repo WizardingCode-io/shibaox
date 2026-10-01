@@ -263,4 +263,21 @@ describe('the reply is rendered as a document', () => {
       expect(calls.find((x) => x.name === 'fileContent')?.args).toEqual(['root', 'out/a.csv']),
     );
   });
+
+  it('the model menu has a search field that narrows the list', async () => {
+    const { client: c } = client({
+      runs: [summary('root')],
+      states: { root: state('root') },
+    });
+    mount(c, { hash: '#/t/root' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Change model' }));
+    const menu = await screen.findByRole('menu');
+    await within(menu).findByRole('menuitemradio', { name: /qwen/ }); // the models arrive on demand
+    const before = within(menu).getAllByRole('menuitemradio').length;
+    expect(before).toBeGreaterThan(2);
+    fireEvent.change(await within(menu).findByRole('searchbox'), { target: { value: 'qwen' } });
+    const after = within(menu).getAllByRole('menuitemradio');
+    expect(after.length).toBeLessThan(before);
+    expect(after.every((el) => /qwen/i.test(el.textContent ?? ''))).toBe(true);
+  });
 });

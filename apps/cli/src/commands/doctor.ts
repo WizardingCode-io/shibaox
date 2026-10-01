@@ -6,6 +6,8 @@ import {
   DaemonHttpError,
   DaemonUnavailableError,
   deciderInfo,
+  defaultHiggsfieldProbe,
+  higgsfieldStatus,
   homePaths,
   loadDaemonConfig,
   registryFor,
@@ -126,6 +128,7 @@ export async function doctorCommand(): Promise<number> {
   const vault = new SecretsStore(homePaths().secrets);
   const withVault = vault.env(process.env);
   lines.push(decisionsLine(withVault));
+  lines.push(await higgsfieldLine(withVault));
   for (const env of ['ANTHROPIC_API_KEY', 'TYPESAFE_API_KEY', 'OPENROUTER_API_KEY']) {
     const set = Boolean(withVault[env]);
     lines.push({
@@ -322,4 +325,29 @@ function decisionsLine(env: NodeJS.ProcessEnv): CheckLine {
       detail: e instanceof Error ? e.message : String(e),
     };
   }
+}
+
+/** Higgsfield: the CLI, who is logged in, the credits (images and video need it). */
+async function higgsfieldLine(env: NodeJS.ProcessEnv): Promise<CheckLine> {
+  const v = await higgsfieldStatus(defaultHiggsfieldProbe(env), { signupUrl: '' });
+  if (!v.cli.installed)
+    return {
+      name: 'higgsfield',
+      ok: false,
+      required: false,
+      detail: `not installed (images and video): ${v.installCommand}`,
+    };
+  if (!v.loggedIn)
+    return {
+      name: 'higgsfield',
+      ok: false,
+      required: false,
+      detail: `${v.cli.version ?? 'installed'}, not logged in (run: higgsfield auth login)`,
+    };
+  return {
+    name: 'higgsfield',
+    ok: true,
+    required: false,
+    detail: `${v.cli.version ?? ''} · ${v.account?.email} (${v.account?.plan}), ${v.account?.credits} credits · MCP ${v.mcp}`,
+  };
 }

@@ -4,6 +4,7 @@ import type {
   DecisionsView,
   Envelope,
   Health,
+  HiggsfieldView,
   InboxItem,
   KeyRow,
   McpServerRow,
@@ -96,6 +97,13 @@ export class AppClient {
     return this.json('POST', '/runs', req);
   }
   /** The files a run created or changed (its diff plus what it reported). */
+  /** The Higgsfield status: the CLI, the account, the MCP. */
+  higgsfield(): Promise<HiggsfieldView> {
+    return this.json('GET', '/integrations/higgsfield');
+  }
+  higgsfieldLogin(): Promise<{ started: boolean }> {
+    return this.json('POST', '/integrations/higgsfield/login');
+  }
   /** Who decides and the latest decisions across runs. */
   decisions(): Promise<DecisionsView> {
     return this.json('GET', '/decisions');

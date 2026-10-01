@@ -4,7 +4,13 @@ import {
   StdioClientTransport,
 } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { expandHeaders, type McpServerSpec } from '@wizardingcode/shibaox-core';
+import {
+  augmentPath,
+  expandHeaders,
+  type McpServerSpec,
+  runArgv,
+  withBearer,
+} from '@wizardingcode/shibaox-core';
 
 export interface McpToolInfo {
   /** The server's own tool name. */
@@ -30,9 +36,18 @@ export interface McpConnection {
 export const MCP_RESULT_MAX_CHARS = 100_000;
 
 export async function connectMcp(
-  spec: McpServerSpec,
+  given: McpServerSpec,
   o: { log?: (line: string) => void; cwd?: string } = {},
 ): Promise<McpConnection> {
+  // an http server with a bearer command: the token is fetched now (a CLI's login, refreshed by it)
+  const spec = await withBearer(given, (argv) =>
+    runArgv({
+      argv,
+      cwd: o.cwd ?? process.cwd(),
+      timeoutMs: 20_000,
+      env: { PATH: augmentPath(process.env.PATH, process.env.HOME) },
+    }),
+  );
   const client = new Client({ name: 'shibaox', version: '0' });
   const transport =
     spec.transport === 'stdio'

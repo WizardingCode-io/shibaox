@@ -151,3 +151,11 @@ Written by `shibaox remote set <url> <token>` (0600): `{ "baseUrl": "http://box:
 | `SHIBAOX_REAL_TESTS=1` | enables the real-call tests |
 
 Provider keys belong in the vault (`shibaox keys set`); the environment stays a fallback.
+
+## `daemon.yaml` · `partners`
+
+```yaml
+partners:
+  higgsfield:
+    signup_url: https://higgsfield.ai?fpr=andre-4fae29   # where "Create an account" sends people
+```

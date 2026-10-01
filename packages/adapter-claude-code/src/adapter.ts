@@ -4,15 +4,18 @@ import { type Options, query, type SDKMessage } from '@anthropic-ai/claude-agent
 import {
   type AgentTool,
   type ApprovalHandler,
+  augmentPath,
   type Capability,
   conversationOf,
   type ExecutionContext,
   type McpServerSpec,
   type RuntimeAdapter,
   type RuntimeEvent,
+  runArgv,
   skillsPrompt,
   splitConversation,
   type TaskJob,
+  withBearer,
 } from '@wizardingcode/shibaox-core';
 import { describeError } from '@wizardingcode/shibaox-providers';
 import type { ApprovalCategory } from './bash-command.js';
@@ -140,7 +143,19 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
 
     const { allowedTools, disallowedTools } = mapRoleTools(job.role);
     const extra = this.opts.extraTools?.(job) ?? [];
-    const specs = this.opts.mcpSpecs?.(job) ?? [];
+    // http servers with a bearer command get their token now (a CLI's login stands in for a key)
+    const specs = await Promise.all(
+      (this.opts.mcpSpecs?.(job) ?? []).map((s) =>
+        withBearer(s, (argv) =>
+          runArgv({
+            argv,
+            cwd: job.workspace,
+            timeoutMs: 20_000,
+            env: { PATH: augmentPath(process.env.PATH, process.env.HOME) },
+          }),
+        ),
+      ),
+    );
     const own: McpServers = {
       ...this.opts.mcpServers?.(job),
       ...(extra.length > 0 ? { shibaox: sdkMcpServer('shibaox', extra) } : {}),

@@ -586,6 +586,7 @@ function useModelMenu(
   return (
     <S.MenuList
       title="Model for this conversation"
+      search={items.length > 3 ? 'Search models…' : undefined}
       items={items}
       onSelect={(id) => store.setThreadModel(rootId, id || undefined)}
       onClose={close}

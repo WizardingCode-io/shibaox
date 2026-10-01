@@ -121,6 +121,19 @@ function fakeClient() {
     async decisions() {
       return { decider: { kind: 'none' as const, usable: false }, decisions: [] };
     },
+    async higgsfield() {
+      return {
+        cli: { installed: false },
+        loggedIn: false,
+        mcp: 'unreachable' as const,
+        signupUrl: 'https://higgsfield.ai',
+        installCommand: 'curl …',
+        site: 'https://higgsfield.ai',
+      };
+    },
+    async higgsfieldLogin() {
+      return { started: true };
+    },
     async writeFile(id: string, path: string, content: string) {
       rec('writeFile', id, path, content);
       return { path, size: content.length };

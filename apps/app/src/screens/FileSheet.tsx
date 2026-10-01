@@ -21,11 +21,54 @@ const iconFor = (path: string): 'table' | 'image' | 'code' | 'file-text' => {
   return languageOfFile(path) ? 'code' : 'file-text';
 };
 
-/** The file's body by what it is: a table, a document, coloured code, an image, or a download. */
-function Body(props: { file: RunFileContent; lang?: string }): JSX.Element {
+const VIDEO = new Set(['mp4', 'webm', 'mov', 'm4v']);
+const AUDIO = new Set(['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac']);
+
+/** A video or audio file played from the whole download (a Blob URL, never the token). */
+function Media(props: { kind: 'video' | 'audio'; load: () => Promise<Blob> }): JSX.Element {
+  const S = ds();
+  const [url, setUrl] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    let made: string | undefined;
+    props
+      .load()
+      .then((b) => {
+        if (!live) return;
+        made = URL.createObjectURL(b);
+        setUrl(made);
+      })
+      .catch((e: unknown) => {
+        if (live) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      live = false;
+      if (made) URL.revokeObjectURL(made);
+    };
+  }, [props.load]);
+  if (error) return <p className="muted">{error}</p>;
+  if (!url) return <S.ThinkingIndicator label="Fetching" />;
+  return props.kind === 'video' ? (
+    // biome-ignore lint/a11y/useMediaCaption: a generated clip has no captions
+    <video controls src={url} style={{ maxWidth: '100%', borderRadius: 'var(--radius-md)' }} />
+  ) : (
+    // biome-ignore lint/a11y/useMediaCaption: a generated clip has no captions
+    <audio controls src={url} style={{ width: '100%' }} />
+  );
+}
+
+/** The file's body by what it is: a table, a document, coloured code, an image, media, or a word. */
+function Body(props: {
+  file: RunFileContent;
+  lang?: string;
+  loadWhole?: () => Promise<Blob>;
+}): JSX.Element {
   const S = ds();
   const f = props.file;
   const ext = f.path.split('.').pop()?.toLowerCase() ?? '';
+  if (props.loadWhole && (VIDEO.has(ext) || AUDIO.has(ext)))
+    return <Media kind={VIDEO.has(ext) ? 'video' : 'audio'} load={props.loadWhole} />;
   if (f.encoding === 'base64') {
     if (f.mime?.startsWith('image/') && !f.truncated)
       return (
@@ -210,9 +253,22 @@ export function FileSheet(props: {
   };
   const folder = props.save?.workspace.split('/').filter(Boolean).pop() ?? '';
   const lang = inline?.lang;
+  const loadWhole = props.loadWhole;
+  const whole = useMemo(
+    () =>
+      !inline && loadWhole && runId !== undefined && path !== undefined
+        ? () => loadWhole(runId, path)
+        : undefined,
+    [inline, loadWhole, runId, path],
+  );
   const body = useMemo(
-    () => (file ? <Body file={file} lang={lang} /> : <S.ThinkingIndicator label="Fetching" />),
-    [file, lang, S],
+    () =>
+      file ? (
+        <Body file={file} lang={lang} loadWhole={whole} />
+      ) : (
+        <S.ThinkingIndicator label="Fetching" />
+      ),
+    [file, lang, whole, S],
   );
   const doSave = async () => {
     if (!props.save || !inline || !savePath.trim()) return;

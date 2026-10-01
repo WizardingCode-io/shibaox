@@ -61,7 +61,7 @@ export declare function TextShimmer(props: TextShimmerProps): React.ReactElement
 export interface PopoverProps { open: boolean; onClose?: () => void; /** The trigger the panel floats from. */ anchor?: React.ReactNode; align?: 'start' | 'end'; placement?: 'down' | 'up'; role?: string; label?: string; width?: number | string; className?: string; children?: React.ReactNode }
 export declare function Popover(props: PopoverProps): React.ReactElement;
 export interface MenuItem { id: string; label: string; hint?: string; icon?: IconName; checked?: boolean; disabled?: boolean; tone?: 'default' | 'danger' }
-export interface MenuListProps { items: MenuItem[]; onSelect?: (id: string) => void; onClose?: () => void; title?: string; label?: string; className?: string }
+export interface MenuListProps { items: MenuItem[]; onSelect?: (id: string) => void; onClose?: () => void; title?: string; label?: string; /** A search field above the items (true, or its placeholder): typed words filter by label and hint. */ search?: boolean | string; className?: string }
 export declare function MenuList(props: MenuListProps): React.ReactElement;
 export interface MenuProps extends MenuListProps { open: boolean; anchor?: React.ReactNode; align?: 'start' | 'end'; placement?: 'down' | 'up'; width?: number | string }
 export declare function Menu(props: MenuProps): React.ReactElement;

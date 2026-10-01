@@ -16,6 +16,8 @@ export interface McpServerSpec {
   url?: string;
   /** http: headers as written, `${KEY}` left for the runtime to expand (see expandHeaders). */
   headers?: Record<string, string>;
+  /** http: a command whose stdout is the bearer token; `withBearer` runs it and sets the header. */
+  bearerCommand?: string[];
   /** When set, only these tools are offered. */
   tools?: string[];
   timeoutMs: number;
@@ -52,6 +54,7 @@ export function mcpServerSpec(entry: CatalogEntry, env: NodeJS.ProcessEnv): McpS
   } else {
     spec.url = server.url;
     spec.headers = { ...server.headers };
+    if (server.bearer_command) spec.bearerCommand = [...server.bearer_command];
   }
   if (server.tools) spec.tools = server.tools;
   return spec;
@@ -105,4 +108,44 @@ export function skillsPrompt(orgRoot: string, ids: readonly string[]): string | 
 function stripFrontmatter(text: string): string {
   const m = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(text);
   return m ? text.slice(m[0].length) : text;
+}
+
+/** What a bearer command's run returns. */
+export interface BearerRun {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+/**
+ * The spec with its bearer resolved: the command run once, its stdout (trimmed) in the
+ * Authorization header, the command dropped so it is not run again. A failing command is an
+ * error naming the server and what to run (the CLI login).
+ */
+export async function withBearer(
+  spec: McpServerSpec,
+  run: (argv: string[]) => Promise<BearerRun>,
+): Promise<McpServerSpec> {
+  const argv = spec.bearerCommand;
+  if (!argv || argv.length === 0) return spec;
+  const r = await run(argv);
+  if (r.exitCode !== 0)
+    throw new Error(
+      `mcp server "${spec.id}": the bearer command (${argv.join(' ')}) failed: ${r.stderr.trim() || r.stdout.trim() || `exit ${r.exitCode}`}`,
+    );
+  const token = r.stdout.trim().split('\n').pop()?.trim() ?? '';
+  if (!token)
+    throw new Error(
+      `mcp server "${spec.id}": the bearer command (${argv.join(' ')}) printed no token`,
+    );
+  const { bearerCommand: _dropped, ...rest } = spec;
+  return { ...rest, headers: { ...spec.headers, Authorization: `Bearer ${token}` } };
+}
+
+/** The user bins a service's PATH lacks, appended once: where a CLI installed by hand lives. */
+export function augmentPath(path: string | undefined, home: string | undefined): string {
+  const parts = (path ?? '').split(':').filter(Boolean);
+  const extra = [...(home ? [`${home}/.local/bin`] : []), '/opt/homebrew/bin', '/usr/local/bin'];
+  for (const p of extra) if (!parts.includes(p)) parts.push(p);
+  return parts.join(':');
 }

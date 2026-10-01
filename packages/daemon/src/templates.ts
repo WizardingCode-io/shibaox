@@ -52,7 +52,10 @@ system_prompt: prompts/team-leader.md
 description: The orchestrator you talk to; it answers, acts, and dispatches the teams.
 model_tier: cheap
 capabilities: [orchestrate, memory]
-tools: [read, write, git, node, npm, pnpm, bun, python3]
+tools: [read, write, git, node, npm, pnpm, bun, python3, higgsfield, curl]
+# Higgsfield's tools (images, video, audio) and the skill that says how to use them
+mcp: [higgsfield]
+skills: [higgsfield]
 permissions:
   network: ['*']
   approval_required: [push, deploy, execute]   # execute: inline code (python3 -c, node -e) and npx of a package not installed ask first
@@ -81,6 +84,9 @@ scope \`project\`) and look things up with \`recall\` before asking again.
 
 Messages that start with \`[event]\` come from shibaox, not from the user: a dispatched run
 finished or needs something. Summarise the outcome for the user in one or two lines.
+
+Images, video, audio and 3D assets are generated with Higgsfield (its tools or the \`higgsfield\`
+command, see the higgsfield skill) and saved as files of the workspace: never say you cannot.
 
 Pushing, deploying and publishing are only done through approved tool calls.
 `,
@@ -198,6 +204,81 @@ nodes:
     '# Analyst\nYou read the request and the codebase and list what must change, with risks.\n',
   'org/prompts/backend.md':
     '# Backend\nYou implement changes with tests. Never push without approval.\n',
+  'org/catalog/higgsfield.yaml': `id: higgsfield
+type: mcp
+description: "Higgsfield: images, video, audio and 3D from 40+ models (GPT Image, Seedance, Kling, Veo, Soul…), presets and Marketing Studio."
+tags: [images, video, audio, generation]
+# Higgsfield's own MCP server. It signs you in with the Higgsfield CLI's login (\`higgsfield auth
+# login\`, once; Integrations → Higgsfield has a Log in button): the daemon asks the CLI for the
+# current token before every connection, so no key goes in the vault. Credits are spent on the
+# logged-in Higgsfield account. Only the headless tools are offered: the rest draw widgets for
+# Higgsfield's own app.
+server:
+  transport: http
+  url: https://mcp.higgsfield.ai/mcp
+  bearer_command: [higgsfield, auth, token]
+  tools:
+    - models_explore
+    - generate_image_batch
+    - generate_video_batch
+    - generate_audio_batch
+    - generate_3d
+    - jobs_wait
+    - job_status
+    - media_import_url
+    - media_upload
+    - show_medias
+    - get_presets
+    - execute_preset
+    - list_voices
+    - show_generations
+    - reframe
+    - voice_change
+  timeout_ms: 120000
+`,
+  'org/skills/higgsfield/SKILL.md': `---
+name: higgsfield
+description: Generate images, video, audio and 3D with Higgsfield and hand them over as files of the workspace.
+---
+
+# Higgsfield
+
+You can generate images, video, audio and 3D assets: never say you cannot. Higgsfield is
+reached through its tools (\`higgsfield__…\`, when the role lists the server) or through the
+\`higgsfield\` command. Credits are spent on the user's Higgsfield account; say what a job
+cost when the tool reports it.
+
+## Flow
+
+1. Pick the model. Defaults: images \`gpt_image_2_5\` (design, text, realism), cartoons and
+   illustration \`nano_banana_flash\`, video \`seedance_2_5\` (image-to-video too: pass the
+   reference as a media), audio \`seed_audio\`. Cheaper on request: \`nano_banana_2_lite\`,
+   \`kling3_0_turbo\`. When unsure, \`models_explore\` with \`action: recommend\`, the goal and the
+   input kind (text-only, reference image, image-to-video).
+2. Submit with the headless tools: \`generate_image_batch\` / \`generate_video_batch\` /
+   \`generate_audio_batch\` with \`requests: [{ index: 0, params: { model, prompt, aspect_ratio? } }]\`
+   (count stays 1; one request per generation). Reference media: a local file goes through
+   \`media_upload\`, a web URL through \`media_import_url\`; pass the returned media id in
+   \`medias\`, never a URL.
+3. Wait with \`jobs_wait\` (\`jobs: [{ index, job_id }]\`, up to 15 s per call; call again while
+   a job is still running; a video can take minutes).
+4. Save every result into the workspace with \`download_file(url, path)\`: \`outputs/<slug>.png\`
+   (\`.mp4\`, \`.mp3\`, \`.glb\`), a short slug from the prompt, \`-2\`, \`-3\` for variants. The file
+   shows in the conversation with a preview.
+5. Answer in one or two lines: what was generated, the file path, the model, the cost. No
+   raw ids, no JSON.
+
+With the command instead (\`higgsfield generate create <model> --prompt "…" --wait --json\`),
+read the result URL from the JSON and save it the same way; \`higgsfield model list --json\`
+lists models, \`higgsfield generate cost <model> --prompt "…"\` estimates credits.
+
+## When it fails
+
+- Not signed in (401, "Not authenticated", "Session expired"): tell the user to open
+  Integrations → Higgsfield and press Log in (or run \`higgsfield auth login\`), then retry.
+- No credits: say so and give the account link; do not retry.
+- A model rejects a parameter: check \`models_explore\` with \`action: get\` and resubmit once.
+`,
   'org/catalog/playwright.yaml': `id: playwright
 type: mcp
 description: "A browser (Playwright MCP): open pages, click, fill forms, read the page, screenshots."

@@ -7,6 +7,7 @@ import { DirectAdapter } from '@wizardingcode/shibaox-adapter-direct';
 import {
   type AgentTool,
   type ApprovalHandler,
+  augmentPath,
   type CheckRunners,
   type Decider,
   defaultCheckRunners,
@@ -68,6 +69,8 @@ export const COMMAND_ENV_KEYS = [
 export function commandEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   const out: Record<string, string> = {};
   for (const k of COMMAND_ENV_KEYS) if (typeof env[k] === 'string') out[k] = env[k] as string;
+  // the service's PATH is minimal: the user bins (a CLI installed by hand) are added once
+  out.PATH = augmentPath(env.PATH, env.HOME);
   return out;
 }
 

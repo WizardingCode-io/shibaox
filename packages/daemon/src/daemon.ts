@@ -23,6 +23,13 @@ import { inboxToken, telegramChannel } from './channels/telegram.js';
 import type { Channel } from './channels/types.js';
 import { type DaemonConfig, loadDaemonConfig } from './config.js';
 import { ensureDefaultOrg } from './default-org.js';
+import {
+  defaultHiggsfieldProbe,
+  HIGGSFIELD_INSTALL,
+  type HiggsfieldProbe,
+  type HiggsfieldView,
+  higgsfieldStatus,
+} from './higgsfield.js';
 import { type HomePaths, homePaths } from './home.js';
 import { type InboxId, InboxService } from './inbox.js';
 import { mcpList, mcpTest } from './mcp.js';
@@ -44,6 +51,7 @@ import { SecretsStore } from './secrets.js';
 import {
   DaemonServer,
   type Health,
+  HttpError,
   type ListenOptions,
   type ProjectEntry,
   type SchedulesApi,
@@ -78,6 +86,8 @@ export interface DaemonOptions {
   telegramApiBase?: string;
   /** Conversation summariser (tests inject one); by default the org's cheap tier or the run's model. */
   summarize?: (transcript: string, org: Org) => Promise<string>;
+  /** How Higgsfield (CLI + MCP) is probed (tests inject fakes). */
+  higgsfield?: HiggsfieldProbe;
   /** "Create with Shibaox" writer (tests inject one): the model's answer for a draft prompt; by default the org's cheap tier. */
   routineDraft?: (prompt: string, org: Org) => Promise<string>;
   /** Tokens a conversation may carry before it is compacted (tests lower it). */
@@ -271,6 +281,8 @@ export class Daemon {
         }),
       models: () => this.models(),
       decisions: (limit) => this.decisions(limit),
+      higgsfield: () => this.higgsfield(),
+      higgsfieldLogin: () => this.higgsfieldLogin(),
       defaultOrg: () => this.defaultOrg(),
       projects: () => this.projects(),
       heartbeatMs: opts.heartbeatMs,
@@ -381,6 +393,36 @@ export class Daemon {
         this.modelsInFlight = undefined;
       });
     return this.modelsInFlight;
+  }
+
+  private higgsfieldCache?: { at: number; view: Promise<HiggsfieldView> };
+  private get higgsfieldProbe(): HiggsfieldProbe {
+    return this.opts.higgsfield ?? defaultHiggsfieldProbe(this.env);
+  }
+  /** The Higgsfield status (CLI, account, MCP), cached for a minute. */
+  higgsfield(): Promise<HiggsfieldView> {
+    const signupUrl = this.config.partners.higgsfield.signup_url;
+    if (!this.higgsfieldCache || Date.now() - this.higgsfieldCache.at > 60_000)
+      this.higgsfieldCache = {
+        at: Date.now(),
+        view: higgsfieldStatus(this.higgsfieldProbe, { signupUrl }),
+      };
+    return this.higgsfieldCache.view;
+  }
+  /** Starts the Higgsfield browser login on this machine; 409 when the CLI is missing. */
+  async higgsfieldLogin(): Promise<{ started: boolean }> {
+    const v = await this.higgsfield();
+    if (!v.cli.installed)
+      throw new HttpError(
+        409,
+        'no_cli',
+        `The Higgsfield CLI is not installed: ${HIGGSFIELD_INSTALL}`,
+      );
+    const probe = this.higgsfieldProbe;
+    if (probe.login) probe.login();
+    else void probe.exec(['higgsfield', 'auth', 'login']).catch(() => undefined);
+    this.higgsfieldCache = undefined;
+    return { started: true };
   }
 
   /** Who decides (the home org's decision tier) and the latest decisions of the last 50 runs. */

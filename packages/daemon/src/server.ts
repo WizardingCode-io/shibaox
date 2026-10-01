@@ -36,6 +36,7 @@ import type { RoutineDraft } from './runs/routine-draft.js';
 const REMOTE = new WeakSet<IncomingMessage>();
 const isRemote = (req: IncomingMessage) => REMOTE.has(req);
 
+import type { HiggsfieldView } from './higgsfield.js';
 import type { RunManager, SubmitRequest } from './run-manager.js';
 import { AUDIT_RUNTIME_TYPES, buildAudit, renderAuditMarkdown } from './runs/audit.js';
 import { mimeOf, RunFileError } from './runs/files.js';
@@ -137,6 +138,8 @@ export interface ServerDeps {
   /** The org's catalog MCP servers, and a health check of one. */
   mcpList: (org: string) => McpServerRow[];
   mcpTest: (id: string, org: string) => Promise<McpTestResult>;
+  higgsfield: () => Promise<HiggsfieldView>;
+  higgsfieldLogin: () => Promise<{ started: boolean }>;
   /** Whether a network caller may start that org's servers (the daemon's own orgs only). */
   mcpRemoteAllowed: (org: string) => Promise<boolean>;
   setKey: (name: string, value: string) => void;
@@ -402,6 +405,18 @@ export class DaemonServer {
     if ((method === 'GET' || method === 'HEAD') && (path === '/app' || path.startsWith('/app/')))
       return serveAppFile(this.deps.appDist(), path, res);
     if (method === 'GET' && path === '/models') return send(res, 200, await this.deps.models());
+    if (method === 'GET' && path === '/integrations/higgsfield')
+      return send(res, 200, await this.deps.higgsfield());
+    if (method === 'POST' && path === '/integrations/higgsfield/login') {
+      // the browser login opens on the daemon's machine: only from there
+      if (isRemote(req))
+        throw new HttpError(
+          403,
+          'forbidden',
+          "log in on the daemon's machine (higgsfield auth login)",
+        );
+      return send(res, 200, await this.deps.higgsfieldLogin());
+    }
     if (method === 'GET' && path === '/decisions') {
       const limit = Number(url.searchParams.get('limit') ?? '20');
       return send(res, 200, await this.deps.decisions(Number.isFinite(limit) ? limit : 20));

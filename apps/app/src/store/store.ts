@@ -42,6 +42,8 @@ export type StoreClient = Pick<
   | 'fileContent'
   | 'writeFile'
   | 'decisions'
+  | 'higgsfield'
+  | 'higgsfieldLogin'
   | 'fileBlob'
   | 'routines'
   | 'runRoutine'
@@ -621,6 +623,14 @@ export class AppStore {
     });
   }
 
+  /** Starts the Higgsfield browser login on the daemon's machine, then reads the status again. */
+  higgsfieldLogin(): Promise<boolean> {
+    return this.act(async () => {
+      await this.client.higgsfieldLogin();
+      await this.loadIntegrations();
+    });
+  }
+
   loadSkills(): Promise<void> {
     return this.load(async () => {
       const d = await this.defaults();
@@ -705,11 +715,12 @@ export class AppStore {
           failed.push(message(e));
           return fallback;
         });
-      const [mcp, models, keys, decisions, config] = await Promise.all([
+      const [mcp, models, keys, decisions, higgsfield, config] = await Promise.all([
         part(this.client.mcpList(d.orgRoot), [] as Awaited<ReturnType<StoreClient['mcpList']>>),
         part(this.client.models(), [] as Awaited<ReturnType<StoreClient['models']>>),
         part(this.client.keys(), [] as Awaited<ReturnType<StoreClient['keys']>>),
         part(this.client.decisions(), undefined),
+        part(this.client.higgsfield(), undefined),
         part(
           this.client.orgConfig(d.orgRoot),
           undefined as Awaited<ReturnType<StoreClient['orgConfig']>> | undefined,
@@ -724,6 +735,7 @@ export class AppStore {
           keys,
           config: config ?? undefined,
           decisions: decisions ?? undefined,
+          higgsfield: higgsfield ?? undefined,
         },
       });
     }).then(() => undefined);

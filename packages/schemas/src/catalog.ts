@@ -15,6 +15,8 @@ export const McpServerSchema = z
     /** Vault keys the server needs: passed to a stdio process, or expanded as `${KEY}` in headers. */
     env_keys: z.array(z.string().min(1)).default([]),
     headers: z.record(z.string(), z.string()).default({}),
+    /** http: a command whose stdout is the bearer token, run before each connection (a CLI's login stands in for a key). */
+    bearer_command: z.array(z.string().min(1)).min(1).optional(),
     /** Only these tools are offered when set (the server's names, without the mcp__ prefix). */
     tools: z.array(z.string().min(1)).optional(),
     /** Start/connect and per-call timeout. */
@@ -32,6 +34,13 @@ export const McpServerSchema = z
         code: 'custom',
         path: ['url'],
         message: 'an http server needs an http(s) url',
+      });
+    if (s.transport === 'stdio' && s.bearer_command)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['bearer_command'],
+        message:
+          'bearer_command is for http servers (a stdio server gets its keys through env_keys)',
       });
   });
 export type McpServer = z.infer<typeof McpServerSchema>;

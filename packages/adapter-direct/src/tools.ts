@@ -19,7 +19,7 @@ import type { Role } from '@wizardingcode/shibaox-schemas';
 import { jsonSchema, type ToolSet, tool } from 'ai';
 import { z } from 'zod';
 import { safePath } from './safe-path.js';
-import { fetchText } from './web.js';
+import { fetchBytes, fetchText } from './web.js';
 
 /** An MCP tool as the model sees it: a JSON Schema input and a call into the live server. */
 export interface McpAgentTool {
@@ -31,6 +31,9 @@ export interface McpAgentTool {
 
 export interface ToolArgs {
   workspace: string;
+  /** Cap and timeout of `download_file` (default 200 MB, 120 s). */
+  maxDownloadBytes?: number;
+  downloadTimeoutMs?: number;
   role: Role;
   runId: string;
   nodeId: string;
@@ -336,6 +339,38 @@ export function buildTools(a: ToolArgs): ToolSet {
         }),
     ...(network.length > 0
       ? {
+          ...(canWrite
+            ? {
+                download_file: tool({
+                  description: `Download a file over https into the workspace (a generated image or video, a dataset), up to ${Math.round((a.maxDownloadBytes ?? 200_000_000) / 1_000_000)} MB. Allowed hosts: ${network.join(', ')}`,
+                  inputSchema: z.object({ url: z.string(), path: z.string() }),
+                  execute: guarded(
+                    'download_file',
+                    async ({ url, path }: { url: string; path: string }) => {
+                      const p = safePath(a.workspace, path, { write: true });
+                      const rel = relative(a.workspace, p);
+                      if (isProtectedPath(a.workspace, p, protectedGlobsOf()))
+                        await approve('protected', {
+                          tool: 'file',
+                          program: 'write',
+                          command: `write ${rel}`,
+                          argv: ['write', rel],
+                        });
+                      const got = await fetchBytes(url, {
+                        timeoutMs: a.downloadTimeoutMs ?? 120_000,
+                        maxBytes: a.maxDownloadBytes ?? 200_000_000,
+                        allow: network,
+                      });
+                      mkdirSync(dirname(p), { recursive: true });
+                      writeFileSync(p, got.bytes);
+                      a.emit({ type: 'file_changed', path: rel });
+                      a.ctx.log(`[direct] downloaded ${rel} (${got.bytes.length} bytes)`);
+                      return { ok: true, path: rel, bytes: got.bytes.length, mime: got.mime };
+                    },
+                  ),
+                }),
+              }
+            : {}),
           web_fetch: tool({
             description: `Fetch a web page or API response over http(s) as text (HTML reduced to text, up to ${a.webMaxBytes ?? 200_000} bytes). Allowed hosts: ${network.join(', ')}`,
             inputSchema: z.object({ url: z.string() }),
