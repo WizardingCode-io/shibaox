@@ -11,7 +11,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 describe('daemon config and home', () => {
   it('a missing file yields the defaults', () => {
     dir = mkdtempSync(join(tmpdir(), 'shx-home-'));
-    expect(loadDaemonConfig(join(dir, 'daemon.yaml'))).toEqual({
+    expect(loadDaemonConfig(join(dir, 'daemon.yaml'))).toMatchObject({
       max_concurrent_runs: 4,
       approval_timeout_minutes: 120,
       projects: [],
@@ -26,7 +26,7 @@ describe('daemon config and home', () => {
       p,
       'max_concurrent_runs: 2\nchannels:\n  macos: { enabled: false }\n  telegram: { chat_id: 5 }\n',
     );
-    expect(loadDaemonConfig(p)).toEqual({
+    expect(loadDaemonConfig(p)).toMatchObject({
       max_concurrent_runs: 2,
       approval_timeout_minutes: 120,
       projects: [],

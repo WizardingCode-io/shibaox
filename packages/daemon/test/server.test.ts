@@ -1060,7 +1060,7 @@ describe('MCP servers through the API', () => {
     appendFileSync(join(s.orgRoot, 'roles', 'backend.yaml'), 'mcp: [echo]\n');
     const { client } = await started(s);
     const before = await client.mcpList(s.orgRoot);
-    expect(before.map((r) => r.id)).toEqual(['echo', 'playwright']); // the scaffold ships a browser
+    expect(before.map((r) => r.id)).toEqual(['echo', 'higgsfield', 'playwright']); // the scaffold ships a browser
     expect(before[0]).toEqual({
       id: 'echo',
       description: 'echo server',
@@ -1101,7 +1101,10 @@ describe('MCP servers through the API', () => {
       baseUrl: `http://127.0.0.1:${addr?.port}`,
       token: 'secret-1',
     });
-    expect((await remote.mcpList(s.orgRoot)).map((r) => r.id)).toEqual(['playwright']); // listing is fine
+    expect((await remote.mcpList(s.orgRoot)).map((r) => r.id)).toEqual([
+      'higgsfield',
+      'playwright',
+    ]); // listing is fine
     await expect(remote.mcpTest('playwright', s.orgRoot)).rejects.toMatchObject({ status: 403 });
     const home = (await remote.defaultOrg()).root;
     const r = await remote.mcpTest('playwright', home).catch((e: { status?: number }) => e);
