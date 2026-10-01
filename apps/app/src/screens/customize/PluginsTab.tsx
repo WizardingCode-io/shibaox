@@ -5,6 +5,7 @@ import { useAppState, useStore } from '../../store/hooks.js';
 import { TemplateDialog } from './dialogs/ConnectorDialog.js';
 import { RolesDialog } from './dialogs/RolesDialog.js';
 import { matches } from './filter.js';
+import { pluginKeyNeeds } from './needed-keys.js';
 import { AddMenu, Empty, goTo, KeyBadge, Toolbar } from './parts.js';
 import type { CustomizeView } from './types.js';
 
@@ -65,8 +66,36 @@ function PluginCard(props: {
         if (first) props.onSkillAdded(first.id, first.name);
       });
   };
+  const install = (command: string) => {
+    try {
+      void navigator.clipboard?.writeText(command);
+    } catch {
+      // no clipboard
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1400);
+  };
+  /**
+   * An action: `login` POSTs through the store (its href is a daemon path, never a link), an
+   * absolute http(s) href opens apart, `install` copies its command; anything else is hidden.
+   */
   const action = (a: PluginRow['actions'][number]) => {
-    if (a.href)
+    if (a.id === 'login')
+      return (
+        <S.Button
+          key={a.id}
+          size="sm"
+          variant="primary"
+          onClick={() =>
+            void store.higgsfieldLogin().then((r) => {
+              if (r) setLogin(r);
+            })
+          }
+        >
+          {a.label}
+        </S.Button>
+      );
+    if (a.href && /^https?:\/\//i.test(a.href))
       return (
         <a
           key={a.id}
@@ -78,33 +107,11 @@ function PluginCard(props: {
           {a.label}
         </a>
       );
-    const onClick =
-      a.id === 'login'
-        ? () =>
-            void store.higgsfieldLogin().then((r) => {
-              if (r) setLogin(r);
-            })
-        : a.id === 'install' && hf
-          ? () => {
-              try {
-                void navigator.clipboard?.writeText(hf.installCommand);
-              } catch {
-                // no clipboard
-              }
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1400);
-            }
-          : p.keys.some((k) => !k.present)
-            ? () => goTo('keys')
-            : () => void store.loadCustomize();
+    const command = a.id === 'install' ? (a.command ?? hf?.installCommand) : undefined;
+    if (!command) return null;
     return (
-      <S.Button
-        key={a.id}
-        size="sm"
-        variant={a.id === 'login' ? 'primary' : 'secondary'}
-        onClick={onClick}
-      >
-        {a.id === 'install' && copied ? 'Copied' : a.label}
+      <S.Button key={a.id} size="sm" variant="secondary" onClick={() => install(command)}>
+        {copied ? 'Copied' : a.label}
       </S.Button>
     );
   };
@@ -118,8 +125,13 @@ function PluginCard(props: {
           <S.Badge tone={st.tone} dot>
             {st.label}
           </S.Badge>
-          {p.keys.map((k) => (
-            <KeyBadge key={k.name} name={k.name} present={k.present} />
+          {pluginKeyNeeds(p).map((n) => (
+            <KeyBadge
+              key={n.names.join('|')}
+              name={n.names.join(' or ')}
+              focus={n.names[0]}
+              present={n.present}
+            />
           ))}
         </>
       }

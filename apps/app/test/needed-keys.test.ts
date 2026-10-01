@@ -126,8 +126,11 @@ const plugins: PluginRow[] = [
     name: 'GitHub',
     description: 'The GitHub loop',
     status: 'ready',
-    checks: [],
-    keys: [{ name: 'GH_TOKEN', present: true }],
+    checks: [{ label: 'Token (GH_TOKEN or GITHUB_TOKEN)', ok: true }],
+    keys: [
+      { name: 'GH_TOKEN', present: true },
+      { name: 'GITHUB_TOKEN', present: false },
+    ],
     actions: [],
     brings: { connectors: ['github'], skills: [] },
   },
@@ -144,7 +147,6 @@ describe('neededKeys', () => {
       'MISTRAL_API_KEY',
       'OPENAI_API_KEY',
       'OPENROUTER_API_KEY',
-      'SHIBAOX_TELEGRAM_TOKEN',
       // set, by name
       'ANTHROPIC_API_KEY',
       'GH_TOKEN',
@@ -163,9 +165,56 @@ describe('neededKeys', () => {
       'plugin github',
     ]);
     expect(row('FIRECRAWL_API_KEY')?.neededBy.map((b) => b.label)).toEqual(['connector firecrawl']);
-    expect(row('SHIBAOX_TELEGRAM_TOKEN')?.neededBy.map((b) => b.label)).toEqual([
-      'plugin telegram',
-    ]);
+    // a plugin that is not set up at all needs nothing yet: its key stays in Other
+    expect(row('SHIBAOX_TELEGRAM_TOKEN')).toBeUndefined();
+    expect(r.other.some((x) => x.name === 'SHIBAOX_TELEGRAM_TOKEN')).toBe(true);
+  });
+
+  it('alternative keys of a plugin are one need, set when either is', () => {
+    expect(row('GH_TOKEN')?.alternatives).toEqual(['GITHUB_TOKEN']);
+    expect(row('GITHUB_TOKEN')).toBeUndefined();
+    const only = neededKeys({
+      roles: [],
+      mcp: [],
+      plugins: [
+        {
+          ...(plugins[1] as PluginRow),
+          keys: [
+            { name: 'GH_TOKEN', present: false },
+            { name: 'GITHUB_TOKEN', present: true },
+          ],
+        },
+      ],
+      models: [],
+      keys: [
+        { name: 'GH_TOKEN', description: 'GitHub', set: false },
+        { name: 'GITHUB_TOKEN', description: 'GitHub (fallback)', set: true, source: 'env' },
+      ],
+    });
+    expect(only.needed).toHaveLength(1);
+    expect(only.needed[0]).toMatchObject({
+      name: 'GH_TOKEN',
+      alternatives: ['GITHUB_TOKEN'],
+      set: true,
+      via: 'GITHUB_TOKEN',
+    });
+    // a connector that reads GH_TOKEN itself is not served by GITHUB_TOKEN
+    const strict = neededKeys({
+      roles: [],
+      mcp: [{ ...(mcp[0] as McpServerRow), keys: [{ name: 'GH_TOKEN', present: false }] }],
+      plugins: [
+        {
+          ...(plugins[1] as PluginRow),
+          keys: [
+            { name: 'GH_TOKEN', present: false },
+            { name: 'GITHUB_TOKEN', present: true },
+          ],
+        },
+      ],
+      models: [],
+      keys: [],
+    });
+    expect(strict.needed[0]).toMatchObject({ name: 'GH_TOKEN', set: false });
   });
 
   it('keeps the status of the vault: set, masked, where from', () => {

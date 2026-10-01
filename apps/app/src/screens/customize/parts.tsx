@@ -154,7 +154,12 @@ export function AddOrAdded(props: {
 }
 
 /** A key as a badge: present (matcha), or missing (a button into Keys with the row focused). */
-export function KeyBadge(props: { name: string; present: boolean }): JSX.Element {
+export function KeyBadge(props: {
+  name: string;
+  present: boolean;
+  /** The key Keys focuses (default: `name`). */
+  focus?: string;
+}): JSX.Element {
   const S = ds();
   return props.present ? (
     <S.Badge tone="matcha" icon="key">
@@ -165,7 +170,7 @@ export function KeyBadge(props: { name: string; present: boolean }): JSX.Element
       type="button"
       className="badge-link"
       aria-label={`${props.name} missing`}
-      onClick={() => goToKey(props.name)}
+      onClick={() => goToKey(props.focus ?? props.name)}
     >
       <S.Badge tone="warning" icon="key">
         {props.name}

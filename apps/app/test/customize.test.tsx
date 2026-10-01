@@ -1,9 +1,10 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import type { PluginRow } from '@wizardingcode/shibaox-daemon';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadDesignSystem } from '../src/ds.js';
-import { client, mount, server } from './fixtures.js';
+import { client, mount, PLUGINS, server } from './fixtures.js';
 
 beforeAll(() =>
   loadDesignSystem(
@@ -376,6 +377,9 @@ describe('Customize: Plugins', () => {
     expect(screen.getByText('GitHub')).toBeTruthy();
     expect(screen.queryByText('Telegram')).toBeNull();
     expect(screen.getByText('CLI installed')).toBeTruthy();
+    // GH_TOKEN or GITHUB_TOKEN: one need, met
+    expect(screen.queryByRole('button', { name: 'GITHUB_TOKEN missing' })).toBeNull();
+    expect(screen.getByText('GH_TOKEN or GITHUB_TOKEN')).toBeTruthy();
     expect(screen.getByText(/andre@example\.com/)).toBeTruthy();
     expect(screen.getByText(/3\.5 credits/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Create an account' }).getAttribute('href')).toBe(
@@ -401,6 +405,47 @@ describe('Customize: Plugins', () => {
     expect(await screen.findByRole('dialog', { name: 'Add GitHub' })).toBeTruthy();
   });
 
+  it('actions: Log in POSTs through the store, Install copies its command, links open apart', async () => {
+    const writes: string[] = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (t: string) => void writes.push(t) },
+    });
+    const { client: c, calls } = client({
+      plugins: [
+        {
+          ...(PLUGINS[0] as PluginRow),
+          actions: [
+            ...(PLUGINS[0] as PluginRow).actions,
+            { id: 'mystery', label: 'Mystery', href: '/somewhere/else' },
+            { id: 'nothing', label: 'Nothing' },
+          ],
+        },
+        PLUGINS[1] as PluginRow,
+      ],
+    });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    await screen.findByText('Higgsfield');
+    // a daemon path is never a link
+    expect(screen.queryByRole('link', { name: 'Log in' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
+    await waitFor(() => expect(calls.some((x) => x.name === 'higgsfieldLogin')).toBe(true));
+    // the action's own command, not the one of the Higgsfield view
+    fireEvent.click(screen.getByRole('button', { name: 'Install command' }));
+    await waitFor(() =>
+      expect(writes).toEqual(['curl -fsSL https://higgsfield.ai/cli/install.sh | sh']),
+    );
+    for (const name of ['Create an account', 'Open Higgsfield', 'Install gh', 'Create a token']) {
+      const a = screen.getByRole('link', { name });
+      expect(a.getAttribute('target')).toBe('_blank');
+      expect(a.getAttribute('rel')).toBe('noopener noreferrer');
+      expect(a.getAttribute('href')).toMatch(/^https:\/\//);
+    }
+    // neither a usable link nor a known id: hidden
+    expect(screen.queryByText('Mystery')).toBeNull();
+    expect(screen.queryByText('Nothing')).toBeNull();
+  });
+
   it('Discover shows the rest; there is no Add for plugins', async () => {
     const { client: c } = client();
     mount(c, { hash: '#/customize&tab=plugins&view=discover' });
@@ -423,18 +468,19 @@ describe('Customize: Keys', () => {
   it('Needed now: missing first, with who needs each key; Set saves into the vault', async () => {
     const { client: c, calls } = client();
     mount(c, { hash: '#/customize&tab=keys' });
-    await waitFor(() => expect(firstCells('Needed now').length).toBe(4));
+    await waitFor(() => expect(firstCells('Needed now').length).toBe(3));
     expect(firstCells('Needed now')).toEqual([
       'OPENAI_API_KEY',
       'PW_TOKEN',
-      'SHIBAOX_TELEGRAM_TOKEN',
-      'GH_TOKEN',
+      'GH_TOKEN or GITHUB_TOKEN',
     ]);
     const needed = block('Needed now');
     expect(within(needed).getByText('tier cheap')).toBeTruthy();
     expect(within(needed).getByText('role browser-qa')).toBeTruthy();
     expect(within(needed).getByText('connector playwright')).toBeTruthy();
-    expect(within(needed).getByText('plugin telegram')).toBeTruthy();
+    // Telegram is not set up: its key waits in Other
+    expect(within(needed).queryByText('plugin telegram')).toBeNull();
+    expect(within(block('Other')).getByText('SHIBAOX_TELEGRAM_TOKEN')).toBeTruthy();
     expect(within(needed).getByText('plugin github')).toBeTruthy();
     fireEvent.change(within(needed).getByLabelText('OPENAI_API_KEY'), {
       target: { value: 'sk-new' },

@@ -229,7 +229,12 @@ export const PLUGINS: PluginRow[] = [
     ],
     keys: [],
     actions: [
-      { id: 'login', label: 'Log in' },
+      {
+        id: 'install',
+        label: 'Install command',
+        command: 'curl -fsSL https://higgsfield.ai/cli/install.sh | sh',
+      },
+      { id: 'login', label: 'Log in', href: '/integrations/higgsfield/login' },
       { id: 'signup', label: 'Create an account', href: 'https://higgsfield.ai?fpr=andre-4fae29' },
       { id: 'open', label: 'Open Higgsfield', href: 'https://higgsfield.ai' },
     ],
@@ -240,9 +245,22 @@ export const PLUGINS: PluginRow[] = [
     name: 'GitHub',
     description: 'Issues, pull requests and the GitHub loop',
     status: 'ready',
-    checks: [{ label: 'gh installed', ok: true }],
-    keys: [{ name: 'GH_TOKEN', present: true }],
-    actions: [],
+    checks: [
+      { label: 'gh installed', ok: true, detail: '/opt/homebrew/bin/gh' },
+      { label: 'Token (GH_TOKEN or GITHUB_TOKEN)', ok: true },
+    ],
+    keys: [
+      { name: 'GH_TOKEN', present: true },
+      { name: 'GITHUB_TOKEN', present: false },
+    ],
+    actions: [
+      { id: 'install', label: 'Install gh', href: 'https://cli.github.com' },
+      {
+        id: 'token',
+        label: 'Create a token',
+        href: 'https://github.com/settings/personal-access-tokens/new',
+      },
+    ],
     brings: { connectors: ['github'], skills: [] },
   },
   {
@@ -489,6 +507,16 @@ export function client(
           set: true,
           source: 'vault' as const,
           masked: 'gh…12',
+        },
+        {
+          name: 'GITHUB_TOKEN',
+          description: 'GitHub (gh reads it when GH_TOKEN is not set)',
+          set: false,
+        },
+        {
+          name: 'SHIBAOX_TELEGRAM_TOKEN',
+          description: 'Telegram bot (channels.telegram)',
+          set: false,
         },
       ];
     },
