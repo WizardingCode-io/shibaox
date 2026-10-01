@@ -4,6 +4,7 @@ Shibaox runs agents on your machine with your user's permissions. These are the 
 
 ## What is enforced
 
+- A connector's `env_keys` and the `${NAME}` placeholders of its headers are names of vault entries (UPPER_CASE): a value pasted there is refused by the schema, by `POST /mcp` (`bad_key_name`) and by the app's form, and the app never prints a key-like text as a badge. Listings show a key's last four characters only. A connector whose key is not in the vault is left out of the task with a note; the task goes on.
 - **Tools by allowlist.** A role runs only the programs listed in its `tools:`. The direct adapter splits the command into argv and runs it without a shell: nothing is expanded (`$VAR`, `~`, globs), operators (`; & | $ < >`, backticks) are refused, and arguments that are absolute, start with `~`, contain `..` or name `.git` are refused. The child gets a scrubbed environment (`PATH`, `HOME`, `LANG`, `TMPDIR`, `TERM`). `write_file` refuses any path with a `.git` segment.
 - **Files inside the workspace.** Read and write tools, and Claude Code's file tools, are allowed only for paths that resolve, through symlinks, inside the task's working directory.
 - **Network by host.** `web_fetch`, `WebFetch` and `WebSearch` only for the hosts in `permissions.network`, redirects included.
