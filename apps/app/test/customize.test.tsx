@@ -513,7 +513,7 @@ describe('Customize: Connectors', () => {
     expect(add.disabled).toBe(false);
   });
 
-  it('a key value typed where key names go is refused before anything is sent', async () => {
+  it('the API key is pasted as a value: kept in the vault under a derived name, sent as Bearer', async () => {
     const { client: c, calls } = client();
     mount(c, { hash: '#/customize&tab=connectors' });
     await screen.findByText('playwright');
@@ -524,18 +524,50 @@ describe('Customize: Connectors', () => {
     set('Id', 'acme');
     set('Description', 'Acme');
     set('URL', 'https://mcp.acme.dev/mcp');
-    set('Keys', 'f6760db0-8607:4cca224bee865c');
-    expect(within(dialog).getByText(/UPPER_CASE names of vault entries/)).toBeTruthy();
-    expect(
-      (within(dialog).getByRole('button', { name: 'Add' }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    const key = within(dialog).getByLabelText('API key') as HTMLInputElement;
+    expect(key.type).toBe('password');
+    fireEvent.change(key, { target: { value: ' secret-value-123 ' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save key' }));
+    await waitFor(() =>
+      expect(call(calls, 'setKey')).toEqual(['ACME_API_KEY', 'secret-value-123']),
+    );
+    expect(within(dialog).queryByText(/secret-value-123/)).toBeNull();
+    expect(within(dialog).getByRole('button', { name: 'Remove ACME_API_KEY' })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
-    expect(call(calls, 'addMcp')).toBeUndefined();
-    set('Keys', 'ACME_KEY');
-    expect(within(dialog).queryByText(/UPPER_CASE names of vault entries/)).toBeNull();
-    expect(
-      (within(dialog).getByRole('button', { name: 'Add' }) as HTMLButtonElement).disabled,
-    ).toBe(false);
+    await waitFor(() => expect(call(calls, 'addMcp')).toBeTruthy());
+    const req = call(calls, 'addMcp')?.[1] as {
+      server: { env_keys?: string[]; headers?: Record<string, string> };
+    };
+    expect(req.server.env_keys).toEqual(['ACME_API_KEY']);
+    expect(req.server.headers).toEqual({ Authorization: ['Bearer $', '{ACME_API_KEY}'].join('') });
+  });
+
+  it('a server that signs in through its command has no key field and points to Plugins', async () => {
+    const { client: c } = client({
+      mcp: [
+        {
+          id: 'higgsfield',
+          description: 'x',
+          transport: 'http',
+          target: 'https://mcp.higgsfield.ai/mcp',
+          roles: ['assistant'],
+          keys: [],
+          server: server({
+            transport: 'http',
+            url: 'https://mcp.higgsfield.ai/mcp',
+            bearer_command: ['higgsfield', 'auth', 'token'],
+          }),
+        },
+      ],
+    });
+    mount(c, { hash: '#/customize&tab=connectors' });
+    await screen.findByText('higgsfield');
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for higgsfield' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Edit…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit higgsfield' });
+    expect(within(dialog).queryByLabelText('API key')).toBeNull();
+    expect(within(dialog).getByText(/Plugins → Higgsfield → API/)).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: 'Open Plugins' })).toBeTruthy();
   });
 
   it('a connector row never shows a key-like text as a badge', async () => {
@@ -568,7 +600,9 @@ describe('Customize: Connectors', () => {
     set('Id', 'acme');
     set('Description', 'Acme search');
     set('URL', 'https://mcp.acme.dev/mcp');
-    set('Keys', 'ACME_KEY');
+    fireEvent.change(within(dialog).getByLabelText('API key'), { target: { value: 'v-1' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save key' }));
+    await waitFor(() => expect(call(calls, 'setKey')).toEqual(['ACME_API_KEY', 'v-1']));
     set('Headers', `Authorization: ${BEARER}`);
     set('Tools', 'search, fetch');
     set('Timeout (seconds)', '45');
@@ -583,7 +617,7 @@ describe('Customize: Connectors', () => {
           server: {
             transport: 'http',
             url: 'https://mcp.acme.dev/mcp',
-            env_keys: ['ACME_KEY'],
+            env_keys: ['ACME_API_KEY'],
             headers: { Authorization: BEARER },
             tools: ['search', 'fetch'],
             timeout_ms: 45000,
@@ -674,7 +708,7 @@ describe('Customize: Connectors', () => {
     expect(value('Command')).toBe('npx');
     expect(value('Arguments')).toBe('-y\n@playwright/mcp\n--viewport-size\n1280, 720');
     expect(value('Environment')).toBe('DEBUG=pw');
-    expect(value('Keys')).toBe('PW_TOKEN');
+    expect(within(dialog).getByRole('button', { name: 'Remove PW_TOKEN' })).toBeTruthy();
     expect(value('Tools')).toBe('browser_navigate');
     expect(value('Timeout (seconds)')).toBe('60');
     const qa = within(dialog).getByRole('checkbox', { name: /Browser QA/ }) as HTMLInputElement;

@@ -5,7 +5,7 @@ import { ds } from '../../../ds.js';
 import { useAppState, useStore } from '../../../store/hooks.js';
 import { headerLines, ID_RE, words } from '../filter.js';
 import { KEY_NAME_RE } from '../needed-keys.js';
-import { RoleChecks } from '../parts.js';
+import { goTo, RoleChecks } from '../parts.js';
 import type { McpRow } from '../types.js';
 
 // biome-ignore lint/suspicious/noTemplateCurlyInString: the catalog's own ${KEY} placeholder, expanded by the daemon
@@ -299,6 +299,87 @@ export function mcpIdError(id: string): string | undefined {
   return undefined;
 }
 
+/** The vault name a connector's pasted key is kept under: `<ID>_API_KEY`. */
+export const keyNameFor = (id: string): string =>
+  `${id
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')}_API_KEY`;
+
+/**
+ * The key of a connector, pasted as a VALUE: it goes to the vault under `<ID>_API_KEY` and is
+ * never shown again (a chip with its name, and Remove). Nothing here asks for a key's name.
+ */
+function KeySection(props: {
+  id: string;
+  names: string[];
+  onRemove: (name: string) => void;
+  onSaved: (name: string) => void;
+}): JSX.Element {
+  const S = ds();
+  const store = useStore();
+  const state = useAppState();
+  const [value, setValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const known = new Map((state.customize?.keys ?? []).map((k) => [k.name, k]));
+  const name = keyNameFor(props.id);
+  const ready = ID_RE.test(props.id.trim());
+  return (
+    <div className="stack">
+      {props.names.length ? (
+        <div className="badges">
+          {props.names.map((n) => (
+            <span key={n} className="row">
+              <S.Badge tone={known.get(n)?.set ? 'matcha' : 'warning'} icon="key">
+                {n}
+              </S.Badge>
+              <S.IconButton
+                icon="x"
+                label={`Remove ${n}`}
+                size="sm"
+                onClick={() => props.onRemove(n)}
+              />
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <div className="key-set">
+        <S.Input
+          label="API key"
+          type="password"
+          autoComplete="off"
+          placeholder={ready ? 'Paste the key the service gave you' : 'Set the id first'}
+          hint={
+            ready
+              ? `Kept in the vault as ${name}, never shown again; sent as Authorization: Bearer unless Headers say otherwise.`
+              : 'The id above names the key in the vault.'
+          }
+          disabled={!ready}
+          value={value}
+          onChange={(e) => setValue((e.target as HTMLInputElement).value)}
+        />
+        <S.Button
+          size="sm"
+          loading={saving}
+          disabled={!ready || !value.trim()}
+          onClick={() => {
+            setSaving(true);
+            void store.setKey(name, value.trim()).then((ok) => {
+              setSaving(false);
+              if (ok) {
+                setValue('');
+                props.onSaved(name);
+              }
+            });
+          }}
+        >
+          Save key
+        </S.Button>
+      </div>
+    </div>
+  );
+}
+
 /** "Add a custom connector" (and Edit…): any MCP server by URL or command. */
 export function CustomConnectorDialog(props: {
   roles: RoleRow[];
@@ -316,9 +397,7 @@ export function CustomConnectorDialog(props: {
     set({ [k]: (e.target as HTMLInputElement).value } as Partial<CustomForm>);
   const idError = mcpIdError(f.id.trim());
   const commandSpaced = /\s/.test(f.command.trim());
-  const keysError = words(f.keys).some((k) => !KEY_NAME_RE.test(k))
-    ? 'Keys are the UPPER_CASE names of vault entries (ACME_KEY), never a value: paste the value in Keys and write its name here'
-    : undefined;
+  const keysError = words(f.keys).some((k) => !KEY_NAME_RE.test(k));
   const target =
     f.transport === 'http'
       ? /^https?:\/\/\S+$/.test(f.url.trim())
@@ -339,7 +418,7 @@ export function CustomConnectorDialog(props: {
           <S.Button
             variant="primary"
             loading={saving}
-            disabled={!!idError || !!keysError || !target}
+            disabled={!!idError || keysError || !target}
             onClick={() => {
               setSaving(true);
               void store.addMcp(customRequest(f, props.editing === true)).then((ok) => {
@@ -417,14 +496,46 @@ export function CustomConnectorDialog(props: {
             />
           </>
         )}
-        <S.Input
-          label="Keys"
-          placeholder="ACME_API_KEY"
-          hint="Vault keys it needs, comma separated (set them in Keys)"
-          value={f.keys}
-          onChange={field('keys')}
-          error={keysError}
-        />
+        {f.bearerArgv?.length ? (
+          <div className="stack">
+            <p className="muted">
+              No key goes here: this connector signs in through its own command each time the daemon
+              connects. The service's API key belongs in Plugins → Higgsfield → API.
+            </p>
+            <div className="row">
+              <S.Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  props.onClose();
+                  goTo('plugins');
+                }}
+              >
+                Open Plugins
+              </S.Button>
+            </div>
+          </div>
+        ) : (
+          <KeySection
+            id={f.id}
+            names={words(f.keys)}
+            onRemove={(n) =>
+              set({
+                keys: words(f.keys)
+                  .filter((x) => x !== n)
+                  .join(', '),
+              })
+            }
+            onSaved={(n) =>
+              set({
+                keys: [...words(f.keys).filter((x) => x !== n), n].join(', '),
+                ...(f.transport === 'http' && !f.headers.trim()
+                  ? { headers: `Authorization: Bearer \${${n}}` }
+                  : {}),
+              })
+            }
+          />
+        )}
         {f.transport === 'http' ? (
           <>
             <S.Textarea
