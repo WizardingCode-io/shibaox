@@ -105,4 +105,37 @@ describe('threadView', () => {
     expect(requestText({ input: 'x' })).toBe('x');
     expect(requestText(undefined)).toBe('');
   });
+
+  it('parts keep the original order of text and tool calls, text runs joined as they were', () => {
+    const cards: Card[] = [
+      node([
+        { kind: 'text', key: 'x1', text: 'Let me look.' },
+        {
+          kind: 'tool',
+          key: 't1',
+          id: 'a',
+          name: 'read_file',
+          summary: 'a.ts',
+          input: {},
+          status: 'done',
+        },
+        { kind: 'text', key: 'x2', text: 'Found it: ' },
+        { kind: 'text', key: 'x3', text: 'the bug is on line 3.', parentId: undefined },
+        { kind: 'file', key: 'f1', path: 'a.ts' },
+        { kind: 'text', key: 'x4', text: 'Fixed.' },
+      ]),
+    ];
+    const v = threadView([{ state: state({}), cards }]);
+    const agent = v.messages[1];
+    expect(agent?.parts.map((p) => (p.kind === 'text' ? ['text', p.text] : [p.kind]))).toEqual([
+      ['text', 'Let me look.'],
+      ['tool'],
+      ['text', 'Found it: the bug is on line 3.'],
+      ['file'],
+      ['text', 'Fixed.'],
+    ]);
+    // the aggregate text and blocks stay for the title, the sidebar and the tool count
+    expect(agent?.text).toContain('Fixed.');
+    expect(agent?.blocks).toHaveLength(2);
+  });
 });

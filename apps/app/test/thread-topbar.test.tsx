@@ -87,3 +87,38 @@ describe('the top bar follows the mockup', () => {
     expect(scroll.querySelector('.thread')).toBeTruthy();
   });
 });
+
+describe('the reply is rendered as a document', () => {
+  it('text, a tool call and more text keep their order; fences become code blocks', async () => {
+    const { client: c } = client({
+      runs: [summary('root')],
+      states: { root: state('root') },
+      frames: {
+        root: [
+          runFrame(1, 'NodeStarted', { nodeId: 'reply' }),
+          rtFrame(1, 'reply', { type: 'text', text: 'Looking.' }),
+          rtFrame(2, 'reply', {
+            type: 'tool_use',
+            id: 'u1',
+            name: 'read_file',
+            input: { path: 'a.ts' },
+          }),
+          rtFrame(3, 'reply', { type: 'tool_result', id: 'u1', output: 'x' }),
+          rtFrame(4, 'reply', { type: 'text', text: 'Here:\n\n```js\nlet a = 1;\n```\n' }),
+        ],
+      },
+    });
+    const ui = mount(c, { hash: '#/t/root' });
+    await waitFor(() => expect(ui.container.querySelector('.sx-code')).toBeTruthy());
+    const body = ui.container.querySelector('.sx-msg--agent .sx-msg__body') as HTMLElement;
+    const order = [...body.querySelectorAll('p, .sx-tool, .sx-code')].map((el) =>
+      el.classList.contains('sx-tool')
+        ? 'tool'
+        : el.classList.contains('sx-code')
+          ? 'code'
+          : el.textContent,
+    );
+    expect(order).toEqual(['Looking.', 'tool', 'Here:', 'code']);
+    expect(body.textContent).not.toContain('```');
+  });
+});

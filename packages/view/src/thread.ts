@@ -6,10 +6,18 @@ import type { Block, Card } from './stream.js';
 /** The words of the design system's AgentStatus. */
 export type AgentStatus = 'online' | 'working' | 'waiting' | 'idle' | 'error';
 
+/** One piece of a turn in its original order: a run of text, a tool call, or a file. */
+export type MessagePart =
+  | { kind: 'text'; key: string; text: string }
+  | Extract<Block, { kind: 'tool' }>
+  | Extract<Block, { kind: 'file' }>;
+
 export interface ThreadMessage {
   key: string;
   from: 'user' | 'agent';
   text: string;
+  /** Text and tool calls as they happened (text, tool, text…); `text` and `blocks` are the aggregates. */
+  parts: MessagePart[];
   /** ISO time of the turn (the run's creation for the user, its end for the agent). */
   time?: string;
   /** Tool calls and files of the agent's turn, in order. */
@@ -44,6 +52,31 @@ export function replyText(cards: readonly Card[]): string {
     .trim();
 }
 
+/** The blocks of the task nodes in order, consecutive top-level text joined into one run. */
+export function messageParts(cards: readonly Card[]): MessagePart[] {
+  const parts: MessagePart[] = [];
+  let run: { key: string; text: string } | undefined;
+  const flush = () => {
+    if (run && run.text.trim()) parts.push({ kind: 'text', key: run.key, text: run.text.trim() });
+    run = undefined;
+  };
+  for (const c of cards) {
+    if (c.kind !== 'node') continue;
+    for (const b of c.blocks) {
+      if (b.kind === 'text') {
+        if (b.parentId) continue; // what a sub-agent said belongs to its tool call
+        if (run) run.text += b.text;
+        else run = { key: b.key, text: b.text };
+      } else {
+        flush();
+        parts.push(b);
+      }
+    }
+  }
+  flush();
+  return parts;
+}
+
 const LIVE = new Set<RunState['status']>(['running', 'queued']);
 const WAITING = new Set<RunState['status']>(['waiting_human', 'waiting_approval', 'paused_budget']);
 
@@ -76,6 +109,7 @@ export function threadView(turns: readonly ThreadTurn[]): ThreadView {
         key: `${state.runId}:user`,
         from: 'user',
         text: request,
+        parts: [{ kind: 'text', key: `${state.runId}:request`, text: request }],
         time: createdAt,
         blocks: [],
         runId: state.runId,
@@ -92,6 +126,7 @@ export function threadView(turns: readonly ThreadTurn[]): ThreadView {
         key: `${state.runId}:agent`,
         from: 'agent',
         text,
+        parts: messageParts(cards),
         time: updatedAt,
         blocks,
         pending: live && !text,

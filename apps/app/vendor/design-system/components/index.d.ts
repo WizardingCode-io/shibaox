@@ -33,10 +33,12 @@ export interface ToolCallProps { tool: string; summary?: string; status?: 'runni
 export declare function ToolCall(props: ToolCallProps): React.ReactElement;
 export interface ThinkingIndicatorProps { label?: string }
 export declare function ThinkingIndicator(props: ThinkingIndicatorProps): React.ReactElement;
-export interface CodeBlockProps { language?: string; children: string }
+export interface CodeBlockProps { language?: string; /** The code: a string, or highlighted spans (then pass the raw text as `code` for Copy). */ children: React.ReactNode; code?: string; filename?: string; /** Wrap long lines instead of scrolling sideways. */ wrap?: boolean; /** Clip tall blocks to this height with a "Show all" control. */ maxHeight?: number | string; className?: string }
 export declare function CodeBlock(props: CodeBlockProps): React.ReactElement;
 export interface CardProps { icon?: IconName; title?: string; description?: string; action?: React.ReactNode; footer?: React.ReactNode; interactive?: boolean; className?: string; children?: React.ReactNode }
 export declare function Card(props: CardProps): React.ReactElement;
+export interface TableProps { columns?: React.ReactNode[]; rows: React.ReactNode[][]; align?: ('left' | 'center' | 'right' | null | undefined)[]; dense?: boolean; caption?: React.ReactNode; className?: string }
+export declare function Table(props: TableProps): React.ReactElement;
 export interface KbdProps { children: React.ReactNode }
 export declare function Kbd(props: KbdProps): React.ReactElement;
 export interface IconProps { name: IconName; size?: number; strokeWidth?: number; label?: string; className?: string }
@@ -54,4 +56,4 @@ export interface MenuProps extends MenuListProps { open: boolean; anchor?: React
 export declare function Menu(props: MenuProps): React.ReactElement;
 /** @deprecated a decorative 14px Wave, kept for compatibility */
 export declare function Spinner(props?: { size?: number }): React.ReactElement;
-declare global { interface Window { Shibaox: { Button: typeof Button; IconButton: typeof IconButton; Input: typeof Input; Switch: typeof Switch; Composer: typeof Composer; Tabs: typeof Tabs; NavItem: typeof NavItem; Badge: typeof Badge; AgentStatus: typeof AgentStatus; Toast: typeof Toast; Avatar: typeof Avatar; Mascot: typeof Mascot; Message: typeof Message; ToolCall: typeof ToolCall; ThinkingIndicator: typeof ThinkingIndicator; CodeBlock: typeof CodeBlock; Card: typeof Card; Kbd: typeof Kbd; Icon: typeof Icon; Spinner: typeof Spinner; Wave: typeof Wave; TextShimmer: typeof TextShimmer; Popover: typeof Popover; MenuList: typeof MenuList; Menu: typeof Menu } } }
+declare global { interface Window { Shibaox: { Button: typeof Button; IconButton: typeof IconButton; Input: typeof Input; Switch: typeof Switch; Composer: typeof Composer; Tabs: typeof Tabs; NavItem: typeof NavItem; Badge: typeof Badge; AgentStatus: typeof AgentStatus; Toast: typeof Toast; Avatar: typeof Avatar; Mascot: typeof Mascot; Message: typeof Message; ToolCall: typeof ToolCall; ThinkingIndicator: typeof ThinkingIndicator; CodeBlock: typeof CodeBlock; Card: typeof Card; Kbd: typeof Kbd; Icon: typeof Icon; Spinner: typeof Spinner; Wave: typeof Wave; TextShimmer: typeof TextShimmer; Popover: typeof Popover; MenuList: typeof MenuList; Menu: typeof Menu; Table: typeof Table } } }

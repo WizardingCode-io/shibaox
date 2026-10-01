@@ -2,6 +2,7 @@ import type { InboxItem } from '@wizardingcode/shibaox-daemon';
 import {
   type Block,
   type Card,
+  type MessagePart,
   money,
   summarizeInput,
   type ThreadMessage,
@@ -10,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ds } from '../ds.js';
 import { clock, duration, RUN_STATUS_TONE, RUN_STATUS_WORD, shortModel } from '../format.js';
 import { useFollowScroll } from '../hooks/follow-scroll.js';
+import { Markdown } from '../markdown/render.js';
 import { navigate } from '../router.js';
 import { useAppState, useStore } from '../store/hooks.js';
 
@@ -28,54 +30,57 @@ const iconFor = (name: string): IconName =>
     TOOL_ICON[name.split(/[._]/)[0] ?? ''] ??
     (name.startsWith('mcp__') ? 'plug' : 'zap')) as IconName;
 
-function Paragraphs(props: { text: string }): JSX.Element {
-  const parts = props.text.split(/\n{2,}/).filter((p) => p.trim());
-  return (
-    <>
-      {parts.map((p, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: paragraphs have no identity of their own
-        <p key={i} style={{ whiteSpace: 'pre-wrap', margin: 0 }}>
-          {p}
-        </p>
-      ))}
-    </>
-  );
-}
-
 /** `finish` is how a task hands back its result: the reply already shows it, so the call itself stays in Logs. */
 const INTERNAL_TOOLS = new Set(['finish']);
 
-function ToolBlocks(props: { blocks: Block[] }): JSX.Element {
+/** A tool call as the mockup's ToolCall: its output as a code block, clipped when long. */
+function ToolBlock(props: { block: Extract<Block, { kind: 'tool' }> }): JSX.Element {
+  const S = ds();
+  const b = props.block;
+  const output =
+    b.output === undefined
+      ? undefined
+      : typeof b.output === 'string'
+        ? b.output
+        : JSON.stringify(b.output, null, 2);
+  return (
+    <S.ToolCall
+      tool={b.name}
+      summary={b.summary || summarizeInput(b.input)}
+      status={b.status}
+      icon={iconFor(b.name)}
+      duration={duration(b.ms)}
+      args={b.input as Record<string, unknown>}
+      defaultOpen={b.status === 'error'}
+    >
+      {output !== undefined ? (
+        <S.CodeBlock language={typeof b.output === 'string' ? 'text' : 'json'} wrap maxHeight={240}>
+          {output.length > 20000
+            ? `${output.slice(0, 20000)}\n… (${output.length} characters)`
+            : output}
+        </S.CodeBlock>
+      ) : undefined}
+    </S.ToolCall>
+  );
+}
+
+/** The agent's turn as it happened: text as a document, tool calls and files in between. */
+function Parts(props: { parts: MessagePart[] }): JSX.Element {
   const S = ds();
   return (
-    <div className="stack">
-      {props.blocks
-        .filter((b) => !(b.kind === 'tool' && INTERNAL_TOOLS.has(b.name)))
-        .map((b) =>
-          b.kind === 'tool' ? (
-            <S.ToolCall
-              key={b.key}
-              tool={b.name}
-              summary={b.summary || summarizeInput(b.input)}
-              status={b.status}
-              icon={iconFor(b.name)}
-              duration={duration(b.ms)}
-              args={b.input as Record<string, unknown>}
-              defaultOpen={b.status === 'error'}
-            >
-              {b.output !== undefined ? (
-                <pre className="out">
-                  {typeof b.output === 'string'
-                    ? b.output
-                    : JSON.stringify(b.output, null, 2).slice(0, 4000)}
-                </pre>
-              ) : undefined}
-            </S.ToolCall>
-          ) : b.kind === 'file' ? (
-            <S.ToolCall key={b.key} tool="file" summary={b.path} status="done" icon="file-text" />
-          ) : null,
+    <>
+      {props.parts
+        .filter((p) => !(p.kind === 'tool' && INTERNAL_TOOLS.has(p.name)))
+        .map((p) =>
+          p.kind === 'text' ? (
+            <Markdown key={p.key} text={p.text} />
+          ) : p.kind === 'tool' ? (
+            <ToolBlock key={p.key} block={p} />
+          ) : (
+            <S.ToolCall key={p.key} tool="file" summary={p.path} status="done" icon="file-text" />
+          ),
         )}
-    </div>
+    </>
   );
 }
 
@@ -153,7 +158,7 @@ function ChatTab(props: {
         {props.messages.map((m) =>
           m.from === 'user' ? (
             <S.Message key={m.key} from="user">
-              <Paragraphs text={m.text} />
+              <Markdown text={m.text} />
             </S.Message>
           ) : (
             <div key={m.key} className="stack">
@@ -164,8 +169,7 @@ function ChatTab(props: {
                   time={m.pending ? undefined : clock(m.time)}
                   mood={m.pending ? 'working' : 'default'}
                 >
-                  {m.text ? <Paragraphs text={m.text} /> : null}
-                  {m.blocks.length > 0 ? <ToolBlocks blocks={m.blocks} /> : null}
+                  <Parts parts={m.parts} />
                 </S.Message>
               )}
               {byRun(m.runId).map((i) =>

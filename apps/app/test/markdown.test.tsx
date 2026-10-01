@@ -1,0 +1,93 @@
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { render, screen } from '@testing-library/react';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { loadDesignSystem } from '../src/ds.js';
+import { Markdown } from '../src/markdown/render.js';
+
+beforeAll(() =>
+  loadDesignSystem(
+    pathToFileURL(join(process.cwd(), 'vendor/design-system/components/bundle.js')).href,
+  ),
+);
+
+describe('Markdown', () => {
+  it('renders headings, paragraphs, lists, inline code and emphasis as elements, never as raw marks', () => {
+    const ui = render(
+      <Markdown
+        text={
+          '## Plan\n\nFirst **bold** and `code` here.\n\n- one\n- two\n\n1. a\n2. b\n\n> quoted\n\n---'
+        }
+      />,
+    );
+    expect(ui.container.querySelector('h2')?.textContent).toBe('Plan');
+    expect(ui.container.querySelector('strong')?.textContent).toBe('bold');
+    expect(ui.container.querySelector('code')?.textContent).toBe('code');
+    expect(ui.container.querySelectorAll('ul li')).toHaveLength(2);
+    expect(ui.container.querySelectorAll('ol li')).toHaveLength(2);
+    expect(ui.container.querySelector('blockquote')?.textContent).toContain('quoted');
+    expect(ui.container.querySelector('hr')).toBeTruthy();
+    expect(ui.container.textContent).not.toContain('##');
+    expect(ui.container.textContent).not.toContain('**');
+  });
+
+  it('a fenced block becomes the design system CodeBlock with its language and coloured tokens', () => {
+    const ui = render(
+      <Markdown
+        text={'Here:\n\n```javascript\nfunction fib(n) {\n  return n; // done\n}\n```\n'}
+      />,
+    );
+    const block = ui.container.querySelector('.sx-code') as HTMLElement;
+    expect(block).toBeTruthy();
+    expect(block.querySelector('.sx-code__bar')?.textContent).toContain('javascript');
+    expect(block.querySelector('pre code')?.textContent).toBe(
+      'function fib(n) {\n  return n; // done\n}',
+    );
+    expect(block.querySelectorAll('.tok-keyword').length).toBeGreaterThan(0);
+    expect(block.querySelector('.tok-comment')?.textContent).toContain('done');
+    expect(ui.container.textContent).not.toContain('```');
+  });
+
+  it('a GFM table becomes the design system Table', () => {
+    const ui = render(
+      <Markdown text={'| name | age |\n| --- | --- |\n| Ana | 37 |\n| Rui | 29 |\n'} />,
+    );
+    const table = screen.getByRole('table');
+    expect(table.className).toContain('sx-table');
+    expect(table.querySelectorAll('thead th')).toHaveLength(2);
+    expect(table.querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(table.textContent).toContain('Ana');
+  });
+
+  it('links open in a new tab safely; images are shown as links; HTML is text, not markup', () => {
+    const ui = render(
+      <Markdown
+        text={
+          'See [the docs](https://example.com/a).\n\n![pic](https://example.com/p.png)\n\n<script>alert(1)</script> and <b>bold?</b>'
+        }
+      />,
+    );
+    const a = ui.container.querySelector('a[href="https://example.com/a"]') as HTMLAnchorElement;
+    expect(a.target).toBe('_blank');
+    expect(a.rel).toContain('noopener');
+    expect(ui.container.querySelector('img')).toBeNull();
+    expect(ui.container.querySelector('a[href="https://example.com/p.png"]')?.textContent).toBe(
+      'pic',
+    );
+    expect(ui.container.querySelector('script')).toBeNull();
+    expect(ui.container.querySelector('b')).toBeNull();
+    expect(ui.container.textContent).toContain('<b>bold?</b>');
+  });
+
+  it('a fence still open (streaming) already shows as code; task lists are read-only checkboxes', () => {
+    const ui = render(<Markdown text={'Start\n\n```ts\nconst a = 1;\nconst b ='} />);
+    expect(ui.container.querySelector('.sx-code pre code')?.textContent).toBe(
+      'const a = 1;\nconst b =',
+    );
+    const list = render(<Markdown text={'- [x] done\n- [ ] later'} />);
+    const boxes = list.container.querySelectorAll('input[type=checkbox]');
+    expect(boxes).toHaveLength(2);
+    expect((boxes[0] as HTMLInputElement).checked).toBe(true);
+    expect((boxes[0] as HTMLInputElement).disabled).toBe(true);
+  });
+});

@@ -34,6 +34,16 @@
   --scrollbar-thumb: #d9cab8; /* Scrollbar thumbs at rest, on every scrolling region. */
   --scrollbar-thumb-hover: #9a846f; /* Scrollbar thumb under the pointer — line-strong. */
   --scrollbar-track: transparent; /* Scrollbar tracks: the surface shows through. */
+  --code-keyword: #a94a0a; /* Code: keywords, built-ins, literals (shiba-strong). */
+  --code-string: #266e43; /* Code: strings and regexps (matcha). */
+  --code-number: #2a63c4; /* Code: numbers (info). */
+  --code-comment: #8b7a6a; /* Code: comments — quieter than ink-muted, still 4.5:1 on surface-sunken. */
+  --code-function: #6b3fa0; /* Code: function and method names. */
+  --code-type: #0f6f7a; /* Code: types, classes, tags. */
+  --code-attr: #8a5e00; /* Code: attributes, properties, variables (warning). */
+  --code-punct: #6b5a4c; /* Code: operators and punctuation (ink-muted). */
+  --code-diff-add: #266e43; /* Code: added lines in a diff. */
+  --code-diff-del: #c42840; /* Code: removed lines in a diff. */
 }
 [data-theme="dark"] {
   --bg: #140e0a;
@@ -69,6 +79,16 @@
   --focus-ring: 0 0 0 2px #140e0a, 0 0 0 4px #ffa15c;
   --scrollbar-thumb: #3b2e24;
   --scrollbar-thumb-hover: #7e6856;
+  --code-keyword: #ffa15c;
+  --code-string: #6acb8e;
+  --code-number: #86aef5;
+  --code-comment: #8f7f70;
+  --code-function: #c9a0ff;
+  --code-type: #5fd3df;
+  --code-attr: #f2c150;
+  --code-punct: #b9a694;
+  --code-diff-add: #6acb8e;
+  --code-diff-del: #ff7a8a;
   --scrollbar-track: transparent;
 }
 :root {

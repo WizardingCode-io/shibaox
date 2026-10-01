@@ -140,11 +140,28 @@
   }
 
   function CodeBlock(p) {
-    var s = useState(false);
-    function copy() { try { navigator.clipboard.writeText(String(p.children)); } catch (e) {} s[1](true); setTimeout(function () { s[1](false); }, 1400); }
-    return h('div', { className: 'sx-code' }, h('div', { className: 'sx-code__bar' }, h('span', null, p.language || 'text'),
-      h('button', { type: 'button', className: 'sx-code__copy', onClick: copy }, h(Icon, { name: s[0] ? 'check' : 'copy', size: 14 }), s[0] ? 'Copied' : 'Copy')),
+    var s = useState(false), clip = useState(true);
+    var raw = p.code !== undefined ? p.code : (typeof p.children === 'string' ? p.children : '');
+    function copy() { try { navigator.clipboard.writeText(String(raw)); } catch (e) {} s[1](true); setTimeout(function () { s[1](false); }, 1400); }
+    var lines = raw ? raw.split('\n').length : 0;
+    var clippable = p.maxHeight && lines > 12;
+    return h('div', { className: cx('sx-code', p.wrap && 'sx-code--wrap', clippable && clip[0] && 'is-clipped', p.className), style: p.maxHeight ? { '--code-max': typeof p.maxHeight === 'number' ? p.maxHeight + 'px' : p.maxHeight } : undefined },
+      h('div', { className: 'sx-code__bar' },
+        h('div', null, p.filename ? h('span', { className: 'sx-code__file' }, p.filename) : null, h('span', null, p.language || 'text')),
+        h('div', null,
+          clippable ? h('button', { type: 'button', className: 'sx-code__copy', onClick: function () { clip[1](!clip[0]); } }, clip[0] ? 'Show all (' + lines + ' lines)' : 'Show less') : null,
+          h('button', { type: 'button', className: 'sx-code__copy', onClick: copy }, h(Icon, { name: s[0] ? 'check' : 'copy', size: 14 }), s[0] ? 'Copied' : 'Copy'))),
       h('pre', { className: 'sx-code__pre' }, h('code', null, p.children)));
+  }
+
+  function Table(p) {
+    var align = p.align || [];
+    var cls = function (i) { var a = align[i]; return a === 'right' ? 'is-num' : a === 'center' ? 'is-center' : undefined; };
+    return h('div', { className: cx('sx-table-wrap', p.className) },
+      h('table', { className: cx('sx-table', p.dense && 'sx-table--dense') },
+        p.caption ? h('caption', null, p.caption) : null,
+        p.columns ? h('thead', null, h('tr', null, p.columns.map(function (c, i) { return h('th', { key: i, scope: 'col', className: cls(i) }, c); }))) : null,
+        h('tbody', null, (p.rows || []).map(function (r, i) { return h('tr', { key: i }, r.map(function (c, j) { return h('td', { key: j, className: cls(j) }, c); })); }))));
   }
 
   function Kbd(p) { return h('kbd', { className: 'sx-kbd' }, p.children); }
@@ -236,6 +253,6 @@
       h(MenuList, { items: p.items, onSelect: p.onSelect, onClose: p.onClose, title: p.title }));
   }
 
-  var api = { Icon: Icon, Mascot: Mascot, Button: Button, IconButton: IconButton, Input: Input, Switch: Switch, Composer: Composer, Tabs: Tabs, NavItem: NavItem, Badge: Badge, AgentStatus: AgentStatus, Toast: Toast, Avatar: Avatar, Message: Message, ToolCall: ToolCall, ThinkingIndicator: ThinkingIndicator, CodeBlock: CodeBlock, Card: Card, Kbd: Kbd, Spinner: Spinner, Wave: Wave, TextShimmer: TextShimmer, Popover: Popover, MenuList: MenuList, Menu: Menu };
+  var api = { Icon: Icon, Mascot: Mascot, Button: Button, IconButton: IconButton, Input: Input, Switch: Switch, Composer: Composer, Tabs: Tabs, NavItem: NavItem, Badge: Badge, AgentStatus: AgentStatus, Toast: Toast, Avatar: Avatar, Message: Message, ToolCall: ToolCall, ThinkingIndicator: ThinkingIndicator, CodeBlock: CodeBlock, Card: Card, Kbd: Kbd, Spinner: Spinner, Wave: Wave, TextShimmer: TextShimmer, Popover: Popover, MenuList: MenuList, Menu: Menu, Table: Table };
   window.Shibaox = Object.assign(window.Shibaox || {}, api);
 })();
