@@ -4,7 +4,6 @@ import type {
   ConnectorTemplate,
   Envelope,
   InboxItem,
-  PluginRow,
   RoleRow,
   RunSummaryPlus,
   SkillRow,
@@ -13,7 +12,7 @@ import type {
 import type { McpServer } from '@wizardingcode/shibaox-schemas';
 import { App } from '../src/App.js';
 import { AppHttpError, type RunFileContent } from '../src/api/client.js';
-import type { McpRow } from '../src/screens/customize/types.js';
+import type { McpRow, PluginMode, PluginRowModes } from '../src/screens/customize/types.js';
 import { AppStore, type StoreClient } from '../src/store/store.js';
 
 export const summary = (id: string, o: Partial<RunSummaryPlus> = {}): RunSummaryPlus =>
@@ -224,29 +223,111 @@ export const DISCOVER: Record<
     { id: 'pdf', name: 'pdf', description: 'Another pdf', path: 'skills/pdf' },
   ],
 };
-export const PLUGINS: PluginRow[] = [
+const HF_ACCOUNT: PluginMode = {
+  id: 'account',
+  name: 'Account',
+  description: 'Your Higgsfield login: the CLI, the MCP and your plan credits',
+  active: true,
+  status: 'partial',
+  checks: [
+    { label: 'CLI installed', ok: true, detail: '1.1.26' },
+    { label: 'Logged in', ok: true, detail: 'andre@example.com · plus · 3.5 credits' },
+    { label: 'MCP reachable', ok: false, detail: 'unauthorized' },
+  ],
+  keys: [],
+  actions: [
+    {
+      id: 'install',
+      label: 'Install command',
+      command: 'curl -fsSL https://higgsfield.ai/cli/install.sh | sh',
+    },
+    { id: 'login', label: 'Log in', href: '/integrations/higgsfield/login' },
+    { id: 'signup', label: 'Create an account', href: 'https://higgsfield.ai?fpr=andre-4fae29' },
+    { id: 'open', label: 'Open Higgsfield', href: 'https://higgsfield.ai' },
+  ],
+  brings: { connectors: ['higgsfield'], skills: ['higgsfield'] },
+};
+
+export const HF_API: PluginMode = {
+  id: 'api',
+  name: 'API',
+  description: 'A developer key from open.higgsfield.ai: the REST API, billed to that account',
+  active: false,
+  status: 'off',
+  checks: [
+    { label: 'API key saved', ok: false, detail: 'no key' },
+    { label: 'API key valid', ok: false, detail: 'no key' },
+  ],
+  keys: [{ name: 'HIGGSFIELD_API_KEY', present: false }],
+  actions: [
+    { id: 'connect_key', label: 'Connect API key', href: 'https://open.higgsfield.ai/api-keys' },
+    { id: 'docs', label: 'API docs', href: 'https://docs.higgsfield.ai' },
+  ],
+  brings: {
+    connectors: [],
+    skills: ['higgsfield', 'higgsfield-app'],
+    builtin: ['higgsfield', 'higgsfield-app'],
+    tools: [
+      'higgsfield_api_generate',
+      'higgsfield_api_status',
+      'higgsfield_api_cancel',
+      'higgsfield_api_upload',
+    ],
+  },
+};
+
+/** The Higgsfield row with its API key saved; `active`: the API is what tasks use. */
+export function higgsfieldApi(o: {
+  active: boolean;
+  configured?: 'auto' | 'account' | 'api';
+  valid?: boolean;
+}): PluginRowModes {
+  const api: PluginMode = {
+    ...HF_API,
+    active: o.active,
+    status: o.valid === false ? 'partial' : 'ready',
+    checks: [
+      { label: 'API key saved', ok: true },
+      {
+        label: 'API key valid',
+        ok: o.valid !== false,
+        detail: o.valid === false ? 'rejected by Higgsfield (401)' : 'accepted',
+      },
+    ],
+    keys: [{ name: 'HIGGSFIELD_API_KEY', present: true }],
+    actions: [
+      { id: 'connect_key', label: 'Manage API key', href: 'https://open.higgsfield.ai/api-keys' },
+      { id: 'docs', label: 'API docs', href: 'https://docs.higgsfield.ai' },
+    ],
+  };
+  const account = { ...HF_ACCOUNT, active: !o.active };
+  const top = o.active ? api : account;
+  return {
+    id: 'higgsfield',
+    name: 'Higgsfield',
+    description: 'Images, video, audio and 3D from 40+ models',
+    status: top.status,
+    checks: top.checks,
+    keys: top.keys,
+    actions: top.actions,
+    brings: top.brings,
+    modes: [account, api],
+    mode: { configured: o.configured ?? 'auto', effective: o.active ? 'api' : 'account' },
+  };
+}
+
+export const PLUGINS: PluginRowModes[] = [
   {
     id: 'higgsfield',
     name: 'Higgsfield',
     description: 'Images, video, audio and 3D from 40+ models',
     status: 'partial',
-    checks: [
-      { label: 'CLI installed', ok: true, detail: '1.1.26' },
-      { label: 'Logged in', ok: true, detail: 'andre@example.com · plus · 3.5 credits' },
-      { label: 'MCP reachable', ok: false, detail: 'unauthorized' },
-    ],
+    checks: HF_ACCOUNT.checks,
     keys: [],
-    actions: [
-      {
-        id: 'install',
-        label: 'Install command',
-        command: 'curl -fsSL https://higgsfield.ai/cli/install.sh | sh',
-      },
-      { id: 'login', label: 'Log in', href: '/integrations/higgsfield/login' },
-      { id: 'signup', label: 'Create an account', href: 'https://higgsfield.ai?fpr=andre-4fae29' },
-      { id: 'open', label: 'Open Higgsfield', href: 'https://higgsfield.ai' },
-    ],
+    actions: HF_ACCOUNT.actions,
     brings: { connectors: ['higgsfield'], skills: ['higgsfield'] },
+    modes: [HF_ACCOUNT, HF_API],
+    mode: { configured: 'auto', effective: 'account' },
   },
   {
     id: 'github',
@@ -296,8 +377,10 @@ export function client(
     routines?: unknown[];
     skills?: SkillRow[];
     roles?: RoleRow[];
-    plugins?: PluginRow[];
+    plugins?: PluginRowModes[];
     mcp?: McpRow[];
+    /** GET /keys answers these instead. */
+    keys?: Awaited<ReturnType<StoreClient['keys']>>;
     /** addSkill skips these ids with that reason. */
     skip?: Record<string, string>;
     /** addSkill leaves these files out of the skills it adds. */
@@ -395,6 +478,10 @@ export function client(
     async higgsfieldLogin() {
       rec('higgsfieldLogin');
       return { started: true };
+    },
+    async setHiggsfieldMode(mode) {
+      rec('setHiggsfieldMode', mode);
+      return {} as never;
     },
     async decisions() {
       return {
@@ -531,6 +618,7 @@ export function client(
       return {};
     },
     async keys() {
+      if (o.keys) return o.keys;
       return [
         { name: 'OPENAI_API_KEY', description: 'OpenAI', set: false },
         {
@@ -551,6 +639,11 @@ export function client(
           set: false,
         },
         { name: 'MISTRAL_API_KEY', description: 'Mistral', set: false },
+        {
+          name: 'HIGGSFIELD_API_KEY',
+          description: 'Higgsfield API (open.higgsfield.ai): the id:secret pair as copied',
+          set: false,
+        },
       ];
     },
     async setKey(name, value) {
@@ -601,7 +694,7 @@ export function client(
     async addSkill(org, req) {
       rec('addSkill', org, req);
       const ids =
-        req.source === 'inline'
+        req.source === 'inline' || req.source === 'builtin'
           ? [req.id]
           : req.source === 'repo'
             ? (req.ids ?? [])

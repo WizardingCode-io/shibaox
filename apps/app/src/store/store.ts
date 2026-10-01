@@ -8,7 +8,6 @@ import type {
   RolePatch,
   RoutineInput,
   RunSummaryPlus,
-  SkillAddRequest,
   SkillDiscovery,
   SubmitRequest,
 } from '@wizardingcode/shibaox-daemon';
@@ -23,7 +22,12 @@ import {
   threadView,
 } from '@wizardingcode/shibaox-view';
 import type { AppClient, RoutineDraft, RoutinePatch, RunFileContent } from '../api/client.js';
-import type { AddSkillOutcome, SkillDoc } from '../screens/customize/types.js';
+import type {
+  AddSkillOutcome,
+  HiggsfieldMode,
+  SkillAddReq,
+  SkillDoc,
+} from '../screens/customize/types.js';
 import { type AppState, initialState, type Settings, TERMINAL } from './state.js';
 
 /** The part of AppClient the store uses (a fake in tests). */
@@ -50,6 +54,7 @@ export type StoreClient = Pick<
   | 'decisions'
   | 'higgsfield'
   | 'higgsfieldLogin'
+  | 'setHiggsfieldMode'
   | 'fileBlob'
   | 'routines'
   | 'runRoutine'
@@ -670,7 +675,9 @@ export class AppStore {
           await new Promise((res) => setTimeout(res, 3000));
           await this.refreshHiggsfield();
           const hf = this.state.customize?.plugins.find((p) => p.id === 'higgsfield');
-          if (hf?.checks.some((c) => c.label === 'Logged in' && c.ok)) break;
+          // with modes, the login is the account mode's (the top level may be the API's)
+          const checks = hf?.modes?.find((m) => m.id === 'account')?.checks ?? hf?.checks;
+          if (checks?.some((c) => c.label === 'Logged in' && c.ok)) break;
         }
       })();
       return r;
@@ -885,6 +892,14 @@ export class AppStore {
     })();
   }
 
+  /** Sets what Higgsfield generates with (daemon.yaml), then reads the plugins again. */
+  setHiggsfieldMode(mode: HiggsfieldMode): Promise<boolean> {
+    return this.act(async () => {
+      await this.client.setHiggsfieldMode(mode);
+      await this.refreshHiggsfield();
+    });
+  }
+
   /** The plugins again (Higgsfield's status among them), after a login in the browser. */
   async refreshHiggsfield(): Promise<void> {
     const plugins = await this.client.plugins().catch(() => undefined);
@@ -922,7 +937,7 @@ export class AppStore {
     return this.load(async () => this.client.skill(await this.orgRoot(), id));
   }
   /** Installs or writes skills; the result says what was added and skipped (undefined: the toast says why). */
-  async addSkill(req: SkillAddRequest): Promise<AddSkillOutcome | undefined> {
+  async addSkill(req: SkillAddReq): Promise<AddSkillOutcome | undefined> {
     let r: AddSkillOutcome | undefined;
     const ok = await this.act(async () => {
       r = await this.client.addSkill(await this.orgRoot(), req);
