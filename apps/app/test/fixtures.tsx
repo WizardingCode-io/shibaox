@@ -551,6 +551,12 @@ export function client(
             target: 'npx -y @playwright/mcp',
             roles: ['browser-qa'],
             keys: [{ name: 'PW_TOKEN', present: false }],
+            server: server({
+              transport: 'stdio',
+              command: 'npx',
+              args: ['-y', '@playwright/mcp'],
+              env_keys: ['PW_TOKEN'],
+            }),
           },
         ]
       );

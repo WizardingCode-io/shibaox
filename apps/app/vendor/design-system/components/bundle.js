@@ -212,11 +212,13 @@
   function Textarea(p) {
     var rest = Object.assign({}, p);
     ['label', 'hint', 'error', 'className', 'rows'].forEach((k) => { delete rest[k]; });
-    var id = p.id || (p.label ? 'ta-' + p.label.toLowerCase().replace(/[^a-z0-9]+/g, '-') : undefined);
-    return h('label', { className: cx('sx-field', 'sx-field--area', p.error && 'is-error', p.className), htmlFor: id },
-      p.label ? h('span', { className: 'sx-field__label' }, p.label) : null,
-      h('textarea', Object.assign({ className: 'sx-field__area', rows: p.rows || 4, id: id }, rest)),
-      (p.error || p.hint) ? h('span', { className: 'sx-field__hint' }, p.error || p.hint) : null);
+    var ref = React.useRef(null); if (ref.current === null) ref.current = 'sxt' + (++uid);
+    var id = p.id || ref.current;
+    // the label names the field alone; the hint describes it (as Input does)
+    return h('div', { className: cx('sx-field', 'sx-field--area', p.error && 'is-error', p.className) },
+      p.label ? h('label', { className: 'sx-field__label', htmlFor: id }, p.label) : null,
+      h('textarea', Object.assign({ className: 'sx-field__area', rows: p.rows || 4, id: id, 'aria-invalid': p.error ? true : undefined, 'aria-describedby': (p.error || p.hint) ? id + '-d' : undefined }, rest)),
+      (p.error || p.hint) ? h('p', { id: id + '-d', className: 'sx-field__hint' }, p.error || p.hint) : null);
   }
 
   function Select(p) {

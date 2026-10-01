@@ -35,6 +35,15 @@ describe('the design system bundle', () => {
 });
 
 describe('the design system: Customize additions', () => {
+  it('Textarea: the label names the field alone, the hint describes it', async () => {
+    const S = await load();
+    render(<S.Textarea label="Arguments" hint="One per line" rows={2} />);
+    const area = screen.getByLabelText('Arguments');
+    expect(area.tagName).toBe('TEXTAREA');
+    const hint = document.getElementById(area.getAttribute('aria-describedby') ?? '');
+    expect(hint?.textContent).toBe('One per line');
+  });
+
   it('Segmented is a radiogroup that moves with the arrows and shows a dot', async () => {
     const S = await load();
     const seen: string[] = [];

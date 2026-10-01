@@ -335,8 +335,10 @@ describe('Customize: Connectors', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Add a custom connector' });
     fireEvent.click(within(dialog).getByRole('radio', { name: 'stdio' }));
     fireEvent.change(within(dialog).getByLabelText('Id'), { target: { value: 'files' } });
-    fireEvent.change(within(dialog).getByLabelText('Command'), {
-      target: { value: 'npx -y @modelcontextprotocol/server-filesystem /tmp' },
+    fireEvent.change(within(dialog).getByLabelText('Command'), { target: { value: 'npx' } });
+    // one argument per line: a path with a space stays one argument
+    fireEvent.change(within(dialog).getByLabelText('Arguments'), {
+      target: { value: '-y\n@modelcontextprotocol/server-filesystem\n/tmp/my files\n' },
     });
     fireEvent.click(within(dialog).getByRole('checkbox', { name: /Assistant/ }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
@@ -349,10 +351,131 @@ describe('Customize: Connectors', () => {
           server: {
             transport: 'stdio',
             command: 'npx',
-            args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'],
+            args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp/my files'],
           },
           roles: [],
         },
+      ]),
+    );
+  });
+
+  it('Edit… starts from the server as written and replaces it, roles as ticked', async () => {
+    const { client: c, calls } = client({
+      mcp: [
+        {
+          id: 'playwright',
+          description: 'A browser',
+          transport: 'stdio',
+          target: 'npx -y @playwright/mcp --viewport-size 1280, 720',
+          tools: ['browser_navigate'],
+          roles: ['browser-qa'],
+          keys: [{ name: 'PW_TOKEN', present: false }],
+          server: server({
+            transport: 'stdio',
+            command: 'npx',
+            args: ['-y', '@playwright/mcp', '--viewport-size', '1280, 720'],
+            env: { DEBUG: 'pw' },
+            env_keys: ['PW_TOKEN'],
+            tools: ['browser_navigate'],
+            timeout_ms: 60_000,
+          }),
+        },
+        {
+          id: 'acme',
+          description: 'Acme search',
+          transport: 'http',
+          target: 'https://mcp.acme.dev/mcp',
+          roles: ['assistant'],
+          keys: [{ name: 'ACME_KEY', present: true }],
+          server: server({
+            transport: 'http',
+            url: 'https://mcp.acme.dev/mcp',
+            headers: { Authorization: BEARER },
+            env_keys: ['ACME_KEY'],
+            bearer_command: ['acme', 'auth', 'print token'],
+          }),
+        },
+      ],
+    });
+    mount(c, { hash: '#/customize&tab=connectors' });
+    await screen.findByText('playwright');
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for playwright' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Edit…' }));
+    let dialog = await screen.findByRole('dialog', { name: 'Edit playwright' });
+    const value = (label: string) =>
+      (within(dialog).getByLabelText(label) as HTMLInputElement).value;
+    expect(value('Command')).toBe('npx');
+    expect(value('Arguments')).toBe('-y\n@playwright/mcp\n--viewport-size\n1280, 720');
+    expect(value('Environment')).toBe('DEBUG=pw');
+    expect(value('Keys')).toBe('PW_TOKEN');
+    expect(value('Tools')).toBe('browser_navigate');
+    expect(value('Timeout (seconds)')).toBe('60');
+    const qa = within(dialog).getByRole('checkbox', { name: /Browser QA/ }) as HTMLInputElement;
+    expect(qa.checked).toBe(true);
+    // unticking detaches: the daemon replaces the attachment set
+    fireEvent.click(qa);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(call(calls, 'addMcp')).toEqual([
+        '/o',
+        {
+          id: 'playwright',
+          description: 'A browser',
+          server: {
+            transport: 'stdio',
+            command: 'npx',
+            args: ['-y', '@playwright/mcp', '--viewport-size', '1280, 720'],
+            env: { DEBUG: 'pw' },
+            env_keys: ['PW_TOKEN'],
+            tools: ['browser_navigate'],
+            timeout_ms: 60_000,
+          },
+          roles: [],
+          replace: true,
+        },
+      ]),
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // an http server keeps its headers and its bearer command as they were
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for acme' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Edit…' }));
+    dialog = await screen.findByRole('dialog', { name: 'Edit acme' });
+    expect(value('Headers')).toBe(`Authorization: ${BEARER}`);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(calls.filter((x) => x.name === 'addMcp')[1]?.args).toEqual([
+        '/o',
+        {
+          id: 'acme',
+          description: 'Acme search',
+          server: {
+            transport: 'http',
+            url: 'https://mcp.acme.dev/mcp',
+            env_keys: ['ACME_KEY'],
+            headers: { Authorization: BEARER },
+            bearer_command: ['acme', 'auth', 'print token'],
+          },
+          roles: ['assistant'],
+          replace: true,
+        },
+      ]),
+    );
+  });
+
+  it('Roles… puts the connector on the roles ticked (a PUT per role that changed)', async () => {
+    const { client: c, calls } = client();
+    mount(c, { hash: '#/customize&tab=connectors' });
+    await screen.findByText('playwright');
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for playwright' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Roles…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Roles for playwright' });
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /Assistant/ }));
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /Browser QA/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(calls.filter((x) => x.name === 'setRoleLinks').map((x) => x.args)).toEqual([
+        ['/o', 'assistant', { mcp: ['playwright'] }],
+        ['/o', 'browser-qa', { mcp: [] }],
       ]),
     );
   });
