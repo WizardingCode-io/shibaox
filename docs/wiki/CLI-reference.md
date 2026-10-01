@@ -32,6 +32,10 @@
 | `shibaox tiers [--org <dir>]`, `shibaox tiers set <strong\|cheap\|decision\|judge\|adapter\|budget> <value>` | the org's tiers, judge, adapter and budget (`none` clears judge/adapter) |
 | `shibaox keys list\|set <NAME> [value]\|unset <NAME>` | the key vault (value from stdin when omitted) |
 | `shibaox mcp list [--org <dir>]`, `shibaox mcp test <id> [--org <dir>]` | the catalog's MCP servers (roles, keys), and a start-and-list check of one on the daemon |
+| `shibaox mcp add <id> (--url <https> \| --command <cmd> [--arg …]) [--key NAME…] [--header K=V…] [--bearer-command <cmd>] [--tool …] [--role …] [--description …] [--timeout <ms>] [--replace] [--org <dir>]`, `shibaox mcp rm <id> [--org <dir>]` | writes `catalog/<id>.yaml` and gives it to roles (refused when the id exists, unless `--replace`); `rm` takes it off every role first ([MCP and skills](MCP-and-skills)) |
+| `shibaox skills list [--org <dir>]`, `shibaox skills add <owner/repo[/path] \| git URL \| dir> [--id <id>…] [--path <p>] [--org <dir>]`, `shibaox skills rm <id> [--detach] [--org <dir>]` | the org's skills: install from a repository (shallow clone) or a folder, existing ids skipped; `rm` is refused while a role uses the skill unless `--detach` |
+| `shibaox roles list [--org <dir>]` | each role's model, MCP servers and skills |
+| `shibaox plugins` | Higgsfield, GitHub, Telegram, TypeSafe / Jev: each check, and `ready`, `partial` or `off` |
 | `shibaox providers list [--configured]`, `shibaox providers test <provider> [--model <m>]` | the catalog and a real test call |
 | `shibaox models --org <dir>` | how each role of the org resolves to a model |
 

@@ -48,6 +48,44 @@ skills: [e2e-checklist]    # org/skills/e2e-checklist/SKILL.md, appended to the 
 
 `org/skills/<id>/SKILL.md`, Markdown, optional YAML frontmatter (dropped from the prompt). Each skill of a role goes into the system prompt as `## Skill: <id>` followed by the file's body, in both runtimes. Keep them short and imperative; they are read on every task of the role. Files next to `SKILL.md` are not sent (the skill may tell the model to read them from the workspace when the org is checked out there).
 
+## Adding a connector from the app or CLI
+
+The app's **Customize → Connectors** (and the CLI) write the catalog file and the role lists for you, keeping the comments of files that exist:
+
+```
+shibaox mcp add github --url https://api.githubcopilot.com/mcp/ \
+  --header 'Authorization=Bearer ${GH_TOKEN}' --role assistant --description "GitHub"
+shibaox mcp add fetch --command uvx --arg mcp-server-fetch --tool fetch --role backend
+shibaox mcp rm github           # taken off every role first, then catalog/github.yaml is deleted
+shibaox roles list              # each role's model, mcp and skills
+```
+
+`mcp add` takes `--url` (http) or `--command` (stdio) with `--arg` (repeat it; a value starting with `-` takes the `=` form, `--arg=-y`), `--key NAME` (a vault key the server needs), `--header NAME=VALUE`, `--bearer-command "<cmd>"` (split on spaces, never a shell), `--tool`, `--role`, `--description`, `--timeout <ms>`, and `--replace` to overwrite an entry with the same id (it is refused otherwise). A `${KEY}` in a header is added to `env_keys` by itself. The roles named must exist; the entry is checked against the catalog schema before anything is written.
+
+The API behind both: `POST /mcp?org=` with `{id, description, tags?, server, roles?, replace?}` (409 when the id exists and `replace` is not set), `DELETE /mcp/:id?org=`, `GET /roles?org=` and `PUT /roles/:id?org=` with `{mcp?, skills?}` (the lists are replaced; an unknown server, an entry that is not an `mcp` server, a reserved id or a skill without its `SKILL.md` is a 400 naming it).
+
+### The registry
+
+`GET /registry/connectors` is a built-in list of ready entries the app's **Discover** shows, each with its vendor, a `verified` flag (run by the vendor), a category (Code, Browser, Data, Docs, Design & media, Productivity, Infra, Search), the keys it needs with where to get them, and the `server` block to add: Higgsfield, Playwright (both the scaffold's own files), GitHub, Context7, Fetch, Filesystem, Memory, Sequential thinking, Notion, Linear, Sentry, Stripe, Supabase, Cloudflare docs, Firecrawl, Exa, Brave Search, Postgres, Figma, Vercel and Slack. The http servers that use OAuth (Notion, Linear, Sentry, Supabase, Figma, Vercel) have no key: they sign in on first use. Postgres takes its connection URL as the last argument: edit it after adding. `GET /registry/skills` lists the skill repositories offered (`anthropics/skills`, `higgsfield-ai/skills`, Shibaox's templates); their contents come from `/skills/discover`.
+
+## Skills from a repository
+
+```
+shibaox skills list                              # every skill, and the roles that use it
+shibaox skills add anthropics/skills/skills      # owner/repo[/path]: every folder with a SKILL.md
+shibaox skills add anthropics/skills --path skills --id pdf --id docx
+shibaox skills add ~/my-skills                   # a folder on this machine
+shibaox skills rm pdf [--detach]                 # refused while a role uses it, unless --detach
+```
+
+The daemon clones the repository (`git clone --depth 1 --no-recurse-submodules`, no shell, a minimal environment, 60 s, 50 MB at most) into a temporary directory that is always removed, finds every directory holding a `SKILL.md` under the path, and copies each as `org/skills/<directory name>/`. The id must be a valid org id (letters, digits, `-`, `_`, `:`); an id that exists already is skipped (`exists`), never overwritten. Only regular files are copied, at most 1 MB each and 10 MB per skill (`too_large` otherwise); symlinks are never followed or copied, and nothing outside the skill's directory is read. A new skill is not used until a role lists it (`skills: [id]`, or **Roles…** in the app).
+
+The API: `GET /skills?org=` → `{id, name, description, path, roles}[]` (name and description from the frontmatter, else the id and the first paragraph); `POST /skills?org=` with `{source: 'repo', repo, path?, ids?}`, `{source: 'folder', path}` or `{source: 'inline', id, content}` → `{added, skipped: {id, reason}[]}`; `GET /skills/discover?repo=&path=` lists a repository's skills without installing (cached for 10 minutes per daemon); `DELETE /skills/:id?org=&detach=1` (409 with `roles` when used and not detaching).
+
+## Plugins
+
+`shibaox plugins` (`GET /plugins`) shows the integrations that need more than one server: Higgsfield (the CLI, the login, the MCP), GitHub (`gh` and a token), Telegram (the bot token) and TypeSafe / Jev (the key and whether Jev decides). Each is `ready` when every check passes, `partial` when some do, `off` when none.
+
 ## Checking what is wired
 
 ```
