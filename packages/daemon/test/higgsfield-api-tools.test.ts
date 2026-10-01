@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { AgentTool } from '@wizardingcode/shibaox-core';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  defaultSleep,
   type HiggsfieldApiDeps,
   higgsfieldApiTools,
   nextDelay,
@@ -208,6 +209,64 @@ describe('higgsfield_api_generate', () => {
     expect(r.note).toMatch(/higgsfield_api_status/);
   });
 
+  it('a persistent 429 on status gives unknown after five answers, never a cancel', async () => {
+    const { f, seen } = fakeFetch((req) =>
+      req.method === 'POST' ? { status: 200, body: submitted } : { status: 429 },
+    );
+    const r = (await deps({ fetch: f })
+      .tool('higgsfield_api_generate')
+      .execute({ model_path: 'a/b', input: {} })) as { status: string; note: string };
+    expect(r.status).toBe('unknown');
+    expect(r.note).toMatch(/higgsfield_api_status/);
+    expect(r.note).toMatch(/do not submit again/);
+    expect(seen.filter((s) => s.method === 'GET')).toHaveLength(5);
+    expect(seen.some((s) => s.url.endsWith('/cancel'))).toBe(false);
+  });
+
+  it('network failures and non-2xx answers count together toward unknown', async () => {
+    let gets = 0;
+    const { f, seen } = fakeFetch((req) => {
+      if (req.method === 'POST') return { status: 200, body: submitted };
+      gets++;
+      return gets % 2 ? new Error('reset') : { status: 429 };
+    });
+    const r = (await deps({ fetch: f })
+      .tool('higgsfield_api_generate')
+      .execute({ model_path: 'a/b', input: {} })) as { status: string };
+    expect(r.status).toBe('unknown');
+    expect(seen.filter((s) => s.method === 'GET')).toHaveLength(5);
+  });
+
+  it('a 401 in the middle of polling keeps the request id and says not to submit again', async () => {
+    let gets = 0;
+    const { f } = fakeFetch((req) => {
+      if (req.method === 'POST') return { status: 200, body: submitted };
+      return ++gets === 1
+        ? { status: 200, body: { status: 'in_progress' } }
+        : { status: 401, body: { detail: `bad ${KEY}` } };
+    });
+    const p = deps({ fetch: f })
+      .tool('higgsfield_api_generate')
+      .execute({ model_path: 'a/b', input: {} });
+    await expect(p).rejects.toThrow(
+      /request r-1 may still be running; check it with higgsfield_api_status after replacing the key \(do not submit again\)/,
+    );
+    await p.catch((e: Error) => expect(e.message).not.toContain('sekret'));
+  });
+
+  it('a submit aborted by a run cancel may or may not exist: do not submit again', async () => {
+    const ac = new AbortController();
+    const { f } = fakeFetch(() => {
+      ac.abort();
+      return new Error('aborted');
+    });
+    await expect(
+      deps({ fetch: f, signal: () => ac.signal })
+        .tool('higgsfield_api_generate')
+        .execute({ model_path: 'a/b', input: {} }),
+    ).rejects.toThrow(/cancelled.*may or may not exist.*do not submit it again/i);
+  });
+
   it('a 404 on status is an unknown request id', async () => {
     const { f } = fakeFetch((req) =>
       req.method === 'POST' ? { status: 200, body: submitted } : { status: 404 },
@@ -355,6 +414,59 @@ describe('higgsfield_api_upload', () => {
     expect(logs.join('\n')).not.toContain('Signature');
   });
 
+  it('drops Authorization in any case from upload_headers', async () => {
+    const { f, seen } = fakeFetch((req) =>
+      req.url.endsWith('/files/generate-upload-url')
+        ? {
+            status: 200,
+            body: {
+              upload_url: 'https://s3.test/put?sig=1',
+              upload_headers: {
+                Authorization: 'Key x',
+                authorization: 'Key y',
+                'Content-Type': 'image/png',
+              },
+              public_url: 'https://cdn.test/dog.png',
+            },
+          }
+        : { status: 200 },
+    );
+    await deps({ fetch: f }).tool('higgsfield_api_upload').execute({ path: 'attachments/dog.png' });
+    expect(seen[1]?.headers).toEqual({ 'Content-Type': 'image/png' });
+  });
+
+  it("adds the file's content type when no returned header carries one", async () => {
+    const { f, seen } = fakeFetch((req) =>
+      req.url.endsWith('/files/generate-upload-url')
+        ? {
+            status: 200,
+            body: {
+              upload_url: 'https://s3.test/put?sig=1',
+              upload_headers: { 'x-amz-acl': 'private' },
+              public_url: 'https://cdn.test/dog.png',
+            },
+          }
+        : { status: 200 },
+    );
+    await deps({ fetch: f }).tool('higgsfield_api_upload').execute({ path: 'attachments/dog.png' });
+    expect(seen[1]?.headers).toEqual({ 'x-amz-acl': 'private', 'content-type': 'image/png' });
+  });
+
+  it('an upload-URL refusal never shows the key or a signed URL', async () => {
+    const { f } = fakeFetch(() => ({
+      status: 400,
+      body: `bad request for ${KEY} at https://s3.test/put?X-Amz-Signature=sig`,
+    }));
+    const p = deps({ fetch: f }).tool('higgsfield_api_upload').execute({
+      path: 'attachments/dog.png',
+    });
+    await expect(p).rejects.toThrow(/refused the upload request \(400\)/);
+    await p.catch((e: Error) => {
+      expect(e.message).not.toContain('sekret');
+      expect(e.message).not.toContain('Signature=sig');
+    });
+  });
+
   it('a failed PUT reports the storage error code, never the signed URL', async () => {
     const { f } = fakeFetch((req) =>
       req.url.endsWith('/files/generate-upload-url')
@@ -400,5 +512,33 @@ describe('scrub', () => {
       'k=[redacted] s=[redacted] u=[redacted] v=https://cdn/a.png',
     );
     expect(scrub('nothing', undefined)).toBe('nothing');
+  });
+});
+
+describe('defaultSleep', () => {
+  it('removes its abort listener when the timer fires (no listeners pile up over polls)', async () => {
+    const ac = new AbortController();
+    let added = 0;
+    let removed = 0;
+    const add = ac.signal.addEventListener.bind(ac.signal);
+    const remove = ac.signal.removeEventListener.bind(ac.signal);
+    ac.signal.addEventListener = ((...a: Parameters<typeof add>) => {
+      added++;
+      add(...a);
+    }) as typeof add;
+    ac.signal.removeEventListener = ((...a: Parameters<typeof remove>) => {
+      removed++;
+      remove(...a);
+    }) as typeof remove;
+    for (let i = 0; i < 12; i++) await defaultSleep(1, ac.signal);
+    expect(added).toBe(12);
+    expect(removed).toBe(12);
+  });
+
+  it('resolves at once on abort', async () => {
+    const ac = new AbortController();
+    const p = defaultSleep(60_000, ac.signal);
+    ac.abort();
+    await p;
   });
 });

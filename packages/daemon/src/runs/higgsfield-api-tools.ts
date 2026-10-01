@@ -31,7 +31,7 @@ const KEY_REFUSED =
 const TERMINAL = new Set(['completed', 'failed', 'nsfw', 'canceled']);
 const MODEL_PATH = /^[a-z0-9][\w.-]*(\/[a-z0-9][\w.-]*)+$/;
 const REQUEST_ID = /^[\w-]{1,100}$/;
-/** Status answers in a row that may fail (5xx, network) before the poll gives up as `unknown`. */
+/** Status answers in a row that may fail (non-2xx, network) before the poll gives up as `unknown`. */
 const STATUS_FAILURES = 5;
 
 /** The poll steps without jitter: 2 s, then ×1.5 up to 10 s. */
@@ -103,18 +103,19 @@ function resultOf(request_id: string, j: StatusBody) {
   };
 }
 
-const defaultSleep = (ms: number, signal?: AbortSignal) =>
+/** Waits `ms`, or less when `signal` aborts; the abort listener never outlives the wait. */
+export const defaultSleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve) => {
     if (signal?.aborted) return resolve();
-    const t = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(t);
-        resolve();
-      },
-      { once: true },
-    );
+    const onAbort = () => {
+      clearTimeout(t);
+      resolve();
+    };
+    const t = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 
 export function higgsfieldApiTools(d: HiggsfieldApiDeps): AgentTool[] {
@@ -218,7 +219,10 @@ export function higgsfieldApiTools(d: HiggsfieldApiDeps): AgentTool[] {
         try {
           submit = await api('POST', path, i.input);
         } catch (e) {
-          if (runSignal()?.aborted) fail('the run was cancelled before Higgsfield answered');
+          if (runSignal()?.aborted)
+            fail(
+              'the run was cancelled before Higgsfield answered the submission: the request may or may not exist. Do not submit it again; ask the user (they can see it at https://higgsfield.ai).',
+            );
           return fail(
             `Higgsfield did not answer the submission (${e instanceof Error ? e.message : String(e)}): the request may or may not exist. Do not submit it again; ask the user (they can see it at https://higgsfield.ai).`,
           );
@@ -264,27 +268,24 @@ export function higgsfieldApiTools(d: HiggsfieldApiDeps): AgentTool[] {
           } catch {
             r = undefined;
           }
-          if (r === undefined || r.status >= 500) {
+          if (r !== undefined) {
+            if (r.status === 401 || r.status === 403)
+              fail(
+                `${KEY_REFUSED}; request ${id} may still be running; check it with higgsfield_api_status after replacing the key (do not submit again)`,
+              );
+            if (r.status === 404) fail(`unknown request id ${id}: Higgsfield does not know it`);
+          }
+          // a network error or any non-2xx answer (5xx, 429, …): retried, then `unknown`
+          if (r === undefined || r.status < 200 || r.status >= 300) {
             if (++failures >= STATUS_FAILURES)
               return {
                 request_id: id,
                 status: 'unknown',
-                note: `Higgsfield did not answer the status ${STATUS_FAILURES} times in a row: check later with higgsfield_api_status (request_id ${id}); do not submit again`,
+                note: `Higgsfield did not answer the status ${STATUS_FAILURES} times in a row${r ? ` (last: ${r.status})` : ''}: check later with higgsfield_api_status (request_id ${id}); do not submit again`,
               };
             continue;
           }
           failures = 0;
-          refusedOr(r.status);
-          if (r.status === 404) fail(`unknown request id ${id}: Higgsfield does not know it`);
-          if (r.status < 200 || r.status >= 300) {
-            if (++failures >= STATUS_FAILURES)
-              return {
-                request_id: id,
-                status: 'unknown',
-                note: `the status answered ${r.status}: check later with higgsfield_api_status; do not submit again`,
-              };
-            continue;
-          }
           const status = String((r.json as StatusBody).status ?? '');
           if (TERMINAL.has(status)) {
             log(`${id} ${status}`);
@@ -370,6 +371,8 @@ export function higgsfieldApiTools(d: HiggsfieldApiDeps): AgentTool[] {
         if (rawHeaders && typeof rawHeaders === 'object')
           for (const [k, v] of Object.entries(rawHeaders as Record<string, unknown>))
             if (typeof v === 'string' && k.toLowerCase() !== 'authorization') headers[k] = v;
+        if (!Object.keys(headers).some((k) => k.toLowerCase() === 'content-type'))
+          headers['content-type'] = f.contentType;
         let put: Response;
         try {
           put = await d.fetch(uploadUrl as string, {
