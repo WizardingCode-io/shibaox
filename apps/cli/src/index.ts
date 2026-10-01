@@ -358,7 +358,12 @@ mcp
     collect,
     [],
   )
-  .option('--bearer-command <cmd>', 'http: a command whose output is the bearer token (no shell)')
+  .option(
+    '--bearer-command <arg>',
+    'http: the command whose output is the bearer token, one argument per flag (repeat it; no shell)',
+    collect,
+    [],
+  )
   .option('--tool <name>', 'offer only these tools (repeat it)', collect, [])
   .option('--role <role>', 'give it to this role (repeat it)', collect, [])
   .option('--description <text>', 'what it is for (the catalog description)')
@@ -394,14 +399,21 @@ skills
   .description(
     'install skills from a repository (owner/repo[/path] or a git URL, cloned depth 1) or a folder on this machine',
   )
-  .argument('<source>', 'owner/repo[/path], an https git URL, or a directory')
+  .argument(
+    '<source>',
+    'owner/repo[/path] (github.com/ in front is fine), an https git URL, or a folder (./x, /x, ~/x)',
+  )
   .option('--id <id>', 'install only this skill (repeat it)', collect, [])
   .option('--path <path>', 'where the skills are inside the repository')
+  .option(
+    '--folder',
+    'the source is a folder on this machine (needed for a relative path like skills/x)',
+  )
   .option('--org <dir>', 'org directory')
   .action(async function (
     this: Command,
     source: string,
-    o: { org?: string; id?: string[]; path?: string },
+    o: { org?: string; id?: string[]; path?: string; folder?: boolean },
   ) {
     exitWith(await skillsAdd(source, o, out(this)));
   });

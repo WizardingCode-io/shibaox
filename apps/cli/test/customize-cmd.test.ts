@@ -131,7 +131,7 @@ describe('customize commands', () => {
     expect(stdio.code, stdio.stderr).toBe(0);
     const dup = await cli('mcp', 'add', 'fetch', '--command', 'x', '--org', org);
     expect(dup.code).toBe(1);
-    expect(dup.stdout + dup.stderr).toMatch(/already exists.*--replace/s);
+    expect(dup.stdout + dup.stderr).toMatch(/fetch exists \(use --replace\)/);
     const roles = await cli('roles', 'list', '--org', org);
     expect(roles.stdout).toMatch(/backend\s+.*mcp: github/);
     const rm = await cli('mcp', 'rm', 'github', '--org', org);

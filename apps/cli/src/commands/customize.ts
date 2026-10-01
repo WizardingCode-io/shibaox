@@ -1,5 +1,5 @@
-import { existsSync, statSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 import {
   DaemonHttpError,
   type McpAddRequest,
@@ -26,13 +26,23 @@ export async function skillsList(o: { org?: string }, out: Out): Promise<number>
 }
 
 /**
- * What `skills add <source>` means: an existing directory is a folder (copied by the daemon on
- * this machine); `owner/repo[/path]` or a git URL is a repository.
+ * What `skills add <source>` means: a folder on this machine (copied by the daemon) when it
+ * starts with `.`, `/` or `~`, or with `--folder`; otherwise a repository: `owner/repo[/path]`
+ * (a leading `github.com/` or `https://github.com/` is dropped) or a git URL.
  */
-export function skillSource(source: string, o: { id?: string[]; path?: string }): SkillAddRequest {
-  if (existsSync(source) && statSync(source).isDirectory())
-    return { source: 'folder', path: resolve(source) };
-  const gh = /^([a-z0-9][\w.-]*\/[a-z0-9][\w.-]*)(?:\/(.+))?$/i.exec(source);
+export function skillSource(
+  source: string,
+  o: { id?: string[]; path?: string; folder?: boolean },
+): SkillAddRequest {
+  if (o.folder || /^[./~]/.test(source)) {
+    const path =
+      source === '~' || source.startsWith('~/')
+        ? join(homedir(), source.slice(1))
+        : resolve(source);
+    return { source: 'folder', path };
+  }
+  const bare = source.replace(/^(?:https:\/\/)?github\.com\//i, '');
+  const gh = /^([a-z0-9][\w.-]*\/[a-z0-9][\w.-]*)(?:\/(.+?))?\/?$/i.exec(bare);
   const repo = gh ? (gh[1] as string) : source;
   const path = o.path ?? gh?.[2];
   return {
@@ -46,7 +56,7 @@ export function skillSource(source: string, o: { id?: string[]; path?: string })
 /** `shibaox skills add <repo|path>`: installs every skill found (or the `--id` ones). */
 export async function skillsAdd(
   source: string,
-  o: { org?: string; id?: string[]; path?: string },
+  o: { org?: string; id?: string[]; path?: string; folder?: boolean },
   out: Out,
 ): Promise<number> {
   const client = await connect({ write: true });
@@ -106,7 +116,8 @@ export interface McpAddOptions {
   arg?: string[];
   key?: string[];
   header?: string[];
-  bearerCommand?: string;
+  /** The bearer command, one argument per `--bearer-command` (never split on spaces). */
+  bearerCommand?: string[];
   tool?: string[];
   role?: string[];
   description?: string;
@@ -128,9 +139,7 @@ export function mcpAddRequest(id: string, o: McpAddOptions): McpAddRequest {
         url: o.url,
         ...common,
         ...(o.header?.length ? { headers: headerPairs(o.header) } : {}),
-        ...(o.bearerCommand
-          ? { bearer_command: o.bearerCommand.split(/\s+/).filter(Boolean) }
-          : {}),
+        ...(o.bearerCommand?.length ? { bearer_command: o.bearerCommand } : {}),
       }
     : {
         transport: 'stdio',
@@ -162,12 +171,20 @@ export async function mcpAdd(id: string, o: McpAddOptions, out: Out): Promise<nu
     return 0;
   } catch (e) {
     if (e instanceof DaemonHttpError && e.status === 409) {
-      out.line(`${e.message}: run again with --replace to overwrite it.`);
+      out.line(mcpConflictLine(e, id));
       out.obj({ id, added: false, error: e.message });
       return 1;
     }
     throw e;
   }
+}
+
+/** The line a 409 of `mcp add` prints: replace it, or pick another id. */
+export function mcpConflictLine(e: DaemonHttpError, id: string): string {
+  if (e.code === 'exists') return `${id} exists (use --replace)`;
+  if (e.code === 'catalog_file_collision')
+    return `catalog/${id}.yaml holds another entry (pick another id)`;
+  return `${id} is not an mcp entry (pick another id)`;
 }
 
 /** `shibaox mcp rm <id>`: detaches it from every role, then deletes the catalog entry. */
