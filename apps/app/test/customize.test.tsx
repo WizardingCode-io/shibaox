@@ -846,6 +846,14 @@ describe('Customize: Keys', () => {
     await waitFor(() => expect(call(calls, 'unsetKey')).toEqual(['GH_TOKEN']));
   });
 
+  it('the keys tables keep the field and Save inside (a fixed action column)', async () => {
+    const { client: c } = client();
+    mount(c, { hash: '#/customize&tab=keys' });
+    await waitFor(() => expect(firstCells('Needed now').length).toBe(3));
+    for (const name of ['Needed now', 'Providers', 'Other'])
+      expect(block(name).querySelector('.keys-table')).toBeTruthy();
+  });
+
   it('a key only in the environment says so, with no Unset', async () => {
     const { client: c } = client({
       mcp: [
@@ -944,6 +952,53 @@ describe('Customize: Models', () => {
     expect(screen.getByText('no runtime (claude)')).toBeTruthy();
     expect(screen.queryByText('openai/gpt-5')).toBeNull();
     expect(screen.queryByText('lmstudio/qwen')).toBeNull();
+  });
+
+  it('the context and the price read like the model menu; a missing key badge keeps its name whole', async () => {
+    const { client: c } = client();
+    mount(c, { hash: '#/customize&tab=models' });
+    await screen.findByText('lmstudio/qwen');
+    const row = (ref: string) =>
+      screen
+        .getAllByRole('row')
+        .find((r) => r.querySelector('td')?.textContent === ref) as HTMLElement;
+    const cells = (ref: string) =>
+      [...row(ref).querySelectorAll('td')].map((td) => td.textContent ?? '');
+    expect(cells('openrouter/meta/llama-3.3-70b').slice(3)).toEqual(['131k', '$0.12/$0.30']);
+    expect(cells('lmstudio/qwen').slice(3)).toEqual(['—', 'free']);
+    expect(cells('anthropic/claude-opus').slice(3)).toEqual(['—', '—']);
+    const missing = within(row('openai/gpt-5')).getByRole('button', {
+      name: 'OPENAI_API_KEY missing',
+    });
+    expect(missing.getAttribute('title')).toBe('Missing OPENAI_API_KEY: set it in Keys');
+  });
+
+  it('shows 60 models at a time; a search or a filter starts over', async () => {
+    const many = Array.from({ length: 130 }, (_, i) => ({
+      ref: `openrouter/m-${String(i).padStart(3, '0')}`,
+      provider: 'openrouter',
+      model: `m-${i}`,
+      configured: true,
+    }));
+    const { client: c } = client({ models: many });
+    mount(c, { hash: '#/customize&tab=models' });
+    await screen.findByText('openrouter/m-000');
+    const shown = () =>
+      within(screen.getByRole('region', { name: 'Models' })).getAllByRole('row').length - 1;
+    expect(shown()).toBe(60);
+    fireEvent.click(screen.getByRole('button', { name: 'Show 60 more' }));
+    expect(shown()).toBe(120);
+    fireEvent.click(screen.getByRole('button', { name: 'Show 10 more' }));
+    expect(shown()).toBe(130);
+    expect(screen.queryByRole('button', { name: /Show .* more/ })).toBeNull();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search models' }), {
+      target: { value: 'm-1' },
+    });
+    expect(shown()).toBe(30);
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search models' }), {
+      target: { value: '' },
+    });
+    expect(shown()).toBe(60);
   });
 
   it('decisions that cannot be read say so', async () => {

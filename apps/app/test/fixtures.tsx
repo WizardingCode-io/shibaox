@@ -310,6 +310,8 @@ export function client(
     mcpTestFails?: boolean;
     /** These methods of the client fail (`<name> failed`). */
     fail?: (keyof StoreClient)[];
+    /** GET /models answers these instead. */
+    models?: Awaited<ReturnType<StoreClient['models']>>;
   } = {},
 ) {
   const calls: { name: string; args: unknown[] }[] = [];
@@ -415,6 +417,7 @@ export function client(
       };
     },
     async models() {
+      if (o.models) return o.models;
       return [
         {
           ref: 'anthropic/claude-opus',

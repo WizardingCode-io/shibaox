@@ -200,6 +200,7 @@ export function KeysTab(props: { focus?: string }): JSX.Element {
         {needed.length ? (
           <S.Table
             dense
+            className="keys-table"
             columns={['Key', 'Needed by', 'Status', '']}
             rows={needed.map((k) => [
               <Name key="n" k={k} focus={props.focus} />,
@@ -228,6 +229,7 @@ export function KeysTab(props: { focus?: string }): JSX.Element {
         {providers.length ? (
           <S.Table
             dense
+            className="keys-table"
             columns={['Provider', 'Key', 'Status', 'Models', '']}
             align={[null, null, null, 'right', null]}
             rows={providers.map((k) => [
@@ -254,6 +256,7 @@ export function KeysTab(props: { focus?: string }): JSX.Element {
         {other.length ? (
           <S.Table
             dense
+            className="keys-table"
             columns={['Key', 'What for', 'Status', '']}
             rows={other.map((k) => [
               <Name key="n" k={k} focus={props.focus} />,

@@ -471,6 +471,38 @@ td .key-set .sx-field {
 td .key-set {
   justify-content: flex-end;
 }
+/* Keys: the action column keeps its field and Save inside the table; the field shrinks */
+.keys-table td:last-child {
+  width: 1%;
+  min-width: 216px;
+}
+.keys-table td:last-child .key-set .sx-field {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+.keys-table td:last-child .key-set > .sx-btn {
+  flex: none;
+}
+/* a long status (masked value, source, a key name) wraps instead of being clipped */
+.keys-table .sx-badge,
+.models-table .sx-badge {
+  height: auto;
+  min-height: 22px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.more-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding-top: 8px;
+}
+.skipped {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
 .stack-12 > p,
 .stack-16 > p {
   margin: 0;
@@ -496,8 +528,22 @@ td .key-set {
 }
 .checklist li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
+  line-height: 20px;
+}
+.checklist .ok,
+.checklist .bad {
+  padding-top: 2px;
+}
+/* the label stays on one line; the detail (an email, a path) wraps */
+.checklist__label {
+  flex: none;
+  white-space: nowrap;
+}
+.checklist__detail {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .checklist .ok {
   display: inline-flex;
