@@ -36,7 +36,9 @@ function Media(props: {
   const [error, setError] = useState<string | undefined>(undefined);
   const loadRef = useRef(props.load);
   loadRef.current = props.load;
+  const { id } = props;
   useEffect(() => {
+    if (!id) return;
     let live = true;
     let made: string | undefined;
     loadRef
@@ -53,7 +55,7 @@ function Media(props: {
       live = false;
       if (made) URL.revokeObjectURL(made);
     };
-  }, [props.id]);
+  }, [id]);
   if (error) return <p className="muted">{error}</p>;
   if (!url) return <S.ThinkingIndicator label="Fetching" />;
   return props.kind === 'video' ? (
