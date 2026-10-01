@@ -254,6 +254,17 @@ function fakeClient() {
       rec('removeSkill', org, id, detach);
       return { removed: true as const };
     },
+    async skill(org: string, id: string) {
+      rec('skill', org, id);
+      return {
+        id,
+        name: id,
+        description: '',
+        path: `/o/skills/${id}/SKILL.md`,
+        roles: [],
+        content: '',
+      };
+    },
     async roles(org: string) {
       rec('roles', org);
       return [{ id: 'assistant', name: 'Assistant', tools: [], mcp: [], skills: [] }];
@@ -725,6 +736,16 @@ describe('AppStore: the slice-2 review fixes', () => {
     expect(await store.discoverSkills('a/b', 'p')).toMatchObject({ repo: 'a/b' });
     expect(store.get().discovered['a/b|p']).toBeTruthy();
     expect(await store.discoverSkills('nope/nope')).toEqual({ error: 'repository not found' });
+    // a source being read is not asked again until it answers
+    const n = () => f.calls.filter((x) => x.name === 'discoverSkills').length;
+    const was = n();
+    const [one, two] = await Promise.all([
+      store.discoverSkills('c/d'),
+      store.discoverSkills('c/d'),
+    ]);
+    expect(one).toBe(two);
+    expect(n()).toBe(was + 1);
+    expect(store.isDiscovering('c/d')).toBe(false);
   });
   it('a failing part of Integrations surfaces as the error, the rest still loads; addRoutine says whether it worked', async () => {
     const f = fakeClient();

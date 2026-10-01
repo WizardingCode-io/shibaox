@@ -1,18 +1,28 @@
+import type { ConnectorTemplate, McpAddRequest, RoleRow } from '@wizardingcode/shibaox-daemon';
+import type { McpServerInput } from '@wizardingcode/shibaox-schemas';
 import { useState } from 'react';
 import { ds } from '../../../ds.js';
 import { useAppState, useStore } from '../../../store/hooks.js';
 import { headerLines, ID_RE, words } from '../filter.js';
 import { RoleChecks } from '../parts.js';
-import type { AddMcpRequest, ConnectorTemplate, McpServerSpec, RoleRow } from '../types.js';
+import type { McpRow } from '../types.js';
 
 // biome-ignore lint/suspicious/noTemplateCurlyInString: the catalog's own ${KEY} placeholder, expanded by the daemon
 const HEADER_EXAMPLE = 'Authorization: Bearer ${ACME_API_KEY}';
+// biome-ignore lint/suspicious/noTemplateCurlyInString: the catalog's own ${KEY} placeholder, expanded by the daemon
+const HEADER_HINT = 'One per line, Name: value; ${KEY} becomes that vault key (it joins Keys)';
 
 const defaultRoles = (roles: RoleRow[]) =>
   roles.some((r) => r.id === 'assistant') ? ['assistant'] : [];
 
 /** A key a connector needs: set (a badge), or a password field with Save and where to get one. */
-function KeyField(props: { name: string; description?: string; signupUrl?: string }): JSX.Element {
+function KeyField(props: {
+  name: string;
+  description?: string;
+  signupUrl?: string;
+  /** The server works without it. */
+  optional?: boolean;
+}): JSX.Element {
   const S = ds();
   const store = useStore();
   const state = useAppState();
@@ -22,6 +32,7 @@ function KeyField(props: { name: string; description?: string; signupUrl?: strin
     <div className="stack">
       <div className="row">
         <span className="mono">{props.name}</span>
+        {props.optional ? <S.Badge>optional</S.Badge> : null}
         {props.description ? <span className="muted">{props.description}</span> : null}
         <span className="grow" />
         {row?.set ? (
@@ -117,6 +128,7 @@ export function TemplateDialog(props: {
         <p className="muted">
           {`by ${t.vendor} · ${t.server.transport === 'http' ? t.server.url : [t.server.command, ...(t.server.args ?? [])].join(' ')}`}
         </p>
+        {t.keys.length && t.note ? <p className="muted">{t.note}</p> : null}
         {t.keys.length ? (
           t.keys.map((k) => (
             <KeyField
@@ -124,10 +136,11 @@ export function TemplateDialog(props: {
               name={k.name}
               description={k.description}
               signupUrl={k.signupUrl}
+              optional={k.optional}
             />
           ))
         ) : (
-          <p className="muted">{t.note ? `No key: it ${t.note}.` : 'It needs no key.'}</p>
+          <p className="muted">{t.note ?? 'It needs no key.'}</p>
         )}
         <RoleChecks roles={props.roles} value={roles} onChange={setRoles} />
       </div>
@@ -140,13 +153,20 @@ export interface CustomForm {
   description: string;
   transport: 'http' | 'stdio';
   url: string;
+  /** stdio: the executable alone. */
   command: string;
+  /** stdio: one argument per line (spaces inside an argument are kept). */
+  args: string;
+  /** stdio: `NAME=value` lines (fixed environment, never secrets). */
+  env: string;
   keys: string;
   headers: string;
   bearer: string;
   tools: string;
   timeoutS: string;
   roles: string[];
+  /** Edit: the bearer command as written (kept when the field is not changed). */
+  bearerArgv?: string[];
 }
 
 export const emptyCustom = (roles: RoleRow[]): CustomForm => ({
@@ -155,6 +175,8 @@ export const emptyCustom = (roles: RoleRow[]): CustomForm => ({
   transport: 'http',
   url: '',
   command: '',
+  args: '',
+  env: '',
   keys: '',
   headers: '',
   bearer: '',
@@ -163,8 +185,63 @@ export const emptyCustom = (roles: RoleRow[]): CustomForm => ({
   roles: defaultRoles(roles),
 });
 
+/** The Edit… form of a catalog server: the raw server the daemon read (else what the row says). */
+export function formOf(row: McpRow, roles: RoleRow[]): CustomForm {
+  const s = row.server;
+  const base = {
+    ...emptyCustom(roles),
+    id: row.id,
+    description: row.description,
+    roles: row.roles,
+  };
+  if (!s)
+    return {
+      ...base,
+      transport: row.transport,
+      url: row.transport === 'http' ? row.target : '',
+      command: row.transport === 'stdio' ? row.target : '',
+      keys: row.keys.map((k) => k.name).join(', '),
+      tools: (row.tools ?? []).join(', '),
+    };
+  return {
+    ...base,
+    transport: s.transport,
+    url: s.url ?? '',
+    command: s.command ?? '',
+    args: (s.args ?? []).join('\n'),
+    env: Object.entries(s.env ?? {})
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n'),
+    keys: (s.env_keys ?? []).join(', '),
+    headers: Object.entries(s.headers ?? {})
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('\n'),
+    bearer: (s.bearer_command ?? []).join(' '),
+    ...(s.bearer_command ? { bearerArgv: s.bearer_command } : {}),
+    tools: (s.tools ?? []).join(', '),
+    timeoutS: s.timeout_ms && s.timeout_ms !== 30_000 ? String(s.timeout_ms / 1000) : '',
+  };
+}
+
+const lines = (s: string) =>
+  s
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+/** `NAME=value` lines into an object (lines without `=` are skipped). */
+function envLines(s: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of lines(s)) {
+    const i = line.indexOf('=');
+    if (i <= 0) continue;
+    out[line.slice(0, i).trim()] = line.slice(i + 1);
+  }
+  return out;
+}
+
 /** The request a custom connector form makes: only the fields that were filled. */
-export function customRequest(f: CustomForm, replace: boolean): AddMcpRequest {
+export function customRequest(f: CustomForm, replace: boolean): McpAddRequest {
   const keys = words(f.keys);
   const tools = words(f.tools);
   const timeout = Number.parseFloat(f.timeoutS);
@@ -173,11 +250,14 @@ export function customRequest(f: CustomForm, replace: boolean): AddMcpRequest {
     ...(tools.length ? { tools } : {}),
     ...(timeout > 0 ? { timeout_ms: Math.round(timeout * 1000) } : {}),
   };
-  let server: McpServerSpec;
+  const { env_keys, ...rest } = common;
+  let server: McpServerInput;
   if (f.transport === 'http') {
     const headers = headerLines(f.headers);
-    const bearer = f.bearer.trim().split(/\s+/).filter(Boolean);
-    const { env_keys, ...rest } = common;
+    const bearer =
+      f.bearerArgv && f.bearer === f.bearerArgv.join(' ')
+        ? f.bearerArgv
+        : f.bearer.trim().split(/\s+/).filter(Boolean);
     server = {
       transport: 'http',
       url: f.url.trim(),
@@ -187,8 +267,16 @@ export function customRequest(f: CustomForm, replace: boolean): AddMcpRequest {
       ...rest,
     };
   } else {
-    const [command = '', ...args] = f.command.trim().split(/\s+/);
-    server = { transport: 'stdio', command, ...(args.length ? { args } : {}), ...common };
+    const args = lines(f.args);
+    const env = envLines(f.env);
+    server = {
+      transport: 'stdio',
+      command: f.command.trim(),
+      ...(args.length ? { args } : {}),
+      ...(Object.keys(env).length ? { env } : {}),
+      ...(env_keys ? { env_keys } : {}),
+      ...rest,
+    };
   }
   return {
     id: f.id.trim(),
@@ -199,11 +287,22 @@ export function customRequest(f: CustomForm, replace: boolean): AddMcpRequest {
   };
 }
 
+/**
+ * Why the daemon would refuse this id for an MCP server (the schemas' `Id` plus core's
+ * `mcpIdProblem`), or undefined.
+ */
+export function mcpIdError(id: string): string | undefined {
+  if (!ID_RE.test(id)) return 'Letters, digits, - and _';
+  if (id === 'shibaox' || id === 'graphify') return `"${id}" is reserved for a built-in server`;
+  if (id.includes(':') || id.includes('__')) return 'No ":" or "__" (it becomes a tool name)';
+  return undefined;
+}
+
 /** "Add a custom connector" (and Edit…): any MCP server by URL or command. */
 export function CustomConnectorDialog(props: {
   roles: RoleRow[];
   initial?: CustomForm;
-  /** Edit: the id is fixed and the file is replaced. */
+  /** Edit: the id is fixed, the file is replaced and the roles become exactly the ones ticked. */
   editing?: boolean;
   onClose: () => void;
 }): JSX.Element {
@@ -214,9 +313,12 @@ export function CustomConnectorDialog(props: {
   const set = (patch: Partial<CustomForm>) => setF((x) => ({ ...x, ...patch }));
   const field = (k: keyof CustomForm) => (e: { target: EventTarget | null }) =>
     set({ [k]: (e.target as HTMLInputElement).value } as Partial<CustomForm>);
-  const idOk = ID_RE.test(f.id.trim());
+  const idError = mcpIdError(f.id.trim());
+  const commandSpaced = /\s/.test(f.command.trim());
   const target =
-    f.transport === 'http' ? /^https?:\/\/\S+$/.test(f.url.trim()) : !!f.command.trim();
+    f.transport === 'http'
+      ? /^https?:\/\/\S+$/.test(f.url.trim())
+      : !!f.command.trim() && !commandSpaced;
   return (
     <S.Dialog
       open
@@ -233,7 +335,7 @@ export function CustomConnectorDialog(props: {
           <S.Button
             variant="primary"
             loading={saving}
-            disabled={!idOk || !target}
+            disabled={!!idError || !target}
             onClick={() => {
               setSaving(true);
               void store.addMcp(customRequest(f, props.editing === true)).then((ok) => {
@@ -253,7 +355,7 @@ export function CustomConnectorDialog(props: {
           placeholder="acme"
           value={f.id}
           disabled={props.editing}
-          error={f.id && !idOk ? 'Letters, digits, - _ :' : undefined}
+          error={f.id && idError ? idError : undefined}
           onChange={field('id')}
         />
         <S.Input
@@ -282,13 +384,34 @@ export function CustomConnectorDialog(props: {
             onChange={field('url')}
           />
         ) : (
-          <S.Input
-            label="Command"
-            placeholder="npx -y @scope/server --flag"
-            hint="The command and its arguments, as in a terminal on the daemon's machine"
-            value={f.command}
-            onChange={field('command')}
-          />
+          <>
+            <S.Input
+              label="Command"
+              placeholder="npx"
+              hint="The executable alone, found on the daemon's PATH"
+              error={commandSpaced ? 'One word: the arguments go below' : undefined}
+              value={f.command}
+              onChange={field('command')}
+            />
+            <S.Textarea
+              label="Arguments"
+              placeholder={'-y\n@scope/server\n--flag'}
+              hint="One per line (spaces inside an argument are kept)"
+              rows={3}
+              className="mono"
+              value={f.args}
+              onChange={field('args')}
+            />
+            <S.Textarea
+              label="Environment"
+              placeholder="DEBUG=1"
+              hint="NAME=value, one per line; never secrets (those are Keys)"
+              rows={2}
+              className="mono"
+              value={f.env}
+              onChange={field('env')}
+            />
+          </>
         )}
         <S.Input
           label="Keys"
@@ -302,6 +425,7 @@ export function CustomConnectorDialog(props: {
             <S.Textarea
               label="Headers"
               placeholder={HEADER_EXAMPLE}
+              hint={HEADER_HINT}
               rows={2}
               value={f.headers}
               onChange={field('headers')}
@@ -309,7 +433,7 @@ export function CustomConnectorDialog(props: {
             <S.Input
               label="Bearer command"
               placeholder="acme auth token"
-              hint="Headers: one per line, ${KEY} becomes the key's value. Bearer command: its output is the token (a CLI's login instead of a key)"
+              hint="Its output is the token (a CLI's login instead of a key)"
               value={f.bearer}
               onChange={field('bearer')}
             />

@@ -16,7 +16,7 @@ export interface ComposerProps { onSend?: (text: string) => void; onStop?: () =>
 export declare function Composer(props: ComposerProps): React.ReactElement;
 export interface TabsProps { items: { id: string; label: string; count?: number }[]; value?: string; defaultValue?: string; onChange?: (id: string) => void }
 export declare function Tabs(props: TabsProps): React.ReactElement;
-export interface SegmentedItem { id: string; label: string; /** A 6px shiba dot after the label: something there needs attention. */ dot?: boolean }
+export interface SegmentedItem { id: string; label: string; /** A 6px shiba dot after the label: something there needs attention. */ dot?: boolean; /** What the dot says to a screen reader (default "needs attention"). */ dotLabel?: string }
 export interface SegmentedProps { items: SegmentedItem[]; value: string; onChange?: (id: string) => void; label?: string; className?: string }
 export declare function Segmented(props: SegmentedProps): React.ReactElement;
 export interface NavItemProps { label: string; icon?: IconName; active?: boolean; count?: number; href?: string; onClick?: () => void }

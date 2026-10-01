@@ -21,6 +21,7 @@ function Action(props: { k: KeyLine }): JSX.Element {
   const store = useStore();
   const [value, setValue] = useState('');
   const k = props.k;
+  if (k.via) return <span className="muted">{`through ${k.via}`}</span>;
   if (k.set)
     return k.source === 'env' ? (
       <span className="muted">from the environment</span>
@@ -60,12 +61,17 @@ function Action(props: { k: KeyLine }): JSX.Element {
 }
 
 function Name(props: { k: KeyLine; focus?: string }): JSX.Element {
+  const k = props.k;
+  const focused = k.name === props.focus || (k.alternatives ?? []).includes(props.focus ?? '');
   return (
-    <span
-      className={props.k.name === props.focus ? 'mono key-focus' : 'mono'}
-      data-key={props.k.name}
-    >
-      {props.k.name}
+    <span className={focused ? 'mono key-focus' : 'mono'} data-key={k.name}>
+      {k.name}
+      {(k.alternatives ?? []).map((a) => (
+        <span key={a} data-key={a}>
+          <span className="muted"> or </span>
+          {a}
+        </span>
+      ))}
     </span>
   );
 }
@@ -144,7 +150,13 @@ export function KeysTab(props: { focus?: string }): JSX.Element {
     [c],
   );
   const hit = (k: KeyLine) =>
-    matches(query, [k.name, k.description, ...k.neededBy.map((b) => b.label), ...k.models]);
+    matches(query, [
+      k.name,
+      ...(k.alternatives ?? []),
+      k.description,
+      ...k.neededBy.map((b) => b.label),
+      ...k.models,
+    ]);
   // ?key=NAME: that row's field gets the focus (the first block that has it), else its name scrolls in
   const loaded = blocks !== undefined;
   useEffect(() => {
@@ -188,6 +200,7 @@ export function KeysTab(props: { focus?: string }): JSX.Element {
         {needed.length ? (
           <S.Table
             dense
+            className="keys-table"
             columns={['Key', 'Needed by', 'Status', '']}
             rows={needed.map((k) => [
               <Name key="n" k={k} focus={props.focus} />,
@@ -216,6 +229,7 @@ export function KeysTab(props: { focus?: string }): JSX.Element {
         {providers.length ? (
           <S.Table
             dense
+            className="keys-table"
             columns={['Provider', 'Key', 'Status', 'Models', '']}
             align={[null, null, null, 'right', null]}
             rows={providers.map((k) => [
@@ -242,6 +256,7 @@ export function KeysTab(props: { focus?: string }): JSX.Element {
         {other.length ? (
           <S.Table
             dense
+            className="keys-table"
             columns={['Key', 'What for', 'Status', '']}
             rows={other.map((k) => [
               <Name key="n" k={k} focus={props.focus} />,

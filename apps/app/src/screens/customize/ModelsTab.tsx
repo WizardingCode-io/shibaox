@@ -24,18 +24,23 @@ export function modelState(m: ModelChoice): 'ready' | 'key' | 'runtime' {
 const keep = (m: ModelChoice, f: Filter) =>
   f === 'all' ? true : f === 'local' ? m.local === true : modelState(m) === f;
 
-const context = (n?: number) =>
-  n === undefined
-    ? '—'
-    : n >= 1_000_000
-      ? `${Math.round(n / 100_000) / 10}M`
-      : `${Math.round(n / 1000)}k`;
-const price = (m: ModelChoice) =>
-  m.free || m.local
-    ? 'free'
-    : m.pricing
-      ? `$${m.pricing.input_per_m} / $${m.pricing.output_per_m}`
-      : '—';
+/** How many models a page shows before "Show 60 more". */
+const PAGE = 60;
+
+/** `1.25`, `10.00`, `0.004`: as the model menu prints a price. */
+const usd = (v: number): string =>
+  v === 0 ? '0.00' : v >= 0.1 ? v.toFixed(2) : v.toPrecision(2).replace(/\.?0+$/, '');
+/** `128k`, `1.0M`, or "—" when unknown (the model menu's window, without "ctx"). */
+export const contextLabel = (n?: number): string =>
+  !n ? '—' : n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}k`;
+/** `$0.30/$2.50` per million tokens in and out, `free`, or "—" when unknown. */
+export function priceLabel(m: ModelChoice): string {
+  const p = m.pricing;
+  if (p && (p.input_per_m > 0 || p.output_per_m > 0))
+    return `$${usd(p.input_per_m)}/$${usd(p.output_per_m)}`;
+  if (m.free || m.local || (p && p.input_per_m === 0 && p.output_per_m === 0)) return 'free';
+  return '—';
+}
 
 function ModelStatus(props: { m: ModelChoice }): JSX.Element {
   const S = ds();
@@ -43,16 +48,18 @@ function ModelStatus(props: { m: ModelChoice }): JSX.Element {
   const st = modelState(m);
   if (st === 'ready') return <S.Badge tone="matcha">{m.local ? 'local, up' : 'ready'}</S.Badge>;
   if (st === 'key') {
-    const key = m.missing?.[0] ?? '';
+    const missing = m.missing ?? [];
+    const key = missing[0] ?? '';
     return (
       <button
         type="button"
         className="badge-link"
         aria-label={`${key} missing`}
+        title={`Missing ${missing.join(', ')}: set it in Keys`}
         onClick={() => goToKey(key)}
       >
         <S.Badge tone="warning" icon="key">
-          {`missing ${(m.missing ?? []).join(', ')}`}
+          {`missing ${key}${missing.length > 1 ? ` +${missing.length - 1}` : ''}`}
         </S.Badge>
       </button>
     );
@@ -182,8 +189,10 @@ export function ModelsTab(): JSX.Element {
   const c = state.customize;
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  const [limit, setLimit] = useState(PAGE);
   if (!c) return <p className="muted">Reading the org…</p>;
   const rows = c.models.filter((m) => keep(m, filter) && matches(query, [m.ref, m.provider]));
+  const shown = rows.slice(0, limit);
   return (
     <div className="stack-24">
       <section className="stack-12" aria-label="Tiers">
@@ -204,31 +213,48 @@ export function ModelsTab(): JSX.Element {
             placeholder="Search models"
             aria-label="Search models"
             value={query}
-            onChange={(e) => setQuery((e.target as HTMLInputElement).value)}
+            onChange={(e) => {
+              setQuery((e.target as HTMLInputElement).value);
+              setLimit(PAGE);
+            }}
           />
           <span className="grow" />
           <S.Segmented
             label="Filter"
             items={FILTERS}
             value={filter}
-            onChange={(id) => setFilter(id as Filter)}
+            onChange={(id) => {
+              setFilter(id as Filter);
+              setLimit(PAGE);
+            }}
           />
         </div>
         {rows.length ? (
-          <S.Table
-            dense
-            columns={['Model', 'Provider', 'Status', 'Context', 'Price per M']}
-            align={[null, null, null, 'right', 'right']}
-            rows={rows.map((m) => [
-              <span key="r" className="mono">
-                {m.ref}
-              </span>,
-              <span key="p">{m.provider}</span>,
-              <ModelStatus key="s" m={m} />,
-              <span key="c">{context(m.contextWindow)}</span>,
-              <span key="$">{price(m)}</span>,
-            ])}
-          />
+          <>
+            <S.Table
+              dense
+              className="models-table"
+              columns={['Model', 'Provider', 'Status', 'Context', 'Price per M']}
+              align={[null, null, null, 'right', 'right']}
+              rows={shown.map((m) => [
+                <span key="r" className="mono">
+                  {m.ref}
+                </span>,
+                <span key="p">{m.provider}</span>,
+                <ModelStatus key="s" m={m} />,
+                <span key="c">{contextLabel(m.contextWindow)}</span>,
+                <span key="$">{priceLabel(m)}</span>,
+              ])}
+            />
+            {rows.length > shown.length ? (
+              <div className="more-row">
+                <span className="muted">{`${shown.length} of ${rows.length}`}</span>
+                <S.Button size="sm" variant="secondary" onClick={() => setLimit((n) => n + PAGE)}>
+                  {`Show ${Math.min(PAGE, rows.length - shown.length)} more`}
+                </S.Button>
+              </div>
+            ) : null}
+          </>
         ) : (
           <p className="muted">No model matches.</p>
         )}
@@ -237,6 +263,8 @@ export function ModelsTab(): JSX.Element {
         <h3>Decisions</h3>
         {c.decisions ? (
           <Decisions view={c.decisions} />
+        ) : c.decisionsError ? (
+          <p className="note">{`The decisions could not be read: ${c.decisionsError}`}</p>
         ) : (
           <p className="muted">Reading the daemon…</p>
         )}

@@ -1,11 +1,14 @@
+import type { ConnectorTemplate, PluginRow } from '@wizardingcode/shibaox-daemon';
 import { useState } from 'react';
 import { ds } from '../../ds.js';
 import { useAppState, useStore } from '../../store/hooks.js';
 import { TemplateDialog } from './dialogs/ConnectorDialog.js';
 import { RolesDialog } from './dialogs/RolesDialog.js';
 import { matches } from './filter.js';
+import { pluginKeyNeeds } from './needed-keys.js';
 import { AddMenu, Empty, goTo, KeyBadge, Toolbar } from './parts.js';
-import type { ConnectorTemplate, CustomizeView, PluginRow } from './types.js';
+import { settle } from './skill-results.js';
+import type { CustomizeView } from './types.js';
 
 type IconName = Parameters<Window['Shibaox']['Icon']>[0]['name'];
 const ICON: Record<string, IconName> = {
@@ -35,19 +38,18 @@ function PluginCard(props: {
   const state = useAppState();
   const c = state.customize;
   const p = props.p;
-  const hf = p.id === 'higgsfield' ? c?.higgsfield : undefined;
+  // the command an install action copies; shown whole while the CLI is not there
+  const installCommand = p.actions.find((a) => a.id === 'install' && a.command)?.command;
+  const cliMissing = p.checks.some((ch) => /^CLI installed/.test(ch.label) && !ch.ok);
   const [login, setLogin] = useState<{ url?: string } | undefined>(undefined);
   const [copied, setCopied] = useState(false);
   const [adding, setAdding] = useState<string | undefined>(undefined);
   const st = STATUS[p.status];
+  /** A skill the plugin brings, from the skill source of the same vendor. */
   const addSkill = (id: string) => {
-    const sources = c?.registry.skills ?? [];
     const own = (s: string) => s.toLowerCase();
-    const src = sources.find(
-      (s) =>
-        own(s.vendor) === own(p.name) ||
-        own(s.vendor) === own(p.id) ||
-        own(s.repo).includes(own(p.id)),
+    const src = (c?.registry.skills ?? []).find(
+      (s) => own(s.vendor) === own(p.name) || own(s.vendor) === own(p.id),
     );
     if (!src) return goTo('skills', 'discover');
     setAdding(id);
@@ -60,12 +62,48 @@ function PluginCard(props: {
       })
       .then((r) => {
         setAdding(undefined);
-        const first = r?.added[0];
-        if (first) props.onSkillAdded(first.id, first.name);
+        if (!r) return;
+        const skipped = settle(r, {
+          close: () => undefined,
+          onAdded: (added) => {
+            const first = added[0];
+            if (first) props.onSkillAdded(first.id, first.name);
+          },
+          notice: (m) => store.notice(m),
+        });
+        if (skipped.length) store.notice(`Not added: ${skipped.join('; ')}`);
       });
   };
+  const install = (command: string) => {
+    try {
+      void navigator.clipboard?.writeText(command);
+    } catch {
+      // no clipboard
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1400);
+  };
+  /**
+   * An action: `login` POSTs through the store (its href is a daemon path, never a link), an
+   * absolute http(s) href opens apart, `install` copies its command; anything else is hidden.
+   */
   const action = (a: PluginRow['actions'][number]) => {
-    if (a.href)
+    if (a.id === 'login')
+      return (
+        <S.Button
+          key={a.id}
+          size="sm"
+          variant="primary"
+          onClick={() =>
+            void store.higgsfieldLogin().then((r) => {
+              if (r) setLogin(r);
+            })
+          }
+        >
+          {a.label}
+        </S.Button>
+      );
+    if (a.href && /^https?:\/\//i.test(a.href))
       return (
         <a
           key={a.id}
@@ -77,33 +115,11 @@ function PluginCard(props: {
           {a.label}
         </a>
       );
-    const onClick =
-      a.id === 'login'
-        ? () =>
-            void store.higgsfieldLogin().then((r) => {
-              if (r) setLogin(r);
-            })
-        : a.id === 'install' && hf
-          ? () => {
-              try {
-                void navigator.clipboard?.writeText(hf.installCommand);
-              } catch {
-                // no clipboard
-              }
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1400);
-            }
-          : p.keys.some((k) => !k.present)
-            ? () => goTo('keys')
-            : () => void store.loadCustomize();
+    const command = a.id === 'install' ? a.command : undefined;
+    if (!command) return null;
     return (
-      <S.Button
-        key={a.id}
-        size="sm"
-        variant={a.id === 'login' ? 'primary' : 'secondary'}
-        onClick={onClick}
-      >
-        {a.id === 'install' && copied ? 'Copied' : a.label}
+      <S.Button key={a.id} size="sm" variant="secondary" onClick={() => install(command)}>
+        {copied ? 'Copied' : a.label}
       </S.Button>
     );
   };
@@ -117,8 +133,13 @@ function PluginCard(props: {
           <S.Badge tone={st.tone} dot>
             {st.label}
           </S.Badge>
-          {p.keys.map((k) => (
-            <KeyBadge key={k.name} name={k.name} present={k.present} />
+          {pluginKeyNeeds(p).map((n) => (
+            <KeyBadge
+              key={n.names.join('|')}
+              name={n.names.join(' or ')}
+              focus={n.names[0]}
+              present={n.present}
+            />
           ))}
         </>
       }
@@ -131,22 +152,15 @@ function PluginCard(props: {
                 <span className={ch.ok ? 'ok' : 'bad'}>
                   <S.Icon name={ch.ok ? 'check-circle' : 'triangle-alert'} size={16} />
                 </span>
-                <span>{ch.label}</span>
-                {ch.detail ? <span className="muted">{ch.detail}</span> : null}
+                <span className="checklist__label">{ch.label}</span>
+                {ch.detail ? <span className="muted checklist__detail">{ch.detail}</span> : null}
               </li>
             ))}
           </ul>
         ) : null}
-        {hf?.loggedIn && hf.account ? (
-          <p className="muted">
-            <span className="mono">{hf.account.email}</span>
-            {` · ${hf.account.plan} plan · `}
-            <strong>{`${hf.account.credits} credits`}</strong>
-          </p>
-        ) : null}
-        {hf && !hf.cli.installed ? (
-          <S.CodeBlock language="bash" code={hf.installCommand}>
-            {hf.installCommand}
+        {cliMissing && installCommand ? (
+          <S.CodeBlock language="bash" code={installCommand}>
+            {installCommand}
           </S.CodeBlock>
         ) : null}
         <div className="row">

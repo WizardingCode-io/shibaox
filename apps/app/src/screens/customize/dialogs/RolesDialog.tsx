@@ -1,8 +1,8 @@
+import type { RolePatch, RoleRow } from '@wizardingcode/shibaox-daemon';
 import { useState } from 'react';
 import { ds } from '../../../ds.js';
 import { useStore } from '../../../store/hooks.js';
 import { RoleChecks } from '../parts.js';
-import type { RoleLinks, RoleRow } from '../types.js';
 
 /** Which roles use a skill or a connector: a checkbox per role, one PUT per role that changed. */
 export function RolesDialog(props: {
@@ -18,7 +18,7 @@ export function RolesDialog(props: {
   const [picked, setPicked] = useState<string[]>(using);
   const [saving, setSaving] = useState(false);
   const save = () => {
-    const changes: { id: string; links: RoleLinks }[] = [];
+    const changes: { id: string; links: RolePatch }[] = [];
     for (const r of props.roles) {
       const had = r[props.kind].includes(props.id);
       const has = picked.includes(r.id);

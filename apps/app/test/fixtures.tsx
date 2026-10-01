@@ -1,20 +1,19 @@
 import { render } from '@testing-library/react';
 import type { RunState } from '@wizardingcode/shibaox-core';
 import type {
+  ConnectorTemplate,
   Envelope,
   InboxItem,
-  McpServerRow,
-  RunSummaryPlus,
-} from '@wizardingcode/shibaox-daemon';
-import { App } from '../src/App.js';
-import type { RunFileContent } from '../src/api/client.js';
-import type {
-  ConnectorTemplate,
   PluginRow,
   RoleRow,
+  RunSummaryPlus,
   SkillRow,
   SkillSource,
-} from '../src/screens/customize/types.js';
+} from '@wizardingcode/shibaox-daemon';
+import type { McpServer } from '@wizardingcode/shibaox-schemas';
+import { App } from '../src/App.js';
+import { AppHttpError, type RunFileContent } from '../src/api/client.js';
+import type { McpRow } from '../src/screens/customize/types.js';
 import { AppStore, type StoreClient } from '../src/store/store.js';
 
 export const summary = (id: string, o: Partial<RunSummaryPlus> = {}): RunSummaryPlus =>
@@ -100,6 +99,15 @@ export const ROLES: RoleRow[] = [
     skills: [],
   },
 ];
+/** A catalog server as the daemon answers with it (the schema's defaults applied). */
+export const server = (s: Partial<McpServer> & Pick<McpServer, 'transport'>): McpServer => ({
+  args: [],
+  env: {},
+  env_keys: [],
+  headers: {},
+  timeout_ms: 30_000,
+  ...s,
+});
 export const CONNECTORS: ConnectorTemplate[] = [
   {
     id: 'github',
@@ -115,13 +123,13 @@ export const CONNECTORS: ConnectorTemplate[] = [
         description: 'A GitHub token',
       },
     ],
-    server: {
+    server: server({
       transport: 'http',
       url: 'https://api.githubcopilot.com/mcp/',
       // biome-ignore lint/suspicious/noTemplateCurlyInString: the catalog's own ${KEY} placeholder
       headers: { Authorization: 'Bearer ${GH_TOKEN}' },
       env_keys: ['GH_TOKEN'],
-    },
+    }),
   },
   {
     id: 'firecrawl',
@@ -137,12 +145,12 @@ export const CONNECTORS: ConnectorTemplate[] = [
         description: 'Firecrawl API key',
       },
     ],
-    server: {
+    server: server({
       transport: 'stdio',
       command: 'npx',
       args: ['-y', 'firecrawl-mcp'],
       env_keys: ['FIRECRAWL_API_KEY'],
-    },
+    }),
   },
   {
     id: 'playwright',
@@ -152,7 +160,7 @@ export const CONNECTORS: ConnectorTemplate[] = [
     category: 'Browser',
     description: 'Drive a browser',
     keys: [],
-    server: { transport: 'stdio', command: 'npx', args: ['-y', '@playwright/mcp'] },
+    server: server({ transport: 'stdio', command: 'npx', args: ['-y', '@playwright/mcp'] }),
   },
   {
     id: 'notion',
@@ -162,8 +170,8 @@ export const CONNECTORS: ConnectorTemplate[] = [
     category: 'Productivity',
     description: 'Pages and databases',
     keys: [],
-    note: 'signs in on first use',
-    server: { transport: 'http', url: 'https://mcp.notion.com/mcp' },
+    note: 'Signs in on first use (OAuth in the browser); no key to set.',
+    server: server({ transport: 'http', url: 'https://mcp.notion.com/mcp' }),
   },
 ];
 export const SOURCES: SkillSource[] = [
@@ -171,8 +179,9 @@ export const SOURCES: SkillSource[] = [
     repo: 'anthropics/skills',
     name: 'Anthropic skills',
     vendor: 'Anthropic',
-    description: "Anthropic's example skills",
-    categories: ['document-skills'],
+    description: 'Anthropic’s public skills: documents, design, development, communication.',
+    path: 'skills',
+    categories: ['Documents', 'Design', 'Development', 'Communication'],
   },
   {
     repo: 'higgsfield-ai/skills',
@@ -185,14 +194,15 @@ export const DISCOVER: Record<
   string,
   { id: string; name: string; description: string; path: string }[]
 > = {
+  // the daemon's paths are relative to the repository (anthropics/skills keeps them in skills/)
   'anthropics/skills': [
-    { id: 'pdf', name: 'pdf', description: 'PDF tools', path: 'document-skills/pdf' },
-    { id: 'xlsx', name: 'xlsx', description: 'Spreadsheets', path: 'document-skills/xlsx' },
+    { id: 'pdf', name: 'pdf', description: 'PDF tools', path: 'skills/pdf' },
+    { id: 'xlsx', name: 'xlsx', description: 'Spreadsheets', path: 'skills/xlsx' },
     {
       id: 'canvas-design',
       name: 'canvas-design',
       description: 'Posters and art',
-      path: 'canvas-design',
+      path: 'skills/canvas-design',
     },
   ],
   'higgsfield-ai/skills': [
@@ -201,6 +211,12 @@ export const DISCOVER: Record<
       name: 'higgsfield',
       description: 'Images and video',
       path: 'higgsfield',
+    },
+    {
+      id: 'product-shot',
+      name: 'product-shot',
+      description: 'Product photos',
+      path: 'recipes/product-shot',
     },
   ],
   'acme/tools': [
@@ -216,12 +232,17 @@ export const PLUGINS: PluginRow[] = [
     status: 'partial',
     checks: [
       { label: 'CLI installed', ok: true, detail: '1.1.26' },
-      { label: 'Logged in', ok: false },
-      { label: 'MCP', ok: false, detail: 'unauthorized' },
+      { label: 'Logged in', ok: true, detail: 'andre@example.com · plus · 3.5 credits' },
+      { label: 'MCP reachable', ok: false, detail: 'unauthorized' },
     ],
     keys: [],
     actions: [
-      { id: 'login', label: 'Log in' },
+      {
+        id: 'install',
+        label: 'Install command',
+        command: 'curl -fsSL https://higgsfield.ai/cli/install.sh | sh',
+      },
+      { id: 'login', label: 'Log in', href: '/integrations/higgsfield/login' },
       { id: 'signup', label: 'Create an account', href: 'https://higgsfield.ai?fpr=andre-4fae29' },
       { id: 'open', label: 'Open Higgsfield', href: 'https://higgsfield.ai' },
     ],
@@ -232,9 +253,22 @@ export const PLUGINS: PluginRow[] = [
     name: 'GitHub',
     description: 'Issues, pull requests and the GitHub loop',
     status: 'ready',
-    checks: [{ label: 'gh installed', ok: true }],
-    keys: [{ name: 'GH_TOKEN', present: true }],
-    actions: [],
+    checks: [
+      { label: 'gh installed', ok: true, detail: '/opt/homebrew/bin/gh' },
+      { label: 'Token (GH_TOKEN or GITHUB_TOKEN)', ok: true },
+    ],
+    keys: [
+      { name: 'GH_TOKEN', present: true },
+      { name: 'GITHUB_TOKEN', present: false },
+    ],
+    actions: [
+      { id: 'install', label: 'Install gh', href: 'https://cli.github.com' },
+      {
+        id: 'token',
+        label: 'Create a token',
+        href: 'https://github.com/settings/personal-access-tokens/new',
+      },
+    ],
     brings: { connectors: ['github'], skills: [] },
   },
   {
@@ -263,7 +297,21 @@ export function client(
     skills?: SkillRow[];
     roles?: RoleRow[];
     plugins?: PluginRow[];
-    mcp?: McpServerRow[];
+    mcp?: McpRow[];
+    /** addSkill skips these ids with that reason. */
+    skip?: Record<string, string>;
+    /** addSkill leaves these files out of the skills it adds. */
+    omitted?: Record<string, string[]>;
+    /** DELETE /skills answers 409 with these roles (unless detach). */
+    inUse?: string[];
+    /** discoverSkills fails this many times first. */
+    discoverFails?: number;
+    /** mcpTest answers a failure. */
+    mcpTestFails?: boolean;
+    /** These methods of the client fail (`<name> failed`). */
+    fail?: (keyof StoreClient)[];
+    /** GET /models answers these instead. */
+    models?: Awaited<ReturnType<StoreClient['models']>>;
   } = {},
 ) {
   const calls: { name: string; args: unknown[] }[] = [];
@@ -369,6 +417,7 @@ export function client(
       };
     },
     async models() {
+      if (o.models) return o.models;
       return [
         {
           ref: 'anthropic/claude-opus',
@@ -402,6 +451,15 @@ export function client(
           provider: 'openrouter',
           model: 'meta/llama-3.3-70b',
           configured: true,
+          contextWindow: 131_072,
+          pricing: { input_per_m: 0.12, output_per_m: 0.3 },
+        },
+        {
+          ref: 'claude-code/opus',
+          provider: 'claude-code',
+          model: 'opus',
+          configured: false,
+          runtime: 'claude',
         },
       ];
     },
@@ -482,6 +540,17 @@ export function client(
           source: 'vault' as const,
           masked: 'gh…12',
         },
+        {
+          name: 'GITHUB_TOKEN',
+          description: 'GitHub (gh reads it when GH_TOKEN is not set)',
+          set: false,
+        },
+        {
+          name: 'SHIBAOX_TELEGRAM_TOKEN',
+          description: 'Telegram bot (channels.telegram)',
+          set: false,
+        },
+        { name: 'MISTRAL_API_KEY', description: 'Mistral', set: false },
       ];
     },
     async setKey(name, value) {
@@ -515,6 +584,12 @@ export function client(
             target: 'npx -y @playwright/mcp',
             roles: ['browser-qa'],
             keys: [{ name: 'PW_TOKEN', present: false }],
+            server: server({
+              transport: 'stdio',
+              command: 'npx',
+              args: ['-y', '@playwright/mcp'],
+              env_keys: ['PW_TOKEN'],
+            }),
           },
         ]
       );
@@ -531,25 +606,43 @@ export function client(
           : req.source === 'repo'
             ? (req.ids ?? [])
             : [req.path.split('/').pop() ?? 'x'];
+      const skip = o.skip ?? {};
       return {
-        added: ids.map((id) => ({
-          id,
-          name: id,
-          description: '',
-          path: `/o/skills/${id}`,
-          roles: [],
-        })),
-        skipped: [],
+        added: ids
+          .filter((id) => !skip[id])
+          .map((id) => ({
+            id,
+            name: id,
+            description: '',
+            path: `/o/skills/${id}/SKILL.md`,
+            roles: [],
+            ...(o.omitted?.[id] ? { omitted: o.omitted[id] } : {}),
+          })),
+        skipped: ids.filter((id) => skip[id]).map((id) => ({ id, reason: skip[id] as 'exists' })),
       };
     },
     async discoverSkills(repo, path) {
       rec('discoverSkills', repo, path);
       if (repo === 'nope/nope') throw new Error('repository not found');
+      if (o.discoverFails && o.discoverFails-- > 0) throw new Error('git clone timed out');
       return { repo, skills: DISCOVER[repo] ?? [] };
     },
     async removeSkill(org, id, detach) {
       rec('removeSkill', org, id, detach);
+      if (o.inUse && !detach)
+        throw new AppHttpError(409, 'in_use', `skill ${id} is used by ${o.inUse.join(', ')}`, {
+          roles: o.inUse,
+        });
       return { removed: true as const };
+    },
+    async skill(org, id) {
+      rec('skill', org, id);
+      const row = (o.skills ?? SKILLS).find((s) => s.id === id);
+      if (!row) throw new AppHttpError(404, 'not_found', `skill ${id} not found`);
+      return {
+        ...row,
+        content: `---\nname: ${row.name}\ndescription: ${row.description}\n---\n\n# ${row.name} guide\n\nFill the form **first**.\n`,
+      };
     },
     async roles(org) {
       rec('roles', org);
@@ -579,6 +672,7 @@ export function client(
     },
     async mcpTest(id, org) {
       rec('mcpTest', id, org);
+      if (o.mcpTestFails) return { ok: false, error: 'spawn npx ENOENT' };
       return { ok: true, tools: [{ name: 'browser_navigate', description: 'Open a page' }] };
     },
     async projectProfile(path) {
@@ -595,6 +689,10 @@ export function client(
       } as never;
     },
   };
+  for (const name of o.fail ?? [])
+    (c as unknown as Record<string, unknown>)[name] = async () => {
+      throw new Error(`${name} failed`);
+    };
   return { client: c, calls };
 }
 

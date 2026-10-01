@@ -1,5 +1,6 @@
 import type { ProjectProfile, RunState, RunStatus } from '@wizardingcode/shibaox-core';
 import type {
+  ConnectorTemplate,
   DecisionsView,
   Health,
   HiggsfieldView,
@@ -8,19 +9,17 @@ import type {
   McpServerRow,
   OrgConfig,
   OrgInfo,
+  PluginRow,
+  RoleRow,
   RoutineView,
   RunSummaryPlus,
+  SkillDiscovery,
+  SkillRow,
+  SkillSource,
 } from '@wizardingcode/shibaox-daemon';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import type { Card } from '@wizardingcode/shibaox-view';
-import type {
-  ConnectorTemplate,
-  DiscoverResult,
-  PluginRow,
-  RoleRow,
-  SkillRow,
-  SkillSource,
-} from '../screens/customize/types.js';
+import type { McpRow } from '../screens/customize/types.js';
 
 export interface Settings {
   theme: 'light' | 'dark' | 'system';
@@ -78,18 +77,21 @@ export interface AppState {
     org: string;
     skills: SkillRow[];
     roles: RoleRow[];
-    mcp: McpServerRow[];
+    mcp: McpRow[];
     models: ModelChoice[];
     keys: KeyRow[];
     config?: OrgConfig;
     decisions?: DecisionsView;
-    higgsfield?: HiggsfieldView;
+    /** Why the decisions could not be read. */
+    decisionsError?: string;
     plugins: PluginRow[];
     registry: { connectors: ConnectorTemplate[]; skills: SkillSource[] };
     workflows: { name: string; description: string; conversation: boolean }[];
   };
+  /** Why Customize has nothing to show (its org could not be found). */
+  customizeError?: string;
   /** Repository listings for Discover and the repository dialog, by `repo` or `repo|path`. */
-  discovered: Record<string, DiscoverResult | { error: string }>;
+  discovered: Record<string, SkillDiscovery | { error: string }>;
   /** A model chosen for the next turns of a thread (`provider/model`). */
   threadModels: Record<string, string>;
 }

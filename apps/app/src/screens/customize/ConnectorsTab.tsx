@@ -1,4 +1,4 @@
-import type { McpServerRow, McpTestResult } from '@wizardingcode/shibaox-daemon';
+import type { ConnectorTemplate, McpTestResult } from '@wizardingcode/shibaox-daemon';
 import { useState } from 'react';
 import { ds } from '../../ds.js';
 import { useAppState, useStore } from '../../store/hooks.js';
@@ -6,7 +6,7 @@ import { ConfirmDialog } from './dialogs/ConfirmDialog.js';
 import {
   CustomConnectorDialog,
   type CustomForm,
-  emptyCustom,
+  formOf,
   TemplateDialog,
 } from './dialogs/ConnectorDialog.js';
 import { RolesDialog } from './dialogs/RolesDialog.js';
@@ -21,12 +21,7 @@ import {
   KeyBadge,
   Toolbar,
 } from './parts.js';
-import {
-  CONNECTOR_CATEGORIES,
-  type ConnectorTemplate,
-  type CustomizeView,
-  type RoleRow,
-} from './types.js';
+import { CONNECTOR_CATEGORIES, type CustomizeView, type McpRow } from './types.js';
 
 type Dialog =
   | { kind: 'template'; template: ConnectorTemplate }
@@ -34,30 +29,9 @@ type Dialog =
   | { kind: 'roles'; id: string }
   | { kind: 'remove'; id: string };
 
-/** The Edit… form of a catalog server: what the row says, the registry's template for the rest. */
-function formOf(row: McpServerRow, roles: RoleRow[], t?: ConnectorTemplate): CustomForm {
-  const base = emptyCustom(roles);
-  return {
-    ...base,
-    id: row.id,
-    description: row.description,
-    transport: row.transport,
-    url: row.transport === 'http' ? row.target : '',
-    command: row.transport === 'stdio' ? row.target : '',
-    keys: row.keys.map((k) => k.name).join(', '),
-    headers: Object.entries(t?.server.headers ?? {})
-      .map(([k, v]) => `${k}: ${v}`)
-      .join('\n'),
-    bearer: (t?.server.bearer_command ?? []).join(' '),
-    tools: (row.tools ?? []).join(', '),
-    timeoutS: t?.server.timeout_ms ? String(t.server.timeout_ms / 1000) : '',
-    roles: row.roles,
-  };
-}
-
 /** One server of yours: where it is, who uses it, its keys, Test inline, and its menu. */
 function ServerCard(props: {
-  row: McpServerRow;
+  row: McpRow;
   result?: McpTestResult;
   onTested: (r: McpTestResult | undefined) => void;
   onMenu: (id: string) => void;
@@ -210,7 +184,7 @@ export function ConnectorsTab(props: { view: CustomizeView }): JSX.Element {
                   else
                     setDialog({
                       kind: 'custom',
-                      initial: formOf(r, roles, template(r.id)),
+                      initial: formOf(r, roles),
                       editing: true,
                     });
                 }}
@@ -245,7 +219,7 @@ export function ConnectorsTab(props: { view: CustomizeView }): JSX.Element {
                     <S.Badge>{t.category}</S.Badge>
                     {t.keys.map((k) => (
                       <span key={k.name} className="mono">
-                        {k.name}
+                        {k.optional ? `${k.name} (optional)` : k.name}
                       </span>
                     ))}
                     {t.note ? <span>{t.note}</span> : null}

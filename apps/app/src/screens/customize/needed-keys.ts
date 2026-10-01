@@ -1,6 +1,11 @@
-import type { KeyRow, McpServerRow, OrgConfig } from '@wizardingcode/shibaox-daemon';
+import type {
+  KeyRow,
+  McpServerRow,
+  OrgConfig,
+  PluginRow,
+  RoleRow,
+} from '@wizardingcode/shibaox-daemon';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
-import type { PluginRow, RoleRow } from './types.js';
 
 /** Who needs a key: a badge in the Keys tab (`tier strong`, `connector github`, `plugin telegram`). */
 export interface NeededBy {
@@ -19,6 +24,32 @@ export interface KeyLine {
   neededBy: NeededBy[];
   /** The models this key unlocks (provider keys). */
   models: string[];
+  /** Other names a plugin accepts in its place (`GH_TOKEN` or `GITHUB_TOKEN`). */
+  alternatives?: string[];
+  /** Set through this alternative (the row's own key is not). */
+  via?: string;
+}
+
+/**
+ * A plugin's keys as needs: keys named together in one check ("Token (GH_TOKEN or
+ * GITHUB_TOKEN)") are alternatives of one need, met when any of them is present.
+ */
+export function pluginKeyNeeds(p: PluginRow): { names: string[]; present: boolean }[] {
+  const out: { names: string[]; present: boolean }[] = [];
+  const seen = new Set<string>();
+  for (const k of p.keys) {
+    if (seen.has(k.name)) continue;
+    const label = p.checks.find(
+      (c) =>
+        / or /.test(c.label) &&
+        c.label.includes(k.name) &&
+        p.keys.some((o) => o.name !== k.name && c.label.includes(o.name)),
+    )?.label;
+    const group = label ? p.keys.filter((o) => label.includes(o.name)) : [k];
+    for (const g of group) seen.add(g.name);
+    out.push({ names: group.map((g) => g.name), present: group.some((g) => g.present) });
+  }
+  return out;
 }
 
 export interface NeededKeysInput {
@@ -103,11 +134,15 @@ export function neededKeys(input: NeededKeysInput): {
   const known = new Map(keys.map((k) => [k.name, k]));
   const needs = new Map<string, NeededBy[]>();
   const present = new Map<string, boolean>();
+  /** Alternatives of a row (a plugin's), and whether anything needs the row's own key. */
+  const alternatives = new Map<string, { names: string[]; present?: string }>();
+  const strict = new Set<string>();
   const need = (name: string, by: NeededBy, isSet?: boolean) => {
     const list = needs.get(name) ?? [];
     if (!list.some((b) => b.label === by.label)) list.push(by);
     needs.set(name, list);
     if (isSet) present.set(name, true);
+    if (by.kind !== 'plugin') strict.add(name);
   };
   for (const tier of ['strong', 'cheap', 'decision'] as const) {
     const ref = config?.tiers[tier];
@@ -125,9 +160,22 @@ export function neededKeys(input: NeededKeysInput): {
   for (const s of mcp)
     for (const k of s.keys)
       need(k.name, { kind: 'connector', id: s.id, label: `connector ${s.id}` }, k.present);
-  for (const p of plugins)
-    for (const k of p.keys)
-      need(k.name, { kind: 'plugin', id: p.id, label: `plugin ${p.id}` }, k.present);
+  // a plugin that is not set up at all needs nothing yet (its keys stay in Other)
+  for (const p of plugins) {
+    if (p.status === 'off') continue;
+    for (const n of pluginKeyNeeds(p)) {
+      const [first, ...rest] = n.names;
+      if (!first) continue;
+      const own = p.keys.find((k) => k.name === first)?.present;
+      need(first, { kind: 'plugin', id: p.id, label: `plugin ${p.id}` }, own);
+      if (rest.length) {
+        const via = rest.find(
+          (r) => p.keys.find((k) => k.name === r)?.present || known.get(r)?.set,
+        );
+        alternatives.set(first, { names: rest, ...(via ? { present: via } : {}) });
+      }
+    }
+  }
 
   const line = (name: string): KeyLine => {
     const k = known.get(name);
@@ -135,14 +183,27 @@ export function neededKeys(input: NeededKeysInput): {
       name,
       description: k?.description ?? '',
       set: k?.set ?? present.get(name) ?? false,
-      ...(k?.source ? { source: k.source } : {}),
+      // a key the vault does not list but the daemon sees: it comes from the environment
+      ...(k?.source
+        ? { source: k.source }
+        : !k && present.get(name)
+          ? { source: 'env' as const }
+          : {}),
       ...(k?.masked ? { masked: k.masked } : {}),
       neededBy: needs.get(name) ?? [],
       models: [],
     };
   };
+  /** A needed row: its alternatives meet it unless something reads the key itself. */
+  const neededLine = (name: string): KeyLine => {
+    const l = line(name);
+    const alt = alternatives.get(name);
+    if (!alt) return l;
+    const via = !l.set && !strict.has(name) ? alt.present : undefined;
+    return { ...l, alternatives: alt.names, ...(via ? { set: true, via } : {}) };
+  };
 
-  const needed = [...needs.keys()].map(line);
+  const needed = [...needs.keys()].map(neededLine);
   needed.sort((a, b) => (a.set === b.set ? byName(a, b) : a.set ? 1 : -1));
 
   const unlocks = new Map<string, string[]>();

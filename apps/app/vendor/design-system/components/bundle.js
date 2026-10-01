@@ -98,7 +98,8 @@
     return h('div', { className: cx('sx-seg', p.className), role: 'radiogroup', 'aria-label': p.label }, items.map(function (it, i) {
       var sel = it.id === p.value;
       return h('button', { key: it.id, ref: function (el) { refs.current[i] = el; }, type: 'button', role: 'radio', 'aria-checked': sel, tabIndex: sel || (current < 0 && i === 0) ? 0 : -1, className: cx('sx-seg__item', sel && 'is-active'), onClick: function () { pick(i); }, onKeyDown: function (e) { onKey(e, i); } },
-        it.label, it.dot ? h('span', { className: 'sx-seg__dot', 'aria-hidden': true }) : null);
+        it.label, it.dot ? h('span', { className: 'sx-seg__dot', 'aria-hidden': true }) : null,
+        it.dot ? h('span', { className: 'sx-vh' }, ' (' + (it.dotLabel || 'needs attention') + ')') : null);
     }));
   }
 
@@ -212,11 +213,13 @@
   function Textarea(p) {
     var rest = Object.assign({}, p);
     ['label', 'hint', 'error', 'className', 'rows'].forEach((k) => { delete rest[k]; });
-    var id = p.id || (p.label ? 'ta-' + p.label.toLowerCase().replace(/[^a-z0-9]+/g, '-') : undefined);
-    return h('label', { className: cx('sx-field', 'sx-field--area', p.error && 'is-error', p.className), htmlFor: id },
-      p.label ? h('span', { className: 'sx-field__label' }, p.label) : null,
-      h('textarea', Object.assign({ className: 'sx-field__area', rows: p.rows || 4, id: id }, rest)),
-      (p.error || p.hint) ? h('span', { className: 'sx-field__hint' }, p.error || p.hint) : null);
+    var ref = React.useRef(null); if (ref.current === null) ref.current = 'sxt' + (++uid);
+    var id = p.id || ref.current;
+    // the label names the field alone; the hint describes it (as Input does)
+    return h('div', { className: cx('sx-field', 'sx-field--area', p.error && 'is-error', p.className) },
+      p.label ? h('label', { className: 'sx-field__label', htmlFor: id }, p.label) : null,
+      h('textarea', Object.assign({ className: 'sx-field__area', rows: p.rows || 4, id: id, 'aria-invalid': p.error ? true : undefined, 'aria-describedby': (p.error || p.hint) ? id + '-d' : undefined }, rest)),
+      (p.error || p.hint) ? h('p', { id: id + '-d', className: 'sx-field__hint' }, p.error || p.hint) : null);
   }
 
   function Select(p) {

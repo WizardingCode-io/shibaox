@@ -97,6 +97,15 @@ function HomeComposer(): JSX.Element {
   );
 }
 
+/** A daemon on this machine (its listener on the loopback). */
+const isLoopback = (base: string): boolean => {
+  try {
+    return ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(new URL(base).hostname);
+  } catch {
+    return false;
+  }
+};
+
 function Shell(props: { base: string; onDisconnect: () => void }): JSX.Element {
   const S = ds();
   const store = useStore();
@@ -140,7 +149,12 @@ function Shell(props: { base: string; onDisconnect: () => void }): JSX.Element {
           <MemoryScreen />
         )
       ) : route.name === 'customize' ? (
-        <CustomizeScreen tab={route.tab} view={route.view} focusKey={route.key} />
+        <CustomizeScreen
+          tab={route.tab}
+          view={route.view}
+          focusKey={route.key}
+          local={isLoopback(props.base)}
+        />
       ) : route.name === 'soon' ? (
         <SoonScreen section={route.section} />
       ) : (

@@ -200,6 +200,28 @@ describe('AppClient: Customize', () => {
     expect(JSON.parse(String(f.calls[7]?.init.body))).toEqual({ skills: ['pdf'] });
     expect(JSON.parse(String(f.calls[8]?.init.body))).toMatchObject({ id: 'ctx' });
   });
+
+  it('reads one skill with its SKILL.md; an error keeps the extra fields of its body', async () => {
+    const f = fakeFetch((_url, init) =>
+      init.method === 'DELETE'
+        ? json(
+            {
+              error: { code: 'in_use', message: 'skill pdf is used by assistant' },
+              roles: ['assistant'],
+            },
+            409,
+          )
+        : json({ id: 'pdf', content: '# PDF' }),
+    );
+    const c = new AppClient('http://d', 't', { fetch: f.fetch });
+    expect(await c.skill('/o', 'pdf')).toEqual({ id: 'pdf', content: '# PDF' });
+    expect(f.calls[0]?.url).toBe('http://d/skills/pdf?org=%2Fo');
+    await expect(c.removeSkill('/o', 'pdf', false)).rejects.toMatchObject({
+      status: 409,
+      code: 'in_use',
+      details: { roles: ['assistant'] },
+    });
+  });
 });
 
 describe('the connection', () => {

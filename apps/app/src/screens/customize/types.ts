@@ -1,121 +1,42 @@
 /**
- * The shapes of the Customize API (docs/superpowers/specs/2026-10-01-customize-design.md),
- * defined on the app side: the daemon builds the same routes against the same shapes.
+ * App-only types of the Customize screen. The API shapes come from `@wizardingcode/shibaox-daemon`
+ * (`SkillRow`, `RoleRow`, `McpServerRow`, `ConnectorTemplate`, `SkillSource`, `PluginRow`, the
+ * request and result types); what the daemon does not export yet is declared here, marked
+ * `TODO daemon export`, with the shape the daemon answers with.
  */
+import type {
+  McpServerRow,
+  SkillAddResult,
+  SkillRow,
+  SkipReason,
+} from '@wizardingcode/shibaox-daemon';
+import type { McpServer } from '@wizardingcode/shibaox-schemas';
 
-/** One skill of the org: `org/skills/<id>/SKILL.md`. */
-export interface SkillRow {
+// TODO daemon export: `GET /mcp` rows carry the raw catalog server (Edit… starts from it).
+export type McpRow = McpServerRow & { server?: McpServer };
+
+// TODO daemon export: `added[].omitted` (files over 1 MB left out) and the `copy_failed` reason.
+export type SkillSkipReason = SkipReason | 'copy_failed';
+export interface AddedSkill extends SkillRow {
+  /** Files of the skill that were not copied (over 1 MB). */
+  omitted?: string[];
+}
+export interface AddSkillOutcome extends Omit<SkillAddResult, 'added' | 'skipped'> {
+  added: AddedSkill[];
+  skipped: { id: string; reason: SkillSkipReason }[];
+}
+
+// TODO daemon export: `GET /skills/:id?org=` (a skill with its SKILL.md).
+export interface SkillDoc {
   id: string;
-  /** The frontmatter `name`, else the id. */
   name: string;
-  /** The frontmatter `description`, else the first paragraph. */
   description: string;
   path: string;
-  /** The roles that list it under `skills:`. */
   roles: string[];
+  content: string;
 }
 
-/** `POST /skills?org=`: from a repository, a folder on the daemon's machine, or written here. */
-export type AddSkillRequest =
-  | { source: 'repo'; repo: string; path?: string; ids?: string[] }
-  | { source: 'folder'; path: string }
-  | { source: 'inline'; id: string; content: string };
-
-export interface AddSkillResult {
-  added: SkillRow[];
-  skipped: { id: string; reason: string }[];
-}
-
-/** One skill a repository offers (`GET /skills/discover`). */
-export interface DiscoveredSkill {
-  id: string;
-  name: string;
-  description: string;
-  path: string;
-}
-export interface DiscoverResult {
-  repo: string;
-  skills: DiscoveredSkill[];
-}
-
-/** One role of the org (`GET /roles?org=`). */
-export interface RoleRow {
-  id: string;
-  name: string;
-  model?: string;
-  tools: string[];
-  mcp: string[];
-  skills: string[];
-}
-
-/** `PUT /roles/:id?org=`: the lists to replace. */
-export interface RoleLinks {
-  mcp?: string[];
-  skills?: string[];
-}
-
-/** How to reach an MCP server (the catalog's `server:`), as the app sends it. */
-export interface McpServerSpec {
-  transport: 'stdio' | 'http';
-  command?: string;
-  args?: string[];
-  url?: string;
-  env?: Record<string, string>;
-  env_keys?: string[];
-  headers?: Record<string, string>;
-  bearer_command?: string[];
-  tools?: string[];
-  timeout_ms?: number;
-}
-
-/** `POST /mcp?org=`: writes `catalog/<id>.yaml` and attaches the roles. */
-export interface AddMcpRequest {
-  id: string;
-  description: string;
-  tags?: string[];
-  server: McpServerSpec;
-  roles?: string[];
-  replace?: boolean;
-}
-
-/** One connector of the built-in registry (`GET /registry/connectors`). */
-export interface ConnectorTemplate {
-  id: string;
-  name: string;
-  vendor: string;
-  verified: boolean;
-  category: string;
-  description: string;
-  keys: { name: string; signupUrl?: string; description: string }[];
-  server: McpServerSpec;
-  skills?: string[];
-  /** e.g. "signs in on first use" for an OAuth server without keys. */
-  note?: string;
-}
-
-/** One built-in skill source (`GET /registry/skills`); its listing comes from `/skills/discover`. */
-export interface SkillSource {
-  repo: string;
-  name: string;
-  vendor: string;
-  description: string;
-  path?: string;
-  categories?: string[];
-}
-
-/** One partner integration (`GET /plugins`). */
-export interface PluginRow {
-  id: string;
-  name: string;
-  description: string;
-  status: 'ready' | 'partial' | 'off';
-  checks: { label: string; ok: boolean; detail?: string }[];
-  keys: { name: string; present: boolean }[];
-  actions: { id: string; label: string; href?: string }[];
-  brings: { connectors: string[]; skills: string[] };
-}
-
-/** The connector categories of the registry, in the order the filter shows them. */
+/** The connector categories of the registry, in the order the filter shows them (the daemon's list). */
 export const CONNECTOR_CATEGORIES = [
   'Code',
   'Browser',
@@ -136,3 +57,13 @@ export const CUSTOMIZE_TABS: { id: CustomizeTab; label: string }[] = [
   { id: 'models', label: 'Models' },
 ];
 export type CustomizeView = 'yours' | 'discover';
+
+/** Why a skill was not added, in words. */
+export const SKIP_WORDS: Record<SkillSkipReason, string> = {
+  exists: 'already in the org',
+  invalid_id: 'not a valid id',
+  symlink: 'a symbolic link (refused)',
+  too_large: 'too large',
+  not_found: 'not found in the source',
+  copy_failed: 'the copy failed',
+};

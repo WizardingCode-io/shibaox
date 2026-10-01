@@ -1,11 +1,15 @@
+import type { DiscoveredSkill, SkillRow } from '@wizardingcode/shibaox-daemon';
 import { useState } from 'react';
 import { ds } from '../../../ds.js';
 import { useAppState, useStore } from '../../../store/hooks.js';
-import { splitRepo } from '../filter.js';
-import type { DiscoveredSkill, SkillRow } from '../types.js';
+import { repoProblem, splitRepo } from '../filter.js';
+import { SkippedNote } from '../parts.js';
+import { settle } from '../skill-results.js';
 
 /** "From a repository": what `owner/repo[/path]` (or a git URL) offers, pick, install. */
 export function SkillRepoDialog(props: {
+  /** The daemon is on this machine: a file URL or an absolute path works too. */
+  local: boolean;
   onClose: () => void;
   onAdded: (added: SkillRow[]) => void;
 }): JSX.Element {
@@ -20,9 +24,11 @@ export function SkillRepoDialog(props: {
   >(undefined);
   const [picked, setPicked] = useState<string[]>([]);
   const [installing, setInstalling] = useState(false);
+  const [skipped, setSkipped] = useState<string[]>([]);
+  const problem = input.trim() ? repoProblem(input, props.local) : undefined;
   const look = () => {
     const { repo, path } = splitRepo(input);
-    if (!repo) return;
+    if (!repo || repoProblem(input, props.local)) return;
     setLooking(true);
     void store.discoverSkills(repo, path).then((r) => {
       setLooking(false);
@@ -36,7 +42,7 @@ export function SkillRepoDialog(props: {
     <S.Dialog
       open
       title="Add skills from a repository"
-      description="A GitHub owner/repo (optionally /path inside it) or a git URL. Shibaox clones it shallow and lists every folder with a SKILL.md."
+      description="A GitHub owner/repo (optionally /path inside it) or an https git URL. Shibaox clones it shallow and lists every folder with a SKILL.md."
       icon="github"
       width={560}
       onClose={props.onClose}
@@ -62,8 +68,13 @@ export function SkillRepoDialog(props: {
                 .then((r) => {
                   setInstalling(false);
                   if (!r) return;
-                  props.onClose();
-                  props.onAdded(r.added);
+                  setSkipped(
+                    settle(r, {
+                      close: props.onClose,
+                      onAdded: props.onAdded,
+                      notice: (m) => store.notice(m),
+                    }),
+                  );
                 });
             }}
           >
@@ -83,13 +94,15 @@ export function SkillRepoDialog(props: {
           <S.Input
             label="Repository"
             placeholder="anthropics/skills"
+            error={problem}
             value={input}
             onChange={(e) => setInput((e.target as HTMLInputElement).value)}
           />
-          <S.Button type="submit" loading={looking} disabled={!input.trim()}>
+          <S.Button type="submit" loading={looking} disabled={!input.trim() || !!problem}>
             Look
           </S.Button>
         </form>
+        <SkippedNote lines={skipped} />
         {found && 'error' in found ? (
           <p className="note">{`Could not read it: ${found.error}`}</p>
         ) : null}

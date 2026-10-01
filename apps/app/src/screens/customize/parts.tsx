@@ -1,7 +1,8 @@
+import type { RoleRow } from '@wizardingcode/shibaox-daemon';
 import { type ReactNode, useState } from 'react';
 import { ds } from '../../ds.js';
 import { customizePath, navigate } from '../../router.js';
-import type { CustomizeTab, CustomizeView, RoleRow } from './types.js';
+import type { CustomizeTab, CustomizeView } from './types.js';
 
 type MenuItem = Parameters<Window['Shibaox']['Menu']>[0]['items'][number];
 
@@ -153,7 +154,12 @@ export function AddOrAdded(props: {
 }
 
 /** A key as a badge: present (matcha), or missing (a button into Keys with the row focused). */
-export function KeyBadge(props: { name: string; present: boolean }): JSX.Element {
+export function KeyBadge(props: {
+  name: string;
+  present: boolean;
+  /** The key Keys focuses (default: `name`). */
+  focus?: string;
+}): JSX.Element {
   const S = ds();
   return props.present ? (
     <S.Badge tone="matcha" icon="key">
@@ -164,7 +170,7 @@ export function KeyBadge(props: { name: string; present: boolean }): JSX.Element
       type="button"
       className="badge-link"
       aria-label={`${props.name} missing`}
-      onClick={() => goToKey(props.name)}
+      onClick={() => goToKey(props.focus ?? props.name)}
     >
       <S.Badge tone="warning" icon="key">
         {props.name}
@@ -204,6 +210,21 @@ export function RoleChecks(props: {
         </label>
       ))}
     </fieldset>
+  );
+}
+
+/** Why nothing was added: one line per id, inside the dialog. */
+export function SkippedNote(props: { lines: string[] }): JSX.Element | null {
+  if (props.lines.length === 0) return null;
+  return (
+    <div className="note" role="status">
+      <p>Nothing was added:</p>
+      <ul className="skipped">
+        {props.lines.map((l) => (
+          <li key={l}>{l}</li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
