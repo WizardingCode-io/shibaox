@@ -42,7 +42,7 @@ describe('shibaox routine: manual, model, approvals, update, show', () => {
       channels: [],
       env: {},
       log: () => {},
-      version: '0.2.7',
+      version: '0.2.8',
     });
     daemons.push(daemon);
     await daemon.start();
