@@ -129,6 +129,11 @@ describe('keys endpoints', () => {
     expect((await client.keys()).find((k) => k.name === 'OPENAI_API_KEY')?.set).toBe(false);
     expect((await client.models()).find((m) => m.ref === 'openai/gpt-5')?.configured).toBe(false);
     await expect(client.setKey('bad name', 'x')).rejects.toMatchObject({ status: 400 });
+    await expect(client.setKey('HIGGSFIELD_API_KEY', 'nocolon')).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringMatching(/paste it as-is/),
+    });
+    expect((await client.keys()).find((k) => k.name === 'HIGGSFIELD_API_KEY')?.set).toBe(false);
   });
 });
 

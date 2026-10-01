@@ -77,4 +77,25 @@ describe('SecretsStore', () => {
     expect(maskSecret('sk-or-1234567890')).toBe('sk-o…7890');
     expect(existsSync(s.path)).toBe(false); // nothing written for refused sets
   });
+  it('HIGGSFIELD_API_KEY is known and must be the whole id:secret pair, trimmed', () => {
+    const { s } = store();
+    expect(KNOWN_KEYS.find((k) => k.name === 'HIGGSFIELD_API_KEY')?.description).toMatch(
+      /open\.higgsfield\.ai/,
+    );
+    for (const bad of ['abc', ':def', 'abc:', 'a b:c']) {
+      expect(() => s.set('HIGGSFIELD_API_KEY', bad)).toThrow(/whole key as copied/);
+      try {
+        s.set('HIGGSFIELD_API_KEY', bad);
+      } catch (e) {
+        expect(String(e)).toMatch(/id:secret, with its colon\): paste it as-is/);
+        if (bad.length > 3) expect(String(e)).not.toContain(bad);
+      }
+    }
+    expect(existsSync(s.path)).toBe(false);
+    s.set('HIGGSFIELD_API_KEY', '  id-1234:secret-abcdef \n');
+    expect(s.get('HIGGSFIELD_API_KEY')).toBe('id-1234:secret-abcdef');
+    const row = s.list({}).find((r) => r.name === 'HIGGSFIELD_API_KEY');
+    expect(row).toMatchObject({ set: true, source: 'vault', masked: 'id-1…cdef' });
+    expect(JSON.stringify(s.list({}))).not.toContain('secret-abcdef');
+  });
 });

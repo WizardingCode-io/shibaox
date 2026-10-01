@@ -32,7 +32,20 @@ const BUILT_IN: KnownKey[] = [
     name: 'SHIBAOX_DAEMON_TOKEN',
     description: 'The token clients present to a daemon that listens on the network',
   },
+  {
+    name: 'HIGGSFIELD_API_KEY',
+    description: 'Higgsfield API (open.higgsfield.ai): the id:secret pair as copied',
+  },
 ];
+
+/** Shapes some keys must have; the message never repeats the value. */
+const VALUE_RULES: Record<string, { re: RegExp; message: string }> = {
+  HIGGSFIELD_API_KEY: {
+    re: /^[^\s:]+:\S+$/,
+    message:
+      'HIGGSFIELD_API_KEY must be the whole key as copied from open.higgsfield.ai (id:secret, with its colon): paste it as-is',
+  },
+};
 
 /** The keys shibaox knows what to do with: every provider's, plus Jev and Telegram. */
 export const KNOWN_KEYS: KnownKey[] = (() => {
@@ -93,6 +106,8 @@ export class SecretsStore {
       throw new Error(`key name "${name}" must look like an environment variable (OPENAI_API_KEY)`);
     const v = value.trim();
     if (!v) throw new Error('key value is empty');
+    const rule = VALUE_RULES[name];
+    if (rule && !rule.re.test(v)) throw new Error(rule.message);
     const keys = this.read();
     keys[name] = v;
     this.write(keys);
