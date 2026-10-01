@@ -458,12 +458,23 @@ export class RunManager {
     const state = await this.state(runId);
     if (state.status === 'running' || state.status === 'queued')
       throw new RunFileError('busy', 'The run is running: its tasks own the workspace now');
+    // conversation turns share one checkout: a live turn owns it whatever run the file came from
+    for (const id of this.live.keys()) {
+      if (id === runId) continue;
+      const other = await this.state(id).catch(() => undefined);
+      if (other && other.workspace === state.workspace && other.status === 'running')
+        throw new RunFileError(
+          'busy',
+          'A turn is running in this workspace: wait for it to finish',
+        );
+    }
     if (!existsSync(state.workspace))
       throw new RunFileError('no_workspace', 'The run workspace is gone');
     const r = await writeRunFile(state.workspace, path, content, {
       protectedGlobs: this.protectedFor(state),
     });
     this.recordRuntime(runId, 'you', { type: 'file_changed', path: r.path });
+    if (isTerminal(state.status)) this.buffer.retire(runId);
     return r;
   }
 

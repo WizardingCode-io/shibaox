@@ -636,8 +636,10 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
     const seen = new Set(own.map((o) => o.path));
     return [...own, ...savedHere.filter((s) => !seen.has(s.path))];
   }, [view?.messages, state.states, savedHere]);
-  // where a code block can be saved: the newest finished run of the conversation with a workspace
+  // where a code block can be saved: the newest finished run of the conversation with a
+  // workspace, and only while no turn is running (a live turn owns the checkout)
   const saveTarget = useMemo((): SaveTarget | undefined => {
+    if (live !== undefined || state.busy[props.rootId]) return undefined;
     for (let i = turns.length - 1; i >= 0; i--) {
       const id = turns[i]?.runId;
       const st = id ? state.states[id] : undefined;
@@ -646,13 +648,18 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
           runId: id,
           workspace: st.workspace,
           write: async (path, content) => {
-            await store.writeFile(id, path, content);
-            setSavedHere((s) => [...s, { runId: id, path }]);
+            const saved = await store.writeFile(id, path, content);
+            setSavedHere((s) => [...s, { runId: id, path: saved }]);
           },
         };
     }
     return undefined;
-  }, [turns, state.states, store]);
+  }, [turns, state.states, store, live, state.busy, props.rootId]);
+  const openCode = useCallback(
+    (code: CodeOpen) =>
+      setFile({ inline: { name: code.name, content: code.text, lang: code.lang } }),
+    [],
+  );
   const runningTasks = store
     .tasksOf(props.rootId)
     .filter((t) => !['completed', 'failed', 'cancelled'].includes(t.status)).length;
@@ -689,16 +696,21 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
           inbox={inbox}
           live={live?.runId}
           onFile={(runId, path) => setFile({ runId, path })}
-          onOpenCode={(code) =>
-            setFile({ inline: { name: code.name, content: code.text, lang: code.lang } })
-          }
+          onOpenCode={openCode}
         />
       ) : null}
       {file ? (
         <FileSheet
-          key={'inline' in file ? `inline:${file.inline.name}` : `${file.runId}:${file.path}`}
+          key={
+            'inline' in file
+              ? `inline:${file.inline.name}:${file.inline.content.length}`
+              : `${file.runId}:${file.path}`
+          }
           {...('inline' in file ? { inline: file.inline } : { runId: file.runId, path: file.path })}
           save={saveTarget}
+          saveNote={
+            saveTarget ? undefined : 'Save to project comes back once the turn has finished.'
+          }
           load={loadFile}
           onClose={() => setFile(undefined)}
           onDownload={(runId, path) => void store.downloadFile(runId, path)}

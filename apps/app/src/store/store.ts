@@ -681,10 +681,10 @@ export class AppStore {
     saveBlob(new Blob([content], { type: 'text/plain;charset=utf-8' }), name);
   }
 
-  /** Writes a code block into the run's workspace; the daemon's error is the thrown message. */
-  async writeFile(runId: string, path: string, content: string): Promise<void> {
+  /** Writes a code block into the run's workspace (the path as the daemon spells it); the daemon's error is the thrown message. */
+  async writeFile(runId: string, path: string, content: string): Promise<string> {
     try {
-      await this.client.writeFile(runId, path, content);
+      return (await this.client.writeFile(runId, path, content)).path;
     } catch (e) {
       throw new Error(message(e));
     }

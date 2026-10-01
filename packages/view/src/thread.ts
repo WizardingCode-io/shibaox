@@ -134,7 +134,7 @@ export function threadView(turns: readonly ThreadTurn[]): ThreadView {
         time: updatedAt,
         blocks,
         pending: live && !text,
-        model: runUsage(cards)?.model ?? state.model,
+        model: text || blocks.length > 0 ? (runUsage(cards)?.model ?? state.model) : undefined,
         runId: state.runId,
       });
   }

@@ -1178,4 +1178,38 @@ describe('runtime buffer after a run ends', () => {
     const skipped = await store.read(skip.runId);
     expect(skipped.some((e) => e.type === 'HumanResponded' && e.via === 'auto')).toBe(true);
   });
+
+  it('a file is not written into a workspace while any run is executing in it (409 busy)', async () => {
+    const s = setup();
+    const store = new MemoryEventStore();
+    let hold = false;
+    const { manager: m } = manager(store, {
+      mockScript: async () => {
+        while (hold) await new Promise((r) => setTimeout(r, 20));
+        return { output: {}, summary: 'done' };
+      },
+    });
+    const paused = async (runId: string) =>
+      vi.waitFor(
+        async () => expect(['waiting_human', 'completed']).toContain((await m.state(runId)).status),
+        { timeout: 10_000 },
+      );
+    const first = await submitMock(m, s, 'inplace');
+    await paused(first.runId);
+    hold = true;
+    const second = await submitMock(m, s, 'inplace');
+    await vi.waitFor(async () => expect((await m.state(second.runId)).status).toBe('running'));
+    // the first run is paused, but the second one owns the same checkout right now
+    await expect(m.writeFile(first.runId, 'note.md', 'hi')).rejects.toMatchObject({
+      code: 'busy',
+    });
+    await expect(m.writeFile(second.runId, 'note.md', 'hi')).rejects.toMatchObject({
+      code: 'busy',
+    });
+    hold = false;
+    await paused(second.runId);
+    await expect(m.writeFile(first.runId, 'note.md', 'hi')).resolves.toMatchObject({
+      path: 'note.md',
+    });
+  });
 });

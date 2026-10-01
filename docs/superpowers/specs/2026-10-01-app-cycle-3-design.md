@@ -40,7 +40,7 @@ Verified in Playwright at 1180×700: the footer of Create routine is visible, th
 ## C. Decisions you can see
 
 - `DecisionMade` carries `by` (who decided: `jev` for the TypeSafe typed API, `model:<ref>` for
-  an LLM decider such as `openrouter/typesafe/jev-router`, `scripted`, `default`); the Decider
+  an LLM decider such as `openrouter/typesafe/jev-router`, `scripted`); the Decider
   interface returns `by`; reducer and the view's decide card carry it; the Tasks tab says
   "Decision · <node>: <choice> · 92% · by openrouter/typesafe/jev-router".
 - `GET /decisions?limit=20`: the decider in use (`{ kind: 'jev' | 'model' | 'none', ref?,

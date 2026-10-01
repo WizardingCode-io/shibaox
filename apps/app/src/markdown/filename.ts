@@ -48,32 +48,36 @@ const PLAIN: Record<string, string> = {
   diff: 'changes',
 };
 
-const FILE_RE = /[\w.-]+\.[A-Za-z0-9]{1,8}/;
+/** A relative file path: segments of word characters, dots and dashes, with an extension; never absolute, never `..`. */
+const FILE_RE = /^[\w.-]+(?:\/[\w.-]+)*\.[A-Za-z0-9]{1,8}$/;
+const safe = (p: string): boolean =>
+  FILE_RE.test(p) && !/^\d/.test(p) && !p.split('/').includes('..');
 
 /**
- * A file name for a code block: one written in the fence info (```js fibonacci.js, title="x.ts"),
+ * A file name for a code block: one written in the fence info (```js fibonacci.js, title="src/x.ts"),
  * else a `file:` comment on the first line, else the first function or class with the
- * language's extension, else a plain name per kind (table.csv, notes.md, snippet.txt).
+ * language's extension, else a plain name per kind (table.csv, notes.md, snippet.txt). A path
+ * from the fence or the comment keeps its directories: it is the best prefill for Save to project.
  */
 export function suggestName(text: string, lang: string | undefined, info?: string): string {
   const l = (lang ?? '').toLowerCase();
   const ext = EXT[l] ?? (l || 'txt');
-  const fromInfo = info
-    ?.split(/\s+/)
-    .slice(1)
-    .map((w) => w.replace(/^[a-z]+=/i, '').replace(/^["']|["']$/g, ''))
-    .find((w) => FILE_RE.test(w) && !/^\d/.test(w));
-  if (fromInfo) return base(fromInfo);
+  const rest = (info ?? '').replace(/^\S+\s*/, '');
+  const fromInfo = [...rest.matchAll(/"([^"]+)"|'([^']+)'|(\S+)/g)]
+    .map((m) =>
+      (m[1] ?? m[2] ?? m[3] ?? '').replace(/^[a-z]+=/i, '').replace(/^["'(]+|["')]+$/g, ''),
+    )
+    .find(safe);
+  if (fromInfo) return fromInfo;
   const first = text.split('\n')[0] ?? '';
   const comment = first.match(/^\s*(?:\/\/|#|--|\/\*|<!--)\s*file\s*:\s*(\S+)/i);
-  if (comment?.[1]) return base(comment[1].replace(/\*\/|-->/g, ''));
+  const fromComment = comment?.[1]?.replace(/\*\/|-->/g, '');
+  if (fromComment && safe(fromComment)) return fromComment;
   const named = text.match(
-    /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function\*?|class|def|const|let|var)\s+([A-Za-z_$][\w$]*)/m,
+    /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function\*?|func|class|def|const|let|var)\s+([A-Za-z_$][\w$]*)/m,
   );
   if (named?.[1] && ['js', 'jsx', 'ts', 'tsx', 'py', 'go', 'php'].includes(ext))
     return `${named[1]}.${ext}`;
   if (ext === 'Dockerfile') return 'Dockerfile';
   return `${PLAIN[ext] ?? 'snippet'}.${ext}`;
 }
-
-const base = (p: string): string => p.split('/').pop() ?? p;

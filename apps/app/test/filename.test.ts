@@ -4,10 +4,14 @@ import { suggestName } from '../src/markdown/filename.js';
 describe('suggestName: a file name for a code block', () => {
   it('takes a file name from the fence info', () => {
     expect(suggestName('x', 'js', 'js fibonacci.js')).toBe('fibonacci.js');
-    expect(suggestName('x', 'ts', 'ts title="src/app.ts"')).toBe('app.ts');
+    expect(suggestName('x', 'ts', 'ts title="src/app.ts"')).toBe('src/app.ts');
+    expect(suggestName('x', 'js', 'js (fibonacci.js)')).toBe('fibonacci.js');
+    expect(suggestName('x', 'js', 'js title="/etc/passwd"')).toBe('snippet.js');
+    expect(suggestName('x', 'js', 'js ../x.js')).toBe('snippet.js');
   });
   it('takes a "file:" comment on the first line', () => {
-    expect(suggestName('// file: utils/sum.js\nexport const a = 1;', 'js')).toBe('sum.js');
+    expect(suggestName('// file: utils/sum.js\nexport const a = 1;', 'js')).toBe('utils/sum.js');
+    expect(suggestName('# this is not a file: really\necho', 'bash')).toBe('script.sh');
     expect(suggestName('# File: report.py\nprint(1)', 'python')).toBe('report.py');
   });
   it('names code after its first function or class', () => {
@@ -17,6 +21,7 @@ describe('suggestName: a file name for a code block', () => {
     expect(suggestName('export class OrderBook {}', 'typescript')).toBe('OrderBook.ts');
     expect(suggestName('def parse_rows(rows):\n    pass', 'python')).toBe('parse_rows.py');
     expect(suggestName('const fibonacci = (n) => n;', 'js')).toBe('fibonacci.js');
+    expect(suggestName('package main\n\nfunc main() {}', 'go')).toBe('main.go');
   });
   it('falls back to a name per language', () => {
     expect(suggestName('a,b\n1,2', 'csv')).toBe('table.csv');

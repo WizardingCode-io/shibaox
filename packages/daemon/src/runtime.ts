@@ -410,19 +410,35 @@ export function deciderInfo(
   env: NodeJS.ProcessEnv,
   registry: ProviderRegistry,
 ): DeciderInfo {
-  const ref = org.models.tiers.decision;
-  if (ref?.includes('/')) {
-    const why = unusable(registry, ref);
-    return { kind: 'model', ref, usable: why === undefined, ...(why ? { reason: why } : {}) };
-  }
-  if (env.TYPESAFE_API_KEY) return { kind: 'jev', ref: ref || 'jev-latest', usable: true };
+  // the same choice buildRuntime makes for a real run: the decision tier when it is a usable
+  // model ref; Jev's typed API with its key when the tier is not a ref; else the strong tier;
+  // else a scripted "ship"
+  const strongRef = org.models.tiers.strong;
+  const strongWhy = strongRef ? unusable(registry, strongRef) : 'not set';
+  const decisionRef = org.models.tiers.decision;
+  const isRef = decisionRef?.includes('/') ?? false;
+  const decisionWhy = isRef ? unusable(registry, decisionRef) : undefined;
+  if (isRef && decisionRef && decisionWhy === undefined)
+    return { kind: 'model', ref: decisionRef, usable: true };
+  if (!isRef && env.TYPESAFE_API_KEY)
+    return { kind: 'jev', ref: decisionRef || 'jev-latest', usable: true };
+  const why = isRef
+    ? `the decision tier ${decisionRef} is not usable (${decisionWhy})`
+    : decisionRef
+      ? `the decision tier ${decisionRef} needs TYPESAFE_API_KEY`
+      : 'no decision tier (models.yaml, tiers.decision)';
+  if (strongRef && strongWhy === undefined)
+    return {
+      kind: 'model',
+      ref: strongRef,
+      usable: true,
+      reason: `${why}: the strong tier decides`,
+    };
   return {
     kind: 'none',
-    ...(ref ? { ref } : {}),
+    ...(decisionRef ? { ref: decisionRef } : {}),
     usable: false,
-    reason: ref
-      ? 'TYPESAFE_API_KEY is not set: decide nodes pick their first option'
-      : 'no decision tier (models.yaml, tiers.decision): decide nodes pick their first option',
+    reason: `${why}, and the strong tier ${strongRef ? `${strongRef} is not usable (${strongWhy})` : 'is not set'}: decide nodes always pick ship`,
   };
 }
 

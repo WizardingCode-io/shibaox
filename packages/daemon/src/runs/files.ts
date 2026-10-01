@@ -1,5 +1,6 @@
 import {
   closeSync,
+  constants,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -7,7 +8,7 @@ import {
   readSync,
   realpathSync,
   statSync,
-  writeFileSync,
+  writeSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { isProtected } from '@wizardingcode/shibaox-core';
@@ -173,7 +174,9 @@ export async function readRunFile(
 ): Promise<RunFileContent> {
   if (!existsSync(root)) throw new RunFileError('no_workspace', 'The run workspace is gone');
   const { file, rel } = confine(root, path);
-  if (isProtected(rel, [...ALWAYS_PROTECTED, ...(o.protectedGlobs ?? [])]))
+  // protected by its own name or by the real file a link points at (cfg -> .env)
+  const globs = [...ALWAYS_PROTECTED, ...(o.protectedGlobs ?? [])];
+  if (isProtected(rel, globs) || isProtected(relative(realpathSync(root), file), globs))
     throw new RunFileError('protected', `${rel} is protected: it is never shown or downloaded`);
   const st = statSync(file);
   if (!st.isFile()) throw new RunFileError('not_found', `${rel} is not a file`);
@@ -244,31 +247,72 @@ export async function writeRunFile(
   const rel = relativeInWorkspace(realRoot, path);
   if (rel === undefined)
     throw new RunFileError('forbidden', `${path || '(empty)'} is not a path inside the workspace`);
-  if (isProtected(rel, [...ALWAYS_PROTECTED, ...(o.protectedGlobs ?? [])]))
+  const globs = [...ALWAYS_PROTECTED, ...(o.protectedGlobs ?? [])];
+  if (isProtected(rel, globs))
     throw new RunFileError('protected', `${rel} is protected: it is never written from here`);
   const size = Buffer.byteLength(content, 'utf8');
   const cap = o.maxBytes ?? RUN_FILE_LIMIT;
   if (size > cap)
     throw new RunFileError('too_large', `${rel} would be ${size} bytes; the cap is ${cap}`);
   const target = resolve(realRoot, rel);
-  // the deepest directory that exists must really be inside the root (no symlink out) and be a directory
+  const inside = (p: string) => p === realRoot || p.startsWith(realRoot + sep);
+  // the deepest directory that exists must really be inside the root (no symlink out), be a
+  // directory, and the real spelling of the path must not be protected (d -> .git)
   let dir = dirname(target);
   while (!existsSync(dir)) dir = dirname(dir);
   const realDir = realpathSync(dir);
-  if (realDir !== realRoot && !realDir.startsWith(realRoot + sep))
-    throw new RunFileError('forbidden', `${rel} points outside the workspace`);
+  if (!inside(realDir)) throw new RunFileError('forbidden', `${rel} points outside the workspace`);
   if (!statSync(realDir).isDirectory())
     throw new RunFileError(
       'not_found',
       `${relative(realRoot, realDir) || '.'} is a file, not a directory`,
     );
-  if (existsSync(target)) {
-    const real = realpathSync(target);
-    if (real !== realRoot && !real.startsWith(realRoot + sep))
-      throw new RunFileError('forbidden', `${rel} points outside the workspace`);
-    if (statSync(real).isDirectory()) throw new RunFileError('not_found', `${rel} is a directory`);
+  const realRel = relative(realRoot, join(realDir, relative(dir, target)));
+  if (isProtected(realRel, globs))
+    throw new RunFileError('protected', `${rel} is protected: it is never written from here`);
+  // the file itself is never written through a link: a link to a file elsewhere, to a protected
+  // file, or dangling, is refused, and the open below (O_NOFOLLOW) refuses one that appears later
+  let link: ReturnType<typeof lstatSync> | undefined;
+  try {
+    link = lstatSync(target);
+  } catch {
+    link = undefined;
   }
+  if (link?.isSymbolicLink()) {
+    // a link onto a protected file is as protected as the file; any other link is refused
+    let real: string | undefined;
+    try {
+      real = realpathSync(target);
+    } catch {
+      real = undefined;
+    }
+    if (real && inside(real) && isProtected(relative(realRoot, real), globs))
+      throw new RunFileError('protected', `${rel} is protected: it is never written from here`);
+    throw new RunFileError('forbidden', `${rel} is a link: write to the file it points at instead`);
+  }
+  if (link?.isDirectory()) throw new RunFileError('not_found', `${rel} is a directory`);
   mkdirSync(dirname(target), { recursive: true });
-  writeFileSync(target, content, 'utf8');
+  let fd: number;
+  try {
+    fd = openSync(
+      target,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+      0o644,
+    );
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === 'ELOOP' || code === 'EMLINK')
+      throw new RunFileError(
+        'forbidden',
+        `${rel} is a link: write to the file it points at instead`,
+      );
+    if (code === 'EISDIR') throw new RunFileError('not_found', `${rel} is a directory`);
+    throw e;
+  }
+  try {
+    writeSync(fd, content, null, 'utf8');
+  } finally {
+    closeSync(fd);
+  }
   return { path: rel, size };
 }

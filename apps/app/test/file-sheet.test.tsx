@@ -171,4 +171,28 @@ describe('FileSheet', () => {
     expect(screen.queryByLabelText('Save to project')).toBeNull();
     expect(screen.getByRole('table')).toBeTruthy();
   });
+
+  it('opening another block with the same name starts fresh (no stale Saved state)', async () => {
+    const save = { runId: 'r1', workspace: '/w', write: async () => {} };
+    const props = {
+      save,
+      load: async () => {
+        throw new Error('not loaded');
+      },
+      onClose: () => {},
+      onDownload: () => {},
+      onDownloadInline: () => {},
+    };
+    const ui = render(
+      <FileSheet {...props} inline={{ name: 'script.sh', content: 'echo one', lang: 'bash' }} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(screen.getByText(/Saved\./)).toBeTruthy());
+    ui.rerender(
+      <FileSheet {...props} inline={{ name: 'script.sh', content: 'echo two', lang: 'bash' }} />,
+    );
+    expect(screen.queryByText(/Saved\./)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy();
+    expect(screen.getByText('two')).toBeTruthy();
+  });
 });

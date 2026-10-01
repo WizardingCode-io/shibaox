@@ -160,4 +160,12 @@ describe('threadView', () => {
     const v = threadView([{ state: state({}), cards }]);
     expect(v.messages[1]).toMatchObject({ from: 'agent', model: 'lmstudio/qwen3-coder' });
   });
+
+  it('a turn that failed before writing anything names no model', () => {
+    const v = threadView([
+      { state: state({ status: 'failed', model: 'lmstudio/qwen' }), cards: [node([], 'failed')] },
+    ]);
+    const agent = v.messages.find((m) => m.from === 'agent');
+    expect(agent?.model).toBeUndefined();
+  });
 });

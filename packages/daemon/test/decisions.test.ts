@@ -38,6 +38,7 @@ describe('GET /decisions', () => {
     // the scaffold's decision tier is Jev's typed API (jev-latest), which has no key here
     expect(before.decider).toMatchObject({ kind: 'none', ref: 'jev-latest', usable: false });
     expect(before.decider.reason).toMatch(/TYPESAFE_API_KEY/);
+    expect(before.decider.reason).toMatch(/always pick ship/);
     expect(before.decisions).toEqual([]);
     const { runId } = await client.submitRun({
       orgRoot: join(dir, 'org'),

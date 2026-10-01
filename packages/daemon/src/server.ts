@@ -159,15 +159,17 @@ export class HttpError extends Error {
 }
 
 const MAX_BODY = 1_000_000;
+/** A file written from the app: the 2 MB file cap plus JSON overhead. */
+const FILE_BODY_LIMIT = 3_000_000;
 const TEXT_LIMIT = 4096;
 
-function readBody(req: IncomingMessage): Promise<unknown> {
+function readBody(req: IncomingMessage, limit = MAX_BODY): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks: Buffer[] = [];
     req.on('data', (c: Buffer) => {
       size += c.length;
-      if (size > MAX_BODY) {
+      if (size > limit) {
         reject(new HttpError(413, 'too_large', 'request body is too large'));
         req.destroy();
         return;
@@ -580,7 +582,7 @@ export class DaemonServer {
       // a text file into the run's workspace (the app's "Save to project"); the token is shell
       // access already, so no approval is asked: the same fence as reads applies
       const path = url.searchParams.get('path') ?? '';
-      const body = asRecord(await readBody(req));
+      const body = asRecord(await readBody(req, FILE_BODY_LIMIT));
       if (typeof body.content !== 'string')
         throw new HttpError(400, 'bad_request', 'content (a string) is required');
       try {

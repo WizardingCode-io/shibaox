@@ -50,4 +50,27 @@ describe('the decide card', () => {
     const card = cards.find((c) => c.kind === 'decide');
     expect(card).toMatchObject({ kind: 'decide', choice: 'ship', confidence: 0.9, by: 'jev' });
   });
+
+  it('a file the user saved (node "you") is a file of the run, never a phantom node card', () => {
+    const cards = reduceTimeline(state, [
+      {
+        kind: 'runtime',
+        seq: 2,
+        cursor: '1:2',
+        event: {
+          runId: 'r1',
+          nodeId: 'you',
+          seq: 2,
+          at,
+          event: { type: 'file_changed', path: 'scripts/fib.js' },
+        },
+      } as never,
+    ]);
+    expect(cards.some((c) => c.kind === 'node' && c.nodeId === 'you')).toBe(false);
+    expect(
+      cards.some(
+        (c) => 'files' in c && (c as { files: string[] }).files.includes('scripts/fib.js'),
+      ),
+    ).toBe(true);
+  });
 });

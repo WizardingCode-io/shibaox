@@ -360,8 +360,14 @@ export function reduceTimeline(state: RunState | undefined, frames: Envelope[]):
     }
     // runtime frame
     const env = frame.event;
-    const c = cardFor(env.nodeId);
     const rt = env.event as Record<string, unknown> & { type: string };
+    // a file the user saved from the app (node `you`, or any id the workflow has no node for):
+    // a file of the run, never a card of its own
+    if (rt.type === 'file_changed' && !state?.workflowSnapshot?.nodes[env.nodeId]) {
+      files.add(rt.path as string);
+      continue;
+    }
+    const c = cardFor(env.nodeId);
     if (c.kind !== 'node') {
       if (rt.type === 'file_changed') files.add(rt.path as string);
       continue;

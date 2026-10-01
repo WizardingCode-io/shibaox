@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MemoryEventStore } from '@wizardingcode/shibaox-core';
@@ -248,5 +256,26 @@ describe('writeRunFile', () => {
       writeRunFile(dir, 'big.txt', 'x'.repeat(11), { maxBytes: 10 }),
     ).rejects.toMatchObject({ code: 'too_large' });
     await expect(writeRunFile(dir, 'a.ts/x', 'x', {})).rejects.toMatchObject({ code: 'not_found' }); // a file in the way
+  });
+  it('never follows a symlink: not a dangling one out, not one onto .env, not a directory link into .git', async () => {
+    const dir = repo();
+    const outside = mkdtempSync(join(tmpdir(), 'files-outside-'));
+    tmp.push(outside);
+    symlinkSync(join(outside, 'created.txt'), join(dir, 'dangle'));
+    writeFileSync(join(dir, '.env'), 'SECRET=1\n');
+    symlinkSync(join(dir, '.env'), join(dir, 'cfg'));
+    symlinkSync(join(dir, '.git'), join(dir, 'd'));
+    await expect(writeRunFile(dir, 'dangle', 'x', {})).rejects.toMatchObject({ code: 'forbidden' });
+    expect(existsSync(join(outside, 'created.txt'))).toBe(false);
+    await expect(writeRunFile(dir, 'cfg', 'PWNED=1', {})).rejects.toMatchObject({
+      code: 'protected',
+    });
+    expect(readFileSync(join(dir, '.env'), 'utf8')).toBe('SECRET=1\n');
+    await expect(writeRunFile(dir, 'd/hooks/pre-commit', 'x', {})).rejects.toMatchObject({
+      code: 'protected',
+    });
+    expect(existsSync(join(dir, '.git', 'hooks', 'pre-commit'))).toBe(false);
+    // the same on reads: a link onto a protected file is as protected as the file
+    await expect(readRunFile(dir, 'cfg')).rejects.toMatchObject({ code: 'protected' });
   });
 });

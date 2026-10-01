@@ -93,6 +93,8 @@ export function FileSheet(props: {
   path?: string;
   inline?: InlineFile;
   save?: SaveTarget;
+  /** Why an inline file cannot be saved right now (a turn is running), shown in the footer. */
+  saveNote?: string;
   load: (runId: string, path: string) => Promise<RunFileContent>;
   onClose: () => void;
   onDownload: (runId: string, path: string) => void;
@@ -107,6 +109,12 @@ export function FileSheet(props: {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<string | undefined>(undefined);
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
+  // another block, even with the same name, starts fresh
+  useEffect(() => {
+    setSavePath(inline?.name ?? '');
+    setSaved(undefined);
+    setSaveError(undefined);
+  }, [inline]);
   useEffect(() => {
     if (inline || runId === undefined || path === undefined) return;
     let live = true;
@@ -207,6 +215,8 @@ export function FileSheet(props: {
           </form>
         ) : saved ? (
           <p className="muted">Saved. It is now a file of this conversation.</p>
+        ) : inline && props.saveNote ? (
+          <p className="muted">{props.saveNote}</p>
         ) : undefined
       }
     >
