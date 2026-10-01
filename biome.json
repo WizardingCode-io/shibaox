@@ -8,7 +8,8 @@
       "!**/.turbo",
       "!**/.superpowers",
       "!docs/assets",
-      "!apps/app/vendor"
+      "!apps/app/vendor",
+      "!apps/desktop/release"
     ]
   },
   "formatter": {
