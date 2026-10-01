@@ -2,6 +2,8 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
   DaemonHttpError,
+  HIGGSFIELD_MODES,
+  type HiggsfieldMode,
   type McpAddRequest,
   type SkillAddRequest,
 } from '@wizardingcode/shibaox-daemon';
@@ -224,11 +226,34 @@ export async function rolesList(o: { org?: string }, out: Out): Promise<number> 
 /** `shibaox plugins`: Higgsfield, GitHub, Telegram, TypeSafe / Jev, what passes and what does not. */
 export async function pluginsCommand(out: Out): Promise<number> {
   const client = await connect();
+  const check = (indent: string) => (c: { ok: boolean; label: string; detail?: string }) =>
+    out.line(`${indent}${c.ok ? 'ok ' : 'no '} ${c.label}${c.detail ? `  (${c.detail})` : ''}`);
   for (const p of await client.plugins()) {
     out.line(`${p.id.padEnd(12)} ${p.status.padEnd(8)} ${p.name}`);
-    for (const c of p.checks)
-      out.line(`    ${c.ok ? 'ok ' : 'no '} ${c.label}${c.detail ? `  (${c.detail})` : ''}`);
+    if (p.mode) out.line(`    mode ${p.mode.configured} → ${p.mode.effective}`);
+    if (p.modes)
+      for (const m of p.modes) {
+        out.line(`    [${m.id}]${m.active ? ' active' : ''} ${m.status}`);
+        m.checks.forEach(check('        '));
+      }
+    else p.checks.forEach(check('    '));
     out.obj(p);
   }
+  return 0;
+}
+
+/** `shibaox plugins higgsfield-mode <auto|account|api>`: how Higgsfield generates (daemon.yaml). */
+export async function higgsfieldModeCommand(mode: string, out: Out): Promise<number> {
+  if (!(HIGGSFIELD_MODES as readonly string[]).includes(mode)) {
+    out.line(`The mode is one of ${HIGGSFIELD_MODES.join(', ')} (got "${mode}").`);
+    out.obj({ error: 'bad mode', mode });
+    return 1;
+  }
+  const client = await connect({ write: true });
+  const v = await client.setHiggsfieldMode(mode as HiggsfieldMode);
+  out.line(
+    `Higgsfield mode ${v.mode} (daemon.yaml); generating now: ${v.effective === 'none' ? 'nothing set up' : v.effective}. The next task uses it.`,
+  );
+  out.obj({ mode: v.mode, effective: v.effective });
   return 0;
 }

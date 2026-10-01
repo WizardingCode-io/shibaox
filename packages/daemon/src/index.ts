@@ -34,6 +34,11 @@ export {
   writeAttachments,
 } from './runs/files.js';
 export * from './runs/graph.js';
+export {
+  type HiggsfieldApiDeps,
+  higgsfieldApiTools,
+} from './runs/higgsfield-api-tools.js';
+export { type HiggsfieldPlan, higgsfieldPlan } from './runs/higgsfield-gate.js';
 export * from './runs/notes.js';
 export * from './runs/orchestration.js';
 export * from './runs/profile.js';

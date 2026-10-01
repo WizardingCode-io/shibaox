@@ -5,6 +5,7 @@ import { connect } from './client.js';
 import { appCommand } from './commands/app.js';
 import type { McpAddOptions } from './commands/customize.js';
 import {
+  higgsfieldModeCommand,
   mcpAdd,
   mcpRemove,
   pluginsCommand,
@@ -447,11 +448,20 @@ roles
     exitWith(await rolesList(o, out(this)));
   });
 
-program
+const plugins = program
   .command('plugins')
   .description('Higgsfield, GitHub, Telegram and TypeSafe / Jev: what is set up, what is missing')
   .action(async function (this: Command) {
     exitWith(await pluginsCommand(out(this)));
+  });
+plugins
+  .command('higgsfield-mode')
+  .description(
+    'how Higgsfield generates: account (CLI login, plan credits), api (an API key), auto (the API when a key is saved)',
+  )
+  .argument('<mode>', 'auto, account or api')
+  .action(async function (this: Command, mode: string) {
+    exitWith(await higgsfieldModeCommand(mode, out(this)));
   });
 
 const tiers = program

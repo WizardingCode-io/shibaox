@@ -1,16 +1,21 @@
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { runCommand } from '@wizardingcode/shibaox-core';
 import {
+  apiBase,
   DaemonClient,
   DaemonHttpError,
   DaemonUnavailableError,
   deciderInfo,
   defaultHiggsfieldProbe,
+  HIGGSFIELD_API_KEYS_URL,
+  type HiggsfieldMode,
+  higgsfieldApiCheck,
   higgsfieldStatus,
   homePaths,
   loadDaemonConfig,
   registryFor,
+  runtimeHiggsfieldMode,
   SecretsStore,
   serviceKind,
   serviceStatus,
@@ -129,6 +134,9 @@ export async function doctorCommand(): Promise<number> {
   const withVault = vault.env(process.env);
   lines.push(decisionsLine(withVault));
   lines.push(await higgsfieldLine(withVault));
+  lines.push(await higgsfieldApiLine(withVault));
+  const stale = higgsfieldSkillLine(homePaths().org);
+  if (stale) lines.push(stale);
   for (const env of ['ANTHROPIC_API_KEY', 'TYPESAFE_API_KEY', 'OPENROUTER_API_KEY']) {
     const set = Boolean(withVault[env]);
     lines.push({
@@ -349,5 +357,49 @@ async function higgsfieldLine(env: NodeJS.ProcessEnv): Promise<CheckLine> {
     ok: true,
     required: false,
     detail: `${v.cli.version ?? ''} · ${v.account?.email} (${v.account?.plan}), ${v.account?.credits} credits · MCP ${v.mcp}`,
+  };
+}
+
+/** Higgsfield's API path: whether a key is saved and accepted, and the mode it gives. */
+async function higgsfieldApiLine(env: NodeJS.ProcessEnv): Promise<CheckLine> {
+  let mode: HiggsfieldMode = 'auto';
+  try {
+    mode = loadDaemonConfig(homePaths().config).partners.higgsfield.mode;
+  } catch {
+    // an unreadable daemon.yaml has its own line
+  }
+  const key = env.HIGGSFIELD_API_KEY;
+  const line = (ok: boolean, detail: string): CheckLine => ({
+    name: 'higgsfield api',
+    ok,
+    required: false,
+    detail,
+  });
+  if (!key) return line(false, `no key (optional: ${HIGGSFIELD_API_KEYS_URL}) · mode ${mode}`);
+  const r = await higgsfieldApiCheck(key, apiBase(env));
+  const now = `mode ${mode} → ${runtimeHiggsfieldMode(mode, true)}`;
+  if (r.valid === true) return line(true, `key set, valid · ${now}`);
+  if (r.valid === false) return line(false, `key set, rejected (${r.status ?? 401}) · ${now}`);
+  return line(
+    false,
+    `key set, not checked (${r.status ? `HTTP ${r.status}` : 'no answer'}) · ${now}`,
+  );
+}
+
+/** The home org's higgsfield skill from before the API mode (it does not know the API tools). */
+function higgsfieldSkillLine(org: string): CheckLine | undefined {
+  const file = join(org, 'skills', 'higgsfield', 'SKILL.md');
+  let text: string;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch {
+    return undefined;
+  }
+  if (text.includes('higgsfield_api_')) return undefined;
+  return {
+    name: 'higgsfield skill',
+    ok: false,
+    required: false,
+    detail: `${file} predates the API mode: shibaox skills add higgsfield --builtin --replace`,
   };
 }

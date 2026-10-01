@@ -1,3 +1,4 @@
+import { DaemonHttpError } from '@wizardingcode/shibaox-daemon';
 import { connect } from '../client.js';
 import type { Out } from '../output.js';
 
@@ -35,7 +36,15 @@ export async function keysSet(name: string, arg: string | undefined, out: Out): 
     return 1;
   }
   const client = await connect({ write: true });
-  await client.setKey(name, value);
+  try {
+    await client.setKey(name, value);
+  } catch (e) {
+    // the daemon refused the value (a name that is not a variable, a key in the wrong shape)
+    if (!(e instanceof DaemonHttpError && e.status === 400)) throw e;
+    out.line(e.message);
+    out.obj({ name, set: false, error: e.message });
+    return 1;
+  }
   out.line(`Saved ${name} in the shibaox vault; the daemon uses it from now on.`);
   out.obj({ name, set: true });
   return 0;
