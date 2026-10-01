@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1211,5 +1211,117 @@ describe('runtime buffer after a run ends', () => {
     await expect(m.writeFile(first.runId, 'note.md', 'hi')).resolves.toMatchObject({
       path: 'note.md',
     });
+  });
+});
+
+describe('Higgsfield gating per task', () => {
+  /** The tool names of the in-process server the adapter hands the SDK. */
+  const toolNames = (srv: unknown): string[] =>
+    Object.keys(
+      (srv as { instance?: { _registeredTools?: Record<string, unknown> } } | undefined)?.instance
+        ?._registeredTools ?? {},
+    );
+  const chatSetup = () => {
+    const s = setup({ claudeCode: true });
+    // the account's MCP signs in with a harmless command here (never the user's real CLI)
+    const cat = join(s.orgRoot, 'catalog', 'higgsfield.yaml');
+    writeFileSync(
+      cat,
+      readFileSync(cat, 'utf8').replace(
+        'bearer_command: [higgsfield, auth, token]',
+        'bearer_command: [echo, tok]',
+      ),
+    );
+    return s;
+  };
+  const run = async (mode: 'auto' | 'account' | 'api', env: NodeJS.ProcessEnv) => {
+    const s = chatSetup();
+    const seen: { servers: string[]; tools: string[] }[] = [];
+    const q = fakeQuery(async function* ({ options }) {
+      seen.push({
+        servers: Object.keys(options.mcpServers ?? {}),
+        tools: toolNames((options.mcpServers as Record<string, unknown> | undefined)?.shibaox),
+      });
+      yield msg.init();
+      yield msg.success('hi');
+    });
+    const { manager: m } = manager(new MemoryEventStore(), {
+      queryFn: q,
+      vault: s.vault,
+      env,
+      higgsfield: { mode: () => mode },
+    });
+    const { runId } = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'chat',
+      input: 'make an image',
+      workspace: 'inplace',
+    });
+    await vi.waitFor(async () => expect(isTerminal((await m.state(runId)).status)).toBe(true), {
+      timeout: 10_000,
+    });
+    return seen[0];
+  };
+
+  it('account mode: the MCP server and its upload, no API tools', async () => {
+    const r = await run('account', { HIGGSFIELD_API_KEY: 'id:secret' });
+    expect(r?.servers).toContain('higgsfield');
+    expect(r?.tools).toContain('higgsfield_upload');
+    expect(r?.tools.some((t) => t.startsWith('higgsfield_api_'))).toBe(false);
+  });
+
+  it('api mode (or auto with a key): the API tools, no MCP server, no MCP upload', async () => {
+    for (const mode of ['api', 'auto'] as const) {
+      const r = await run(mode, { HIGGSFIELD_API_KEY: 'id:secret' });
+      expect(r?.servers).not.toContain('higgsfield');
+      expect(r?.tools).toEqual(
+        expect.arrayContaining([
+          'higgsfield_api_generate',
+          'higgsfield_api_status',
+          'higgsfield_api_cancel',
+          'higgsfield_api_upload',
+        ]),
+      );
+      expect(r?.tools).not.toContain('higgsfield_upload');
+    }
+  });
+
+  it('auto without a key is the account', async () => {
+    const r = await run('auto', {});
+    expect(r?.servers).toContain('higgsfield');
+    expect(r?.tools.some((t) => t.startsWith('higgsfield_api_'))).toBe(false);
+  });
+
+  it('cancelling a run aborts the signal its Higgsfield tools listen to', async () => {
+    const s = chatSetup();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const q = fakeQuery(async function* () {
+      yield msg.init();
+      await gate;
+      yield msg.success('late');
+    });
+    const { manager: m } = manager(new MemoryEventStore(), {
+      queryFn: q,
+      vault: s.vault,
+      env: { HIGGSFIELD_API_KEY: 'id:secret' },
+      higgsfield: { mode: () => 'api' },
+    });
+    const { runId } = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'chat',
+      input: 'x',
+      workspace: 'inplace',
+    });
+    await vi.waitFor(() => expect(m.toolSignal(runId)).toBeDefined(), { timeout: 10_000 });
+    const signal = m.toolSignal(runId);
+    expect(signal?.aborted).toBe(false);
+    await m.cancel(runId);
+    expect(signal?.aborted).toBe(true);
+    release();
   });
 });

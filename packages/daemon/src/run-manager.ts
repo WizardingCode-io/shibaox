@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import type { QueryFn } from '@wizardingcode/shibaox-adapter-claude-code';
 import { connectMcp } from '@wizardingcode/shibaox-adapter-direct';
 import {
+  type AgentTool,
   type ApprovalHandler,
   AutoApproveHuman,
   compactConversation,
@@ -21,6 +22,7 @@ import {
   replay,
   ScriptedDecider,
   type StoredEvent,
+  type TaskJob,
 } from '@wizardingcode/shibaox-core';
 import { type Graphify, MemoryNotes } from '@wizardingcode/shibaox-memory';
 import type { ProviderEntry } from '@wizardingcode/shibaox-providers';
@@ -38,7 +40,8 @@ import {
   removeRunWorkspace,
   type WorkspaceMode,
 } from '@wizardingcode/shibaox-workspace';
-import type { DaemonConfig } from './config.js';
+import type { DaemonConfig, HiggsfieldMode } from './config.js';
+import { apiBase, runtimeHiggsfieldMode } from './higgsfield.js';
 import type { InboxAnswer, InboxItem, InboxService } from './inbox.js';
 import { projectProtectedGlobs } from './protected.js';
 import { type DiffResult, diffWorkspace, worktreeBase } from './runs/diff.js';
@@ -56,6 +59,8 @@ import {
   writeRunFile,
 } from './runs/files.js';
 import { type GraphMode, prepareGraph } from './runs/graph.js';
+import { higgsfieldApiTools } from './runs/higgsfield-api-tools.js';
+import { higgsfieldPlan } from './runs/higgsfield-gate.js';
 import { higgsfieldTools, uploadTimeoutMs } from './runs/higgsfield-tools.js';
 import { finishRun, vaultDir } from './runs/notes.js';
 import { memoryTools, orchestrationTools, toolsForRole } from './runs/orchestration.js';
@@ -159,6 +164,11 @@ export interface RunManagerOptions {
   summarizer?: (org: Org, model: string | undefined) => Summarizer | undefined;
   /** Tokens (estimated) a conversation may carry into a run before it is compacted. */
   conversationTokens?: number;
+  /**
+   * Higgsfield's mode (`partners.higgsfield.mode`), read when each task starts; `fetch` is the
+   * API tools' (tests inject a fake).
+   */
+  higgsfield?: { mode(): HiggsfieldMode; fetch?: typeof fetch };
   /** A run with an `origin` ended: the daemon reports it where it was asked for. */
   onFinished?: (
     state: RunState,
@@ -208,6 +218,8 @@ export class RunManager {
   private readonly starting = new Set<string>();
   /** Runs whose engine promise is still out (a cancelled task may keep going for a while). */
   private readonly inFlight = new Set<string>();
+  /** Per running run: aborted on cancel/stop/end, so a tool waiting on Higgsfield stops too. */
+  private readonly toolAborts = new Map<string, AbortController>();
   private readonly now: () => string;
   private stopping = false;
   private pumping = false;
@@ -375,6 +387,7 @@ export class RunManager {
     const deadline = Date.now() + grace;
     while (this.live.size > 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
     for (const [runId, a] of [...this.live]) {
+      this.abortTools(runId, 'daemon stopped');
       if (o.force) await a.engine.cancel(runId, 'daemon stopped').catch(() => undefined);
       // past the grace period the task is aborted but the log stays `running`: the next
       // daemon start recovers it (interrupted nodes re-run)
@@ -390,6 +403,8 @@ export class RunManager {
     if (idx >= 0) this.queue.splice(idx, 1);
     this.prepared.delete(runId);
     const engine = a?.engine ?? this.lightEngine();
+    // a tool waiting on Higgsfield stops now (and cancels its request there)
+    this.abortTools(runId, 'cancelled by the user');
     const state = await engine.cancel(runId, 'cancelled by the user');
     if (a) {
       // a task that ignores the abort signal must not hold the slot
@@ -782,6 +797,7 @@ export class RunManager {
   private async execute(p: Pending, prepared: Prepared, token: object): Promise<void> {
     let result: RunState | undefined;
     this.inFlight.add(p.runId);
+    this.toolAborts.set(p.runId, new AbortController());
     try {
       result =
         p.action === 'run'
@@ -794,6 +810,7 @@ export class RunManager {
       );
       for (const s of p.settle) s.reject(e);
     } finally {
+      this.abortTools(p.runId, 'the run left the engine');
       this.inFlight.delete(p.runId);
       if (this.live.get(p.runId)?.token === token) this.live.delete(p.runId);
       if (result && isTerminal(result.status)) {
@@ -894,6 +911,10 @@ export class RunManager {
     const policy = r.approvals === 'auto' || r.approvals === 'skip' ? r.approvals : 'inbox';
     const { engine, warnings } = buildRuntime({
       tools: this.taskTools(org, r),
+      // the account's MCP never starts in API mode (decided per task)
+      skipMcp: (job, id) =>
+        id === 'higgsfield' &&
+        higgsfieldPlan(job.role, this.hfMode(), !!org.catalog.higgsfield?.server).skipMcp,
       model: r.model,
       org,
       store: this.opts.store,
@@ -1012,25 +1033,69 @@ export class RunManager {
       },
       extra: (job) => [
         ...toolsForRole(job.role, job.input, { orchestration, memory }),
-        // a role with Higgsfield's server gets the upload the model cannot do itself
-        ...(job.role.mcp.includes('higgsfield') && org.catalog.higgsfield?.server
-          ? higgsfieldTools({
-              workspace: job.workspace,
-              protectedGlobs: projectProtectedGlobs(project),
-              withMcp: (f) => this.withMcp(org.catalog.higgsfield as CatalogEntry, f),
-              put: async (url, bytes, contentType) => {
-                const r = await fetch(url, {
-                  method: 'PUT',
-                  headers: { 'content-type': contentType, 'content-length': String(bytes.length) },
-                  body: bytes as unknown as BodyInit,
-                  signal: AbortSignal.timeout(uploadTimeoutMs(bytes.length)),
-                });
-                return { status: r.status, body: await r.text().catch(() => '') };
-              },
-            })
-          : []),
+        ...this.higgsfieldTools(org, job, project, r.runId),
       ],
     };
+  }
+
+  /** `account` or `api` for the task starting now (`auto`: the API when a key is saved). */
+  private hfMode(): 'account' | 'api' {
+    const env = this.opts.env ?? process.env;
+    return runtimeHiggsfieldMode(this.opts.higgsfield?.mode() ?? 'auto', !!env.HIGGSFIELD_API_KEY);
+  }
+
+  /** The signal a run's tools listen to: aborted when the run is cancelled, stopped or ends. */
+  toolSignal(runId: string): AbortSignal | undefined {
+    return this.toolAborts.get(runId)?.signal;
+  }
+
+  private abortTools(runId: string, reason: string): void {
+    const c = this.toolAborts.get(runId);
+    if (!c) return;
+    this.toolAborts.delete(runId);
+    c.abort(new Error(reason));
+  }
+
+  /**
+   * Higgsfield for a task, one path only: the account's upload (with the MCP server) or the
+   * API tools (the key read from the live environment at each call, never handed to a model).
+   */
+  private higgsfieldTools(
+    org: Org,
+    job: TaskJob,
+    project: string,
+    runId: string | undefined,
+  ): AgentTool[] {
+    const entry = org.catalog.higgsfield;
+    const plan = higgsfieldPlan(job.role, this.hfMode(), !!entry?.server);
+    const env = this.opts.env ?? process.env;
+    if (plan.apiTools)
+      return higgsfieldApiTools({
+        key: () => env.HIGGSFIELD_API_KEY || undefined,
+        fetch: this.opts.higgsfield?.fetch ?? fetch,
+        base: apiBase(env),
+        workspace: job.workspace,
+        protectedGlobs: projectProtectedGlobs(project),
+        signal: () => (runId ? this.toolSignal(runId) : undefined),
+        log: this.opts.log,
+      });
+    if (plan.upload && entry)
+      // a role with Higgsfield's server gets the upload the model cannot do itself
+      return higgsfieldTools({
+        workspace: job.workspace,
+        protectedGlobs: projectProtectedGlobs(project),
+        withMcp: (f) => this.withMcp(entry, f),
+        put: async (url, bytes, contentType) => {
+          const r = await fetch(url, {
+            method: 'PUT',
+            headers: { 'content-type': contentType, 'content-length': String(bytes.length) },
+            body: bytes as unknown as BodyInit,
+            signal: AbortSignal.timeout(uploadTimeoutMs(bytes.length)),
+          });
+          return { status: r.status, body: await r.text().catch(() => '') };
+        },
+      });
+    return [];
   }
 
   /** An engine that only needs the event log (suspend/cancel without adapters). */

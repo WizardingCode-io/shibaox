@@ -210,6 +210,8 @@ export class Daemon {
       config: this.config,
       log,
       env: this.env,
+      // read when each task starts: a mode change applies to the next task
+      higgsfield: { mode: () => this.higgsfieldMode() },
       ready: opts.discovery === false ? undefined : () => this.models(),
       summarizer: opts.summarize
         ? (org) => (t) => opts.summarize?.(t, org) ?? Promise.reject(new Error('no summariser'))

@@ -137,6 +137,27 @@ export interface RuntimeOptions {
     extra?: (job: TaskJob) => AgentTool[];
     preamble?: (job: TaskJob) => string | undefined;
   };
+  /** Catalog servers of the role left out for this task (Higgsfield's MCP in API mode). */
+  skipMcp?: (job: TaskJob, id: string) => boolean;
+}
+
+/**
+ * The role's catalog MCP servers, with their vault keys (a missing key fails the task clearly),
+ * minus the ones `skip` names.
+ */
+export function roleMcpSpecs(
+  org: Org,
+  env: NodeJS.ProcessEnv,
+  job: Pick<TaskJob, 'role'>,
+  skip?: (id: string) => boolean,
+): McpServerSpec[] {
+  return job.role.mcp
+    .filter((id) => !skip?.(id))
+    .map((id) => {
+      const entry = org.catalog[id];
+      if (!entry) throw new Error(`mcp server "${id}" is not in the catalog`);
+      return mcpServerSpec(entry, env);
+    });
 }
 
 /** Bridges a HumanHandler to the approval interface (the CLI's terminal prompt). */
@@ -342,13 +363,13 @@ export function buildRuntime(o: RuntimeOptions) {
   // the project checkout (a run's worktree is the model's to edit); unreadable → the task fails
   const protectedFor = (job: TaskJob): string[] =>
     protectedGlobs(job.role, { protected: projectProtectedGlobs(o.project ?? job.workspace) });
-  // the role's catalog MCP servers, with their vault keys (a missing key fails the task clearly)
   const mcpFor = (job: TaskJob): McpServerSpec[] =>
-    job.role.mcp.map((id) => {
-      const entry = o.org.catalog[id];
-      if (!entry) throw new Error(`mcp server "${id}" is not in the catalog`);
-      return mcpServerSpec(entry, o.env ?? process.env);
-    });
+    roleMcpSpecs(
+      o.org,
+      o.env ?? process.env,
+      job,
+      o.skipMcp ? (id) => o.skipMcp?.(job, id) === true : undefined,
+    );
   const engine = new RunEngine({
     store: o.store,
     org: o.org,
