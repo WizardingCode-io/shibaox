@@ -285,4 +285,77 @@ describe('FileSheet', () => {
     await waitFor(() => expect(screen.getByText(/No preview for \.xlsx/)).toBeTruthy());
     bin.unmount();
   });
+
+  it('on the desktop, a run file larger than the preview is opened and saved whole, through the full download', async () => {
+    const calls: { name: string; bytes: number; encoding?: string }[] = [];
+    (window as unknown as { shibaoxDesktop?: unknown }).shibaoxDesktop = {
+      platform: 'darwin',
+      saveAs: async (name: string, content: string, encoding?: string) => {
+        calls.push({ name, bytes: content.length, encoding });
+        return { ok: true, path: '/x' };
+      },
+      openWith: async (name: string, content: string, encoding?: string) => {
+        calls.push({ name, bytes: content.length, encoding });
+        return { ok: true };
+      },
+      reveal: async () => {},
+    };
+    try {
+      const whole = new Blob([new Uint8Array(3000)]);
+      render(
+        <FileSheet
+          runId="r1"
+          path="out/report.xlsx"
+          load={async () => ({
+            path: 'out/report.xlsx',
+            size: 3000,
+            encoding: 'base64',
+            content: 'AAAA',
+            truncated: true,
+          })}
+          loadWhole={async () => whole}
+          onClose={() => {}}
+          onDownload={() => {}}
+        />,
+      );
+      await waitFor(() => expect(screen.getByText(/No preview/)).toBeTruthy());
+      fireEvent.click(screen.getByRole('button', { name: 'Save as…' }));
+      await waitFor(() => expect(calls).toHaveLength(1));
+      // 3000 bytes as base64 is 4000 chars: the whole file, not the 4-char preview
+      expect(calls[0]).toEqual({ name: 'report.xlsx', bytes: 4000, encoding: 'base64' });
+    } finally {
+      delete (window as unknown as { shibaoxDesktop?: unknown }).shibaoxDesktop;
+    }
+  });
+
+  it('on the desktop, a refused Open says why; Reveal is hidden when the daemon is not on this machine', async () => {
+    (window as unknown as { shibaoxDesktop?: unknown }).shibaoxDesktop = {
+      platform: 'darwin',
+      saveAs: async () => ({ ok: false, reason: 'cancelled' }),
+      openWith: async () => ({ ok: false, reason: 'deploy.sh would run rather than open' }),
+      reveal: async () => {},
+    };
+    try {
+      render(
+        <FileSheet
+          inline={{ name: 'deploy.sh', content: 'echo hi', lang: 'bash' }}
+          save={{ runId: 'r1', workspace: '/w/proj', write: async () => 'deploy.sh' }}
+          localDaemon={false}
+          load={async () => {
+            throw new Error('x');
+          }}
+          onClose={() => {}}
+          onDownload={() => {}}
+          onDownloadInline={() => {}}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+      await waitFor(() => expect(screen.getByText(/would run rather than open/)).toBeTruthy());
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(screen.getByText(/Saved\./)).toBeTruthy());
+      expect(screen.queryByRole('button', { name: 'Reveal in Finder' })).toBeNull();
+    } finally {
+      delete (window as unknown as { shibaoxDesktop?: unknown }).shibaoxDesktop;
+    }
+  });
 });

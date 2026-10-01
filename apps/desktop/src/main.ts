@@ -1,4 +1,11 @@
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startBridge } from '@wizardingcode/shibaox-bridge';
@@ -14,7 +21,7 @@ import {
 } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { probeDaemon, startDaemonViaShell } from './daemon.js';
-import { openable, tempName } from './files.js';
+import { type BridgePayload, createFileBridge } from './files.js';
 import { type BridgeHandle, type Launch, planLaunch, single } from './launch.js';
 import { homeRoot, readRemote, socketPath } from './paths.js';
 import { startUpdater, type Updater, type UpdateSource, type UpdateUi } from './updater.js';
@@ -264,52 +271,64 @@ function installMenu(u: Updater): void {
 }
 
 /**
- * What the app may ask the desktop for (through the preload): the save dialog, "open with the
- * app that reads it", the Finder. Only the app's own origin is answered, and kinds that would
- * run instead of opening are refused: a daemon's page never gets to launch anything.
+ * What the app may ask the desktop for (through the preload): see createFileBridge. Copies
+ * handed to other apps live under userData/opened and are pruned after a week.
  */
 function installFileBridge(): void {
-  const fromApp = (event: Electron.IpcMainInvokeEvent): boolean => {
-    const url = event.senderFrame?.url ?? '';
-    return (
-      current?.url !== undefined &&
-      url !== '' &&
-      new URL(url).origin === new URL(current.url).origin
-    );
-  };
-  type Payload = { name?: unknown; content?: unknown; encoding?: unknown; path?: unknown };
-  const text = (p: Payload) => {
-    const name = typeof p.name === 'string' ? tempName(p.name) : 'file.txt';
-    const content = typeof p.content === 'string' ? p.content : '';
-    const data =
-      p.encoding === 'base64' ? Buffer.from(content, 'base64') : Buffer.from(content, 'utf8');
-    return { name, data };
-  };
-  ipcMain.handle('shibaox:saveAs', async (event, raw: Payload) => {
-    if (!fromApp(event)) return undefined;
-    const { name, data } = text(raw);
-    const w = win && !win.isDestroyed() ? win : undefined;
-    const options = { defaultPath: join(app.getPath('downloads'), name) };
-    const r = w ? await dialog.showSaveDialog(w, options) : await dialog.showSaveDialog(options);
-    if (r.canceled || !r.filePath) return undefined;
-    writeFileSync(r.filePath, data);
-    return r.filePath;
+  const openedDir = join(app.getPath('userData'), 'opened');
+  try {
+    mkdirSync(openedDir, { recursive: true });
+    const week = 7 * 24 * 3600_000;
+    for (const entry of readdirSync(openedDir))
+      if (/^\d+$/.test(entry) && Date.now() - Number(entry) > week)
+        rmSync(join(openedDir, entry), { recursive: true, force: true });
+  } catch {
+    // nothing to prune
+  }
+  const bridge = createFileBridge({
+    appUrl: () => current?.url,
+    local: () => current?.kind === 'bridge',
+    downloads: app.getPath('downloads'),
+    openedDir,
+    saveDialog: async (defaultPath) => {
+      const w = win && !win.isDestroyed() ? win : undefined;
+      const r = w
+        ? await dialog.showSaveDialog(w, { defaultPath })
+        : await dialog.showSaveDialog({ defaultPath });
+      return r.canceled ? undefined : r.filePath || undefined;
+    },
+    confirm: async (question) => {
+      const w = win && !win.isDestroyed() ? win : undefined;
+      const options = {
+        type: 'question' as const,
+        message: question,
+        detail: 'This page comes from a remote daemon.',
+        buttons: ['Open', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+      };
+      const r = w ? await dialog.showMessageBox(w, options) : await dialog.showMessageBox(options);
+      return r.response === 0;
+    },
+    write: (path, data) => {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, data);
+    },
+    openPath: (p) => shell.openPath(p),
+    reveal: (p) => shell.showItemInFolder(p),
+    now: () => Date.now(),
   });
-  ipcMain.handle('shibaox:openWith', async (event, raw: Payload) => {
-    if (!fromApp(event)) return false;
-    const { name, data } = text(raw);
-    if (!openable(name)) return false;
-    const dir = join(app.getPath('temp'), 'shibaox-open', String(Date.now()));
-    mkdirSync(dir, { recursive: true });
-    const file = join(dir, name);
-    writeFileSync(file, data);
-    const err = await shell.openPath(file);
-    if (err) log(`open with: ${err}`);
-    return err === '';
+  const sender = (event: Electron.IpcMainInvokeEvent) => ({
+    senderUrl: event.senderFrame?.url ?? '',
   });
-  ipcMain.handle('shibaox:reveal', async (event, raw: Payload) => {
-    if (!fromApp(event) || typeof raw.path !== 'string') return;
-    shell.showItemInFolder(raw.path);
+  ipcMain.handle('shibaox:saveAs', (event, raw: BridgePayload) =>
+    bridge.saveAs(sender(event), raw),
+  );
+  ipcMain.handle('shibaox:openWith', (event, raw: BridgePayload) =>
+    bridge.openWith(sender(event), raw),
+  );
+  ipcMain.handle('shibaox:reveal', (event, raw: BridgePayload) => {
+    bridge.reveal(sender(event), raw);
   });
 }
 

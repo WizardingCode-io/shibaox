@@ -63,7 +63,8 @@ export function parseCsv(
     rows.push(cells);
   }
   if (ragged) {
-    const width = Math.max(header.length, ...rows.map((r) => r.length));
+    let width = header.length;
+    for (const r of rows) if (r.length > width) width = r.length;
     const pad = (r: string[]) => [...r, ...Array.from({ length: width - r.length }, () => '')];
     return { header: pad(header), rows: rows.map(pad), delimiter: d, ragged };
   }

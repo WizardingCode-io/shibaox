@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { RunFileContent } from '../api/client.js';
-import { desktopBridge } from '../desktop.js';
+import { blobToBase64, desktopBridge } from '../desktop.js';
 import { ds } from '../ds.js';
 import { numericColumns, parseCsv } from '../markdown/csv.js';
 import { highlight, languageOfFile } from '../markdown/highlight.js';
@@ -98,7 +98,8 @@ export interface InlineFile {
 export interface SaveTarget {
   runId: string;
   workspace: string;
-  write: (path: string, content: string) => Promise<void>;
+  /** Writes the file; resolves with the path as the daemon spells it (or nothing: the typed one stands). */
+  write: (path: string, content: string) => Promise<string | undefined | void>;
 }
 
 /**
@@ -114,6 +115,10 @@ export function FileSheet(props: {
   /** Why an inline file cannot be saved right now (a turn is running), shown in the footer. */
   saveNote?: string;
   load: (runId: string, path: string) => Promise<RunFileContent>;
+  /** The whole file as a Blob (the preview stops at 2 MB): what the desktop opens and saves. */
+  loadWhole?: (runId: string, path: string) => Promise<Blob>;
+  /** Whether the daemon is on this machine (Reveal in Finder makes sense). */
+  localDaemon?: boolean;
   onClose: () => void;
   onDownload: (runId: string, path: string) => void;
   onDownloadInline?: (name: string, content: string) => void;
@@ -168,29 +173,54 @@ export function FileSheet(props: {
       : shownPath;
   const desktop = desktopBridge();
   const [busy, setBusy] = useState<string | undefined>(undefined);
+  const [actionError, setActionError] = useState<string | undefined>(undefined);
   const download = () => {
     if (inline) props.onDownloadInline?.(inline.name, inline.content);
     else if (runId !== undefined && path !== undefined) props.onDownload(runId, path);
   };
-  // on the desktop: the app that reads the kind, and the native save dialog
+  // on the desktop: the app that reads the kind, and the native save dialog, always with the
+  // whole file (a run file's preview stops at 2 MB: the full download is fetched for it)
   const native = async (what: 'open' | 'saveAs') => {
     if (!desktop || !file) return;
     setBusy(what);
+    setActionError(undefined);
     try {
-      if (what === 'open') await desktop.openWith(name, file.content, file.encoding);
-      else await desktop.saveAs(name, file.content, file.encoding);
+      let content = file.content;
+      let encoding = file.encoding;
+      if (
+        !inline &&
+        file.truncated &&
+        props.loadWhole &&
+        runId !== undefined &&
+        path !== undefined
+      ) {
+        content = await blobToBase64(await props.loadWhole(runId, path));
+        encoding = 'base64';
+      }
+      const r =
+        what === 'open'
+          ? await desktop.openWith(name, content, encoding)
+          : await desktop.saveAs(name, content, encoding);
+      if (!r.ok && r.reason !== 'cancelled') setActionError(r.reason);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(undefined);
     }
   };
   const folder = props.save?.workspace.split('/').filter(Boolean).pop() ?? '';
+  const lang = inline?.lang;
+  const body = useMemo(
+    () => (file ? <Body file={file} lang={lang} /> : <S.ThinkingIndicator label="Fetching" />),
+    [file, lang, S],
+  );
   const doSave = async () => {
     if (!props.save || !inline || !savePath.trim()) return;
     setSaving(true);
     setSaveError(undefined);
     try {
-      await props.save.write(savePath.trim(), inline.content);
-      setSaved(savePath.trim());
+      const where = await props.save.write(savePath.trim(), inline.content);
+      setSaved(typeof where === 'string' && where ? where : savePath.trim());
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -229,6 +259,7 @@ export function FileSheet(props: {
                 variant="secondary"
                 icon="external-link"
                 loading={busy === 'open'}
+                disabled={!file}
                 onClick={() => void native('open')}
               >
                 Open
@@ -238,6 +269,7 @@ export function FileSheet(props: {
                 variant="secondary"
                 icon="download"
                 loading={busy === 'saveAs'}
+                disabled={!file}
                 onClick={() => void native('saveAs')}
               >
                 Save as…
@@ -272,7 +304,7 @@ export function FileSheet(props: {
           <div className="row">
             <p className="muted">Saved. It is now a file of this conversation.</p>
             <span className="grow" />
-            {desktop && props.save ? (
+            {desktop && props.save && props.localDaemon !== false ? (
               <S.Button
                 size="sm"
                 variant="secondary"
@@ -287,13 +319,8 @@ export function FileSheet(props: {
         ) : undefined
       }
     >
-      {error ? (
-        <p className="muted">{error}</p>
-      ) : file ? (
-        <Body file={file} lang={inline?.lang} />
-      ) : (
-        <S.ThinkingIndicator label="Fetching" />
-      )}
+      {actionError ? <p className="muted">{actionError}</p> : null}
+      {error ? <p className="muted">{error}</p> : body}
     </S.Sheet>
   );
 }

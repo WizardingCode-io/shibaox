@@ -650,11 +650,18 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
           write: async (path, content) => {
             const saved = await store.writeFile(id, path, content);
             setSavedHere((s) => [...s, { runId: id, path: saved }]);
+            return saved;
           },
         };
     }
     return undefined;
   }, [turns, state.states, store, live, state.busy, props.rootId]);
+  // the app is served by the daemon it talks to (or the desktop's bridge to the local one):
+  // a loopback origin means the workspace is on this machine
+  const localDaemon = useMemo(
+    () => /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/.test(location.origin),
+    [],
+  );
   const openCode = useCallback(
     (code: CodeOpen) =>
       setFile({ inline: { name: code.name, content: code.text, lang: code.lang } }),
@@ -708,6 +715,8 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
           }
           {...('inline' in file ? { inline: file.inline } : { runId: file.runId, path: file.path })}
           save={saveTarget}
+          loadWhole={(id, p) => store.loadWhole(id, p)}
+          localDaemon={localDaemon}
           saveNote={
             saveTarget ? undefined : 'Save to project comes back once the turn has finished.'
           }

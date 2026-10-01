@@ -676,6 +676,11 @@ export class AppStore {
     }
   }
 
+  /** The whole file as a Blob (what the desktop opens or saves when the preview is cut). */
+  loadWhole(runId: string, path: string): Promise<Blob> {
+    return this.client.fileBlob(runId, path);
+  }
+
   /** Saves text the model wrote (a code block) as a file through the browser's download. */
   downloadText(name: string, content: string): void {
     saveBlob(new Blob([content], { type: 'text/plain;charset=utf-8' }), name);

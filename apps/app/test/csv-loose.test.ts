@@ -21,4 +21,12 @@ describe('parseCsv loose', () => {
     expect(t?.delimiter).toBe(';');
     expect(t?.ragged).toBe(false);
   });
+
+  it('a huge ragged file never blows the stack', () => {
+    const lines = ['a,b,c'];
+    for (let i = 0; i < 200_000; i++) lines.push(i % 2 ? '1,2' : '1,2,3,4');
+    const t = parseCsv(lines.join('\n'), undefined, { loose: true });
+    expect(t?.rows).toHaveLength(200_000);
+    expect(t?.header).toHaveLength(4);
+  });
 });
