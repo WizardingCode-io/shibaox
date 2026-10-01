@@ -155,6 +155,53 @@ describe('AppClient: the sections', () => {
   });
 });
 
+describe('AppClient: Customize', () => {
+  it('skills, roles, connectors, registries and plugins use the daemon paths and bodies', async () => {
+    const f = fakeFetch(() => json({ ok: true }));
+    const c = new AppClient('http://d', 't', { fetch: f.fetch });
+    await c.skills('/o');
+    await c.addSkill('/o', { source: 'repo', repo: 'anthropics/skills', ids: ['pdf'] });
+    await c.discoverSkills('anthropics/skills', 'document-skills');
+    await c.discoverSkills('higgsfield-ai/skills');
+    await c.removeSkill('/o', 'pdf', true);
+    await c.removeSkill('/o', 'pdf', false);
+    await c.roles('/o');
+    await c.setRoleLinks('/o', 'assistant', { skills: ['pdf'] });
+    await c.addMcp('/o', {
+      id: 'ctx',
+      description: 'Docs',
+      server: { transport: 'http', url: 'https://mcp.context7.com/mcp' },
+      roles: ['assistant'],
+    });
+    await c.removeMcp('/o', 'ctx');
+    await c.registryConnectors();
+    await c.registrySkills();
+    await c.plugins();
+    expect(f.calls.map((x) => `${x.init.method} ${x.url.replace('http://d', '')}`)).toEqual([
+      'GET /skills?org=%2Fo',
+      'POST /skills?org=%2Fo',
+      'GET /skills/discover?repo=anthropics%2Fskills&path=document-skills',
+      'GET /skills/discover?repo=higgsfield-ai%2Fskills',
+      'DELETE /skills/pdf?org=%2Fo&detach=1',
+      'DELETE /skills/pdf?org=%2Fo',
+      'GET /roles?org=%2Fo',
+      'PUT /roles/assistant?org=%2Fo',
+      'POST /mcp?org=%2Fo',
+      'DELETE /mcp/ctx?org=%2Fo',
+      'GET /registry/connectors',
+      'GET /registry/skills',
+      'GET /plugins',
+    ]);
+    expect(JSON.parse(String(f.calls[1]?.init.body))).toEqual({
+      source: 'repo',
+      repo: 'anthropics/skills',
+      ids: ['pdf'],
+    });
+    expect(JSON.parse(String(f.calls[7]?.init.body))).toEqual({ skills: ['pdf'] });
+    expect(JSON.parse(String(f.calls[8]?.init.body))).toMatchObject({ id: 'ctx' });
+  });
+});
+
 describe('the connection', () => {
   const storage = () => {
     const m = new Map<string, string>();

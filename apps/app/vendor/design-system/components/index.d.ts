@@ -1,5 +1,5 @@
 import type * as React from 'react';
-type IconName = 'message-square' | 'send-horizontal' | 'plus' | 'paperclip' | 'mic' | 'terminal' | 'globe' | 'file-text' | 'folder' | 'brain' | 'clock' | 'zap' | 'plug' | 'history' | 'wrench' | 'settings' | 'search' | 'copy' | 'play' | 'square' | 'check' | 'x' | 'triangle-alert' | 'info' | 'chevron-right' | 'chevron-down' | 'arrow-up' | 'download' | 'external-link' | 'table' | 'image' | 'code';
+type IconName = 'message-square' | 'send-horizontal' | 'plus' | 'paperclip' | 'mic' | 'terminal' | 'globe' | 'file-text' | 'folder' | 'brain' | 'clock' | 'zap' | 'plug' | 'history' | 'wrench' | 'settings' | 'search' | 'copy' | 'play' | 'square' | 'check' | 'x' | 'triangle-alert' | 'info' | 'chevron-right' | 'chevron-down' | 'arrow-up' | 'download' | 'external-link' | 'table' | 'image' | 'code' | 'puzzle' | 'key' | 'lock' | 'package' | 'trash' | 'sparkles' | 'server' | 'github' | 'filter' | 'more-horizontal' | 'arrow-up-down' | 'check-circle';
 type Tone = 'neutral' | 'shiba' | 'matcha' | 'info' | 'warning' | 'danger';
 type Mood = 'default' | 'happy' | 'thinking' | 'working' | 'sleeping' | 'error';
 type Status = 'online' | 'working' | 'waiting' | 'idle' | 'error';
@@ -16,6 +16,9 @@ export interface ComposerProps { onSend?: (text: string) => void; onStop?: () =>
 export declare function Composer(props: ComposerProps): React.ReactElement;
 export interface TabsProps { items: { id: string; label: string; count?: number }[]; value?: string; defaultValue?: string; onChange?: (id: string) => void }
 export declare function Tabs(props: TabsProps): React.ReactElement;
+export interface SegmentedItem { id: string; label: string; /** A 6px shiba dot after the label: something there needs attention. */ dot?: boolean }
+export interface SegmentedProps { items: SegmentedItem[]; value: string; onChange?: (id: string) => void; label?: string; className?: string }
+export declare function Segmented(props: SegmentedProps): React.ReactElement;
 export interface NavItemProps { label: string; icon?: IconName; active?: boolean; count?: number; href?: string; onClick?: () => void }
 export declare function NavItem(props: NavItemProps): React.ReactElement;
 export interface BadgeProps { tone?: Tone; dot?: boolean; icon?: IconName; children?: React.ReactNode }
@@ -36,7 +39,7 @@ export interface ThinkingIndicatorProps { label?: string }
 export declare function ThinkingIndicator(props: ThinkingIndicatorProps): React.ReactElement;
 export interface CodeBlockProps { language?: string; /** The code: a string, or highlighted spans (then pass the raw text as `code` for Copy). */ children: React.ReactNode; code?: string; filename?: string; /** Wrap long lines instead of scrolling sideways. */ wrap?: boolean; /** Clip tall blocks to this height with a "Show all" control. */ maxHeight?: number | string; /** Extra controls in the bar, before Copy (`sx-code__copy` buttons: Open, Save…). */ actions?: React.ReactNode; className?: string }
 export declare function CodeBlock(props: CodeBlockProps): React.ReactElement;
-export interface CardProps { icon?: IconName; title?: string; description?: string; action?: React.ReactNode; footer?: React.ReactNode; interactive?: boolean; className?: string; children?: React.ReactNode }
+export interface CardProps { icon?: IconName; title?: string; description?: string; /** A small muted line under the description (by…, roles, keys). */ meta?: React.ReactNode; action?: React.ReactNode; /** The right column of the head, top-aligned: action buttons. */ aside?: React.ReactNode; footer?: React.ReactNode; interactive?: boolean; className?: string; children?: React.ReactNode }
 export declare function Card(props: CardProps): React.ReactElement;
 export interface TableProps { columns?: React.ReactNode[]; rows: React.ReactNode[][]; align?: ('left' | 'center' | 'right' | null | undefined)[]; dense?: boolean; caption?: React.ReactNode; className?: string }
 export declare function Table(props: TableProps): React.ReactElement;
@@ -68,4 +71,4 @@ export interface MenuProps extends MenuListProps { open: boolean; anchor?: React
 export declare function Menu(props: MenuProps): React.ReactElement;
 /** @deprecated a decorative 14px Wave, kept for compatibility */
 export declare function Spinner(props?: { size?: number }): React.ReactElement;
-declare global { interface Window { Shibaox: { Button: typeof Button; IconButton: typeof IconButton; Input: typeof Input; Switch: typeof Switch; Composer: typeof Composer; Tabs: typeof Tabs; NavItem: typeof NavItem; Badge: typeof Badge; AgentStatus: typeof AgentStatus; Toast: typeof Toast; Avatar: typeof Avatar; Mascot: typeof Mascot; Message: typeof Message; ToolCall: typeof ToolCall; ThinkingIndicator: typeof ThinkingIndicator; CodeBlock: typeof CodeBlock; Card: typeof Card; Kbd: typeof Kbd; Icon: typeof Icon; Spinner: typeof Spinner; Wave: typeof Wave; TextShimmer: typeof TextShimmer; Popover: typeof Popover; MenuList: typeof MenuList; Menu: typeof Menu; Table: typeof Table; Sheet: typeof Sheet; FileChip: typeof FileChip; Textarea: typeof Textarea; Select: typeof Select; Dialog: typeof Dialog } } }
+declare global { interface Window { Shibaox: { Button: typeof Button; IconButton: typeof IconButton; Input: typeof Input; Switch: typeof Switch; Composer: typeof Composer; Tabs: typeof Tabs; Segmented: typeof Segmented; NavItem: typeof NavItem; Badge: typeof Badge; AgentStatus: typeof AgentStatus; Toast: typeof Toast; Avatar: typeof Avatar; Mascot: typeof Mascot; Message: typeof Message; ToolCall: typeof ToolCall; ThinkingIndicator: typeof ThinkingIndicator; CodeBlock: typeof CodeBlock; Card: typeof Card; Kbd: typeof Kbd; Icon: typeof Icon; Spinner: typeof Spinner; Wave: typeof Wave; TextShimmer: typeof TextShimmer; Popover: typeof Popover; MenuList: typeof MenuList; Menu: typeof Menu; Table: typeof Table; Sheet: typeof Sheet; FileChip: typeof FileChip; Textarea: typeof Textarea; Select: typeof Select; Dialog: typeof Dialog } } }

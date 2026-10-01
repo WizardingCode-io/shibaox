@@ -328,3 +328,190 @@ a.decision:hover {
   border-radius: var(--radius-md);
   border: 1px solid var(--line);
 }
+
+/* Customize: toolbar, the two-column card grid, role checkboxes, key rows */
+.top .ellipsis {
+  flex-shrink: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.toolbar .sx-field {
+  width: 240px;
+}
+.stack-12 {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.stack-16 {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.stack-24 {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .grid-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.grid-2 .sx-card__desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.sx-card__meta .ellipsis {
+  flex: 1 1 100%;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sx-card__meta .mono {
+  font-size: 12px;
+}
+.added {
+  display: inline-flex;
+  color: var(--matcha);
+  padding: 4px;
+}
+.badge-link {
+  font: inherit;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  border-radius: var(--radius-full);
+}
+.badge-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.empty-line {
+  margin: 0;
+  padding: 24px 0;
+}
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.checks {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.checks legend {
+  padding: 0;
+  margin-bottom: 8px;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--shiba);
+  flex: none;
+}
+.check input:disabled + * {
+  color: var(--ink-muted);
+}
+.check__desc {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.key-set {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.key-set .sx-field {
+  flex: 1 1 auto;
+  width: 160px;
+  min-width: 120px;
+}
+.key-set > .sx-btn {
+  flex: none;
+}
+td .key-set .sx-field {
+  flex: none;
+  width: 136px;
+}
+td .key-set {
+  justify-content: flex-end;
+}
+.stack-12 > p,
+.stack-16 > p {
+  margin: 0;
+}
+.key-focus {
+  background: var(--shiba-soft);
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
+}
+.badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.checklist li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.checklist .ok {
+  display: inline-flex;
+  color: var(--matcha);
+}
+.checklist .bad {
+  display: inline-flex;
+  color: var(--warning);
+}
+.tiers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.tiers__save {
+  grid-column: 1 / -1;
+}

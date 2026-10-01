@@ -13,6 +13,14 @@ import type {
 } from '@wizardingcode/shibaox-daemon';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import type { Card } from '@wizardingcode/shibaox-view';
+import type {
+  ConnectorTemplate,
+  DiscoverResult,
+  PluginRow,
+  RoleRow,
+  SkillRow,
+  SkillSource,
+} from '../screens/customize/types.js';
 
 export interface Settings {
   theme: 'light' | 'dark' | 'system';
@@ -65,6 +73,23 @@ export interface AppState {
     decisions?: DecisionsView;
     higgsfield?: HiggsfieldView;
   };
+  /** Customize: skills, connectors, plugins, keys and models of the org, loaded together. */
+  customize?: {
+    org: string;
+    skills: SkillRow[];
+    roles: RoleRow[];
+    mcp: McpServerRow[];
+    models: ModelChoice[];
+    keys: KeyRow[];
+    config?: OrgConfig;
+    decisions?: DecisionsView;
+    higgsfield?: HiggsfieldView;
+    plugins: PluginRow[];
+    registry: { connectors: ConnectorTemplate[]; skills: SkillSource[] };
+    workflows: { name: string; description: string; conversation: boolean }[];
+  };
+  /** Repository listings for Discover and the repository dialog, by `repo` or `repo|path`. */
+  discovered: Record<string, DiscoverResult | { error: string }>;
   /** A model chosen for the next turns of a thread (`provider/model`). */
   threadModels: Record<string, string>;
 }
@@ -78,6 +103,7 @@ export const initialState = (settings: Settings): AppState => ({
   ended: {},
   busy: {},
   threadModels: {},
+  discovered: {},
   settings,
 });
 

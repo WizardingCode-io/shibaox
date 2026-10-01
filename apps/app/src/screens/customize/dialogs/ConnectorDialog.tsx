@@ -1,0 +1,336 @@
+import { useState } from 'react';
+import { ds } from '../../../ds.js';
+import { useAppState, useStore } from '../../../store/hooks.js';
+import { headerLines, ID_RE, words } from '../filter.js';
+import { RoleChecks } from '../parts.js';
+import type { AddMcpRequest, ConnectorTemplate, McpServerSpec, RoleRow } from '../types.js';
+
+// biome-ignore lint/suspicious/noTemplateCurlyInString: the catalog's own ${KEY} placeholder, expanded by the daemon
+const HEADER_EXAMPLE = 'Authorization: Bearer ${ACME_API_KEY}';
+
+const defaultRoles = (roles: RoleRow[]) =>
+  roles.some((r) => r.id === 'assistant') ? ['assistant'] : [];
+
+/** A key a connector needs: set (a badge), or a password field with Save and where to get one. */
+function KeyField(props: { name: string; description?: string; signupUrl?: string }): JSX.Element {
+  const S = ds();
+  const store = useStore();
+  const state = useAppState();
+  const row = state.customize?.keys.find((k) => k.name === props.name);
+  const [value, setValue] = useState('');
+  return (
+    <div className="stack">
+      <div className="row">
+        <span className="mono">{props.name}</span>
+        {props.description ? <span className="muted">{props.description}</span> : null}
+        <span className="grow" />
+        {row?.set ? (
+          <S.Badge tone="matcha" icon="check">
+            {`set${row.source === 'env' ? ' · env' : ''}`}
+          </S.Badge>
+        ) : null}
+      </div>
+      {row?.set ? null : (
+        <div className="key-set">
+          <S.Input
+            type="password"
+            aria-label={props.name}
+            placeholder="Paste the key"
+            value={value}
+            onChange={(e) => setValue((e.target as HTMLInputElement).value)}
+          />
+          <S.Button
+            size="sm"
+            disabled={!value.trim()}
+            onClick={() => {
+              void store.setKey(props.name, value.trim());
+              setValue('');
+            }}
+          >
+            Save key
+          </S.Button>
+          {props.signupUrl ? (
+            <a
+              className="sx-btn sx-btn--quiet sx-btn--sm"
+              href={props.signupUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Get a key
+            </a>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** "Add <name>" for a registry connector: its keys (set inline) and the roles to attach. */
+export function TemplateDialog(props: {
+  template: ConnectorTemplate;
+  roles: RoleRow[];
+  onClose: () => void;
+}): JSX.Element {
+  const S = ds();
+  const store = useStore();
+  const t = props.template;
+  const [roles, setRoles] = useState<string[]>(defaultRoles(props.roles));
+  const [saving, setSaving] = useState(false);
+  return (
+    <S.Dialog
+      open
+      title={`Add ${t.name}`}
+      description={t.description}
+      icon="plug"
+      width={520}
+      onClose={props.onClose}
+      footer={
+        <>
+          <S.Button variant="quiet" onClick={props.onClose}>
+            Cancel
+          </S.Button>
+          <S.Button
+            variant="primary"
+            loading={saving}
+            onClick={() => {
+              setSaving(true);
+              void store
+                .addMcp({
+                  id: t.id,
+                  description: t.description,
+                  tags: [t.category],
+                  server: t.server,
+                  roles,
+                })
+                .then((ok) => {
+                  setSaving(false);
+                  if (ok) props.onClose();
+                });
+            }}
+          >
+            Add
+          </S.Button>
+        </>
+      }
+    >
+      <div className="form">
+        <p className="muted">
+          {`by ${t.vendor} · ${t.server.transport === 'http' ? t.server.url : [t.server.command, ...(t.server.args ?? [])].join(' ')}`}
+        </p>
+        {t.keys.length ? (
+          t.keys.map((k) => (
+            <KeyField
+              key={k.name}
+              name={k.name}
+              description={k.description}
+              signupUrl={k.signupUrl}
+            />
+          ))
+        ) : (
+          <p className="muted">{t.note ? `No key: it ${t.note}.` : 'It needs no key.'}</p>
+        )}
+        <RoleChecks roles={props.roles} value={roles} onChange={setRoles} />
+      </div>
+    </S.Dialog>
+  );
+}
+
+export interface CustomForm {
+  id: string;
+  description: string;
+  transport: 'http' | 'stdio';
+  url: string;
+  command: string;
+  keys: string;
+  headers: string;
+  bearer: string;
+  tools: string;
+  timeoutS: string;
+  roles: string[];
+}
+
+export const emptyCustom = (roles: RoleRow[]): CustomForm => ({
+  id: '',
+  description: '',
+  transport: 'http',
+  url: '',
+  command: '',
+  keys: '',
+  headers: '',
+  bearer: '',
+  tools: '',
+  timeoutS: '',
+  roles: defaultRoles(roles),
+});
+
+/** The request a custom connector form makes: only the fields that were filled. */
+export function customRequest(f: CustomForm, replace: boolean): AddMcpRequest {
+  const keys = words(f.keys);
+  const tools = words(f.tools);
+  const timeout = Number.parseFloat(f.timeoutS);
+  const common = {
+    ...(keys.length ? { env_keys: keys } : {}),
+    ...(tools.length ? { tools } : {}),
+    ...(timeout > 0 ? { timeout_ms: Math.round(timeout * 1000) } : {}),
+  };
+  let server: McpServerSpec;
+  if (f.transport === 'http') {
+    const headers = headerLines(f.headers);
+    const bearer = f.bearer.trim().split(/\s+/).filter(Boolean);
+    const { env_keys, ...rest } = common;
+    server = {
+      transport: 'http',
+      url: f.url.trim(),
+      ...(env_keys ? { env_keys } : {}),
+      ...(Object.keys(headers).length ? { headers } : {}),
+      ...(bearer.length ? { bearer_command: bearer } : {}),
+      ...rest,
+    };
+  } else {
+    const [command = '', ...args] = f.command.trim().split(/\s+/);
+    server = { transport: 'stdio', command, ...(args.length ? { args } : {}), ...common };
+  }
+  return {
+    id: f.id.trim(),
+    description: f.description.trim() || f.id.trim(),
+    server,
+    roles: f.roles,
+    ...(replace ? { replace: true } : {}),
+  };
+}
+
+/** "Add a custom connector" (and Edit…): any MCP server by URL or command. */
+export function CustomConnectorDialog(props: {
+  roles: RoleRow[];
+  initial?: CustomForm;
+  /** Edit: the id is fixed and the file is replaced. */
+  editing?: boolean;
+  onClose: () => void;
+}): JSX.Element {
+  const S = ds();
+  const store = useStore();
+  const [f, setF] = useState<CustomForm>(props.initial ?? emptyCustom(props.roles));
+  const [saving, setSaving] = useState(false);
+  const set = (patch: Partial<CustomForm>) => setF((x) => ({ ...x, ...patch }));
+  const field = (k: keyof CustomForm) => (e: { target: EventTarget | null }) =>
+    set({ [k]: (e.target as HTMLInputElement).value } as Partial<CustomForm>);
+  const idOk = ID_RE.test(f.id.trim());
+  const target =
+    f.transport === 'http' ? /^https?:\/\/\S+$/.test(f.url.trim()) : !!f.command.trim();
+  return (
+    <S.Dialog
+      open
+      title={props.editing ? `Edit ${f.id}` : 'Add a custom connector'}
+      description="Any MCP server: a URL (Streamable HTTP) or a command on the daemon's machine (stdio)."
+      icon="plug"
+      width={560}
+      onClose={props.onClose}
+      footer={
+        <>
+          <S.Button variant="quiet" onClick={props.onClose}>
+            Cancel
+          </S.Button>
+          <S.Button
+            variant="primary"
+            loading={saving}
+            disabled={!idOk || !target}
+            onClick={() => {
+              setSaving(true);
+              void store.addMcp(customRequest(f, props.editing === true)).then((ok) => {
+                setSaving(false);
+                if (ok) props.onClose();
+              });
+            }}
+          >
+            {props.editing ? 'Save' : 'Add'}
+          </S.Button>
+        </>
+      }
+    >
+      <div className="form">
+        <S.Input
+          label="Id"
+          placeholder="acme"
+          value={f.id}
+          disabled={props.editing}
+          error={f.id && !idOk ? 'Letters, digits, - _ :' : undefined}
+          onChange={field('id')}
+        />
+        <S.Input
+          label="Description"
+          placeholder="What it gives the agent"
+          value={f.description}
+          onChange={field('description')}
+        />
+        <div className="stack">
+          <span className="sx-field__label">Transport</span>
+          <S.Segmented
+            label="Transport"
+            items={[
+              { id: 'http', label: 'http' },
+              { id: 'stdio', label: 'stdio' },
+            ]}
+            value={f.transport}
+            onChange={(id) => set({ transport: id as 'http' | 'stdio' })}
+          />
+        </div>
+        {f.transport === 'http' ? (
+          <S.Input
+            label="URL"
+            placeholder="https://mcp.example.com/mcp"
+            value={f.url}
+            onChange={field('url')}
+          />
+        ) : (
+          <S.Input
+            label="Command"
+            placeholder="npx -y @scope/server --flag"
+            hint="The command and its arguments, as in a terminal on the daemon's machine"
+            value={f.command}
+            onChange={field('command')}
+          />
+        )}
+        <S.Input
+          label="Keys"
+          placeholder="ACME_API_KEY"
+          hint="Vault keys it needs, comma separated (set them in Keys)"
+          value={f.keys}
+          onChange={field('keys')}
+        />
+        {f.transport === 'http' ? (
+          <>
+            <S.Textarea
+              label="Headers"
+              placeholder={HEADER_EXAMPLE}
+              rows={2}
+              value={f.headers}
+              onChange={field('headers')}
+            />
+            <S.Input
+              label="Bearer command"
+              placeholder="acme auth token"
+              hint="Headers: one per line, ${KEY} becomes the key's value. Bearer command: its output is the token (a CLI's login instead of a key)"
+              value={f.bearer}
+              onChange={field('bearer')}
+            />
+          </>
+        ) : null}
+        <S.Input
+          label="Tools"
+          placeholder="All of them"
+          hint="Only these tools, comma separated"
+          value={f.tools}
+          onChange={field('tools')}
+        />
+        <S.Input
+          label="Timeout (seconds)"
+          placeholder="30"
+          inputMode="decimal"
+          value={f.timeoutS}
+          onChange={field('timeoutS')}
+        />
+        <RoleChecks roles={props.roles} value={f.roles} onChange={(roles) => set({ roles })} />
+      </div>
+    </S.Dialog>
+  );
+}

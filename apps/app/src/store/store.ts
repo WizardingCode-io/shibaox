@@ -19,6 +19,13 @@ import {
   threadView,
 } from '@wizardingcode/shibaox-view';
 import type { AppClient, RoutineDraft, RoutinePatch, RunFileContent } from '../api/client.js';
+import type {
+  AddMcpRequest,
+  AddSkillRequest,
+  AddSkillResult,
+  DiscoverResult,
+  RoleLinks,
+} from '../screens/customize/types.js';
 import { type AppState, initialState, type Settings, TERMINAL } from './state.js';
 
 /** The part of AppClient the store uses (a fake in tests). */
@@ -63,6 +70,17 @@ export type StoreClient = Pick<
   | 'mcpList'
   | 'mcpTest'
   | 'projectProfile'
+  | 'skills'
+  | 'addSkill'
+  | 'discoverSkills'
+  | 'removeSkill'
+  | 'roles'
+  | 'setRoleLinks'
+  | 'addMcp'
+  | 'removeMcp'
+  | 'registryConnectors'
+  | 'registrySkills'
+  | 'plugins'
 >;
 
 interface StorageLike {
@@ -649,8 +667,8 @@ export class AppStore {
       void (async () => {
         for (let i = 0; i < 40; i++) {
           await new Promise((res) => setTimeout(res, 3000));
-          await this.loadIntegrations();
-          if (this.state.integrations?.higgsfield?.loggedIn) break;
+          await this.refreshHiggsfield();
+          if (this.state.customize?.higgsfield?.loggedIn) break;
         }
       })();
       return r;
@@ -766,23 +784,179 @@ export class AppStore {
       });
     }).then(() => undefined);
   }
+  // ---- Customize
+
+  /** The org Customize edits: the one in Settings, else the daemon's default. */
+  private async orgRoot(): Promise<string> {
+    return this.state.settings.org ?? (await this.client.defaultOrg()).root;
+  }
+
+  /**
+   * Everything Customize shows, fetched in parallel: a part the daemon cannot answer stays
+   * empty and its message becomes the toast; the rest still loads.
+   */
+  loadCustomize(): Promise<void> {
+    return this.load(async () => {
+      const org = await this.orgRoot();
+      const failed: string[] = [];
+      const part = <T>(what: Promise<T>, fallback: T): Promise<T> =>
+        what.catch((e: unknown) => {
+          if (isUnauthorized(e)) this.set({ unauthorized: true });
+          failed.push(message(e));
+          return fallback;
+        });
+      const c = this.client;
+      const [
+        skills,
+        roles,
+        mcp,
+        models,
+        keys,
+        config,
+        decisions,
+        higgsfield,
+        plugins,
+        connectors,
+        sources,
+        info,
+      ] = await Promise.all([
+        part(c.skills(org), [] as Awaited<ReturnType<StoreClient['skills']>>),
+        part(c.roles(org), [] as Awaited<ReturnType<StoreClient['roles']>>),
+        part(c.mcpList(org), [] as Awaited<ReturnType<StoreClient['mcpList']>>),
+        part(c.models(), [] as Awaited<ReturnType<StoreClient['models']>>),
+        part(c.keys(), [] as Awaited<ReturnType<StoreClient['keys']>>),
+        part(
+          c.orgConfig(org),
+          undefined as Awaited<ReturnType<StoreClient['orgConfig']>> | undefined,
+        ),
+        part(c.decisions(), undefined),
+        part(c.higgsfield(), undefined),
+        part(c.plugins(), [] as Awaited<ReturnType<StoreClient['plugins']>>),
+        part(c.registryConnectors(), [] as Awaited<ReturnType<StoreClient['registryConnectors']>>),
+        part(c.registrySkills(), [] as Awaited<ReturnType<StoreClient['registrySkills']>>),
+        part(c.orgInfo(org), undefined as Awaited<ReturnType<StoreClient['orgInfo']>> | undefined),
+      ]);
+      if (failed.length) this.set({ error: failed[0] });
+      const workflows = (info?.workflows ?? []).map((name) => ({
+        name,
+        description: info?.descriptions?.[name] ?? '',
+        conversation: info?.single.includes(name) ?? false,
+      }));
+      this.set({
+        customize: {
+          org,
+          skills,
+          roles,
+          mcp,
+          models,
+          keys,
+          config: config ?? undefined,
+          decisions: decisions ?? undefined,
+          higgsfield: higgsfield ?? undefined,
+          plugins,
+          registry: { connectors, skills: sources },
+          workflows,
+        },
+        // the thread's and the routine dialog's lists ride along
+        integrations: {
+          org,
+          mcp,
+          models,
+          keys,
+          config: config ?? undefined,
+          decisions: decisions ?? undefined,
+          higgsfield: higgsfield ?? undefined,
+        },
+        ...(info ? { skills: { org, workflows, catalog: info.catalog ?? [] } } : {}),
+      });
+    }).then(() => undefined);
+  }
+
+  /** The Higgsfield status and the plugins again (after a login in the browser). */
+  async refreshHiggsfield(): Promise<void> {
+    const [higgsfield, plugins] = await Promise.all([
+      this.client.higgsfield().catch(() => undefined),
+      this.client.plugins().catch(() => undefined),
+    ]);
+    this.set((s) =>
+      s.customize
+        ? {
+            customize: {
+              ...s.customize,
+              ...(higgsfield ? { higgsfield } : {}),
+              ...(plugins ? { plugins } : {}),
+            },
+          }
+        : {},
+    );
+  }
+
+  /** What a repository offers; the listing (or why it failed) is kept for Discover. */
+  async discoverSkills(repo: string, path?: string): Promise<DiscoverResult | { error: string }> {
+    const key = path ? `${repo}|${path}` : repo;
+    let r: DiscoverResult | { error: string };
+    try {
+      r = await this.client.discoverSkills(repo, path);
+    } catch (e) {
+      if (isUnauthorized(e)) this.set({ unauthorized: true });
+      r = { error: message(e) };
+    }
+    this.set((s) => ({ discovered: { ...s.discovered, [key]: r } }));
+    return r;
+  }
+  /** Installs or writes skills; the result says what was added and skipped (undefined: the toast says why). */
+  async addSkill(req: AddSkillRequest): Promise<AddSkillResult | undefined> {
+    let r: AddSkillResult | undefined;
+    const ok = await this.act(async () => {
+      r = await this.client.addSkill(await this.orgRoot(), req);
+      await this.loadCustomize();
+    });
+    return ok ? r : undefined;
+  }
+  removeSkill(id: string, detach: boolean): Promise<boolean> {
+    return this.act(async () => {
+      await this.client.removeSkill(await this.orgRoot(), id, detach);
+      await this.loadCustomize();
+    });
+  }
+  /** Replaces the lists of each role that changed, then reads the org again. */
+  setRoleLinks(changes: { id: string; links: RoleLinks }[]): Promise<boolean> {
+    return this.act(async () => {
+      const org = await this.orgRoot();
+      for (const ch of changes) await this.client.setRoleLinks(org, ch.id, ch.links);
+      await this.loadCustomize();
+    });
+  }
+  addMcp(req: AddMcpRequest): Promise<boolean> {
+    return this.act(async () => {
+      await this.client.addMcp(await this.orgRoot(), req);
+      await this.loadCustomize();
+    });
+  }
+  removeMcp(id: string): Promise<boolean> {
+    return this.act(async () => {
+      await this.client.removeMcp(await this.orgRoot(), id);
+      await this.loadCustomize();
+    });
+  }
+
   setKey(name: string, value: string): Promise<boolean> {
     return this.act(async () => {
       await this.client.setKey(name, value);
-      await this.loadIntegrations();
+      await this.loadCustomize();
     });
   }
   unsetKey(name: string): Promise<boolean> {
     return this.act(async () => {
       await this.client.unsetKey(name);
-      await this.loadIntegrations();
+      await this.loadCustomize();
     });
   }
   saveOrgConfig(patch: OrgConfigPatch): Promise<boolean> {
     return this.act(async () => {
-      const d = await this.defaults();
-      await this.client.setOrgConfig(d.orgRoot, patch);
-      await this.loadIntegrations();
+      const org = await this.orgRoot();
+      await this.client.setOrgConfig(org, patch);
+      await this.loadCustomize();
     });
   }
   /** Starts a catalog server on the daemon and lists its tools (undefined and an error when it could not). */
@@ -792,8 +966,8 @@ export class AppStore {
     { ok: boolean; tools?: { name: string; description: string }[]; error?: string } | undefined
   > {
     return this.load(async () => {
-      const d = await this.defaults();
-      return this.client.mcpTest(id, d.orgRoot);
+      const org = await this.orgRoot();
+      return this.client.mcpTest(id, org);
     });
   }
   clearError(): void {

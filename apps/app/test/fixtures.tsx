@@ -1,8 +1,20 @@
 import { render } from '@testing-library/react';
 import type { RunState } from '@wizardingcode/shibaox-core';
-import type { Envelope, InboxItem, RunSummaryPlus } from '@wizardingcode/shibaox-daemon';
+import type {
+  Envelope,
+  InboxItem,
+  McpServerRow,
+  RunSummaryPlus,
+} from '@wizardingcode/shibaox-daemon';
 import { App } from '../src/App.js';
 import type { RunFileContent } from '../src/api/client.js';
+import type {
+  ConnectorTemplate,
+  PluginRow,
+  RoleRow,
+  SkillRow,
+  SkillSource,
+} from '../src/screens/customize/types.js';
 import { AppStore, type StoreClient } from '../src/store/store.js';
 
 export const summary = (id: string, o: Partial<RunSummaryPlus> = {}): RunSummaryPlus =>
@@ -61,6 +73,182 @@ export const rtFrame = (seq: number, nodeId: string, event: Record<string, unkno
     event: { runId: 'x', nodeId, seq, at: 't', event },
   }) as Envelope;
 
+export const SKILLS: SkillRow[] = [
+  {
+    id: 'pdf',
+    name: 'PDF',
+    description: 'Read, fill and merge PDF forms',
+    path: '/o/skills/pdf/SKILL.md',
+    roles: ['assistant'],
+  },
+  {
+    id: 'brand-voice',
+    name: 'Brand voice',
+    description: 'Write in the voice of the brand',
+    path: '/o/skills/brand-voice/SKILL.md',
+    roles: [],
+  },
+];
+export const ROLES: RoleRow[] = [
+  { id: 'assistant', name: 'Assistant', tools: [], mcp: [], skills: ['pdf'] },
+  {
+    id: 'browser-qa',
+    name: 'Browser QA',
+    model: 'openai/gpt-5',
+    tools: [],
+    mcp: ['playwright'],
+    skills: [],
+  },
+];
+export const CONNECTORS: ConnectorTemplate[] = [
+  {
+    id: 'github',
+    name: 'GitHub',
+    vendor: 'GitHub',
+    verified: true,
+    category: 'Code',
+    description: 'Issues, pull requests and code search',
+    keys: [
+      {
+        name: 'GH_TOKEN',
+        signupUrl: 'https://github.com/settings/tokens',
+        description: 'A GitHub token',
+      },
+    ],
+    server: {
+      transport: 'http',
+      url: 'https://api.githubcopilot.com/mcp/',
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the catalog's own ${KEY} placeholder
+      headers: { Authorization: 'Bearer ${GH_TOKEN}' },
+      env_keys: ['GH_TOKEN'],
+    },
+  },
+  {
+    id: 'firecrawl',
+    name: 'Firecrawl',
+    vendor: 'Firecrawl',
+    verified: false,
+    category: 'Search',
+    description: 'Scrape and crawl websites',
+    keys: [
+      {
+        name: 'FIRECRAWL_API_KEY',
+        signupUrl: 'https://firecrawl.dev',
+        description: 'Firecrawl API key',
+      },
+    ],
+    server: {
+      transport: 'stdio',
+      command: 'npx',
+      args: ['-y', 'firecrawl-mcp'],
+      env_keys: ['FIRECRAWL_API_KEY'],
+    },
+  },
+  {
+    id: 'playwright',
+    name: 'Playwright',
+    vendor: 'Microsoft',
+    verified: false,
+    category: 'Browser',
+    description: 'Drive a browser',
+    keys: [],
+    server: { transport: 'stdio', command: 'npx', args: ['-y', '@playwright/mcp'] },
+  },
+  {
+    id: 'notion',
+    name: 'Notion',
+    vendor: 'Notion',
+    verified: true,
+    category: 'Productivity',
+    description: 'Pages and databases',
+    keys: [],
+    note: 'signs in on first use',
+    server: { transport: 'http', url: 'https://mcp.notion.com/mcp' },
+  },
+];
+export const SOURCES: SkillSource[] = [
+  {
+    repo: 'anthropics/skills',
+    name: 'Anthropic skills',
+    vendor: 'Anthropic',
+    description: "Anthropic's example skills",
+    categories: ['document-skills'],
+  },
+  {
+    repo: 'higgsfield-ai/skills',
+    name: 'Higgsfield skills',
+    vendor: 'Higgsfield',
+    description: 'Generate with Higgsfield',
+  },
+];
+export const DISCOVER: Record<
+  string,
+  { id: string; name: string; description: string; path: string }[]
+> = {
+  'anthropics/skills': [
+    { id: 'pdf', name: 'pdf', description: 'PDF tools', path: 'document-skills/pdf' },
+    { id: 'xlsx', name: 'xlsx', description: 'Spreadsheets', path: 'document-skills/xlsx' },
+    {
+      id: 'canvas-design',
+      name: 'canvas-design',
+      description: 'Posters and art',
+      path: 'canvas-design',
+    },
+  ],
+  'higgsfield-ai/skills': [
+    {
+      id: 'higgsfield',
+      name: 'higgsfield',
+      description: 'Images and video',
+      path: 'higgsfield',
+    },
+  ],
+  'acme/tools': [
+    { id: 'invoice', name: 'invoice', description: 'Invoices', path: 'skills/invoice' },
+    { id: 'pdf', name: 'pdf', description: 'Another pdf', path: 'skills/pdf' },
+  ],
+};
+export const PLUGINS: PluginRow[] = [
+  {
+    id: 'higgsfield',
+    name: 'Higgsfield',
+    description: 'Images, video, audio and 3D from 40+ models',
+    status: 'partial',
+    checks: [
+      { label: 'CLI installed', ok: true, detail: '1.1.26' },
+      { label: 'Logged in', ok: false },
+      { label: 'MCP', ok: false, detail: 'unauthorized' },
+    ],
+    keys: [],
+    actions: [
+      { id: 'login', label: 'Log in' },
+      { id: 'signup', label: 'Create an account', href: 'https://higgsfield.ai?fpr=andre-4fae29' },
+      { id: 'open', label: 'Open Higgsfield', href: 'https://higgsfield.ai' },
+    ],
+    brings: { connectors: ['higgsfield'], skills: ['higgsfield'] },
+  },
+  {
+    id: 'github',
+    name: 'GitHub',
+    description: 'Issues, pull requests and the GitHub loop',
+    status: 'ready',
+    checks: [{ label: 'gh installed', ok: true }],
+    keys: [{ name: 'GH_TOKEN', present: true }],
+    actions: [],
+    brings: { connectors: ['github'], skills: [] },
+  },
+  {
+    id: 'telegram',
+    name: 'Telegram',
+    description: 'Talk to Shibaox from Telegram',
+    status: 'off',
+    checks: [{ label: 'Bot token', ok: false }],
+    keys: [{ name: 'SHIBAOX_TELEGRAM_TOKEN', present: false }],
+    actions: [{ id: 'docs', label: 'Channel docs', href: 'https://example.com/telegram' }],
+    brings: { connectors: [], skills: [] },
+  },
+];
+
 export function client(
   o: {
     runs?: RunSummaryPlus[];
@@ -72,6 +260,10 @@ export function client(
     files?: Record<string, RunFileContent>;
     inbox?: InboxItem[];
     routines?: unknown[];
+    skills?: SkillRow[];
+    roles?: RoleRow[];
+    plugins?: PluginRow[];
+    mcp?: McpServerRow[];
   } = {},
 ) {
   const calls: { name: string; args: unknown[] }[] = [];
@@ -314,16 +506,76 @@ export function client(
       return { root, organization: 'wc', tiers: {} };
     },
     async mcpList() {
-      return [
-        {
-          id: 'playwright',
-          description: 'A browser',
-          transport: 'stdio' as const,
-          target: 'npx -y @playwright/mcp',
-          roles: ['browser-qa'],
-          keys: [{ name: 'PW_TOKEN', present: false }],
-        },
-      ];
+      return (
+        o.mcp ?? [
+          {
+            id: 'playwright',
+            description: 'A browser',
+            transport: 'stdio' as const,
+            target: 'npx -y @playwright/mcp',
+            roles: ['browser-qa'],
+            keys: [{ name: 'PW_TOKEN', present: false }],
+          },
+        ]
+      );
+    },
+    async skills(org) {
+      rec('skills', org);
+      return o.skills ?? SKILLS;
+    },
+    async addSkill(org, req) {
+      rec('addSkill', org, req);
+      const ids =
+        req.source === 'inline'
+          ? [req.id]
+          : req.source === 'repo'
+            ? (req.ids ?? [])
+            : [req.path.split('/').pop() ?? 'x'];
+      return {
+        added: ids.map((id) => ({
+          id,
+          name: id,
+          description: '',
+          path: `/o/skills/${id}`,
+          roles: [],
+        })),
+        skipped: [],
+      };
+    },
+    async discoverSkills(repo, path) {
+      rec('discoverSkills', repo, path);
+      if (repo === 'nope/nope') throw new Error('repository not found');
+      return { repo, skills: DISCOVER[repo] ?? [] };
+    },
+    async removeSkill(org, id, detach) {
+      rec('removeSkill', org, id, detach);
+      return { removed: true as const };
+    },
+    async roles(org) {
+      rec('roles', org);
+      return o.roles ?? ROLES;
+    },
+    async setRoleLinks(org, id, links) {
+      rec('setRoleLinks', org, id, links);
+      return { id, name: id, tools: [], mcp: links.mcp ?? [], skills: links.skills ?? [] };
+    },
+    async addMcp(org, req) {
+      rec('addMcp', org, req);
+      return {} as never;
+    },
+    async removeMcp(org, id) {
+      rec('removeMcp', org, id);
+      return { removed: true as const };
+    },
+    async registryConnectors() {
+      return CONNECTORS;
+    },
+    async registrySkills() {
+      return SOURCES;
+    },
+    async plugins() {
+      rec('plugins');
+      return o.plugins ?? PLUGINS;
     },
     async mcpTest(id, org) {
       rec('mcpTest', id, org);

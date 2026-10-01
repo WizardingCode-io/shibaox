@@ -2,9 +2,8 @@ import { ds } from '../ds.js';
 
 const WORDS: Record<string, string> = {
   scheduled: 'Routines land here next: what the daemon does on its own, and when.',
-  skills: 'The workflows and skills of your org, ready to run.',
   memory: 'What Shibaox remembers about the project.',
-  integrations: 'MCP servers, providers and keys.',
+  customize: 'Skills, connectors, plugins, keys and models.',
 };
 
 export function SoonScreen(props: { section: string }): JSX.Element {
