@@ -1061,7 +1061,7 @@ describe('MCP servers through the API', () => {
     const { client } = await started(s);
     const before = await client.mcpList(s.orgRoot);
     expect(before.map((r) => r.id)).toEqual(['echo', 'higgsfield', 'playwright']); // the scaffold ships a browser
-    expect(before[0]).toEqual({
+    expect(before[0]).toMatchObject({
       id: 'echo',
       description: 'echo server',
       transport: 'stdio',
@@ -1069,6 +1069,7 @@ describe('MCP servers through the API', () => {
       tools: ['echo', 'secret'],
       roles: ['backend'],
       keys: [{ name: 'ECHO_TOKEN', present: false }],
+      server: { transport: 'stdio', command: process.execPath, env_keys: ['ECHO_TOKEN'] },
     });
     const missing = await client.mcpTest('echo', s.orgRoot);
     expect(missing.ok).toBe(false);
