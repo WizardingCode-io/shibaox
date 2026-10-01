@@ -91,7 +91,30 @@ describe('customize commands', () => {
     expect(rm.code).toBe(0);
     expect(existsSync(join(org, 'skills/higgsfield'))).toBe(false);
     const json = await cli('--json', 'skills', 'list', '--org', org);
-    expect(JSON.parse(json.stdout.trim().split('\n')[0] as string)).toMatchObject({ id: 'notes' });
+    expect(
+      json.stdout
+        .trim()
+        .split('\n')
+        .map((l) => (JSON.parse(l) as { id: string }).id),
+    ).toEqual(['higgsfield-app', 'notes']);
+    // a built-in skill comes back from Shibaox's own text; an existing one only with --replace
+    const builtin = await cli('skills', 'add', 'higgsfield', '--builtin', '--org', org);
+    expect(builtin.code).toBe(0);
+    expect(builtin.stdout).toContain('added higgsfield');
+    const kept = await cli('skills', 'add', 'higgsfield-app', '--builtin', '--org', org);
+    expect(kept.stdout).toMatch(/skipped higgsfield-app \(exists\).*--replace/);
+    const replaced = await cli(
+      'skills',
+      'add',
+      'higgsfield-app',
+      '--builtin',
+      '--replace',
+      '--org',
+      org,
+    );
+    expect(replaced.stdout).toContain('written higgsfield-app');
+    const unknown = await cli('skills', 'add', 'nope', '--builtin', '--org', org);
+    expect(unknown.code).toBe(1);
   });
 
   it('mcp add (url and command), roles list, mcp rm, plugins', async () => {
