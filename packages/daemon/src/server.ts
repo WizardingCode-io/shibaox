@@ -52,7 +52,13 @@ import { ATTACHMENTS_LIMIT, ATTACHMENTS_MAX, mimeOf, RunFileError } from './runs
 import type { DecisionsView } from './runtime.js';
 import type { RuntimeEnvelope } from './runtime-buffer.js';
 import type { KeyRow } from './secrets.js';
-import type { SkillAddRequest, SkillAddResult, SkillDiscovery, SkillRow } from './skills.js';
+import type {
+  SkillAddRequest,
+  SkillAddResult,
+  SkillDetail,
+  SkillDiscovery,
+  SkillRow,
+} from './skills.js';
 
 export interface Health {
   version: string;
@@ -156,6 +162,7 @@ export interface ServerDeps {
   /** The org's skills (Customize → Skills). */
   skills: {
     list(org: string): SkillRow[];
+    get(org: string, id: string): SkillDetail;
     add(org: string, req: SkillAddRequest, o: { local: boolean }): Promise<SkillAddResult>;
     discover(
       repo: string,
@@ -462,6 +469,8 @@ export class DaemonServer {
     if (path === '/orgs/config' && (method === 'GET' || method === 'PUT')) {
       const org = url.searchParams.get('org') ?? '';
       if (!org) throw new HttpError(400, 'bad_request', '"org" is required');
+      // it writes org files: only callers on the daemon's machine
+      if (method === 'PUT') this.requireLocalWrite(req);
       try {
         if (method === 'GET') return send(res, 200, readOrgConfig(org));
         const body = asRecord(await readBody(req));
@@ -780,10 +789,26 @@ export class DaemonServer {
     throw new HttpError(404, 'not_found', `no route for ${method} ${path}`);
   }
 
-  /** The socket, or a client of the network listener on this machine. */
+  /**
+   * The socket, or a client of the network listener on this machine. A request carrying
+   * `X-Forwarded-For` / `Forwarded` came through a proxy (a same-host reverse proxy looks like
+   * loopback): never local.
+   */
   private localCaller(req: IncomingMessage): boolean {
     if (!isRemote(req)) return true;
+    if (req.headers['x-forwarded-for'] !== undefined || req.headers.forwarded !== undefined)
+      return false;
     return this.deps.localPeer ? this.deps.localPeer(req.socket.remoteAddress) : isLoopback(req);
+  }
+
+  /** Org writes are for callers on the daemon's machine only (403 otherwise). */
+  private requireLocalWrite(req: IncomingMessage): void {
+    if (!this.localCaller(req))
+      throw new HttpError(
+        403,
+        'forbidden',
+        "the org is changed from the daemon's own machine only (the socket or a loopback client, not through a proxy)",
+      );
   }
 
   /**
@@ -803,21 +828,19 @@ export class DaemonServer {
     const write = method === 'POST' || method === 'PUT' || method === 'DELETE';
     const route =
       (kind === 'skills' &&
-        ((!id && (method === 'GET' || method === 'POST')) || (id && method === 'DELETE'))) ||
+        ((!id && (method === 'GET' || method === 'POST')) ||
+          (id && method === 'DELETE') ||
+          (id && id !== 'discover' && method === 'GET'))) ||
       (kind === 'roles' && ((!id && method === 'GET') || (id && method === 'PUT'))) ||
       (kind === 'mcp' && ((!id && method === 'POST') || (id && method === 'DELETE')));
     if (!route) return false;
     const org = url.searchParams.get('org') ?? '';
     if (!org) throw new HttpError(400, 'bad_request', '"org" is required');
-    if (write && !this.localCaller(req))
-      throw new HttpError(
-        403,
-        'forbidden',
-        "the org is changed from the daemon's own machine only (the socket or a loopback client)",
-      );
+    if (write) this.requireLocalWrite(req);
     const body = write && method !== 'DELETE' ? asRecord(await readBody(req)) : {};
     const run = async (): Promise<unknown> => {
       if (kind === 'skills') {
+        if (method === 'GET' && id) return this.deps.skills.get(org, id);
         if (method === 'GET') return this.deps.skills.list(org);
         if (method === 'POST')
           return this.deps.skills.add(org, body as unknown as SkillAddRequest, { local: true });
@@ -838,7 +861,9 @@ export class DaemonServer {
     } catch (e) {
       if (e instanceof OrgEditError || e instanceof HttpError) throw e;
       const m = e instanceof Error ? e.message : String(e);
-      throw new HttpError(/not found/i.test(m) ? 404 : 400, 'bad_request', m);
+      if (/not found/i.test(m)) throw new HttpError(404, 'not_found', m);
+      // a write that failed for a reason we did not check for is ours, not the caller's
+      throw write ? new HttpError(500, 'internal', m) : new HttpError(400, 'bad_request', m);
     }
     send(res, 200, result);
     return true;

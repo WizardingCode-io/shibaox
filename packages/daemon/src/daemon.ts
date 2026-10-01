@@ -312,6 +312,7 @@ export class Daemon {
       },
       skills: {
         list: (org) => this.skills.list(org),
+        get: (org, id) => this.skills.get(org, id),
         add: async (org, req, o) => {
           const r = await this.skills.add(org, req, o);
           if (r.added.length) log(`skills added: ${r.added.map((a) => a.id).join(', ')} (${org})`);

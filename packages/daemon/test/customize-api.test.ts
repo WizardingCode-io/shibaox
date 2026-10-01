@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MemoryEventStore } from '@wizardingcode/shibaox-core';
@@ -8,6 +8,7 @@ import { DaemonClient, DaemonHttpError } from '../src/client.js';
 import { Daemon } from '../src/daemon.js';
 import type { HiggsfieldProbe } from '../src/higgsfield.js';
 import { homePaths } from '../src/home.js';
+import type { McpServerRow, SkillDetail } from '../src/index.js';
 import { scaffoldOrg } from '../src/templates.js';
 
 const tmp: string[] = [];
@@ -203,5 +204,100 @@ describe('customize API', () => {
     await expect(c.discoverSkills('file:///etc')).rejects.toMatchObject({ status: 400 });
     expect(existsSync(join(org, 'skills/higgsfield'))).toBe(true);
     expect(existsSync(join(org, 'catalog/playwright.yaml'))).toBe(true);
+  });
+});
+
+describe('customize API hardening', () => {
+  it('refuses org writes carrying forwarded headers even from loopback (a reverse proxy)', async () => {
+    const { org, remote } = await setup({ listen: true });
+    const base = (remote as unknown as { remote: { url: URL } }).remote.url.origin;
+    const post = (headers: Record<string, string>) =>
+      fetch(`${base}/skills?org=${encodeURIComponent(org)}`, {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer secret-1',
+          'content-type': 'application/json',
+          ...headers,
+        },
+        body: JSON.stringify({ source: 'inline', id: 'n', content: '# N\n\nx\n' }),
+      });
+    expect((await post({ 'x-forwarded-for': '203.0.113.9' })).status).toBe(403);
+    expect((await post({ forwarded: 'for=203.0.113.9' })).status).toBe(403);
+    const cfg = await fetch(`${base}/orgs/config?org=${encodeURIComponent(org)}`, {
+      method: 'PUT',
+      headers: {
+        authorization: 'Bearer secret-1',
+        'content-type': 'application/json',
+        'x-forwarded-for': '203.0.113.9',
+      },
+      body: JSON.stringify({}),
+    });
+    expect(cfg.status).toBe(403);
+    expect(existsSync(join(org, 'skills/n'))).toBe(false);
+  });
+
+  it('PUT /orgs/config is refused to callers from another machine', async () => {
+    const { org, remote } = await setup({ listen: true, localPeer: () => false });
+    await expect((remote as DaemonClient).setOrgConfig(org, {})).rejects.toMatchObject({
+      status: 403,
+    });
+    expect((await (remote as DaemonClient).orgConfig(org)).tiers).toBeTruthy();
+  });
+
+  it('a network caller may not POST a file:// repository', async () => {
+    const { org, remote } = await setup({ listen: true });
+    const url = bareRepo({ 'a/SKILL.md': '# A\n\nA.\n' });
+    // loopback is local: allowed
+    expect(
+      (await (remote as DaemonClient).addSkills(org, { source: 'repo', repo: url })).added,
+    ).toHaveLength(1);
+    const far = await setup({ listen: true, localPeer: () => false });
+    await expect(
+      (far.remote as DaemonClient).addSkills(far.org, { source: 'repo', repo: url }),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect((far.remote as DaemonClient).discoverSkills(url)).rejects.toMatchObject({
+      status: 400,
+    });
+  });
+
+  it('DELETE /mcp of an entry that is not an mcp server is a 404; PUT /roles with a server-less mcp entry is a 400', async () => {
+    const { org, client } = await setup();
+    writeFileSync(join(org, 'catalog/tooly.yaml'), 'id: tooly\ntype: tool\ndescription: T\n');
+    writeFileSync(join(org, 'catalog/marker.yaml'), 'id: marker\ntype: mcp\ndescription: M\n');
+    await expect(client.removeMcp(org, 'tooly')).rejects.toMatchObject({ status: 404 });
+    await expect(client.putRole(org, 'assistant', { mcp: ['marker'] })).rejects.toMatchObject({
+      status: 400,
+    });
+    await expect(client.putRole(org, 'assistant', { mcp: ['toString'] })).rejects.toMatchObject({
+      status: 400,
+    });
+    await expect(client.putRole(org, 'toString', { mcp: [] })).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+
+  it('an unknown error in a write route is a 500, not a 400', async () => {
+    const { org, client } = await setup();
+    // a role file that does not parse makes loadOrg throw a plain Error
+    writeFileSync(join(org, 'roles/broken.yaml'), 'role: [unclosed\n');
+    const err = await client.putRole(org, 'assistant', { mcp: [] }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DaemonHttpError);
+    expect((err as DaemonHttpError).status).toBe(500);
+  });
+
+  it('GET /skills/:id answers the skill with its SKILL.md text; 404 unknown', async () => {
+    const { org, client } = await setup();
+    const one: SkillDetail = await client.skill(org, 'higgsfield');
+    expect(one).toMatchObject({ id: 'higgsfield', roles: ['assistant'] });
+    expect(one.content).toBe(readFileSync(join(org, 'skills/higgsfield/SKILL.md'), 'utf8'));
+    await expect(client.skill(org, 'nope')).rejects.toMatchObject({ status: 404 });
+    // discover is still its own route
+    await expect(client.discoverSkills('')).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('GET /mcp rows carry the raw server', async () => {
+    const { org, client } = await setup();
+    const rows: McpServerRow[] = await client.mcpList(org);
+    expect(rows.find((r) => r.id === 'higgsfield')?.server.transport).toBe('http');
   });
 });

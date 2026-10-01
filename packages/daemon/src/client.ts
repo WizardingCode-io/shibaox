@@ -20,7 +20,13 @@ import type { RoutineDraft } from './runs/routine-draft.js';
 import type { DecisionsView } from './runtime.js';
 import type { KeyRow } from './secrets.js';
 import type { Envelope, Health, ProjectEntry } from './server.js';
-import type { SkillAddRequest, SkillAddResult, SkillDiscovery, SkillRow } from './skills.js';
+import type {
+  SkillAddRequest,
+  SkillAddResult,
+  SkillDetail,
+  SkillDiscovery,
+  SkillRow,
+} from './skills.js';
 
 export type { Envelope, Health, ProjectEntry } from './server.js';
 
@@ -219,6 +225,10 @@ export class DaemonClient {
   /** The org's skills (`skills/<id>/SKILL.md`) with the roles that use them. */
   skills(org: string): Promise<SkillRow[]> {
     return this.json('GET', `/skills?org=${encodeURIComponent(org)}`);
+  }
+  /** One skill with its SKILL.md text (404 when the org has no such skill). */
+  skill(org: string, id: string): Promise<SkillDetail> {
+    return this.json('GET', `/skills/${encodeURIComponent(id)}?org=${encodeURIComponent(org)}`);
   }
   /** Installs skills from a repository, a folder on the daemon's machine, or text. */
   addSkills(org: string, req: SkillAddRequest): Promise<SkillAddResult> {
