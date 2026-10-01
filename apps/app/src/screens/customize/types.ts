@@ -1,40 +1,21 @@
 /**
- * App-only types of the Customize screen. The API shapes come from `@wizardingcode/shibaox-daemon`
- * (`SkillRow`, `RoleRow`, `McpServerRow`, `ConnectorTemplate`, `SkillSource`, `PluginRow`, the
- * request and result types); what the daemon does not export yet is declared here, marked
- * `TODO daemon export`, with the shape the daemon answers with.
+ * App-only types of the Customize screen. The API shapes come from `@wizardingcode/shibaox-daemon`;
+ * the aliases below keep the screen's names.
  */
 import type {
   McpServerRow,
+  SkillAdded,
   SkillAddResult,
-  SkillRow,
+  SkillDetail,
   SkipReason,
 } from '@wizardingcode/shibaox-daemon';
-import type { McpServer } from '@wizardingcode/shibaox-schemas';
 
-// TODO daemon export: `GET /mcp` rows carry the raw catalog server (Edit… starts from it).
-export type McpRow = McpServerRow & { server?: McpServer };
-
-// TODO daemon export: `added[].omitted` (files over 1 MB left out) and the `copy_failed` reason.
-export type SkillSkipReason = SkipReason | 'copy_failed';
-export interface AddedSkill extends SkillRow {
-  /** Files of the skill that were not copied (over 1 MB). */
-  omitted?: string[];
-}
-export interface AddSkillOutcome extends Omit<SkillAddResult, 'added' | 'skipped'> {
-  added: AddedSkill[];
-  skipped: { id: string; reason: SkillSkipReason }[];
-}
-
-// TODO daemon export: `GET /skills/:id?org=` (a skill with its SKILL.md).
-export interface SkillDoc {
-  id: string;
-  name: string;
-  description: string;
-  path: string;
-  roles: string[];
-  content: string;
-}
+/** A connector row; the daemon always fills `server` (optional only for older daemons). */
+export type McpRow = McpServerRow;
+export type SkillSkipReason = SkipReason;
+export type AddedSkill = SkillAdded;
+export type AddSkillOutcome = SkillAddResult;
+export type SkillDoc = SkillDetail;
 
 /** The connector categories of the registry, in the order the filter shows them (the daemon's list). */
 export const CONNECTOR_CATEGORIES = [
