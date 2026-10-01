@@ -116,7 +116,8 @@ function validate(patch: OrgConfigPatch): void {
 }
 
 type Doc = ReturnType<typeof parseDocument>;
-const readDoc = (path: string): Doc =>
+/** A YAML file as a document (comments kept); an empty one when the file does not exist. */
+export const readDoc = (path: string): Doc =>
   parseDocument(existsSync(path) ? readFileSync(path, 'utf8') : '');
 const setOrDelete = (doc: Doc, path: string[], v: string | number | null | undefined) => {
   if (v === undefined) return;
@@ -125,7 +126,7 @@ const setOrDelete = (doc: Doc, path: string[], v: string | number | null | undef
   } else doc.setIn(path, v);
 };
 /** The file is replaced in one step: a run loading the org never sees a half-written file. */
-const writeAtomic = (path: string, text: string) => {
+export const writeAtomic = (path: string, text: string) => {
   const tmp = `${path}.${process.pid}.tmp`;
   writeFileSync(tmp, text);
   renameSync(tmp, path);
