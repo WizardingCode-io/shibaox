@@ -27,7 +27,7 @@ describe('roles', () => {
       id: 'assistant',
       name: 'assistant',
       mcp: ['higgsfield'],
-      skills: ['higgsfield'],
+      skills: ['higgsfield', 'higgsfield-app'],
     });
     expect(assistant?.tools).toContain('read');
     expect(rows.map((r) => r.id)).toEqual([...rows.map((r) => r.id)].sort());

@@ -93,7 +93,7 @@ describe('SkillsService', () => {
   it('lists the org skills with the roles that use them', () => {
     const root = org();
     const rows = service().list(root);
-    expect(rows.map((r) => r.id)).toEqual(['higgsfield']);
+    expect(rows.map((r) => r.id)).toEqual(['higgsfield', 'higgsfield-app']);
     expect(rows[0]).toMatchObject({
       name: 'higgsfield',
       path: join(root, 'skills', 'higgsfield', 'SKILL.md'),

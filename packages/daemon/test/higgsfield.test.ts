@@ -40,6 +40,38 @@ describe('Higgsfield in the scaffold', () => {
     expect(skill).toMatch(/never say you cannot/i);
     expect(readFileSync(join(dir, 'org', 'prompts', 'assistant.md'), 'utf8')).toMatch(/Higgsfield/);
   });
+
+  it('both paths: the higgsfield skill covers the account and the API, higgsfield-app builds apps', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hf-'));
+    tmp.push(dir);
+    scaffoldOrg(dir);
+    const org = loadOrg(join(dir, 'org'));
+    expect(org.roles.assistant?.skills).toEqual(['higgsfield', 'higgsfield-app']);
+    const skill = readFileSync(join(dir, 'org', 'skills', 'higgsfield', 'SKILL.md'), 'utf8');
+    expect(skill).toContain('higgsfield_api_generate');
+    expect(skill).toContain('higgsfield_api_upload');
+    expect(skill).toContain('https://docs.higgsfield.ai/docs/llms.txt');
+    expect(skill).toContain('higgsfield-ai/soul/standard');
+    expect(skill).toMatch(/never both/i);
+    expect(skill).toMatch(/higgsfield_upload/); // the account path is still there
+    const app = readFileSync(join(dir, 'org', 'skills', 'higgsfield-app', 'SKILL.md'), 'utf8');
+    expect(app).toMatch(/^---\nname: higgsfield-app\n/);
+    expect(app).toContain('Paste the API key copied from open.higgsfield.ai. Paste it as-is.');
+    expect(app).toContain('Connect API key');
+    expect(app).toContain('higgsfield-ai/app-templates/studio');
+    expect(app).toContain('pnpm dlx shadcn@latest init -t next');
+    expect(app).toMatch(/cannot read .*key/i);
+    const prompt = readFileSync(join(dir, 'org', 'prompts', 'assistant.md'), 'utf8');
+    expect(prompt).toContain('higgsfield-app skill');
+    expect(prompt).toMatch(/API tools|account's MCP/);
+  });
+
+  it('the connector registry note names both modes', async () => {
+    const { connectorRegistry } = await import('../src/registry/connectors.js');
+    const hf = connectorRegistry().find((c) => c.id === 'higgsfield');
+    expect(hf?.note).toMatch(/account/i);
+    expect(hf?.note).toMatch(/API key/);
+  });
 });
 
 describe('the command environment PATH', () => {

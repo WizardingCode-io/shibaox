@@ -53,9 +53,10 @@ description: The orchestrator you talk to; it answers, acts, and dispatches the 
 model_tier: cheap
 capabilities: [orchestrate, memory]
 tools: [read, write, git, node, npm, pnpm, bun, python3, higgsfield]
-# Higgsfield's tools (images, video, audio) and the skill that says how to use them
+# Higgsfield's tools (images, video, audio) and the skills that say how to use them and build on them
+# (in API mode the daemon's higgsfield_api_* tools replace the MCP server: Plugins → Higgsfield)
 mcp: [higgsfield]
-skills: [higgsfield]
+skills: [higgsfield, higgsfield-app]
 permissions:
   network: ['*']
   approval_required: [push, deploy, execute]   # execute: inline code (python3 -c, node -e) and npx of a package not installed ask first
@@ -85,10 +86,11 @@ scope \`project\`) and look things up with \`recall\` before asking again.
 Messages that start with \`[event]\` come from shibaox, not from the user: a dispatched run
 finished or needs something. Summarise the outcome for the user in one or two lines.
 
-Images, video, audio and 3D assets are generated with Higgsfield (its tools or the \`higgsfield\`
-command, see the higgsfield skill) and saved as files of the workspace: never say you cannot. An
-image attached to a request for a new picture is its reference: upload it and generate; do not ask
-what to do with the image. Never run an interactive command (a login).
+Images, video, audio and 3D assets are generated with Higgsfield, through its API tools or the
+account's MCP tools (see the higgsfield skill), and saved as files of the workspace: never say you
+cannot. An image attached to a request for a new picture is its reference: upload it and generate;
+do not ask what to do with the image. Never run an interactive command (a login). When asked to
+build an app or product on Higgsfield, follow the higgsfield-app skill.
 
 Pushing, deploying and publishing are only done through approved tool calls.
 `,
@@ -238,17 +240,62 @@ server:
 `,
   'org/skills/higgsfield/SKILL.md': `---
 name: higgsfield
-description: Generate images, video, audio and 3D with Higgsfield and hand them over as files of the workspace.
+description: Generate images, video, audio and 3D with Higgsfield (an API key or the account) and hand them over as files of the workspace.
 ---
 
 # Higgsfield
 
-You can generate images, video, audio and 3D assets: never say you cannot. Higgsfield is
-reached through its tools (\`higgsfield__…\`, when the role lists the server) or through the
-\`higgsfield\` command. Credits are real money on the user's Higgsfield account: one request per
-asked-for result, the cost said afterwards, never a retry on your own.
+You can generate images, video, audio and 3D assets: never say you cannot. Higgsfield has two
+paths and a task gets exactly one of them, never both:
 
-## An image attached is a reference
+- **API** (a developer key from open.higgsfield.ai, kept by shibaox): you have the tools
+  \`higgsfield_api_generate\`, \`higgsfield_api_status\`, \`higgsfield_api_cancel\` and
+  \`higgsfield_api_upload\`. Use them, and never the \`higgsfield\` command or MCP tools.
+- **Account** (the Higgsfield CLI login, plan credits): you have Higgsfield's MCP tools
+  (\`higgsfield__…\`) and \`higgsfield_upload\`. Follow "Account path" below.
+
+With neither, Higgsfield is not set up: say so and point to Customize → Plugins → Higgsfield.
+Every generation is real money (the developer account or the plan's credits): one request per
+asked-for result, the cost or model said afterwards, never a retry on your own.
+
+## API path
+
+1. Models: images \`higgsfield-ai/soul/standard\`; video \`kling-video/v2.5-turbo/pro/text-to-video\`
+   or \`bytedance/seedance-2.0/text-to-video\`; image-to-video
+   \`kling-video/v2.5-turbo/standard/image-to-video\`. Before any other model (or one whose input
+   you do not know), \`web_fetch\` https://docs.higgsfield.ai/docs/llms.txt, follow that model's own
+   llms.txt and its Input JSON Schema. Never invent a model path or a parameter.
+2. Video costs much more than an image: before the first video in a conversation, say the model
+   and that it is billed to the developer account, and ask once unless the user already said go.
+3. References: a file the user attached (or an earlier output) goes through
+   \`higgsfield_api_upload(path)\` (attachments/ or outputs/ only) and its \`public_url\` goes in the
+   input field the model's schema names (\`image_url\`, …). A web URL is passed as it is.
+4. \`higgsfield_api_generate({ model_path, input: { prompt, … } })\`, once per result: it waits
+   (up to 10 minutes) and returns \`images[]\`, \`video\`, \`audio[]\`. \`wait: false\` returns the
+   \`request_id\` at once for long videos; check later with \`higgsfield_api_status\`.
+5. Status \`unknown\` or \`canceled_by_timeout\`, or an error saying the request may or may not
+   exist: never submit again. Check with \`higgsfield_api_status(request_id)\`, or tell the user.
+6. Save every result with \`download_file(url, path)\`: \`outputs/<slug>.png\` (\`.mp4\`, \`.mp3\`), a
+   short slug from the prompt, \`-2\`, \`-3\` for variants. Answer in one or two lines: what, the file
+   path, the model. No raw ids, no JSON.
+
+When it fails:
+
+- "HIGGSFIELD_API_KEY is not set": point to Customize → Plugins → Higgsfield → Connect API key.
+- 401, "refused the API key": the user replaces it (Customize → Plugins → Higgsfield → Manage API
+  key). Do not retry.
+- \`nsfw\`: say the request was refused by the content filter; do not retry.
+- \`failed\`: one corrected submission only when the error names a parameter; otherwise report it.
+
+Building an app or product on the Higgsfield API is a different job: follow the higgsfield-app
+skill.
+
+## Account path
+
+Higgsfield is reached through its tools (\`higgsfield__…\`, when the role lists the server) or
+through the \`higgsfield\` command. Credits are real money on the user's Higgsfield account.
+
+### An image attached is a reference
 
 When a message attaches an image (or names an earlier output) and asks for a new image made
 from it ("the same dog in…", "like this but…", "put this in…"), the attachment is the reference:
@@ -263,7 +310,7 @@ Never run \`higgsfield auth login\` or any other interactive command: when Higgs
 signed in, say so and point to Integrations → Higgsfield. The \`higgsfield\` command is for
 \`generate\`, \`model list\` and \`generate cost\` only; uploads go through \`higgsfield_upload\`.
 
-## Flow
+### Flow
 
 1. Pick the model without exploring: images \`gpt_image_2_5\` (0.25 credits; design, text,
    realism), cartoons and illustration \`nano_banana_flash\`, video \`seedance_2_5\` (image-to-video
@@ -293,13 +340,93 @@ With the command instead (\`higgsfield generate create <model> --prompt "…" --
 the result URL from the JSON and save it the same way; \`higgsfield model list --json\` lists
 models, \`higgsfield generate cost <model> --prompt "…"\` estimates credits.
 
-## When it fails
+### When it fails
 
 - The tools are off this turn, 401, "Not authenticated": tell the user to open Integrations →
   Higgsfield and press Log in (or run \`higgsfield auth login\`), then try again later.
 - No credits: say so and point to the account; do not retry.
 - A model rejects a parameter: read its parameters with \`models_explore\` (\`action: get\`) and
   submit once more, corrected; a second rejection ends it, with the message to the user.
+`,
+  'org/skills/higgsfield-app/SKILL.md': `---
+name: higgsfield-app
+description: Build an app or product on the Higgsfield API (image and video models behind one REST interface), from the official Studio template or inside an existing app.
+---
+
+# Build an app on the Higgsfield API
+
+Higgsfield is a generative media API (Seedance, Kling, Soul, Flux, Wan… for images and video)
+behind one REST interface. You build the app with your tools: \`run_command\` (pnpm), \`web_fetch\`
+(the docs), \`write\` (files). You cannot read shibaox's own Higgsfield key and never ask for it:
+the user pastes their key into the app you build (keys are created at
+https://open.higgsfield.ai/api-keys).
+
+## Verify the documentation first
+
+- \`web_fetch\` https://docs.higgsfield.ai/docs/llms.txt; models are listed at
+  https://open.higgsfield.ai/explore. For each model, follow its own llms.txt and its Input JSON
+  Schema. Never invent a model-documentation URL; the OpenAPI file is only supplementary.
+- When a schema cannot be verified, say so, and go on with the work that does not depend on it.
+  Keep every installed model available while verification is incomplete.
+
+## How the API works
+
+1. Submit: \`POST https://api.higgsfield.ai/<model-path>\` with JSON, headers
+   \`Authorization: Key <api-key>\` and \`Content-Type: application/json\` → \`request_id\`,
+   \`status_url\`, \`cancel_url\`.
+2. Poll \`GET https://api.higgsfield.ai/requests/<request_id>/status\` until \`completed\`, \`failed\`,
+   \`nsfw\` or \`canceled\` (back off 2 s → 10 s); \`completed\` carries \`images[].url\` or \`video.url\`.
+3. Cancel: \`POST https://api.higgsfield.ai/requests/<request_id>/cancel\` (stopping the polling
+   does not cancel).
+4. Uploads: \`POST https://api.higgsfield.ai/files/generate-upload-url\` with
+   \`{"content_type":"image/png"}\` → \`upload_url\`, \`upload_headers\`, \`public_url\`. The browser PUTs
+   the file to \`upload_url\` with every returned header, credentials omitted and no API
+   authorization header; \`public_url\` is used only after the PUT succeeded. Signed upload URLs are
+   never logged.
+
+## The key, in the app
+
+- The first action is "Connect API key". Its modal says exactly:
+  "Paste the API key copied from open.higgsfield.ai. Paste it as-is."
+  One password field: never ask to split the key, never require a colon in the UI. Server-side
+  requests keep the \`Key\` authorization scheme.
+- The key lives on the server only: an HTTP-only cookie (the template's flow) or a server-only
+  variable (\`HF_API_KEY\`, \`HF_CREDENTIALS\` for the JS SDK \`@higgsfield/client\`, \`HF_KEY\` for the
+  Python \`higgsfield-client\`) in \`.env.local\`, with a placeholder in \`.env.example\`. Never in
+  localStorage/IndexedDB, a client bundle, a server action's return value or a log. Authenticated
+  provider requests never leave from the browser.
+- Keep "Manage API key", "Replace API key" and "Remove API key".
+- A shared-key app stores each \`request_id\` with its user and checks that ownership on status,
+  results and cancel.
+
+## New app
+
+1. From the parent directory:
+   \`pnpm dlx shadcn@latest init -t next -n <app-name> --no-monorepo -y higgsfield-ai/app-templates/studio\`
+   (\`studio-bare\` for a bare layout).
+2. Read \`AGENTS.md\`, \`layouts/AGENTS.md\`, \`components/studio/AGENTS.md\`.
+3. Reuse the template: submit/polling/cancel in \`generation/\`, uploads in
+   \`app/api/upload/route.ts\`, the bundled catalog in \`generation/catalog/models/\`. Add a model with
+   \`pnpm dlx shadcn@latest add higgsfield-ai/app-templates/<model>\`.
+4. Keep the default credential flow (Connect API key → HTTP-only cookie → server-side requests).
+
+## Existing app
+
+Look at its framework, auth, tenant model, storage and jobs first. Use the official SDK or REST
+on \`https://api.higgsfield.ai\` with \`Authorization: Key <api-key>\`, a server-only credential and
+an \`.env.example\` placeholder.
+
+## Both
+
+- Validate inputs against the model's schema; show progress and failures.
+- Handle a missing or invalid key (401), rate limits with backoff, timeouts and every terminal
+  state; prevent duplicate submissions.
+- Never repeat a generation POST blindly after an ambiguous timeout: the request may exist; check
+  its status first. Consider webhooks for long jobs.
+- Run the tests, typecheck, lint and \`pnpm build\`; check that \`.next/static\` contains no \`HF_\`
+  and no \`Key \` (the key never reaches the client).
+- Tell the user what changed, which keys to set and where, how to try it (\`pnpm dev\`), and what
+  was not verified.
 `,
   'org/catalog/playwright.yaml': `id: playwright
 type: mcp

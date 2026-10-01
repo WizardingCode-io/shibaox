@@ -78,7 +78,7 @@ const TEMPLATES: Template[] = [
     keys: [],
     server: scaffoldServer('higgsfield'),
     skills: ['higgsfield'],
-    note: 'Signs in with the Higgsfield CLI (higgsfield auth login): see Plugins → Higgsfield.',
+    note: 'Two modes (Plugins → Higgsfield): the account signs in with the Higgsfield CLI (higgsfield auth login) and this server; with an API key from open.higgsfield.ai the daemon calls the API itself and this server stays off.',
   },
   {
     id: 'playwright',

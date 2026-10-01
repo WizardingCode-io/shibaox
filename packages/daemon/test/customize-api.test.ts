@@ -88,7 +88,20 @@ function bareRepo(files: Record<string, string>): string {
 describe('customize API', () => {
   it('skills: list, add (inline + repo), discover, delete with and without detach', async () => {
     const { org, client } = await setup();
-    expect((await client.skills(org)).map((s) => s.id)).toEqual(['higgsfield']);
+    expect((await client.skills(org)).map((s) => s.id)).toEqual(['higgsfield', 'higgsfield-app']);
+    expect(await client.addSkills(org, { source: 'builtin', id: 'higgsfield-app' })).toEqual({
+      added: [],
+      skipped: [{ id: 'higgsfield-app', reason: 'exists' }],
+    });
+    const rewritten = await client.addSkills(org, {
+      source: 'builtin',
+      id: 'higgsfield-app',
+      replace: true,
+    });
+    expect(rewritten.added.map((s) => s.id)).toEqual(['higgsfield-app']);
+    await expect(client.addSkills(org, { source: 'builtin', id: 'ghost' })).rejects.toMatchObject({
+      status: 404,
+    });
     const inline = await client.addSkills(org, {
       source: 'inline',
       id: 'notes',
@@ -184,7 +197,7 @@ describe('customize API', () => {
   it('network callers from another machine are refused every org write', async () => {
     const { org, remote, dir } = await setup({ listen: true, localPeer: () => false });
     const c = remote as DaemonClient;
-    expect((await c.skills(org)).length).toBe(1); // reads are fine
+    expect((await c.skills(org)).length).toBe(2); // reads are fine
     const forbidden = { status: 403 };
     await expect(
       c.addSkills(org, { source: 'inline', id: 'n', content: 'x' }),
