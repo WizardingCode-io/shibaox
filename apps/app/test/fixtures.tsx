@@ -3,7 +3,10 @@ import type { RunState } from '@wizardingcode/shibaox-core';
 import type {
   ConnectorTemplate,
   Envelope,
+  HiggsfieldView,
   InboxItem,
+  PluginMode,
+  PluginRow,
   RoleRow,
   RunSummaryPlus,
   SkillRow,
@@ -12,7 +15,7 @@ import type {
 import type { McpServer } from '@wizardingcode/shibaox-schemas';
 import { App } from '../src/App.js';
 import { AppHttpError, type RunFileContent } from '../src/api/client.js';
-import type { McpRow, PluginMode, PluginRowModes } from '../src/screens/customize/types.js';
+import type { McpRow } from '../src/screens/customize/types.js';
 import { AppStore, type StoreClient } from '../src/store/store.js';
 
 export const summary = (id: string, o: Partial<RunSummaryPlus> = {}): RunSummaryPlus =>
@@ -281,7 +284,7 @@ export function higgsfieldApi(o: {
   active: boolean;
   configured?: 'auto' | 'account' | 'api';
   valid?: boolean;
-}): PluginRowModes {
+}): PluginRow {
   const api: PluginMode = {
     ...HF_API,
     active: o.active,
@@ -316,7 +319,7 @@ export function higgsfieldApi(o: {
   };
 }
 
-export const PLUGINS: PluginRowModes[] = [
+export const PLUGINS: PluginRow[] = [
   {
     id: 'higgsfield',
     name: 'Higgsfield',
@@ -377,7 +380,7 @@ export function client(
     routines?: unknown[];
     skills?: SkillRow[];
     roles?: RoleRow[];
-    plugins?: PluginRowModes[];
+    plugins?: PluginRow[];
     mcp?: McpRow[];
     /** GET /keys answers these instead. */
     keys?: Awaited<ReturnType<StoreClient['keys']>>;

@@ -1,4 +1,4 @@
-import type { ConnectorTemplate } from '@wizardingcode/shibaox-daemon';
+import type { ConnectorTemplate, PluginRow } from '@wizardingcode/shibaox-daemon';
 import { useState } from 'react';
 import { ds } from '../../ds.js';
 import { useAppState, useStore } from '../../store/hooks.js';
@@ -9,13 +9,7 @@ import { matches } from './filter.js';
 import { pluginKeyNeeds } from './needed-keys.js';
 import { AddMenu, Empty, goTo, KeyBadge, Toolbar } from './parts.js';
 import { settle } from './skill-results.js';
-import type {
-  CustomizeView,
-  HiggsfieldEffective,
-  HiggsfieldMode,
-  PluginMode,
-  PluginRowModes,
-} from './types.js';
+import type { CustomizeView, HiggsfieldEffective, HiggsfieldMode, PluginMode } from './types.js';
 
 type IconName = Parameters<Window['Shibaox']['Icon']>[0]['name'];
 const ICON: Record<string, IconName> = {
@@ -26,7 +20,7 @@ const ICON: Record<string, IconName> = {
   jev: 'brain',
 };
 const STATUS: Record<
-  PluginRowModes['status'],
+  PluginRow['status'],
   { tone: 'matcha' | 'warning' | 'neutral'; label: string }
 > = {
   ready: { tone: 'matcha', label: 'Ready' },
@@ -47,11 +41,11 @@ const NOW: Record<HiggsfieldEffective, string> = {
 };
 
 /** What a body shows: the plugin itself, or one of its modes (`id` is the mode's). */
-type Part = Pick<PluginRowModes, 'checks' | 'keys' | 'actions' | 'brings'> & { id?: string };
+type Part = Pick<PluginRow, 'checks' | 'keys' | 'actions' | 'brings'> & { id?: string };
 
 /** A plugin's (or a mode's) checks, actions and what it brings. */
 function PluginBody(props: {
-  p: PluginRowModes;
+  p: PluginRow;
   part: Part;
   onConnector: (t: ConnectorTemplate) => void;
   onSkillAdded: (id: string, name: string) => void;
@@ -271,7 +265,7 @@ function PluginBody(props: {
 
 /** The modes of a plugin (Higgsfield: Account | API), what generation uses, and the chosen panel. */
 function PluginModes(props: {
-  p: PluginRowModes;
+  p: PluginRow;
   modes: PluginMode[];
   onConnector: (t: ConnectorTemplate) => void;
   onSkillAdded: (id: string, name: string) => void;
@@ -326,7 +320,7 @@ function PluginModes(props: {
 
 /** One plugin: its status, and its body (or its modes, each with its own body). */
 function PluginCard(props: {
-  p: PluginRowModes;
+  p: PluginRow;
   onConnector: (t: ConnectorTemplate) => void;
   onSkillAdded: (id: string, name: string) => void;
 }): JSX.Element {

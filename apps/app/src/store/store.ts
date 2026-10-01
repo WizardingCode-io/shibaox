@@ -8,6 +8,7 @@ import type {
   RolePatch,
   RoutineInput,
   RunSummaryPlus,
+  SkillAddRequest,
   SkillDiscovery,
   SubmitRequest,
 } from '@wizardingcode/shibaox-daemon';
@@ -22,12 +23,7 @@ import {
   threadView,
 } from '@wizardingcode/shibaox-view';
 import type { AppClient, RoutineDraft, RoutinePatch, RunFileContent } from '../api/client.js';
-import type {
-  AddSkillOutcome,
-  HiggsfieldMode,
-  SkillAddReq,
-  SkillDoc,
-} from '../screens/customize/types.js';
+import type { AddSkillOutcome, HiggsfieldMode, SkillDoc } from '../screens/customize/types.js';
 import { type AppState, initialState, type Settings, TERMINAL } from './state.js';
 
 /** The part of AppClient the store uses (a fake in tests). */
@@ -937,7 +933,7 @@ export class AppStore {
     return this.load(async () => this.client.skill(await this.orgRoot(), id));
   }
   /** Installs or writes skills; the result says what was added and skipped (undefined: the toast says why). */
-  async addSkill(req: SkillAddReq): Promise<AddSkillOutcome | undefined> {
+  async addSkill(req: SkillAddRequest): Promise<AddSkillOutcome | undefined> {
     let r: AddSkillOutcome | undefined;
     const ok = await this.act(async () => {
       r = await this.client.addSkill(await this.orgRoot(), req);

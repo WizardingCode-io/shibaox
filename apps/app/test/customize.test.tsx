@@ -4,7 +4,6 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { PluginRow } from '@wizardingcode/shibaox-daemon';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadDesignSystem } from '../src/ds.js';
-import type { PluginRowModes } from '../src/screens/customize/types.js';
 import { client, higgsfieldApi, mount, PLUGINS, server } from './fixtures.js';
 
 beforeAll(() =>
@@ -894,7 +893,7 @@ describe('Customize: Plugins → Higgsfield in two modes', () => {
 
   it('Manage API key: the masked key and its validity; Replace saves a new one', async () => {
     const { client: c, calls } = client({
-      plugins: [higgsfieldApi({ active: true }), PLUGINS[1] as PluginRowModes],
+      plugins: [higgsfieldApi({ active: true }), PLUGINS[1] as PluginRow],
       keys: savedKey('vault'),
     });
     mount(c, { hash: '#/customize&tab=plugins' });
@@ -959,9 +958,7 @@ describe('Customize: Plugins → Higgsfield in two modes', () => {
 
   it('Now: nothing set up when no mode can be used', async () => {
     const { client: c } = client({
-      plugins: [
-        { ...(PLUGINS[0] as PluginRowModes), mode: { configured: 'api', effective: 'none' } },
-      ],
+      plugins: [{ ...(PLUGINS[0] as PluginRow), mode: { configured: 'api', effective: 'none' } }],
     });
     mount(c, { hash: '#/customize&tab=plugins' });
     expect(await screen.findByText('Now: nothing set up')).toBeTruthy();
@@ -1048,7 +1045,7 @@ describe('Customize: Keys', () => {
     const { client: c } = client({
       plugins: [
         {
-          ...(PLUGINS[0] as PluginRowModes),
+          ...(PLUGINS[0] as PluginRow),
           status: 'off',
           mode: { configured: 'api', effective: 'none' },
         },
@@ -1067,7 +1064,7 @@ describe('Customize: Keys', () => {
 
   it('Higgsfield not set up on auto: its API key waits in Other', async () => {
     const { client: c } = client({
-      plugins: [{ ...(PLUGINS[0] as PluginRowModes), status: 'off' }],
+      plugins: [{ ...(PLUGINS[0] as PluginRow), status: 'off' }],
     });
     mount(c, { hash: '#/customize&tab=keys' });
     await waitFor(() => expect(firstCells('Needed now').length).toBeGreaterThan(0));

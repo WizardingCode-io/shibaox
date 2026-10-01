@@ -1,9 +1,14 @@
-import type { KeyRow, McpServerRow, OrgConfig, RoleRow } from '@wizardingcode/shibaox-daemon';
+import type {
+  KeyRow,
+  McpServerRow,
+  OrgConfig,
+  PluginRow,
+  RoleRow,
+} from '@wizardingcode/shibaox-daemon';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
-import type { PluginRowModes } from './types.js';
 
 /** The fields of a plugin (or of one of its modes) its key needs are read from. */
-type KeyedPart = Pick<PluginRowModes, 'checks' | 'keys'>;
+type KeyedPart = Pick<PluginRow, 'checks' | 'keys'>;
 
 /** Who needs a key: a badge in the Keys tab (`tier strong`, `connector github`, `plugin telegram`). */
 export interface NeededBy {
@@ -54,7 +59,7 @@ export interface NeededKeysInput {
   config?: OrgConfig;
   roles: RoleRow[];
   mcp: McpServerRow[];
-  plugins: PluginRowModes[];
+  plugins: PluginRow[];
   models: ModelChoice[];
   keys: KeyRow[];
 }
@@ -74,7 +79,7 @@ export const BUILT_IN_KEYS = [
  * even before it works, so its own keys; otherwise the top level (the active mode). Undefined:
  * the plugin is not set up and nothing chose it, so it needs nothing yet.
  */
-function neededPart(p: PluginRowModes): KeyedPart | undefined {
+function neededPart(p: PluginRow): KeyedPart | undefined {
   const chosen = p.mode?.configured;
   if (chosen === 'account' || chosen === 'api') return p.modes?.find((m) => m.id === chosen) ?? p;
   return p.status === 'off' ? undefined : p;

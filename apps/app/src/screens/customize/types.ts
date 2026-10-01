@@ -8,9 +8,7 @@ import type {
   HiggsfieldView,
   McpServerRow,
   PluginMode,
-  PluginRow,
   SkillAdded,
-  SkillAddRequest,
   SkillAddResult,
   SkillDetail,
   SkipReason,
@@ -25,9 +23,6 @@ export type SkillDoc = SkillDetail;
 
 // ---- Higgsfield in two modes (account, API): the daemon's shapes under the screen's names
 export type HiggsfieldEffective = HiggsfieldView['effective'];
-export type PluginRowModes = PluginRow;
-export type HiggsfieldViewModes = HiggsfieldView;
-export type SkillAddReq = SkillAddRequest;
 export type { Brings, HiggsfieldMode, PluginMode };
 
 /** The connector categories of the registry, in the order the filter shows them (the daemon's list). */
