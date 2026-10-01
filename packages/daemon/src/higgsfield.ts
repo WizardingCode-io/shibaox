@@ -1,11 +1,71 @@
 import { spawn } from 'node:child_process';
 import { bearerEnv, runArgv } from '@wizardingcode/shibaox-core';
+import type { HiggsfieldMode } from './config.js';
 
 export const HIGGSFIELD_INSTALL =
   'curl -fsSL https://raw.githubusercontent.com/higgsfield-ai/cli/main/install.sh | sh';
 export const HIGGSFIELD_MCP = 'https://mcp.higgsfield.ai/mcp';
+/** Higgsfield's REST API for developers (a key from open.higgsfield.ai). */
+export const HIGGSFIELD_API = 'https://api.higgsfield.ai';
+export const HIGGSFIELD_API_KEYS_URL = 'https://open.higgsfield.ai/api-keys';
+export const HIGGSFIELD_API_DOCS = 'https://docs.higgsfield.ai/docs';
+/** A request id that never exists: its status answers 404 to a valid key and 401 to a bad one. */
+export const PROBE_REQUEST_ID = '00000000-0000-0000-0000-000000000000';
 
-export interface HiggsfieldView {
+/** The API base (`SHIBAOX_HIGGSFIELD_API_BASE` points tests and the doctor elsewhere). */
+export function apiBase(env: NodeJS.ProcessEnv): string {
+  const b = env.SHIBAOX_HIGGSFIELD_API_BASE?.trim();
+  return (b || HIGGSFIELD_API).replace(/\/+$/, '');
+}
+
+/** What the probe's HTTP status says about the key. */
+export function apiValidity(status: number): boolean | 'unknown' {
+  if (status === 401 || status === 403) return false;
+  if (status === 404) return true;
+  return 'unknown';
+}
+
+/** What generates now: the configured mode against what is set up. */
+export function effectiveHiggsfieldMode(
+  mode: HiggsfieldMode,
+  s: { keySet: boolean; loggedIn: boolean },
+): 'account' | 'api' | 'none' {
+  if (mode === 'api') return s.keySet ? 'api' : 'none';
+  if (mode === 'account') return s.loggedIn ? 'account' : 'none';
+  return s.keySet ? 'api' : s.loggedIn ? 'account' : 'none';
+}
+
+/** The path a task is given: `auto` is the API when a key is saved, else the account. */
+export function runtimeHiggsfieldMode(mode: HiggsfieldMode, keySet: boolean): 'account' | 'api' {
+  if (mode === 'auto') return keySet ? 'api' : 'account';
+  return mode;
+}
+
+/** The key probe's answer: `valid` is absent when the answer says nothing (5xx, no network). */
+export interface ApiCheck {
+  valid?: boolean;
+  status?: number;
+}
+
+/** GET the zero request's status with the key: 404 accepted, 401/403 refused. Never throws. */
+export async function higgsfieldApiCheck(key: string, base: string): Promise<ApiCheck> {
+  try {
+    const r = await fetch(`${base}/requests/${PROBE_REQUEST_ID}/status`, {
+      method: 'GET',
+      redirect: 'manual',
+      signal: AbortSignal.timeout(10_000),
+      headers: { authorization: `Key ${key}`, accept: 'application/json' },
+    });
+    await r.body?.cancel().catch(() => undefined);
+    const v = apiValidity(r.status);
+    return v === 'unknown' ? { status: r.status } : { valid: v, status: r.status };
+  } catch {
+    return {};
+  }
+}
+
+/** The account path: the CLI, the login, the MCP. */
+export interface HiggsfieldAccountView {
   cli: { installed: boolean; version?: string };
   loggedIn: boolean;
   account?: { email: string; plan: string; credits: number };
@@ -14,6 +74,25 @@ export interface HiggsfieldView {
   signupUrl: string;
   installCommand: string;
   site: string;
+}
+
+/** The API path: whether a key is saved and what Higgsfield said about it (never the key). */
+export interface HiggsfieldApiView {
+  keySet: boolean;
+  /** Absent: not checked, or the answer said nothing. */
+  valid?: boolean;
+  /** The probe's HTTP status. */
+  status?: number;
+  /** When the probe ran (ISO). */
+  checkedAt?: string;
+}
+
+export interface HiggsfieldView extends HiggsfieldAccountView {
+  api: HiggsfieldApiView;
+  /** `partners.higgsfield.mode` in daemon.yaml. */
+  mode: HiggsfieldMode;
+  /** What generates now. */
+  effective: 'account' | 'api' | 'none';
 }
 
 /** How the daemon talks to the Higgsfield CLI and MCP (tests inject fakes). */
@@ -28,12 +107,16 @@ export interface HiggsfieldProbe {
   mcp(token: string): Promise<'ok' | 'unauthorized' | 'unreachable'>;
   /** Starts the browser login on this machine and reports what the CLI printed in its first seconds. */
   login(): Promise<LoginStart>;
+  /** Asks the API whether `key` is accepted (absent: the API is never probed). */
+  apiCheck?(key: string): Promise<ApiCheck>;
 }
 
 export function defaultHiggsfieldProbe(env: NodeJS.ProcessEnv): HiggsfieldProbe {
   // the CLI runs with a minimal environment: never the daemon's keys
   const minimal = bearerEnv(env);
+  const base = apiBase(env);
   return {
+    apiCheck: (key) => higgsfieldApiCheck(key, base),
     exec: (argv) =>
       runArgv({ argv, cwd: env.HOME ?? '/', timeoutMs: 5_000, inheritEnv: false, env: minimal }),
     mcp: async (token) => {
@@ -107,8 +190,8 @@ export function defaultHiggsfieldProbe(env: NodeJS.ProcessEnv): HiggsfieldProbe 
 export async function higgsfieldStatus(
   probe: HiggsfieldProbe,
   o: { signupUrl: string },
-): Promise<HiggsfieldView> {
-  const base: HiggsfieldView = {
+): Promise<HiggsfieldAccountView> {
+  const base: HiggsfieldAccountView = {
     cli: { installed: false },
     loggedIn: false,
     mcp: 'unreachable',
@@ -119,7 +202,7 @@ export async function higgsfieldStatus(
   const v = await probe.exec(['higgsfield', 'version']).catch(() => undefined);
   if (!v || v.exitCode !== 0) return base;
   const version = /higgsfield\s+v?([\d.]+)/.exec(v.stdout)?.[1];
-  const view: HiggsfieldView = {
+  const view: HiggsfieldAccountView = {
     ...base,
     cli: { installed: true, ...(version ? { version } : {}) },
   };
