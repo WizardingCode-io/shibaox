@@ -257,10 +257,12 @@ export function KeysTab(props: { focus?: string }): JSX.Element {
           <S.Table
             dense
             className="keys-table"
-            columns={['Key', 'What for', 'Status', '']}
+            columns={['Key', 'Status', '']}
             rows={other.map((k) => [
-              <Name key="n" k={k} focus={props.focus} />,
-              <span key="d">{k.description}</span>,
+              <span key="n" className="stack-2">
+                <Name k={k} focus={props.focus} />
+                <span className="muted">{k.description}</span>
+              </span>,
               <Status key="s" k={k} />,
               <Action key="a" k={k} />,
             ])}

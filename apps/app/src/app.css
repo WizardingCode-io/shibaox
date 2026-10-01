@@ -145,6 +145,10 @@ body {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+}
+/* Customize: cards in two columns and the key/model tables need the wider column */
+.page--wide {
+  padding: 24px max(32px, calc((100% - 960px) / 2));
   gap: 16px;
 }
 .page h1 {
@@ -355,6 +359,11 @@ a.decision:hover {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+.stack-2 {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .stack-24 {
   display: flex;

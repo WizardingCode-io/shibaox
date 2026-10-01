@@ -43,7 +43,7 @@ export function CustomizeScreen(props: {
           </span>
         ) : null}
       </div>
-      <div className="page sx-scroll">
+      <div className="page page--wide sx-scroll">
         {!state.customize && state.customizeError ? (
           <div className="row">
             <p className="note">{`Could not read the org: ${state.customizeError}`}</p>
