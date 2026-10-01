@@ -50,14 +50,57 @@ function applyTheme(theme: 'light' | 'dark' | 'system'): void {
   }
 }
 
+/** The composer of a new chat: lives only on the home route, so leaving it drops the files and stops the mic. */
+function HomeComposer(): JSX.Element {
+  const S = ds();
+  const store = useStore();
+  const state = useAppState();
+  const [files, setFiles] = useState<File[]>([]);
+  const [newText, setNewText] = useState('');
+  const thumbs = useFileThumbs(files);
+  const words = useCallback((w: string) => setNewText((t) => (t ? `${t} ${w}` : w)), []);
+  const voice = useVoice(words, (reason) => store.notice(reason));
+  return (
+    <div className="compose">
+      <S.Composer
+        placeholder="Ask Shibaox to do something…"
+        model={state.settings.model?.split('/').pop()}
+        value={newText}
+        onChange={setNewText}
+        attachments={files.map((f) => ({
+          name: f.name,
+          size: f.size,
+          ...(thumbs.get(f)
+            ? { preview: thumbs.get(f), previewKind: thumbKind(f.name, f.type) }
+            : {}),
+        }))}
+        voice={voice.available}
+        listening={voice.listening}
+        onVoice={voice.available ? voice.toggle : undefined}
+        onAttach={(picked) => {
+          const r = addFiles(files, picked);
+          if (r.notice) store.notice(r.notice);
+          else setFiles(r.files);
+        }}
+        onRemoveAttachment={(i) => setFiles((f) => f.filter((_, j) => j !== i))}
+        onSend={(text) =>
+          void (async () => {
+            const attachments = await encodeFiles(files);
+            const id = await store.newChat(text, attachments);
+            if (!id) return; // the toast says why; the text and files stay
+            setNewText('');
+            setFiles([]);
+            window.location.hash = `#/t/${encodeURIComponent(id)}`;
+          })()
+        }
+      />
+    </div>
+  );
+}
+
 function Shell(props: { base: string; onDisconnect: () => void }): JSX.Element {
   const S = ds();
   const store = useStore();
-  const [files, setFiles] = useState<File[]>([]);
-  const [newText, setNewText] = useState('');
-  const homeThumbs = useFileThumbs(files);
-  const homeWords = useCallback((w: string) => setNewText((t) => (t ? `${t} ${w}` : w)), []);
-  const homeVoice = useVoice(homeWords, (reason) => store.notice(reason));
   // a file dropped anywhere else must never navigate the tab away from the app
   useEffect(() => {
     const guard = (e: DragEvent) => {
@@ -120,40 +163,7 @@ function Shell(props: { base: string; onDisconnect: () => void }): JSX.Element {
               </div>
             </div>
           </div>
-          <div className="compose">
-            <S.Composer
-              placeholder="Ask Shibaox to do something…"
-              model={state.settings.model?.split('/').pop()}
-              value={newText}
-              onChange={setNewText}
-              attachments={files.map((f) => ({
-                name: f.name,
-                size: f.size,
-                ...(homeThumbs.get(f)
-                  ? { preview: homeThumbs.get(f), previewKind: thumbKind(f.name, f.type) }
-                  : {}),
-              }))}
-              voice={homeVoice.available}
-              listening={homeVoice.listening}
-              onVoice={homeVoice.available ? homeVoice.toggle : undefined}
-              onAttach={(picked) => {
-                const r = addFiles(files, picked);
-                if (r.notice) store.notice(r.notice);
-                else setFiles(r.files);
-              }}
-              onRemoveAttachment={(i) => setFiles((f) => f.filter((_, j) => j !== i))}
-              onSend={(text) =>
-                void (async () => {
-                  const attachments = await encodeFiles(files);
-                  const id = await store.newChat(text, attachments);
-                  if (!id) return; // the toast says why; the text and files stay
-                  setNewText('');
-                  setFiles([]);
-                  window.location.hash = `#/t/${encodeURIComponent(id)}`;
-                })()
-              }
-            />
-          </div>
+          <HomeComposer />
         </main>
       )}
       {state.error ? (

@@ -2,7 +2,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { higgsfieldTools, parseUpload } from '../src/runs/higgsfield-tools.js';
+import {
+  HIGGSFIELD_UPLOAD_LIMIT,
+  higgsfieldTools,
+  parseUpload,
+  uploadTimeoutMs,
+} from '../src/runs/higgsfield-tools.js';
 
 const tmp: string[] = [];
 afterEach(() => {
@@ -131,5 +136,17 @@ describe('higgsfield_upload', () => {
       upload_url: 'https://upload.higgsfield.ai/u/55fe.png?X-Amz-Signature=abc',
     });
     expect(parseUpload('nothing here')).toBeUndefined();
+  });
+});
+
+describe('uploadTimeoutMs', () => {
+  it('gives a whole number of milliseconds (a fractional delay makes AbortSignal.timeout throw)', () => {
+    // a 1.9 MB screenshot: 60 s plus a second per 100 KB, rounded up
+    expect(uploadTimeoutMs(1_919_128)).toBe(79_192);
+    expect(Number.isInteger(uploadTimeoutMs(123_456_789))).toBe(true);
+  });
+  it('never waits more than ten minutes', () => {
+    expect(uploadTimeoutMs(HIGGSFIELD_UPLOAD_LIMIT)).toBe(584_288);
+    expect(uploadTimeoutMs(100 * 1024 * 1024)).toBe(600_000);
   });
 });

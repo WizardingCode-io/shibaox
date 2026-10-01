@@ -56,7 +56,7 @@ import {
   writeRunFile,
 } from './runs/files.js';
 import { type GraphMode, prepareGraph } from './runs/graph.js';
-import { higgsfieldTools } from './runs/higgsfield-tools.js';
+import { higgsfieldTools, uploadTimeoutMs } from './runs/higgsfield-tools.js';
 import { finishRun, vaultDir } from './runs/notes.js';
 import { memoryTools, orchestrationTools, toolsForRole } from './runs/orchestration.js';
 import { profileFor } from './runs/profile.js';
@@ -1019,12 +1019,11 @@ export class RunManager {
               protectedGlobs: projectProtectedGlobs(project),
               withMcp: (f) => this.withMcp(org.catalog.higgsfield as CatalogEntry, f),
               put: async (url, bytes, contentType) => {
-                // a minute plus a second per 100 KB, so a slow uplink gets a video through
                 const r = await fetch(url, {
                   method: 'PUT',
                   headers: { 'content-type': contentType, 'content-length': String(bytes.length) },
                   body: bytes as unknown as BodyInit,
-                  signal: AbortSignal.timeout(Math.min(600_000, 60_000 + bytes.length / 100)),
+                  signal: AbortSignal.timeout(uploadTimeoutMs(bytes.length)),
                 });
                 return { status: r.status, body: await r.text().catch(() => '') };
               },

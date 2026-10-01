@@ -44,6 +44,10 @@ export const MEDIA_MIME: Record<string, string> = {
 };
 /** The largest file handed to Higgsfield (their URL import takes 50 MB). */
 export const HIGGSFIELD_UPLOAD_LIMIT = 50 * 1024 * 1024;
+/** How long a PUT may take: a minute plus a second per 100 KB (a slow uplink gets a video through), ten minutes at most, whole ms. */
+export function uploadTimeoutMs(bytes: number): number {
+  return Math.min(600_000, Math.ceil(60_000 + bytes / 100));
+}
 /** Only what the user sent or the run made leaves the machine: never the project's own media. */
 const UPLOADABLE = /^(attachments|outputs)\//;
 

@@ -392,4 +392,36 @@ describe('the sections: the review fixes', () => {
     };
     expect(req.attachments?.map((a) => a.name)).toEqual(['shot.png']);
   });
+
+  it('the home microphone stops listening when the user leaves the home screen', async () => {
+    const g = globalThis as { webkitSpeechRecognition?: unknown };
+    const stops: number[] = [];
+    g.webkitSpeechRecognition = class {
+      continuous = false;
+      interimResults = false;
+      lang = '';
+      onresult: unknown;
+      onend: unknown;
+      onerror: unknown;
+      start() {}
+      stop() {
+        stops.push(1);
+      }
+    };
+    try {
+      const { client: c } = client();
+      mount(c, { hash: '#/' });
+      await screen.findByRole('textbox', { name: 'Message' });
+      fireEvent.click(screen.getByRole('button', { name: 'Voice' }));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /stop listening/i })).toBeTruthy(),
+      );
+      window.location.hash = '#/scheduled';
+      window.dispatchEvent(new Event('hashchange'));
+      await screen.findByRole('heading', { name: 'Scheduled' });
+      await waitFor(() => expect(stops.length).toBe(1));
+    } finally {
+      delete g.webkitSpeechRecognition;
+    }
+  });
 });
