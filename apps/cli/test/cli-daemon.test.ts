@@ -46,7 +46,7 @@ async function setup(extra: ConstructorParameters<typeof Daemon>[0] = {}) {
     channels: [],
     env: {},
     log: () => {},
-    version: '0.2.5',
+    version: '0.2.6',
     ...extra,
   });
   daemons.push(daemon);
@@ -470,10 +470,10 @@ esac
   it('daemon status reports the version and an empty inbox prints a sentence', async () => {
     const { cli } = await setup();
     const status = await cli('daemon', 'status');
-    expect(status.stdout).toContain('version 0.2.5');
+    expect(status.stdout).toContain('version 0.2.6');
     expect((await cli('inbox')).stdout).toContain('Nothing waiting for you.');
     const st = json<{ version: string }>(await cli('daemon', 'status', '--json'));
-    expect(st[0]?.version).toBe('0.2.5');
+    expect(st[0]?.version).toBe('0.2.6');
   });
 
   it('daemon stop waits for the active runs and says so', async () => {

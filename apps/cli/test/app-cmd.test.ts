@@ -35,7 +35,7 @@ async function daemonAt(extra: ConstructorParameters<typeof Daemon>[0] = {}) {
     channels: [],
     env: {},
     log: () => {},
-    version: '0.2.5',
+    version: '0.2.6',
     appDist: dist,
     ...extra,
   });
@@ -80,7 +80,7 @@ describe('the app bridge', () => {
     ).toBe(401);
     const h = await fetch(`${base}/health`, { headers: { authorization: 'Bearer bridge-tok' } });
     expect(h.status).toBe(200);
-    expect((await h.json()) as { version: string }).toMatchObject({ version: '0.2.5' });
+    expect((await h.json()) as { version: string }).toMatchObject({ version: '0.2.6' });
     const runs = await fetch(`${base}/runs`, { headers: { authorization: 'Bearer bridge-tok' } });
     expect(await runs.json()).toEqual([]);
     const missing = await fetch(`${base}/runs/nope`, {
