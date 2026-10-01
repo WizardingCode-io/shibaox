@@ -77,6 +77,41 @@ describe('readRunFile', () => {
   });
 });
 
+describe('readRunFile: absolute paths, protected files, bounded reads', () => {
+  it('an absolute path inside the workspace is taken as the relative file; outside stays refused', async () => {
+    const dir = repo();
+    const f = await readRunFile(dir, join(dir, 'a.ts'));
+    expect(f.path).toBe('a.ts');
+    await expect(readRunFile(dir, join(dir, 'a.ts/'))).rejects.toMatchObject({ code: 'not_found' });
+    await expect(readRunFile(dir, '/etc/hosts')).rejects.toMatchObject({ code: 'forbidden' });
+  });
+
+  it('protected files (.env, .git, the project globs) are refused with 403 protected', async () => {
+    const dir = repo();
+    writeFileSync(join(dir, '.env'), 'SECRET=1\n');
+    await expect(readRunFile(dir, '.env')).rejects.toMatchObject({
+      code: 'protected',
+      status: 403,
+    });
+    await expect(readRunFile(dir, '.git/config')).rejects.toMatchObject({ code: 'protected' });
+    mkdirSync(join(dir, 'keys'));
+    writeFileSync(join(dir, 'keys', 'k.pem'), 'x');
+    await expect(
+      readRunFile(dir, 'keys/k.pem', { protectedGlobs: ['keys/**'] }),
+    ).rejects.toMatchObject({ code: 'protected' });
+    expect((await readRunFile(dir, 'a.ts', { protectedGlobs: ['keys/**'] })).path).toBe('a.ts');
+  });
+
+  it('reads at most the cap from disk (a huge file is not loaded whole)', async () => {
+    const dir = repo();
+    writeFileSync(join(dir, 'big.bin'), Buffer.alloc(3_000_000, 0x41));
+    const f = await readRunFile(dir, 'big.bin', { maxBytes: 100 });
+    expect(f.content.length).toBe(100);
+    expect(f.size).toBe(3_000_000);
+    expect(f.truncated).toBe(true);
+  });
+});
+
 describe('listRunFiles', () => {
   it('merges the diff with the files the run reported, with sizes, sorted', async () => {
     const dir = repo();
@@ -93,13 +128,17 @@ describe('listRunFiles', () => {
           { path: 'gone.ts', status: 'deleted', additions: 0, deletions: 3 },
         ],
       },
-      ['new.md', 'a.ts'],
+      ['new.md', 'a.ts', '/etc/hosts', '../outside.md'],
     );
     expect(files).toEqual([
       { path: 'a.ts', status: 'modified', additions: 1, deletions: 1, size: 20 },
       { path: 'gone.ts', status: 'deleted', additions: 0, deletions: 3 },
       { path: 'new.md', status: 'added', size: 5 },
     ]);
+    // an absolute path inside the workspace is listed by its relative name; outside ones are dropped
+    writeFileSync(join(dir, 'abs.md'), 'abs\n');
+    const again = await listRunFiles(dir, undefined, [join(dir, 'abs.md'), '/etc/hosts']);
+    expect(again).toEqual([{ path: 'abs.md', status: 'added', size: 4 }]);
   });
 });
 
@@ -147,6 +186,20 @@ describe('GET /runs/:id/files', () => {
       `/runs/${encodeURIComponent(runId)}/files/content?path=report.md&download=1`,
     );
     expect(raw.headers['content-disposition']).toContain('attachment; filename="report.md"');
+    expect(raw.headers['x-content-type-options']).toBe('nosniff');
     expect(raw.body).toBe('# Report\n');
+    // a download is the whole file, streamed, never the 2 MB view cap
+    writeFileSync(join(project, 'big.txt'), 'x'.repeat(2_500_000));
+    const big = await client.fetchRaw(
+      `/runs/${encodeURIComponent(runId)}/files/content?path=big.txt&download=1`,
+    );
+    expect(big.headers['content-length']).toBe('2500000');
+    expect(big.body.length).toBe(2_500_000);
+    expect((await client.fileContent(runId, 'big.txt')).truncated).toBe(true);
+    writeFileSync(join(project, '.env'), 'S=1\n');
+    await expect(client.fileContent(runId, '.env')).rejects.toMatchObject({
+      status: 403,
+      code: 'protected',
+    });
   });
 });

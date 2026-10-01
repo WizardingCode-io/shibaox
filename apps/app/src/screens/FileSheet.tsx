@@ -26,7 +26,7 @@ function Body(props: { file: RunFileContent }): JSX.Element {
   const f = props.file;
   const ext = f.path.split('.').pop()?.toLowerCase() ?? '';
   if (f.encoding === 'base64') {
-    if (f.mime?.startsWith('image/'))
+    if (f.mime?.startsWith('image/') && !f.truncated)
       return (
         <img
           src={`data:${f.mime};base64,${f.content}`}
@@ -36,7 +36,8 @@ function Body(props: { file: RunFileContent }): JSX.Element {
       );
     return (
       <p className="muted">
-        A binary file ({f.mime ?? 'unknown type'}, {bytes(f.size)}): download it to open it.
+        A binary file ({f.mime ?? 'unknown type'}, {bytes(f.size)}
+        {f.truncated ? ', larger than the 2 MB shown here' : ''}): download it to open it.
       </p>
     );
   }

@@ -348,5 +348,9 @@ export async function filesCommand(
     return 1;
   }
   process.stdout.write(data);
+  if (f.truncated)
+    console.error(
+      `(${path} is ${f.size} bytes; the first 2 MB were printed: --out <file> saves it whole)`,
+    );
   return 0;
 }

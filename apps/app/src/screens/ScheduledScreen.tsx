@@ -18,6 +18,8 @@ export function triggerWords(t: RoutineRow['trigger']): string {
       return `when ${t.path} changes`;
     case 'command':
       return `when \`${t.command}\` changes`;
+    case 'manual':
+      return 'by hand';
   }
 }
 

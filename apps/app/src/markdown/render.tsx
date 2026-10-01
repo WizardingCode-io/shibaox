@@ -1,7 +1,7 @@
 import { marked, type Token, type Tokens } from 'marked';
 import { Fragment, type ReactNode, useMemo } from 'react';
 import { ds } from '../ds.js';
-import { numericColumns, parseCsv } from './csv.js';
+import { looksTabular, numericColumns, parseCsv } from './csv.js';
 import { highlight } from './highlight.js';
 
 const NAMED: Record<string, string> = {
@@ -73,7 +73,8 @@ function inline(tokens: Token[] | undefined, keyBase: string): ReactNode[] {
         out.push(<del key={key}>{inline((t as Tokens.Del).tokens, key)}</del>);
         break;
       case 'codespan':
-        out.push(<code key={key}>{decodeEntities((t as Tokens.Codespan).text)}</code>);
+        // code is literal: marked hands the span raw, entities included
+        out.push(<code key={key}>{(t as Tokens.Codespan).text}</code>);
         break;
       case 'br':
         out.push(<br key={key} />);
@@ -151,10 +152,12 @@ function blocks(tokens: Token[], keyBase: string): ReactNode[] {
         const lang = (c.lang ?? '').trim().split(/\s+/)[0] || undefined;
         // a block of comma- or tab-separated values reads as a table, not as code
         const csv =
-          lang === 'csv' || lang === 'tsv' || lang === undefined
+          lang === 'csv' || lang === 'tsv'
             ? parseCsv(c.text, lang === 'tsv' ? '\t' : undefined)
-            : undefined;
-        if (csv && (lang !== undefined || csv.rows.length >= 1)) {
+            : lang === undefined
+              ? looksTabular(c.text)
+              : undefined;
+        if (csv) {
           const nums = numericColumns(csv);
           out.push(
             <S.Table

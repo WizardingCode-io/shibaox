@@ -85,6 +85,10 @@ describe('DirectAdapter', () => {
     const events: RuntimeEvent[] = [];
     for await (const e of adapter.run(jobFor(ws), ctx())) events.push(e);
     expect(readFileSync(join(ws, 'hello.txt'), 'utf8')).toBe('hi');
+    expect(events.find((e) => e.type === 'file_changed')).toEqual({
+      type: 'file_changed',
+      path: 'hello.txt',
+    });
     expect(events.map((e) => e.type)).toEqual([
       'started',
       'usage', // the model ref, before the first call

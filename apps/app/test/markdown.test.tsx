@@ -140,4 +140,28 @@ describe('Markdown', () => {
     const done = render(<Markdown text={'Intro\n- item'} pending />);
     expect(done.container.querySelector('li')?.textContent).toBe('item');
   });
+
+  it('entities inside code spans stay literal', () => {
+    const ui = render(<Markdown text={'Use `&amp;` and `&copy;` as written.'} />);
+    expect([...ui.container.querySelectorAll('code')].map((c) => c.textContent)).toEqual([
+      '&amp;',
+      '&copy;',
+    ]);
+  });
+
+  it('an unlabelled fence of statements or calls is code, not a table', () => {
+    for (const body of [
+      'const a = 1;\nconst b = 2;',
+      'foo(a, b)\nbar(c, d)',
+      'color: red;\nmargin: 0;',
+      '12:00, started\n12:01, done',
+    ]) {
+      const ui = render(<Markdown text={`\`\`\`\n${body}\n\`\`\``} />);
+      expect(ui.container.querySelector('.sx-code'), body).toBeTruthy();
+      expect(ui.container.querySelector('table'), body).toBeNull();
+      ui.unmount();
+    }
+    const labelled = render(<Markdown text={'```csv\na;b\n1;2\n```'} />);
+    expect(labelled.container.querySelector('table')).toBeTruthy();
+  });
 });

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
 import { type Options, query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import {
   type AgentTool,
@@ -287,8 +287,12 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
                 parentToolUseId,
               };
               const fp = (block.input as { file_path?: unknown } | null)?.file_path;
-              if (typeof fp === 'string' && FILE_TOOLS.includes(block.name))
-                yield { type: 'file_changed', path: fp };
+              if (typeof fp === 'string' && FILE_TOOLS.includes(block.name)) {
+                // Claude Code names files by their absolute path: the event is workspace-relative
+                const rel = isAbsolute(fp) ? relative(job.workspace, fp) : fp;
+                if (rel && !rel.startsWith('..') && !isAbsolute(rel))
+                  yield { type: 'file_changed', path: rel };
+              }
             }
           }
         } else if (m.type === 'user') {

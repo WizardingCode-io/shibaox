@@ -59,3 +59,22 @@ export function numericColumns(t: CsvTable): boolean[] {
     t.rows.every((r) => /^-?\d+([.,]\d+)?%?$/.test((r[i] ?? '').replace(/\s/g, ''))),
   );
 }
+
+/**
+ * An unlabelled block that is data, not code: comma- or tab-separated (never `;`), at least
+ * three lines, a header of short plain names (no brackets, operators or colons), no empty
+ * cell in the header, no row ending in the delimiter, and either a numeric column or three
+ * or more columns. Two statements ending in `;` or two calls with arguments stay code.
+ */
+export function looksTabular(text: string): CsvTable | undefined {
+  const first = text.split('\n').find((l) => l.trim() !== '') ?? '';
+  const delimiter = first.includes('\t') ? '\t' : ',';
+  const t = parseCsv(text, delimiter);
+  if (!t || t.rows.length < 2) return undefined;
+  if (t.header.some((h) => h === '' || h.length > 40 || /[()={}[\];:]/.test(h))) return undefined;
+  const lines = text.split('\n').filter((l) => l.trim() !== '');
+  if (lines.some((l) => l.trimEnd().endsWith(delimiter))) return undefined;
+  const numeric = numericColumns(t).some(Boolean);
+  if (!numeric && t.header.length < 3) return undefined;
+  return t;
+}

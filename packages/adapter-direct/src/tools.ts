@@ -287,8 +287,8 @@ export function buildTools(a: ToolArgs): ToolSet {
                   });
                 mkdirSync(dirname(p), { recursive: true });
                 writeFileSync(p, content);
-                a.emit({ type: 'file_changed', path });
-                a.ctx.log(`[direct] wrote ${path}`);
+                a.emit({ type: 'file_changed', path: rel });
+                a.ctx.log(`[direct] wrote ${rel}`);
                 return { ok: true, bytes: Buffer.byteLength(content) };
               },
             ),

@@ -81,6 +81,8 @@ function Parts(props: {
   onFile: (path: string) => void;
   /** The turn is still streaming: its last text part is treated as unfinished. */
   pending?: boolean;
+  /** The run's workspace: absolute paths it reported are shown relative to it. */
+  workspace?: string;
 }): JSX.Element {
   const S = ds();
   return (
@@ -94,7 +96,11 @@ function Parts(props: {
             <ToolBlock key={p.key} block={p} />
           ) : (
             <div key={p.key}>
-              <S.FileChip path={p.path} status="added" onClick={() => props.onFile(p.path)} />
+              <S.FileChip
+                path={workspacePath(p.path, props.workspace)}
+                status="added"
+                onClick={() => props.onFile(workspacePath(p.path, props.workspace))}
+              />
             </div>
           ),
         )}
@@ -102,17 +108,23 @@ function Parts(props: {
   );
 }
 
-/** Every file the conversation produced, by run: the Outputs row under the top bar. */
-function outputsOf(messages: ThreadMessage[]): { runId: string; path: string }[] {
-  const seen = new Set<string>();
-  const out: { runId: string; path: string }[] = [];
+/** A path as the run reported it, relative to its workspace when it was absolute. */
+export function workspacePath(path: string, workspace: string | undefined): string {
+  if (!workspace || !path.startsWith(workspace)) return path;
+  const rel = path.slice(workspace.length).replace(/^[\\/]+/, '');
+  return rel || path;
+}
+
+/** Every file the conversation produced (the latest run that touched each): the Outputs row. */
+function outputsOf(
+  messages: ThreadMessage[],
+  workspaceOf: (runId: string) => string | undefined,
+): { runId: string; path: string }[] {
+  const latest = new Map<string, string>();
   for (const m of messages)
     for (const p of m.parts)
-      if (p.kind === 'file' && !seen.has(p.path)) {
-        seen.add(p.path);
-        out.push({ runId: m.runId, path: p.path });
-      }
-  return out;
+      if (p.kind === 'file') latest.set(workspacePath(p.path, workspaceOf(m.runId)), m.runId);
+  return [...latest.entries()].map(([path, runId]) => ({ runId, path }));
 }
 
 /** A pending approval of a command or a file write, as the mockup's ToolCall with Approve/Deny. */
@@ -178,6 +190,7 @@ function ChatTab(props: {
   live?: string;
 }): JSX.Element {
   const S = ds();
+  const state = useAppState();
   const scroll = useRef<HTMLDivElement>(null);
   // grows with every delta and tool call of the newest turn: what the view follows
   const version = props.messages.reduce((n, m) => n + m.text.length + m.blocks.length * 997, 0);
@@ -206,6 +219,7 @@ function ChatTab(props: {
                   <Parts
                     parts={m.parts}
                     pending={m.pending || props.live === m.runId}
+                    workspace={state.states[m.runId]?.workspace}
                     onFile={(path) => props.onFile(m.runId, path)}
                   />
                 </S.Message>
@@ -602,7 +616,10 @@ export function ThreadScreen(props: { rootId: string }): JSX.Element {
   const closeModel = useCallback(() => setModelOpen(false), []);
   const modelMenu = useModelMenu(props.rootId, currentRef, modelOpen, closeModel);
   const busy = live !== undefined || state.busy[props.rootId] === true;
-  const outputs = useMemo(() => outputsOf(view?.messages ?? []), [view?.messages]);
+  const outputs = useMemo(
+    () => outputsOf(view?.messages ?? [], (id) => state.states[id]?.workspace),
+    [view?.messages, state.states],
+  );
   const runningTasks = store
     .tasksOf(props.rootId)
     .filter((t) => !['completed', 'failed', 'cancelled'].includes(t.status)).length;

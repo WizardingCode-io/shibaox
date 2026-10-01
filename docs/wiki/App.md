@@ -39,6 +39,10 @@ A conversation: the title (your first request), the agent's status (Working, Nee
 
 **Settings**: theme (light, dark, system), your name, the project, org and model new chats use, the daemon's address and version, Disconnect.
 
+**Replies as documents.** The agent's text renders as Markdown: headings, lists, task lists, quotes, tables, links (they open in a new tab; only web and mail links are links), and fenced code with the brand's syntax colours (Copy on every block, long blocks clipped with "Show all"). An unlabelled block that is plainly CSV shows as a table. Tool calls and files appear where they happened in the reply, not after it. Your own messages keep their line breaks and show inline marks only.
+
+**Files a run produced.** A file the run wrote shows as a chip in the reply and in the "Outputs" row under the top bar. A chip opens the file in a panel on the right: CSV as a table, Markdown as a document, code with colours, images inline, anything else as a download; Copy and Download are in the panel's head (Download saves the whole file, the view stops at 2 MB). The panel reads the file from the run's workspace through the daemon, so it works for remote daemons too; `.env`, `.git` and the project's protected files are never shown. The same files from the terminal: `shibaox files <runId> [path]`.
+
 When a dispatched run ends while its conversation is open, the app tells the orchestrator (an event turn), as the terminal dashboard does; the orchestrator may then answer or dispatch more.
 
 ## The desktop app (macOS)

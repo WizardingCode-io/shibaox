@@ -243,4 +243,24 @@ describe('the reply is rendered as a document', () => {
     expect(user.textContent).toContain('second line');
     expect(user.querySelector('br')).toBeTruthy();
   });
+
+  it('a file reported by its absolute path shows by name and opens by its workspace path', async () => {
+    const { client: c, calls } = client({
+      runs: [summary('root')],
+      states: { root: state('root', { workspace: '/p' }) },
+      frames: {
+        root: [
+          runFrame(1, 'NodeStarted', { nodeId: 'reply' }),
+          rtFrame(1, 'reply', { type: 'file_changed', path: '/p/out/a.csv' }),
+        ],
+      },
+    });
+    mount(c, { hash: '#/t/root' });
+    const chips = await screen.findAllByRole('button', { name: /a\.csv/ });
+    expect(chips[0]?.textContent).not.toContain('/p/');
+    fireEvent.click(chips[0] as HTMLElement);
+    await waitFor(() =>
+      expect(calls.find((x) => x.name === 'fileContent')?.args).toEqual(['root', 'out/a.csv']),
+    );
+  });
 });

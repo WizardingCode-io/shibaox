@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { QueryFn } from '@wizardingcode/shibaox-adapter-claude-code';
 import {
@@ -8,6 +8,7 @@ import {
   compactConversation,
   detectSetupCommand,
   type EventStore,
+  isProtected,
   isTerminal,
   type MockScript,
   RunEngine,
@@ -31,8 +32,17 @@ import {
 import { createRunWorkspace, type WorkspaceMode } from '@wizardingcode/shibaox-workspace';
 import type { DaemonConfig } from './config.js';
 import type { InboxAnswer, InboxItem, InboxService } from './inbox.js';
+import { projectProtectedGlobs } from './protected.js';
 import { type DiffResult, diffWorkspace, worktreeBase } from './runs/diff.js';
-import { listRunFiles, type RunFile, type RunFileContent, readRunFile } from './runs/files.js';
+import {
+  ALWAYS_PROTECTED,
+  confine,
+  listRunFiles,
+  type RunFile,
+  type RunFileContent,
+  RunFileError,
+  readRunFile,
+} from './runs/files.js';
 import { type GraphMode, prepareGraph } from './runs/graph.js';
 import { finishRun, vaultDir } from './runs/notes.js';
 import { memoryTools, orchestrationTools, toolsForRole } from './runs/orchestration.js';
@@ -409,10 +419,34 @@ export class RunManager {
     return { root: state.workspace, files: await listRunFiles(state.workspace, diff, changed) };
   }
 
-  /** One file of the run's workspace (never outside it). */
+  /** One file of the run's workspace (never outside it, never a protected one). */
   async fileContent(runId: string, path: string): Promise<RunFileContent> {
     const state = await this.state(runId);
-    return readRunFile(state.workspace, path);
+    return readRunFile(state.workspace, path, { protectedGlobs: this.protectedFor(state) });
+  }
+
+  /** The real path of a file of the run's workspace, for a download (same rules as fileContent). */
+  async filePath(
+    runId: string,
+    path: string,
+  ): Promise<{ file: string; rel: string; size: number }> {
+    const state = await this.state(runId);
+    if (!existsSync(state.workspace))
+      throw new RunFileError('no_workspace', 'The run workspace is gone');
+    const c = confine(state.workspace, path);
+    if (isProtected(c.rel, [...ALWAYS_PROTECTED, ...this.protectedFor(state)]))
+      throw new RunFileError('protected', `${c.rel} is protected: it is never shown or downloaded`);
+    const st = statSync(c.file);
+    if (!st.isFile()) throw new RunFileError('not_found', `${c.rel} is not a file`);
+    return { ...c, size: st.size };
+  }
+
+  private protectedFor(state: RunState): string[] {
+    try {
+      return projectProtectedGlobs(projectOf(state));
+    } catch {
+      return [];
+    }
   }
 
   async list(

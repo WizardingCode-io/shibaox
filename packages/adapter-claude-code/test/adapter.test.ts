@@ -38,7 +38,7 @@ describe('ClaudeCodeAdapter', () => {
     const q = fakeQuery(() => [
       msg.init({ mcp_servers: [{ name: 'graphify', status: 'connected' }] }),
       msg.text('working'),
-      msg.toolUse('t1', 'Edit', { file_path: 'src/a.ts', old_string: '', new_string: 'x' }),
+      msg.toolUse('t1', 'Edit', { file_path: '/tmp/ws/src/a.ts', old_string: '', new_string: 'x' }),
       msg.toolResult('t1', 'ok'),
       msg.success('done', { structured_output: { files: ['src/a.ts'] } }),
     ]);
@@ -62,6 +62,9 @@ describe('ClaudeCodeAdapter', () => {
       'usage', // model, context tokens and window from the result
       'result',
     ]);
+    // Claude Code names files by their absolute path: the event carries the workspace-relative one
+    const changed = events.find((e) => e.type === 'file_changed');
+    expect(changed).toEqual({ type: 'file_changed', path: 'src/a.ts' });
     const result = events.at(-1);
     expect(result?.type === 'result' && result.output).toEqual({ files: ['src/a.ts'] });
     expect(result?.type === 'result' && result.cost).toEqual({

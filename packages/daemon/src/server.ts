@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
-import { chmodSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { chmodSync, createReadStream, existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createTlsServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
@@ -38,7 +38,7 @@ const isRemote = (req: IncomingMessage) => REMOTE.has(req);
 
 import type { RunManager, SubmitRequest } from './run-manager.js';
 import { AUDIT_RUNTIME_TYPES, buildAudit, renderAuditMarkdown } from './runs/audit.js';
-import { mimeOf, type RunFileContent, RunFileError } from './runs/files.js';
+import { mimeOf, RunFileError } from './runs/files.js';
 import type { RuntimeEnvelope } from './runtime-buffer.js';
 import type { KeyRow } from './secrets.js';
 
@@ -546,28 +546,26 @@ export class DaemonServer {
     const runFile = param(/^\/runs\/([^/]+)\/files\/content$/);
     if (runFile !== undefined && method === 'GET') {
       const path = url.searchParams.get('path') ?? '';
-      let file: RunFileContent;
       try {
-        file = await this.deps.runs.fileContent(runFile, path);
+        if (url.searchParams.get('download') === '1') {
+          // the whole file, streamed from disk: never the view's cap, never in memory
+          const { file, rel, size } = await this.deps.runs.filePath(runFile, path);
+          const base = rel.split('/').pop() ?? 'file';
+          const ascii = base.replace(/[^\w.-]+/g, '_') || 'file';
+          res.writeHead(200, {
+            'content-type': mimeOf(rel) ?? 'application/octet-stream',
+            'content-disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(base)}`,
+            'content-length': String(size),
+            'x-content-type-options': 'nosniff',
+          });
+          createReadStream(file).pipe(res);
+          return;
+        }
+        return send(res, 200, await this.deps.runs.fileContent(runFile, path));
       } catch (e) {
         if (e instanceof RunFileError) throw new HttpError(e.status, e.code, e.message);
         throw e;
       }
-      if (url.searchParams.get('download') === '1') {
-        const name = (path.split('/').pop() ?? 'file').replace(/[^\w.-]+/g, '_');
-        res.writeHead(200, {
-          'content-type': file.mime ?? mimeOf(path) ?? 'application/octet-stream',
-          'content-disposition': `attachment; filename="${name}"`,
-          'content-length': String(
-            file.encoding === 'base64'
-              ? Buffer.from(file.content, 'base64').length
-              : Buffer.byteLength(file.content),
-          ),
-        });
-        res.end(file.encoding === 'base64' ? Buffer.from(file.content, 'base64') : file.content);
-        return;
-      }
-      return send(res, 200, file);
     }
     const runEvents = param(/^\/runs\/([^/]+)\/events$/);
     if (runEvents !== undefined && method === 'GET') return this.stream(req, res, runEvents, url);
