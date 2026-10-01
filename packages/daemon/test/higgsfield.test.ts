@@ -252,6 +252,14 @@ describe('GET /integrations/higgsfield', () => {
     expect(d.config.partners.higgsfield.mode).toBe('api');
     await expect(c.setHiggsfieldMode('x' as never)).rejects.toMatchObject({ status: 400 });
     expect(readFileSync(home.config, 'utf8')).toBe(text);
+    // edited by hand into a broken file while the daemon runs: refused, untouched
+    const broken = '# mine\nmax_concurrent_runs: 2\npartners: {higgsfield: \n';
+    writeFileSync(home.config, broken);
+    await expect(c.setHiggsfieldMode('account')).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringMatching(/daemon\.yaml has a syntax error at line \d+: fix it first/),
+    });
+    expect(readFileSync(home.config, 'utf8')).toBe(broken);
   });
 
   it('PUT /integrations/higgsfield is refused to another machine and through a proxy', async () => {

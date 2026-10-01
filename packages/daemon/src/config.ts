@@ -2,7 +2,12 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { parse } from 'yaml';
 import { z } from 'zod';
-import { readDoc, writeAtomic } from './yaml-file.js';
+import { readDoc, syntaxErrorOf, writeAtomic } from './yaml-file.js';
+
+/** A config file that does not parse: the caller must fix it first (HTTP 409). */
+export class ConfigSyntaxError extends Error {
+  override readonly name = 'ConfigSyntaxError';
+}
 
 /** A second, network listener next to the Unix socket: same API, bearer token required. */
 export const ListenSchema = z.object({
@@ -105,6 +110,9 @@ export interface DaemonConfigPatch {
  */
 export function writeDaemonConfig(path: string, patch: DaemonConfigPatch): DaemonConfig {
   const doc = readDoc(path);
+  // a hand-edited file with a syntax error is never rewritten (it would lose what it says)
+  const syntax = syntaxErrorOf(doc, path);
+  if (syntax) throw new ConfigSyntaxError(syntax);
   if (patch.higgsfieldMode !== undefined) {
     if (!(HIGGSFIELD_MODES as readonly string[]).includes(patch.higgsfieldMode))
       throw new Error(

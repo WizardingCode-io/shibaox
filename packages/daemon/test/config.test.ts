@@ -1,4 +1,14 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -142,5 +152,34 @@ describe('partners.higgsfield.mode and the daemon.yaml writer', () => {
     expect(() => writeDaemonConfig(p, { higgsfieldMode: 'x' as never })).toThrow(/mode/);
     expect(readFileSync(p, 'utf8')).toBe('# keep\nmax_concurrent_runs: 3\n');
     expect(HIGGSFIELD_MODES).toEqual(['auto', 'account', 'api']);
+  });
+
+  it('keeps the file mode, and a symlinked daemon.yaml stays a symlink to its updated target', () => {
+    dir = mkdtempSync(join(tmpdir(), 'shx-home-'));
+    const p = join(dir, 'daemon.yaml');
+    writeFileSync(p, 'max_concurrent_runs: 3\n');
+    chmodSync(p, 0o600);
+    writeDaemonConfig(p, { higgsfieldMode: 'api' });
+    expect(statSync(p).mode & 0o777).toBe(0o600);
+    const target = join(dir, 'real.yaml');
+    writeFileSync(target, 'max_concurrent_runs: 2\n');
+    chmodSync(target, 0o640);
+    const link = join(dir, 'linked.yaml');
+    symlinkSync(target, link);
+    writeDaemonConfig(link, { higgsfieldMode: 'account' });
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(readFileSync(target, 'utf8')).toMatch(/mode: account/);
+    expect(statSync(target).mode & 0o777).toBe(0o640);
+  });
+
+  it('a daemon.yaml with a YAML syntax error is refused with its line, untouched', () => {
+    dir = mkdtempSync(join(tmpdir(), 'shx-home-'));
+    const p = join(dir, 'daemon.yaml');
+    const broken = '# keep\nmax_concurrent_runs: 3\nchannels: [unclosed\n';
+    writeFileSync(p, broken);
+    expect(() => writeDaemonConfig(p, { higgsfieldMode: 'api' })).toThrow(
+      /daemon\.yaml has a syntax error at line \d+: fix it first/,
+    );
+    expect(readFileSync(p, 'utf8')).toBe(broken);
   });
 });
