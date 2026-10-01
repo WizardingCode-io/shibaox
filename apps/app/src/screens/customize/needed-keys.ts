@@ -75,11 +75,9 @@ export const KEY_NAME_RE = /^[A-Z][A-Z0-9_]*$/;
 const norm = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
 const prefixOf = (name: string) => norm(name.replace(/_(API_KEY|API_TOKEN|KEY|TOKEN)$/, ''));
 
-/** A provider's key (not built in, not custom, not an endpoint URL). */
+/** A provider's key or endpoint URL (not built in, not custom). */
 export const isProviderKey = (k: KeyRow): boolean =>
-  !BUILT_IN_KEYS.includes(k.name) &&
-  k.description !== 'custom' &&
-  !/ endpoint$/.test(k.description);
+  !BUILT_IN_KEYS.includes(k.name) && k.description !== 'custom';
 
 /**
  * The key a provider reads: the missing key one of its models names, else the vault's provider

@@ -245,6 +245,7 @@ describe('neededKeys', () => {
       'MISTRAL_API_KEY',
       'OPENAI_API_KEY',
       'OPENROUTER_API_KEY',
+      'VYDRA_BASE_URL',
     ]);
     expect(r.providers[0]?.models).toEqual(['anthropic/claude-opus', 'anthropic/claude-haiku']);
     expect(r.providers.find((x) => x.name === 'ARK_API_KEY')?.models).toEqual([
@@ -255,7 +256,7 @@ describe('neededKeys', () => {
     );
   });
 
-  it('other: the built-in keys, the endpoints and the custom keys', () => {
+  it('other: the built-in keys and the custom keys; a provider endpoint is a provider row', () => {
     expect(r.other.map((x) => x.name)).toEqual([
       'TYPESAFE_API_KEY',
       'SHIBAOX_TELEGRAM_TOKEN',
@@ -263,8 +264,9 @@ describe('neededKeys', () => {
       'GITHUB_TOKEN',
       'SHIBAOX_DAEMON_TOKEN',
       'MY_CUSTOM',
-      'VYDRA_BASE_URL',
     ]);
+    const vydra = r.providers.find((x) => x.name === 'VYDRA_BASE_URL');
+    expect(vydra?.models).toEqual([]);
   });
 
   it('works before the org config and the roles are known', () => {
