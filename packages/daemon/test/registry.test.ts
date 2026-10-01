@@ -39,7 +39,7 @@ describe('connector registry', () => {
     expect(gh?.server).toMatchObject({
       transport: 'http',
       url: 'https://api.githubcopilot.com/mcp/',
-      headers: { Authorization: 'Bearer ${GH_TOKEN}' },
+      headers: { Authorization: `Bearer \${GH_TOKEN}` },
       env_keys: ['GH_TOKEN'],
     });
     expect(gh?.keys[0]?.signupUrl).toMatch(/^https:\/\/github.com\//);

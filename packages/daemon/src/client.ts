@@ -5,8 +5,12 @@ import type { RoutineRow, ScheduleRow } from '@wizardingcode/shibaox-persistence
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import type { HiggsfieldView, LoginStart } from './higgsfield.js';
 import type { InboxItem } from './inbox.js';
-import type { McpServerRow, McpTestResult } from './mcp.js';
+import type { McpAddRequest, McpServerRow, McpTestResult } from './mcp.js';
 import type { OrgConfig, OrgConfigPatch, OrgInfo } from './org-config.js';
+import type { PluginRow } from './plugins.js';
+import type { ConnectorTemplate } from './registry/connectors.js';
+import type { SkillSource } from './registry/skills.js';
+import type { RolePatch, RoleRow } from './roles.js';
 import type { RoutineInput, RoutinePatch, RoutineView } from './routines.js';
 import type { RunSummaryPlus, SubmitRequest } from './run-manager.js';
 import type { AuditDoc } from './runs/audit.js';
@@ -16,6 +20,7 @@ import type { RoutineDraft } from './runs/routine-draft.js';
 import type { DecisionsView } from './runtime.js';
 import type { KeyRow } from './secrets.js';
 import type { Envelope, Health, ProjectEntry } from './server.js';
+import type { SkillAddRequest, SkillAddResult, SkillDiscovery, SkillRow } from './skills.js';
 
 export type { Envelope, Health, ProjectEntry } from './server.js';
 
@@ -24,6 +29,8 @@ export class DaemonHttpError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /** Extra fields of the error body (a 409 of `DELETE /skills/:id` names the `roles`). */
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'DaemonHttpError';
@@ -133,8 +140,14 @@ export class DaemonClient {
   private async json<T>(method: string, path: string, body?: unknown): Promise<T> {
     const r = await this.call(method, path, body);
     if (r.status >= 400) {
-      const err = (r.body as { error?: { code?: string; message?: string } } | undefined)?.error;
-      throw new DaemonHttpError(r.status, err?.code ?? 'error', err?.message ?? `HTTP ${r.status}`);
+      const { error: err, ...details } =
+        (r.body as { error?: { code?: string; message?: string } } | undefined) ?? {};
+      throw new DaemonHttpError(
+        r.status,
+        err?.code ?? 'error',
+        err?.message ?? `HTTP ${r.status}`,
+        Object.keys(details).length ? details : undefined,
+      );
     }
     return r.body as T;
   }
@@ -194,6 +207,57 @@ export class DaemonClient {
   /** Starts one catalog server on the daemon and lists its tools. */
   mcpTest(id: string, org: string): Promise<McpTestResult> {
     return this.json('POST', `/mcp/${encodeURIComponent(id)}/test?org=${encodeURIComponent(org)}`);
+  }
+  /** Writes `catalog/<id>.yaml` (409 when it exists unless `replace`) and attaches `roles`. */
+  addMcp(org: string, req: McpAddRequest): Promise<McpServerRow> {
+    return this.json('POST', `/mcp?org=${encodeURIComponent(org)}`, req);
+  }
+  /** Detaches the server from every role and deletes its catalog entry. */
+  removeMcp(org: string, id: string): Promise<{ removed: true }> {
+    return this.json('DELETE', `/mcp/${encodeURIComponent(id)}?org=${encodeURIComponent(org)}`);
+  }
+  /** The org's skills (`skills/<id>/SKILL.md`) with the roles that use them. */
+  skills(org: string): Promise<SkillRow[]> {
+    return this.json('GET', `/skills?org=${encodeURIComponent(org)}`);
+  }
+  /** Installs skills from a repository, a folder on the daemon's machine, or text. */
+  addSkills(org: string, req: SkillAddRequest): Promise<SkillAddResult> {
+    return this.json('POST', `/skills?org=${encodeURIComponent(org)}`, req);
+  }
+  /** The skills of a repository (`owner/repo` or a git URL), cached by the daemon for 10 minutes. */
+  discoverSkills(repo: string, path?: string): Promise<SkillDiscovery> {
+    const q = new URLSearchParams({ repo, ...(path ? { path } : {}) });
+    return this.json('GET', `/skills/discover?${q}`);
+  }
+  /** Removes a skill; 409 (`details.roles`) while roles use it unless `detach`. */
+  removeSkill(org: string, id: string, o: { detach?: boolean } = {}): Promise<{ removed: true }> {
+    return this.json(
+      'DELETE',
+      `/skills/${encodeURIComponent(id)}?org=${encodeURIComponent(org)}${o.detach ? '&detach=1' : ''}`,
+    );
+  }
+  roles(org: string): Promise<RoleRow[]> {
+    return this.json('GET', `/roles?org=${encodeURIComponent(org)}`);
+  }
+  /** Replaces a role's `mcp` / `skills` lists (each id checked). */
+  putRole(org: string, id: string, patch: RolePatch): Promise<RoleRow> {
+    return this.json(
+      'PUT',
+      `/roles/${encodeURIComponent(id)}?org=${encodeURIComponent(org)}`,
+      patch,
+    );
+  }
+  /** The built-in connector registry. */
+  connectorRegistry(): Promise<ConnectorTemplate[]> {
+    return this.json('GET', '/registry/connectors');
+  }
+  /** The built-in skill repositories. */
+  skillSources(): Promise<SkillSource[]> {
+    return this.json('GET', '/registry/skills');
+  }
+  /** Higgsfield, GitHub, Telegram, TypeSafe / Jev: what is set up and what is missing. */
+  plugins(): Promise<PluginRow[]> {
+    return this.json('GET', '/plugins');
   }
   /** Projects a dashboard may pick, the daemon's home workspace last. */
   projects(): Promise<ProjectEntry[]> {

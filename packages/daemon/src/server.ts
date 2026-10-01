@@ -21,8 +21,9 @@ import {
   RoutineTriggerSchema,
 } from '@wizardingcode/shibaox-schemas';
 import { AlreadyResolvedError, type InboxService, NotFoundError } from './inbox.js';
-import type { McpServerRow, McpTestResult } from './mcp.js';
+import type { McpAddRequest, McpServerRow, McpTestResult } from './mcp.js';
 import { type OrgConfigPatch, orgInfo, readOrgConfig, writeOrgConfig } from './org-config.js';
+import { OrgEditError } from './org-edit.js';
 import {
   allowedUrl,
   MIN_INTERVAL_S,
@@ -41,12 +42,17 @@ const isLoopback = (req: IncomingMessage): boolean =>
 const isRemote = (req: IncomingMessage) => REMOTE.has(req);
 
 import type { HiggsfieldView, LoginStart } from './higgsfield.js';
+import type { PluginRow } from './plugins.js';
+import type { ConnectorTemplate } from './registry/connectors.js';
+import type { SkillSource } from './registry/skills.js';
+import type { RolePatch, RoleRow } from './roles.js';
 import type { RunManager, SubmitRequest } from './run-manager.js';
 import { AUDIT_RUNTIME_TYPES, buildAudit, renderAuditMarkdown } from './runs/audit.js';
 import { ATTACHMENTS_LIMIT, ATTACHMENTS_MAX, mimeOf, RunFileError } from './runs/files.js';
 import type { DecisionsView } from './runtime.js';
 import type { RuntimeEnvelope } from './runtime-buffer.js';
 import type { KeyRow } from './secrets.js';
+import type { SkillAddRequest, SkillAddResult, SkillDiscovery, SkillRow } from './skills.js';
 
 export interface Health {
   version: string;
@@ -147,6 +153,26 @@ export interface ServerDeps {
   /** Whether a network caller may start that org's servers (the daemon's own orgs only). */
   mcpRemoteAllowed: (org: string) => Promise<boolean>;
   setKey: (name: string, value: string) => void;
+  /** The org's skills (Customize → Skills). */
+  skills: {
+    list(org: string): SkillRow[];
+    add(org: string, req: SkillAddRequest, o: { local: boolean }): Promise<SkillAddResult>;
+    discover(
+      repo: string,
+      path: string | undefined,
+      o: { local: boolean },
+    ): Promise<SkillDiscovery>;
+    remove(org: string, id: string, o: { detach: boolean }): { removed: true };
+  };
+  roles: (org: string) => RoleRow[];
+  putRole: (org: string, id: string, patch: RolePatch) => RoleRow;
+  mcpAdd: (org: string, req: McpAddRequest) => McpServerRow;
+  mcpRemove: (org: string, id: string) => { removed: true };
+  connectorRegistry: () => ConnectorTemplate[];
+  skillSources: () => SkillSource[];
+  plugins: () => Promise<PluginRow[]>;
+  /** Whether a peer of the network listener is this machine (default: a loopback address). */
+  localPeer?: (remoteAddress: string | undefined) => boolean;
   unsetKey: (name: string) => boolean;
   onShutdown: (o: { force?: boolean }) => void;
   log: (line: string) => void;
@@ -159,6 +185,8 @@ export class HttpError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /** Extra fields of the error body (e.g. `roles` of a 409). */
+    readonly extra?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'HttpError';
@@ -226,6 +254,7 @@ function trimRuntime(e: RuntimeEnvelope): RuntimeEnvelope {
 /** Maps domain errors to HTTP statuses; anything unknown is a 400 for client mistakes we raise as plain Errors. */
 function toHttp(e: unknown): HttpError {
   if (e instanceof HttpError) return e;
+  if (e instanceof OrgEditError) return new HttpError(e.status, e.code, e.message, e.details);
   if (e instanceof NotFoundError) return new HttpError(404, 'not_found', e.message);
   if (e instanceof AlreadyResolvedError) return new HttpError(409, 'already_resolved', e.message);
   const message = e instanceof Error ? e.message : String(e);
@@ -290,7 +319,8 @@ export class DaemonServer {
     const server = createServer((req, res) => {
       this.handle(req, res).catch((e: unknown) => {
         const h = toHttp(e);
-        if (!res.headersSent) send(res, h.status, { error: { code: h.code, message: h.message } });
+        if (!res.headersSent)
+          send(res, h.status, { error: { code: h.code, message: h.message }, ...h.extra });
         else res.end();
       });
     });
@@ -353,7 +383,8 @@ export class DaemonServer {
       REMOTE.add(req);
       this.handle(req, res).catch((e: unknown) => {
         const h = toHttp(e);
-        if (!res.headersSent) send(res, h.status, { error: { code: h.code, message: h.message } });
+        if (!res.headersSent)
+          send(res, h.status, { error: { code: h.code, message: h.message }, ...h.extra });
         else res.end();
       });
     };
@@ -416,7 +447,7 @@ export class DaemonServer {
     if (method === 'POST' && path === '/integrations/higgsfield/login') {
       // the browser login opens on the daemon's machine: the socket or a loopback client of the
       // listener (this machine), never another host
-      if (isRemote(req) && !isLoopback(req))
+      if (!this.localCaller(req))
         throw new HttpError(
           403,
           'forbidden',
@@ -453,6 +484,31 @@ export class DaemonServer {
       }
     }
     if (method === 'GET' && path === '/projects') return send(res, 200, await this.deps.projects());
+    if (
+      path === '/mcp' ||
+      path === '/skills' ||
+      path === '/roles' ||
+      /^\/(skills|roles|mcp)\/[^/]+$/.test(path)
+    ) {
+      const handled = await this.customize(req, res, method, path, url);
+      if (handled) return;
+    }
+    if (method === 'GET' && path === '/skills/discover') {
+      const repo = url.searchParams.get('repo') ?? '';
+      if (!repo) throw new HttpError(400, 'bad_request', '"repo" is required');
+      return send(
+        res,
+        200,
+        await this.deps.skills.discover(repo, url.searchParams.get('path') ?? undefined, {
+          local: this.localCaller(req),
+        }),
+      );
+    }
+    if (method === 'GET' && path === '/registry/connectors')
+      return send(res, 200, this.deps.connectorRegistry());
+    if (method === 'GET' && path === '/registry/skills')
+      return send(res, 200, this.deps.skillSources());
+    if (method === 'GET' && path === '/plugins') return send(res, 200, await this.deps.plugins());
     if (path === '/mcp' || /^\/mcp\/[^/]+\/test$/.test(path)) {
       const org = url.searchParams.get('org') ?? '';
       if (!org) throw new HttpError(400, 'bad_request', '"org" is required');
@@ -722,6 +778,70 @@ export class DaemonServer {
       return;
     }
     throw new HttpError(404, 'not_found', `no route for ${method} ${path}`);
+  }
+
+  /** The socket, or a client of the network listener on this machine. */
+  private localCaller(req: IncomingMessage): boolean {
+    if (!isRemote(req)) return true;
+    return this.deps.localPeer ? this.deps.localPeer(req.socket.remoteAddress) : isLoopback(req);
+  }
+
+  /**
+   * Customize: the org's skills, roles and MCP servers. Reads answer anyone with the token;
+   * writes change the org directory, so only callers on the daemon's machine may make them.
+   * Returns false when the route is not one of these (the caller goes on).
+   */
+  private async customize(
+    req: IncomingMessage,
+    res: ServerResponse,
+    method: string,
+    path: string,
+    url: URL,
+  ): Promise<boolean> {
+    const [, kind, rawId] = path.split('/') as [string, string, string | undefined];
+    const id = rawId === undefined ? undefined : decodeURIComponent(rawId);
+    const write = method === 'POST' || method === 'PUT' || method === 'DELETE';
+    const route =
+      (kind === 'skills' &&
+        ((!id && (method === 'GET' || method === 'POST')) || (id && method === 'DELETE'))) ||
+      (kind === 'roles' && ((!id && method === 'GET') || (id && method === 'PUT'))) ||
+      (kind === 'mcp' && ((!id && method === 'POST') || (id && method === 'DELETE')));
+    if (!route) return false;
+    const org = url.searchParams.get('org') ?? '';
+    if (!org) throw new HttpError(400, 'bad_request', '"org" is required');
+    if (write && !this.localCaller(req))
+      throw new HttpError(
+        403,
+        'forbidden',
+        "the org is changed from the daemon's own machine only (the socket or a loopback client)",
+      );
+    const body = write && method !== 'DELETE' ? asRecord(await readBody(req)) : {};
+    const run = async (): Promise<unknown> => {
+      if (kind === 'skills') {
+        if (method === 'GET') return this.deps.skills.list(org);
+        if (method === 'POST')
+          return this.deps.skills.add(org, body as unknown as SkillAddRequest, { local: true });
+        return this.deps.skills.remove(org, id as string, {
+          detach: url.searchParams.get('detach') === '1',
+        });
+      }
+      if (kind === 'roles') {
+        if (method === 'GET') return this.deps.roles(org);
+        return this.deps.putRole(org, id as string, body as RolePatch);
+      }
+      if (method === 'POST') return this.deps.mcpAdd(org, body as unknown as McpAddRequest);
+      return this.deps.mcpRemove(org, id as string);
+    };
+    let result: unknown;
+    try {
+      result = await run();
+    } catch (e) {
+      if (e instanceof OrgEditError || e instanceof HttpError) throw e;
+      const m = e instanceof Error ? e.message : String(e);
+      throw new HttpError(/not found/i.test(m) ? 404 : 400, 'bad_request', m);
+    }
+    send(res, 200, result);
+    return true;
   }
 
   private async schedules(

@@ -33,7 +33,11 @@ import {
 } from './higgsfield.js';
 import { type HomePaths, homePaths } from './home.js';
 import { type InboxId, InboxService } from './inbox.js';
-import { mcpList, mcpTest } from './mcp.js';
+import { mcpAdd, mcpList, mcpRemove, mcpTest } from './mcp.js';
+import { pluginsStatus, whichOnPath } from './plugins.js';
+import { connectorRegistry } from './registry/connectors.js';
+import { skillSources } from './registry/skills.js';
+import { listRoles, putRole } from './roles.js';
 import { Routines } from './routines.js';
 import { RunManager } from './run-manager.js';
 import { vaultDir } from './runs/notes.js';
@@ -43,6 +47,7 @@ import { draftPrompt, parseDraft, routineDraftWriter } from './runs/routine-draf
 import { orgSummarizer } from './runs/summarize.js';
 import {
   commandEnv,
+  type DeciderInfo,
   type DecisionRow,
   type DecisionsView,
   deciderInfo,
@@ -58,6 +63,7 @@ import {
   type SchedulesApi,
   type ServerDeps,
 } from './server.js';
+import { SkillsService } from './skills.js';
 
 export interface DaemonOptions {
   home?: HomePaths;
@@ -89,6 +95,8 @@ export interface DaemonOptions {
   summarize?: (transcript: string, org: Org) => Promise<string>;
   /** How Higgsfield (CLI + MCP) is probed (tests inject fakes). */
   higgsfield?: HiggsfieldProbe;
+  /** Whether a network peer address is this machine (default: loopback; tests pretend otherwise). */
+  localPeer?: (remoteAddress: string | undefined) => boolean;
   /** "Create with Shibaox" writer (tests inject one): the model's answer for a draft prompt; by default the org's cheap tier. */
   routineDraft?: (prompt: string, org: Org) => Promise<string>;
   /** Tokens a conversation may carry before it is compacted (tests lower it). */
@@ -117,6 +125,8 @@ export class Daemon {
   readonly version: string;
   /** The key vault; its values sit on top of the environment the daemon was started with. */
   readonly secrets: SecretsStore;
+  /** The org skills: install, discover (cached per process), remove. */
+  private readonly skills: SkillsService;
   /** The environment the runtimes and providers see: the shell's, with the vault on top (live). */
   readonly env: NodeJS.ProcessEnv;
   private readonly server: DaemonServer;
@@ -141,6 +151,7 @@ export class Daemon {
     this.secrets = new SecretsStore(this.paths.secrets);
     // one live object: a key set through the API is seen by the next run without a restart
     this.env = this.secrets.env(opts.env ?? process.env);
+    this.skills = new SkillsService({ env: this.env, log: opts.log });
     this.channels =
       opts.channels ??
       defaultChannels(
@@ -289,6 +300,46 @@ export class Daemon {
       heartbeatMs: opts.heartbeatMs,
       keys: () => this.secrets.list(opts.env ?? process.env),
       mcpList: (org) => mcpList(org, this.env),
+      mcpAdd: (org, req) => {
+        const row = mcpAdd(org, req, this.env);
+        log(`mcp server added: ${row.id} (${org})`);
+        return row;
+      },
+      mcpRemove: (org, id) => {
+        const r = mcpRemove(org, id);
+        log(`mcp server removed: ${id} (${org})`);
+        return r;
+      },
+      skills: {
+        list: (org) => this.skills.list(org),
+        add: async (org, req, o) => {
+          const r = await this.skills.add(org, req, o);
+          if (r.added.length) log(`skills added: ${r.added.map((a) => a.id).join(', ')} (${org})`);
+          return r;
+        },
+        discover: (repo, path, o) => this.skills.discover(repo, path, o),
+        remove: (org, id, o) => {
+          const r = this.skills.remove(org, id, o);
+          log(`skill removed: ${id} (${org})`);
+          return r;
+        },
+      },
+      roles: (org) => listRoles(org),
+      putRole: (org, id, patch) => {
+        const row = putRole(org, id, patch);
+        log(`role updated: ${id} (${org})`);
+        return row;
+      },
+      connectorRegistry: () => connectorRegistry(),
+      skillSources: () => skillSources(),
+      plugins: () =>
+        pluginsStatus({
+          higgsfield: () => this.higgsfield(),
+          which: whichOnPath(this.env),
+          env: this.env,
+          decider: () => this.decider(),
+        }),
+      ...(opts.localPeer ? { localPeer: opts.localPeer } : {}),
       mcpTest: (id, org) => mcpTest(id, org, this.env, opts.log ?? (() => undefined)),
       mcpRemoteAllowed: async (org) => {
         const owned = [this.paths.org, ...(await this.projects()).map((p) => join(p.path, 'org'))];
@@ -427,14 +478,15 @@ export class Daemon {
     return this.higgsfieldProbe.login();
   }
 
+  /** Who decides decide nodes of the home org. */
+  private async decider(): Promise<DeciderInfo> {
+    const { root } = await this.defaultOrg();
+    return deciderInfo(loadOrg(root), this.env, registryFor(this.env, this.opts.extraProviders));
+  }
+
   /** Who decides (the home org's decision tier) and the latest decisions of the last 50 runs. */
   async decisions(limit = 20): Promise<DecisionsView> {
-    const { root } = await this.defaultOrg();
-    const decider = deciderInfo(
-      loadOrg(root),
-      this.env,
-      registryFor(this.env, this.opts.extraProviders),
-    );
+    const decider = await this.decider();
     const runs = (await this.store.listRuns())
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, 50);

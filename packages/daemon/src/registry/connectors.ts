@@ -50,6 +50,9 @@ type Template = Omit<ConnectorTemplate, 'server'> & { server: McpServerInput };
 const scaffoldServer = (id: string): McpServerInput =>
   (parse(ORG_TEMPLATE[`org/catalog/${id}.yaml`] as string) as { server: McpServerInput }).server;
 
+/** `${KEY}`: a vault key expanded in a header value. */
+const key = (name: string) => `\${${name}}`;
+
 const OAUTH = 'Signs in on first use (OAuth in the browser); no key to set.';
 const http = (url: string, extra: Partial<McpServerInput> = {}): McpServerInput => ({
   transport: 'http',
@@ -102,7 +105,7 @@ const TEMPLATES: Template[] = [
       },
     ],
     server: http('https://api.githubcopilot.com/mcp/', {
-      headers: { Authorization: 'Bearer ${GH_TOKEN}' },
+      headers: { Authorization: `Bearer ${key('GH_TOKEN')}` },
       env_keys: ['GH_TOKEN'],
     }),
   },
@@ -117,8 +120,7 @@ const TEMPLATES: Template[] = [
       {
         name: 'CONTEXT7_API_KEY',
         signupUrl: 'https://context7.com/dashboard',
-        description:
-          'Optional: higher rate limits (add a CONTEXT7_API_KEY: ${CONTEXT7_API_KEY} header)',
+        description: `Optional: higher rate limits (add a CONTEXT7_API_KEY: ${key('CONTEXT7_API_KEY')} header)`,
         optional: true,
       },
     ],
@@ -214,7 +216,7 @@ const TEMPLATES: Template[] = [
       },
     ],
     server: http('https://mcp.stripe.com', {
-      headers: { Authorization: 'Bearer ${STRIPE_SECRET_KEY}' },
+      headers: { Authorization: `Bearer ${key('STRIPE_SECRET_KEY')}` },
       env_keys: ['STRIPE_SECRET_KEY'],
     }),
   },
@@ -270,7 +272,7 @@ const TEMPLATES: Template[] = [
       },
     ],
     server: http('https://mcp.exa.ai/mcp', {
-      headers: { 'x-api-key': '${EXA_API_KEY}' },
+      headers: { 'x-api-key': key('EXA_API_KEY') },
       env_keys: ['EXA_API_KEY'],
     }),
   },

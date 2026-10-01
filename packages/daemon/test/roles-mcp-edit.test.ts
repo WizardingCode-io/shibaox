@@ -67,7 +67,7 @@ describe('mcp add / remove', () => {
         server: {
           transport: 'http',
           url: 'https://api.githubcopilot.com/mcp/',
-          headers: { Authorization: 'Bearer ${GH_TOKEN}' },
+          headers: { Authorization: `Bearer \${GH_TOKEN}` },
         },
         roles: ['assistant', 'backend'],
       },
