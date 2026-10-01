@@ -1,4 +1,4 @@
-import type { ConnectorTemplate, McpTestResult, RoleRow } from '@wizardingcode/shibaox-daemon';
+import type { ConnectorTemplate, McpTestResult } from '@wizardingcode/shibaox-daemon';
 import { useState } from 'react';
 import { ds } from '../../ds.js';
 import { useAppState, useStore } from '../../store/hooks.js';
