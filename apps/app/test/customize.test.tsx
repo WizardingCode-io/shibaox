@@ -964,9 +964,9 @@ describe('Customize: Models', () => {
         .find((r) => r.querySelector('td')?.textContent === ref) as HTMLElement;
     const cells = (ref: string) =>
       [...row(ref).querySelectorAll('td')].map((td) => td.textContent ?? '');
-    expect(cells('openrouter/meta/llama-3.3-70b').slice(3)).toEqual(['131k', '$0.12/$0.30']);
-    expect(cells('lmstudio/qwen').slice(3)).toEqual(['—', 'free']);
-    expect(cells('anthropic/claude-opus').slice(3)).toEqual(['—', '—']);
+    expect(cells('openrouter/meta/llama-3.3-70b').slice(2)).toEqual(['131k', '$0.12/$0.30']);
+    expect(cells('lmstudio/qwen').slice(2)).toEqual(['—', 'free']);
+    expect(cells('anthropic/claude-opus').slice(2)).toEqual(['—', '—']);
     const missing = within(row('openai/gpt-5')).getByRole('button', {
       name: 'OPENAI_API_KEY missing',
     });

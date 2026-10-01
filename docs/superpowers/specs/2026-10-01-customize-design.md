@@ -121,7 +121,7 @@ badges elsewhere).
 
 What Integrations showed, organised: **Tiers** (the existing form) on top; then the model
 table with search and a filter (All · Ready · Missing key · Missing runtime · Local), columns
-Model (ref mono) · Provider · Status badge (click → Keys) · Context · Price; then
+Model (ref mono; the provider is its prefix) · Status badge (click → Keys) · Context · Price; then
 **Decisions** (the existing card) at the bottom.
 
 ## Daemon API (new or changed)

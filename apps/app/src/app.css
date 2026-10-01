@@ -484,13 +484,14 @@ td .key-set {
 .keys-table td:last-child .key-set > .sx-btn {
   flex: none;
 }
-/* a long status (masked value, source, a key name) wraps instead of being clipped */
+/* a status (masked value, source, a key name) stays on one line; the table scrolls sideways if it must */
 .keys-table .sx-badge,
 .models-table .sx-badge {
-  height: auto;
-  min-height: 22px;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+}
+.keys-table td,
+.models-table td {
+  vertical-align: top;
 }
 .more-row {
   display: flex;

@@ -234,13 +234,12 @@ export function ModelsTab(): JSX.Element {
             <S.Table
               dense
               className="models-table"
-              columns={['Model', 'Provider', 'Status', 'Context', 'Price per M']}
-              align={[null, null, null, 'right', 'right']}
+              columns={['Model', 'Status', 'Context', 'Price per M']}
+              align={[null, null, 'right', 'right']}
               rows={shown.map((m) => [
-                <span key="r" className="mono">
+                <span key="r" className="mono" title={m.provider}>
                   {m.ref}
                 </span>,
-                <span key="p">{m.provider}</span>,
                 <ModelStatus key="s" m={m} />,
                 <span key="c">{contextLabel(m.contextWindow)}</span>,
                 <span key="$">{priceLabel(m)}</span>,
