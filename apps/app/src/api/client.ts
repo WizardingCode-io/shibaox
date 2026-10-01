@@ -14,7 +14,6 @@ import type {
   OrgConfig,
   OrgConfigPatch,
   OrgInfo,
-  PluginRow,
   ProjectEntry,
   RolePatch,
   RoleRow,
@@ -26,14 +25,21 @@ import type {
   RunFile,
   RunFileContent,
   RunSummaryPlus,
-  SkillAddRequest,
   SkillDiscovery,
   SkillRow,
   SkillSource,
   SubmitRequest,
 } from '@wizardingcode/shibaox-daemon';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
-import type { AddSkillOutcome, McpRow, SkillDoc } from '../screens/customize/types.js';
+import type {
+  AddSkillOutcome,
+  HiggsfieldMode,
+  HiggsfieldViewModes,
+  McpRow,
+  PluginRowModes,
+  SkillAddReq,
+  SkillDoc,
+} from '../screens/customize/types.js';
 
 /** An error the daemon answered with (status, its code and message). */
 export class AppHttpError extends Error {
@@ -121,6 +127,10 @@ export class AppClient {
   }
   higgsfieldLogin(): Promise<{ started: boolean }> {
     return this.json('POST', '/integrations/higgsfield/login');
+  }
+  /** What Higgsfield generates with: `auto` (the API when a key is saved), the account or the API. */
+  setHiggsfieldMode(mode: HiggsfieldMode): Promise<HiggsfieldViewModes> {
+    return this.json('PUT', '/integrations/higgsfield', { mode });
   }
   /** Who decides and the latest decisions across runs. */
   decisions(): Promise<DecisionsView> {
@@ -253,7 +263,7 @@ export class AppClient {
     return this.json('GET', `/skills/${encodeURIComponent(id)}?org=${encodeURIComponent(org)}`);
   }
   /** Installs skills from a repository or a folder, or writes one. */
-  addSkill(org: string, req: SkillAddRequest): Promise<AddSkillOutcome> {
+  addSkill(org: string, req: SkillAddReq): Promise<AddSkillOutcome> {
     return this.json('POST', `/skills?org=${encodeURIComponent(org)}`, req);
   }
   /** What a repository offers (a cached shallow clone on the daemon). */
@@ -295,7 +305,7 @@ export class AppClient {
     return this.json('GET', '/registry/skills');
   }
   /** The partner integrations and how far each is set up. */
-  plugins(): Promise<PluginRow[]> {
+  plugins(): Promise<PluginRowModes[]> {
     return this.json('GET', '/plugins');
   }
 

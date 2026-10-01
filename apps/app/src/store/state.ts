@@ -9,7 +9,6 @@ import type {
   McpServerRow,
   OrgConfig,
   OrgInfo,
-  PluginRow,
   RoleRow,
   RoutineView,
   RunSummaryPlus,
@@ -19,7 +18,7 @@ import type {
 } from '@wizardingcode/shibaox-daemon';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import type { Card } from '@wizardingcode/shibaox-view';
-import type { McpRow } from '../screens/customize/types.js';
+import type { McpRow, PluginRowModes } from '../screens/customize/types.js';
 
 export interface Settings {
   theme: 'light' | 'dark' | 'system';
@@ -84,7 +83,7 @@ export interface AppState {
     decisions?: DecisionsView;
     /** Why the decisions could not be read. */
     decisionsError?: string;
-    plugins: PluginRow[];
+    plugins: PluginRowModes[];
     registry: { connectors: ConnectorTemplate[]; skills: SkillSource[] };
     workflows: { name: string; description: string; conversation: boolean }[];
   };

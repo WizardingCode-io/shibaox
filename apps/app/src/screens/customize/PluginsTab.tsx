@@ -1,14 +1,21 @@
-import type { ConnectorTemplate, PluginRow } from '@wizardingcode/shibaox-daemon';
+import type { ConnectorTemplate } from '@wizardingcode/shibaox-daemon';
 import { useState } from 'react';
 import { ds } from '../../ds.js';
 import { useAppState, useStore } from '../../store/hooks.js';
+import { ApiKeyDialog } from './dialogs/ApiKeyDialog.js';
 import { TemplateDialog } from './dialogs/ConnectorDialog.js';
 import { RolesDialog } from './dialogs/RolesDialog.js';
 import { matches } from './filter.js';
 import { pluginKeyNeeds } from './needed-keys.js';
 import { AddMenu, Empty, goTo, KeyBadge, Toolbar } from './parts.js';
 import { settle } from './skill-results.js';
-import type { CustomizeView } from './types.js';
+import type {
+  CustomizeView,
+  HiggsfieldEffective,
+  HiggsfieldMode,
+  PluginMode,
+  PluginRowModes,
+} from './types.js';
 
 type IconName = Parameters<Window['Shibaox']['Icon']>[0]['name'];
 const ICON: Record<string, IconName> = {
@@ -19,7 +26,7 @@ const ICON: Record<string, IconName> = {
   jev: 'brain',
 };
 const STATUS: Record<
-  PluginRow['status'],
+  PluginRowModes['status'],
   { tone: 'matcha' | 'warning' | 'neutral'; label: string }
 > = {
   ready: { tone: 'matcha', label: 'Ready' },
@@ -27,9 +34,25 @@ const STATUS: Record<
   off: { tone: 'neutral', label: 'Not set up' },
 };
 
-/** One plugin: its status, checks, keys, actions and what it brings. */
-function PluginCard(props: {
-  p: PluginRow;
+/** "Use for generation": what the daemon.yaml choice can be. */
+const MODE_OPTIONS: { id: HiggsfieldMode; label: string; hint: string }[] = [
+  { id: 'auto', label: 'Auto', hint: 'the API when a key is saved, else the account' },
+  { id: 'account', label: 'Account', hint: 'your login and plan credits' },
+  { id: 'api', label: 'API', hint: 'your developer key' },
+];
+const NOW: Record<HiggsfieldEffective, string> = {
+  api: 'Now: API',
+  account: 'Now: Account',
+  none: 'Now: nothing set up',
+};
+
+/** What a body shows: the plugin itself, or one of its modes (`id` is the mode's). */
+type Part = Pick<PluginRowModes, 'checks' | 'keys' | 'actions' | 'brings'> & { id?: string };
+
+/** A plugin's (or a mode's) checks, actions and what it brings. */
+function PluginBody(props: {
+  p: PluginRowModes;
+  part: Part;
   onConnector: (t: ConnectorTemplate) => void;
   onSkillAdded: (id: string, name: string) => void;
 }): JSX.Element {
@@ -38,28 +61,36 @@ function PluginCard(props: {
   const state = useAppState();
   const c = state.customize;
   const p = props.p;
+  const part = props.part;
   // the command an install action copies; shown whole while the CLI is not there
-  const installCommand = p.actions.find((a) => a.id === 'install' && a.command)?.command;
-  const cliMissing = p.checks.some((ch) => /^CLI installed/.test(ch.label) && !ch.ok);
+  const installCommand = part.actions.find((a) => a.id === 'install' && a.command)?.command;
+  const cliMissing = part.checks.some((ch) => /^CLI installed/.test(ch.label) && !ch.ok);
   const [login, setLogin] = useState<{ url?: string } | undefined>(undefined);
   const [copied, setCopied] = useState(false);
   const [adding, setAdding] = useState<string | undefined>(undefined);
-  const st = STATUS[p.status];
-  /** A skill the plugin brings, from the skill source of the same vendor. */
+  const [keyDialog, setKeyDialog] = useState(false);
+  const builtin = part.brings.builtin ?? [];
+  const skills = [...new Set([...part.brings.skills, ...builtin])];
+  const tools = part.brings.tools ?? [];
+  /** A skill the plugin brings: from Shibaox's own template, else the vendor's skill source. */
   const addSkill = (id: string) => {
     const own = (s: string) => s.toLowerCase();
     const src = (c?.registry.skills ?? []).find(
       (s) => own(s.vendor) === own(p.name) || own(s.vendor) === own(p.id),
     );
-    if (!src) return goTo('skills', 'discover');
+    if (!builtin.includes(id) && !src) return goTo('skills', 'discover');
     setAdding(id);
     void store
-      .addSkill({
-        source: 'repo',
-        repo: src.repo,
-        ...(src.path ? { path: src.path } : {}),
-        ids: [id],
-      })
+      .addSkill(
+        builtin.includes(id) || !src
+          ? { source: 'builtin', id }
+          : {
+              source: 'repo',
+              repo: src.repo,
+              ...(src.path ? { path: src.path } : {}),
+              ids: [id],
+            },
+      )
       .then((r) => {
         setAdding(undefined);
         if (!r) return;
@@ -84,10 +115,11 @@ function PluginCard(props: {
     setTimeout(() => setCopied(false), 1400);
   };
   /**
-   * An action: `login` POSTs through the store (its href is a daemon path, never a link), an
-   * absolute http(s) href opens apart, `install` copies its command; anything else is hidden.
+   * An action: `login` POSTs through the store (its href is a daemon path, never a link),
+   * `connect_key` opens the key dialog, an absolute http(s) href opens apart, `install` copies
+   * its command; anything else is hidden.
    */
-  const action = (a: PluginRow['actions'][number]) => {
+  const action = (a: Part['actions'][number]) => {
     if (a.id === 'login')
       return (
         <S.Button
@@ -100,6 +132,12 @@ function PluginCard(props: {
             })
           }
         >
+          {a.label}
+        </S.Button>
+      );
+    if (a.id === 'connect_key')
+      return (
+        <S.Button key={a.id} size="sm" variant="primary" onClick={() => setKeyDialog(true)}>
           {a.label}
         </S.Button>
       );
@@ -123,6 +161,178 @@ function PluginCard(props: {
       </S.Button>
     );
   };
+  const validity = part.checks.find((ch) => ch.label === 'API key valid');
+  return (
+    <div className="stack-12">
+      {part.checks.length ? (
+        <ul className="checklist">
+          {part.checks.map((ch) => (
+            <li key={ch.label}>
+              <span className={ch.ok ? 'ok' : 'bad'}>
+                <S.Icon name={ch.ok ? 'check-circle' : 'triangle-alert'} size={16} />
+              </span>
+              <span className="checklist__label">{ch.label}</span>
+              {ch.detail ? <span className="muted checklist__detail">{ch.detail}</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {cliMissing && installCommand ? (
+        <S.CodeBlock language="bash" code={installCommand}>
+          {installCommand}
+        </S.CodeBlock>
+      ) : null}
+      <div className="row">
+        {part.actions.map(action)}
+        <S.Button size="sm" variant="quiet" onClick={() => void store.loadCustomize()}>
+          Check again
+        </S.Button>
+      </div>
+      {login?.url ? (
+        <p className="muted">
+          Finish the login here:{' '}
+          <a href={login.url} target="_blank" rel="noopener noreferrer">
+            {login.url}
+          </a>
+        </p>
+      ) : null}
+      {part.brings.connectors.length + skills.length + tools.length > 0 ? (
+        <div className="row">
+          <span className="muted">Brings</span>
+          {part.brings.connectors.map((id) =>
+            c?.mcp.some((m) => m.id === id) ? (
+              <S.Badge key={`c-${id}`} tone="matcha" icon="check">
+                {`connector ${id}`}
+              </S.Badge>
+            ) : (
+              <S.Button
+                key={`c-${id}`}
+                size="sm"
+                variant="quiet"
+                icon="plus"
+                aria-label={`Add connector ${id}`}
+                onClick={() => {
+                  const t = c?.registry.connectors.find((x) => x.id === id);
+                  if (t) props.onConnector(t);
+                  else goTo('connectors', 'discover');
+                }}
+              >
+                {`connector ${id}`}
+              </S.Button>
+            ),
+          )}
+          {skills.map((id) =>
+            c?.skills.some((s) => s.id === id) ? (
+              <S.Badge key={`s-${id}`} tone="matcha" icon="check">
+                {`skill ${id}`}
+              </S.Badge>
+            ) : (
+              <S.Button
+                key={`s-${id}`}
+                size="sm"
+                variant="quiet"
+                icon="plus"
+                loading={adding === id}
+                aria-label={`Add skill ${id}`}
+                onClick={() => addSkill(id)}
+              >
+                {`skill ${id}`}
+              </S.Button>
+            ),
+          )}
+          {tools.map((id) => (
+            <S.Badge key={`t-${id}`}>{`tool ${id}`}</S.Badge>
+          ))}
+        </div>
+      ) : null}
+      {p.id === 'higgsfield' && (!p.modes?.length || part.id === 'account') ? (
+        <p className="muted">
+          Ask Shibaox for an image, a video or a voice: it generates it with your Higgsfield credits
+          and saves the file in the conversation. Create an account is an affiliate link: Shibaox's
+          maintainer earns a share, you pay the same.
+        </p>
+      ) : null}
+      {p.id === 'higgsfield' && part.id === 'api' ? (
+        <p className="muted">
+          Shibaox calls the Higgsfield API with your key: generation is billed to your Higgsfield
+          developer account (open.higgsfield.ai), not to your plan's credits. The key stays in the
+          daemon's vault.
+        </p>
+      ) : null}
+      {keyDialog ? (
+        <ApiKeyDialog
+          {...(validity ? { validity: { ok: validity.ok, detail: validity.detail } } : {})}
+          onClose={() => setKeyDialog(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** The modes of a plugin (Higgsfield: Account | API), what generation uses, and the chosen panel. */
+function PluginModes(props: {
+  p: PluginRowModes;
+  modes: PluginMode[];
+  onConnector: (t: ConnectorTemplate) => void;
+  onSkillAdded: (id: string, name: string) => void;
+}): JSX.Element {
+  const S = ds();
+  const store = useStore();
+  const p = props.p;
+  const first = props.modes.find((m) => m.active) ?? props.modes[0];
+  const [shown, setShown] = useState(first?.id ?? '');
+  const mode = props.modes.find((m) => m.id === shown) ?? first;
+  return (
+    <div className="stack-12">
+      <div className="row">
+        <S.Segmented
+          label={`${p.name} mode`}
+          items={props.modes.map((m) => ({ id: m.id, label: m.name }))}
+          value={mode?.id ?? ''}
+          onChange={setShown}
+        />
+        <span className="grow" />
+        {p.mode ? <span className="muted">{NOW[p.mode.effective]}</span> : null}
+      </div>
+      {p.mode ? (
+        <S.Select
+          label="Use for generation"
+          value={p.mode.configured}
+          options={MODE_OPTIONS}
+          onChange={(id) => void store.setHiggsfieldMode(id as HiggsfieldMode)}
+        />
+      ) : null}
+      {mode ? (
+        <>
+          <div className="row">
+            <span className="muted">{mode.description}</span>
+            <span className="grow" />
+            <S.Badge tone={STATUS[mode.status].tone} dot>
+              {STATUS[mode.status].label}
+            </S.Badge>
+          </div>
+          <PluginBody
+            key={mode.id}
+            p={p}
+            part={mode}
+            onConnector={props.onConnector}
+            onSkillAdded={props.onSkillAdded}
+          />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** One plugin: its status, and its body (or its modes, each with its own body). */
+function PluginCard(props: {
+  p: PluginRowModes;
+  onConnector: (t: ConnectorTemplate) => void;
+  onSkillAdded: (id: string, name: string) => void;
+}): JSX.Element {
+  const S = ds();
+  const p = props.p;
+  const st = STATUS[p.status];
   return (
     <S.Card
       icon={ICON[p.id] ?? 'package'}
@@ -144,93 +354,21 @@ function PluginCard(props: {
         </>
       }
     >
-      <div className="stack-12">
-        {p.checks.length ? (
-          <ul className="checklist">
-            {p.checks.map((ch) => (
-              <li key={ch.label}>
-                <span className={ch.ok ? 'ok' : 'bad'}>
-                  <S.Icon name={ch.ok ? 'check-circle' : 'triangle-alert'} size={16} />
-                </span>
-                <span className="checklist__label">{ch.label}</span>
-                {ch.detail ? <span className="muted checklist__detail">{ch.detail}</span> : null}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {cliMissing && installCommand ? (
-          <S.CodeBlock language="bash" code={installCommand}>
-            {installCommand}
-          </S.CodeBlock>
-        ) : null}
-        <div className="row">
-          {p.actions.map(action)}
-          <S.Button size="sm" variant="quiet" onClick={() => void store.loadCustomize()}>
-            Check again
-          </S.Button>
-        </div>
-        {login?.url ? (
-          <p className="muted">
-            Finish the login here:{' '}
-            <a href={login.url} target="_blank" rel="noopener noreferrer">
-              {login.url}
-            </a>
-          </p>
-        ) : null}
-        {p.brings.connectors.length + p.brings.skills.length > 0 ? (
-          <div className="row">
-            <span className="muted">Brings</span>
-            {p.brings.connectors.map((id) =>
-              c?.mcp.some((m) => m.id === id) ? (
-                <S.Badge key={`c-${id}`} tone="matcha" icon="check">
-                  {`connector ${id}`}
-                </S.Badge>
-              ) : (
-                <S.Button
-                  key={`c-${id}`}
-                  size="sm"
-                  variant="quiet"
-                  icon="plus"
-                  aria-label={`Add connector ${id}`}
-                  onClick={() => {
-                    const t = c?.registry.connectors.find((x) => x.id === id);
-                    if (t) props.onConnector(t);
-                    else goTo('connectors', 'discover');
-                  }}
-                >
-                  {`connector ${id}`}
-                </S.Button>
-              ),
-            )}
-            {p.brings.skills.map((id) =>
-              c?.skills.some((s) => s.id === id) ? (
-                <S.Badge key={`s-${id}`} tone="matcha" icon="check">
-                  {`skill ${id}`}
-                </S.Badge>
-              ) : (
-                <S.Button
-                  key={`s-${id}`}
-                  size="sm"
-                  variant="quiet"
-                  icon="plus"
-                  loading={adding === id}
-                  aria-label={`Add skill ${id}`}
-                  onClick={() => addSkill(id)}
-                >
-                  {`skill ${id}`}
-                </S.Button>
-              ),
-            )}
-          </div>
-        ) : null}
-        {p.id === 'higgsfield' ? (
-          <p className="muted">
-            Ask Shibaox for an image, a video or a voice: it generates it with your Higgsfield
-            credits and saves the file in the conversation. Create an account is an affiliate link:
-            Shibaox's maintainer earns a share, you pay the same.
-          </p>
-        ) : null}
-      </div>
+      {p.modes?.length ? (
+        <PluginModes
+          p={p}
+          modes={p.modes}
+          onConnector={props.onConnector}
+          onSkillAdded={props.onSkillAdded}
+        />
+      ) : (
+        <PluginBody
+          p={p}
+          part={p}
+          onConnector={props.onConnector}
+          onSkillAdded={props.onSkillAdded}
+        />
+      )}
     </S.Card>
   );
 }

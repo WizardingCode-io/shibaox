@@ -4,7 +4,8 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { PluginRow } from '@wizardingcode/shibaox-daemon';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadDesignSystem } from '../src/ds.js';
-import { client, mount, PLUGINS, server } from './fixtures.js';
+import type { PluginRowModes } from '../src/screens/customize/types.js';
+import { client, higgsfieldApi, mount, PLUGINS, server } from './fixtures.js';
 
 beforeAll(() =>
   loadDesignSystem(
@@ -812,6 +813,173 @@ describe('Customize: Plugins', () => {
   });
 });
 
+describe('Customize: Plugins → Higgsfield in two modes', () => {
+  const HF_KEY = 'HIGGSFIELD_API_KEY';
+  const savedKey = (source: 'vault' | 'env') => [
+    {
+      name: HF_KEY,
+      description: 'Higgsfield API (open.higgsfield.ai): the id:secret pair as copied',
+      set: true,
+      source,
+      masked: 'abcd…wxyz',
+    },
+  ];
+  const card = () => screen.getByText('Higgsfield').closest('.sx-card') as HTMLElement;
+  const openConnect = async () => {
+    fireEvent.click(radio('API'));
+    fireEvent.click(screen.getByRole('button', { name: 'Connect API key' }));
+    return screen.findByRole('dialog', { name: 'Connect API key' });
+  };
+
+  it('Account | API switches the panel: its checks, its actions, its words', async () => {
+    const { client: c } = client();
+    mount(c, { hash: '#/customize&tab=plugins' });
+    await screen.findByText('Higgsfield');
+    expect(radio('Account').getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByText('CLI installed')).toBeTruthy();
+    expect(screen.getByText(/affiliate link/i)).toBeTruthy();
+    fireEvent.click(radio('API'));
+    expect(screen.getByText('API key saved')).toBeTruthy();
+    expect(screen.getByText('API key valid')).toBeTruthy();
+    expect(screen.queryByText('CLI installed')).toBeNull();
+    expect(screen.queryByText(/affiliate link/i)).toBeNull();
+    expect(screen.getByText(/billed to your Higgsfield developer account/)).toBeTruthy();
+    // a primary button, never a link to the key page
+    expect(screen.queryByRole('link', { name: 'Connect API key' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'API docs' })).toBeTruthy();
+  });
+
+  it('Connect API key: the exact copy, one password field, Get a key; Save trims and saves', async () => {
+    const { client: c, calls } = client();
+    mount(c, { hash: '#/customize&tab=plugins' });
+    await screen.findByText('Higgsfield');
+    const dialog = await openConnect();
+    expect(
+      within(dialog).getByText('Paste the API key copied from open.higgsfield.ai. Paste it as-is.'),
+    ).toBeTruthy();
+    expect(dialog.querySelectorAll('input').length).toBe(1);
+    const input = within(dialog).getByLabelText('API key') as HTMLInputElement;
+    expect(input.type).toBe('password');
+    expect(input.getAttribute('autocomplete')).toBe('off');
+    const get = within(dialog).getByRole('link', { name: 'Get a key' });
+    expect(get.getAttribute('href')).toBe('https://open.higgsfield.ai/api-keys');
+    expect(get.getAttribute('target')).toBe('_blank');
+    expect(get.getAttribute('rel')).toBe('noopener noreferrer');
+    const save = () => within(dialog).getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+    expect(save().disabled).toBe(true);
+    fireEvent.change(input, { target: { value: '   ' } });
+    expect(save().disabled).toBe(true);
+    fireEvent.change(input, { target: { value: '  id:secret \n' } });
+    fireEvent.click(save());
+    await waitFor(() => expect(call(calls, 'setKey')).toEqual([HF_KEY, 'id:secret']));
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Connect API key' })).toBeNull(),
+    );
+  });
+
+  it('a key without its colon is refused here, with no call', async () => {
+    const { client: c, calls } = client();
+    mount(c, { hash: '#/customize&tab=plugins' });
+    await screen.findByText('Higgsfield');
+    const dialog = await openConnect();
+    fireEvent.change(within(dialog).getByLabelText('API key'), { target: { value: 'nocolon' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(
+      await within(dialog).findByText(
+        'Copy the whole key from open.higgsfield.ai (it has a colon)',
+      ),
+    ).toBeTruthy();
+    expect(calls.some((x) => x.name === 'setKey')).toBe(false);
+  });
+
+  it('Manage API key: the masked key and its validity; Replace saves a new one', async () => {
+    const { client: c, calls } = client({
+      plugins: [higgsfieldApi({ active: true }), PLUGINS[1] as PluginRowModes],
+      keys: savedKey('vault'),
+    });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    await screen.findByText('Higgsfield');
+    // the active mode is the one shown first
+    expect(radio('API').getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Manage API key' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Manage API key' });
+    expect(within(dialog).getByText('abcd…wxyz')).toBeTruthy();
+    expect(within(dialog).getByText(/accepted/)).toBeTruthy();
+    expect(dialog.querySelector('input')).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Replace' }));
+    const input = within(dialog).getByLabelText('API key') as HTMLInputElement;
+    expect(input.type).toBe('password');
+    fireEvent.change(input, { target: { value: 'new:key' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(call(calls, 'setKey')).toEqual([HF_KEY, 'new:key']));
+  });
+
+  it('Remove asks first, then unsets the key', async () => {
+    const { client: c, calls } = client({
+      plugins: [higgsfieldApi({ active: true })],
+      keys: savedKey('vault'),
+    });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage API key' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Manage API key' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove' }));
+    const confirm = await screen.findByRole('dialog', { name: /Remove the API key/ });
+    expect(calls.some((x) => x.name === 'unsetKey')).toBe(false);
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(call(calls, 'unsetKey')).toEqual([HF_KEY]));
+  });
+
+  it('a key from the environment cannot be removed here', async () => {
+    const { client: c } = client({
+      plugins: [higgsfieldApi({ active: true })],
+      keys: savedKey('env'),
+    });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage API key' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Manage API key' });
+    expect(within(dialog).getAllByText(/environment/).length).toBeGreaterThan(0);
+    expect(within(dialog).queryByRole('button', { name: 'Remove' })).toBeNull();
+    expect(within(dialog).getByRole('button', { name: 'Replace' })).toBeTruthy();
+  });
+
+  it('Use for generation sets the mode; Now says what tasks use', async () => {
+    const { client: c, calls } = client();
+    mount(c, { hash: '#/customize&tab=plugins' });
+    await screen.findByText('Higgsfield');
+    expect(within(card()).getByText('Now: Account')).toBeTruthy();
+    const reads = calls.filter((x) => x.name === 'plugins').length;
+    fireEvent.click(screen.getByRole('button', { name: 'Use for generation' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /^API/ }));
+    await waitFor(() => expect(call(calls, 'setHiggsfieldMode')).toEqual(['api']));
+    // the plugins are read again
+    await waitFor(() =>
+      expect(calls.filter((x) => x.name === 'plugins').length).toBeGreaterThan(reads),
+    );
+  });
+
+  it('Now: nothing set up when no mode can be used', async () => {
+    const { client: c } = client({
+      plugins: [
+        { ...(PLUGINS[0] as PluginRowModes), mode: { configured: 'api', effective: 'none' } },
+      ],
+    });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    expect(await screen.findByText('Now: nothing set up')).toBeTruthy();
+  });
+
+  it('a skill the API mode brings from Shibaox itself is added as builtin', async () => {
+    const { client: c, calls } = client();
+    mount(c, { hash: '#/customize&tab=plugins' });
+    await screen.findByText('Higgsfield');
+    fireEvent.click(radio('API'));
+    expect(screen.getByText('tool higgsfield_api_generate')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Add skill higgsfield-app' }));
+    await waitFor(() =>
+      expect(call(calls, 'addSkill')).toEqual(['/o', { source: 'builtin', id: 'higgsfield-app' }]),
+    );
+  });
+});
+
 describe('Customize: Keys', () => {
   const block = (name: string) => screen.getByRole('region', { name });
   const firstCells = (name: string) =>
@@ -874,6 +1042,37 @@ describe('Customize: Keys', () => {
       .find((r) => r.querySelector('td')?.textContent === 'PW_TOKEN') as HTMLElement;
     expect(within(row).getByText('from the environment')).toBeTruthy();
     expect(within(row).queryByRole('button', { name: /Unset/ })).toBeNull();
+  });
+
+  it('Higgsfield set to API: its key is needed now (missing), never a provider', async () => {
+    const { client: c } = client({
+      plugins: [
+        {
+          ...(PLUGINS[0] as PluginRowModes),
+          status: 'off',
+          mode: { configured: 'api', effective: 'none' },
+        },
+      ],
+    });
+    mount(c, { hash: '#/customize&tab=keys' });
+    await waitFor(() => expect(firstCells('Needed now')).toContain('HIGGSFIELD_API_KEY'));
+    const row = within(block('Needed now'))
+      .getAllByRole('row')
+      .find((r) => r.querySelector('td')?.textContent === 'HIGGSFIELD_API_KEY') as HTMLElement;
+    expect(within(row).getByText('missing')).toBeTruthy();
+    expect(within(row).getByText('plugin higgsfield')).toBeTruthy();
+    fireEvent.click(within(block('Providers')).getByRole('switch'));
+    expect(within(block('Providers')).queryByText('HIGGSFIELD_API_KEY')).toBeNull();
+  });
+
+  it('Higgsfield not set up on auto: its API key waits in Other', async () => {
+    const { client: c } = client({
+      plugins: [{ ...(PLUGINS[0] as PluginRowModes), status: 'off' }],
+    });
+    mount(c, { hash: '#/customize&tab=keys' });
+    await waitFor(() => expect(firstCells('Needed now').length).toBeGreaterThan(0));
+    expect(firstCells('Needed now')).not.toContain('HIGGSFIELD_API_KEY');
+    expect(within(block('Other')).getByText('HIGGSFIELD_API_KEY')).toBeTruthy();
   });
 
   it('Providers: the keys in use; Show all providers lists the rest', async () => {

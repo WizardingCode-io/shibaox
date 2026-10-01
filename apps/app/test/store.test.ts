@@ -7,6 +7,7 @@ import type {
 } from '@wizardingcode/shibaox-daemon';
 import { describe, expect, it, vi } from 'vitest';
 import { AppStore } from '../src/store/store.js';
+import { client as fixtureClient, higgsfieldApi, storage } from './fixtures.js';
 
 type Turn = { summary: RunSummaryPlus; state: RunState; frames: Envelope[] };
 function fakeClient() {
@@ -133,6 +134,10 @@ function fakeClient() {
     },
     async higgsfieldLogin() {
       return { started: true };
+    },
+    async setHiggsfieldMode(mode: string) {
+      rec('setHiggsfieldMode', mode);
+      return {} as never;
     },
     async writeFile(id: string, path: string, content: string) {
       rec('writeFile', id, path, content);
@@ -776,5 +781,48 @@ describe('AppStore: the slice-2 review fixes', () => {
         input: '',
       }),
     ).toBe(true);
+  });
+});
+
+describe('AppStore: Higgsfield in two modes', () => {
+  /** API active: the top-level checks are the API's; the account mode carries "Logged in". */
+  const row = (loggedIn: boolean) => {
+    const r = higgsfieldApi({ active: true });
+    const account = r.modes?.[0];
+    if (account)
+      account.checks = account.checks.map((c) =>
+        c.label === 'Logged in' ? { ...c, ok: loggedIn } : c,
+      );
+    return r;
+  };
+
+  it('the login poll reads the account mode and stops once it is logged in', async () => {
+    const f = fixtureClient();
+    let reads = 0;
+    f.client.plugins = async () => {
+      reads++;
+      return [row(reads >= 3)];
+    };
+    const store = new AppStore({ client: f.client, storage: storage() });
+    await store.loadCustomize();
+    expect(reads).toBe(1);
+    vi.useFakeTimers();
+    try {
+      await store.higgsfieldLogin();
+      for (let i = 0; i < 10; i++) await vi.advanceTimersByTimeAsync(3000);
+      expect(reads).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('setHiggsfieldMode PUTs the mode, then reads the plugins again', async () => {
+    const f = fixtureClient();
+    const store = new AppStore({ client: f.client, storage: storage() });
+    await store.loadCustomize();
+    const reads = f.calls.filter((x) => x.name === 'plugins').length;
+    expect(await store.setHiggsfieldMode('api')).toBe(true);
+    expect(f.calls.find((x) => x.name === 'setHiggsfieldMode')?.args).toEqual(['api']);
+    expect(f.calls.filter((x) => x.name === 'plugins').length).toBe(reads + 1);
   });
 });

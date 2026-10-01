@@ -1,11 +1,9 @@
-import type {
-  KeyRow,
-  McpServerRow,
-  OrgConfig,
-  PluginRow,
-  RoleRow,
-} from '@wizardingcode/shibaox-daemon';
+import type { KeyRow, McpServerRow, OrgConfig, RoleRow } from '@wizardingcode/shibaox-daemon';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
+import type { PluginRowModes } from './types.js';
+
+/** The fields of a plugin (or of one of its modes) its key needs are read from. */
+type KeyedPart = Pick<PluginRowModes, 'checks' | 'keys'>;
 
 /** Who needs a key: a badge in the Keys tab (`tier strong`, `connector github`, `plugin telegram`). */
 export interface NeededBy {
@@ -34,7 +32,7 @@ export interface KeyLine {
  * A plugin's keys as needs: keys named together in one check ("Token (GH_TOKEN or
  * GITHUB_TOKEN)") are alternatives of one need, met when any of them is present.
  */
-export function pluginKeyNeeds(p: PluginRow): { names: string[]; present: boolean }[] {
+export function pluginKeyNeeds(p: KeyedPart): { names: string[]; present: boolean }[] {
   const out: { names: string[]; present: boolean }[] = [];
   const seen = new Set<string>();
   for (const k of p.keys) {
@@ -56,7 +54,7 @@ export interface NeededKeysInput {
   config?: OrgConfig;
   roles: RoleRow[];
   mcp: McpServerRow[];
-  plugins: PluginRow[];
+  plugins: PluginRowModes[];
   models: ModelChoice[];
   keys: KeyRow[];
 }
@@ -68,7 +66,19 @@ export const BUILT_IN_KEYS = [
   'GH_TOKEN',
   'GITHUB_TOKEN',
   'SHIBAOX_DAEMON_TOKEN',
+  'HIGGSFIELD_API_KEY',
 ];
+
+/**
+ * The part of a plugin whose keys count: a mode chosen by name (`account`/`api`) is needed
+ * even before it works, so its own keys; otherwise the top level (the active mode). Undefined:
+ * the plugin is not set up and nothing chose it, so it needs nothing yet.
+ */
+function neededPart(p: PluginRowModes): KeyedPart | undefined {
+  const chosen = p.mode?.configured;
+  if (chosen === 'account' || chosen === 'api') return p.modes?.find((m) => m.id === chosen) ?? p;
+  return p.status === 'off' ? undefined : p;
+}
 
 export const KEY_NAME_RE = /^[A-Z][A-Z0-9_]*$/;
 
@@ -158,17 +168,19 @@ export function neededKeys(input: NeededKeysInput): {
   for (const s of mcp)
     for (const k of s.keys)
       need(k.name, { kind: 'connector', id: s.id, label: `connector ${s.id}` }, k.present);
-  // a plugin that is not set up at all needs nothing yet (its keys stay in Other)
+  // a plugin that is not set up at all needs nothing yet (its keys stay in Other), unless a
+  // mode of it was chosen by name (Higgsfield set to API needs its key now)
   for (const p of plugins) {
-    if (p.status === 'off') continue;
-    for (const n of pluginKeyNeeds(p)) {
+    const part = neededPart(p);
+    if (!part) continue;
+    for (const n of pluginKeyNeeds(part)) {
       const [first, ...rest] = n.names;
       if (!first) continue;
-      const own = p.keys.find((k) => k.name === first)?.present;
+      const own = part.keys.find((k) => k.name === first)?.present;
       need(first, { kind: 'plugin', id: p.id, label: `plugin ${p.id}` }, own);
       if (rest.length) {
         const via = rest.find(
-          (r) => p.keys.find((k) => k.name === r)?.present || known.get(r)?.set,
+          (r) => part.keys.find((k) => k.name === r)?.present || known.get(r)?.set,
         );
         alternatives.set(first, { names: rest, ...(via ? { present: via } : {}) });
       }
