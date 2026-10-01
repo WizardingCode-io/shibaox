@@ -1402,7 +1402,8 @@ describe('Higgsfield gating per task', () => {
     const { manager: m } = manager(new MemoryEventStore(), {
       queryFn: q,
       vault: s.vault,
-      env: { HIGGSFIELD_API_KEY: 'id:secret' },
+      // a base in the run's env (the vault is merged in it) never redirects the key
+      env: { HIGGSFIELD_API_KEY: 'id:secret', SHIBAOX_HIGGSFIELD_API_BASE: 'http://127.0.0.1:9' },
       higgsfield: { mode: () => 'api', fetch: fakeFetch },
     });
     const { runId } = await m.submit({

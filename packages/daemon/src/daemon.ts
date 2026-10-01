@@ -31,6 +31,7 @@ import {
 } from './config.js';
 import { ensureDefaultOrg } from './default-org.js';
 import {
+  apiBase,
   defaultHiggsfieldProbe,
   effectiveHiggsfieldMode,
   HIGGSFIELD_INSTALL,
@@ -150,6 +151,7 @@ export class Daemon {
   /** One turn at a time per chat: the run in flight and the texts waiting for it. */
   private readonly inFlight = new Map<string, { runId: string; queue: string[] }>();
   private modelsCache: { at: number; models: ModelChoice[] } | undefined;
+  private readonly higgsfieldBase: string;
 
   constructor(private readonly opts: DaemonOptions = {}) {
     this.paths = opts.home ?? homePaths(opts.env);
@@ -161,6 +163,8 @@ export class Daemon {
     this.secrets = new SecretsStore(this.paths.secrets);
     // one live object: a key set through the API is seen by the next run without a restart
     this.env = this.secrets.env(opts.env ?? process.env);
+    // Higgsfield's API base from the launch env only: a vault entry never redirects the key
+    this.higgsfieldBase = apiBase(opts.env ?? process.env, log);
     this.skills = new SkillsService({ env: this.env, log: opts.log });
     this.channels =
       opts.channels ??
@@ -211,7 +215,7 @@ export class Daemon {
       log,
       env: this.env,
       // read when each task starts: a mode change applies to the next task
-      higgsfield: { mode: () => this.higgsfieldMode() },
+      higgsfield: { mode: () => this.higgsfieldMode(), base: this.higgsfieldBase },
       ready: opts.discovery === false ? undefined : () => this.models(),
       summarizer: opts.summarize
         ? (org) => (t) => opts.summarize?.(t, org) ?? Promise.reject(new Error('no summariser'))
@@ -466,7 +470,7 @@ export class Daemon {
   private higgsfieldCache?: { at: number; view: Promise<HiggsfieldAccountView> };
   private higgsfieldApiCache?: { at: number; hash: string; view: Promise<HiggsfieldApiView> };
   private get higgsfieldProbe(): HiggsfieldProbe {
-    return this.opts.higgsfield ?? defaultHiggsfieldProbe(this.env);
+    return this.opts.higgsfield ?? defaultHiggsfieldProbe(this.env, this.higgsfieldBase);
   }
   /** `partners.higgsfield.mode` (an injected config may lack the block: auto). */
   higgsfieldMode(): HiggsfieldMode {

@@ -134,6 +134,12 @@ describe('keys endpoints', () => {
       message: expect.stringMatching(/paste it as-is/),
     });
     expect((await client.keys()).find((k) => k.name === 'HIGGSFIELD_API_KEY')?.set).toBe(false);
+    await expect(
+      client.setKey('SHIBAOX_HIGGSFIELD_API_BASE', 'http://other.test'),
+    ).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringMatching(/reserved for Shibaox's own settings/),
+    });
   });
 });
 

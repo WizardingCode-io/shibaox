@@ -12,10 +12,28 @@ export const HIGGSFIELD_API_DOCS = 'https://docs.higgsfield.ai/docs';
 /** A request id that never exists: its status answers 404 to a valid key and 401 to a bad one. */
 export const PROBE_REQUEST_ID = '00000000-0000-0000-0000-000000000000';
 
-/** The API base (`SHIBAOX_HIGGSFIELD_API_BASE` points tests and the doctor elsewhere). */
-export function apiBase(env: NodeJS.ProcessEnv): string {
-  const b = env.SHIBAOX_HIGGSFIELD_API_BASE?.trim();
-  return (b || HIGGSFIELD_API).replace(/\/+$/, '');
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+/**
+ * The API base: `SHIBAOX_HIGGSFIELD_API_BASE` from the environment the daemon or CLI was
+ * launched with (never the vault: callers pass the launch env), https only, or http on a
+ * loopback host. Anything else is ignored (with `warn`) and the public API is used.
+ */
+export function apiBase(launchEnv: NodeJS.ProcessEnv, warn?: (line: string) => void): string {
+  const b = launchEnv.SHIBAOX_HIGGSFIELD_API_BASE?.trim();
+  if (!b) return HIGGSFIELD_API;
+  let u: URL | undefined;
+  try {
+    u = new URL(b);
+  } catch {
+    u = undefined;
+  }
+  if (u && (u.protocol === 'https:' || (u.protocol === 'http:' && LOOPBACK.has(u.hostname))))
+    return b.replace(/\/+$/, '');
+  warn?.(
+    `warn: SHIBAOX_HIGGSFIELD_API_BASE is ignored: it must be an https URL (http only on 127.0.0.1, localhost or [::1]); using ${HIGGSFIELD_API}`,
+  );
+  return HIGGSFIELD_API;
 }
 
 /** What the probe's HTTP status says about the key. */
@@ -111,10 +129,13 @@ export interface HiggsfieldProbe {
   apiCheck?(key: string): Promise<ApiCheck>;
 }
 
-export function defaultHiggsfieldProbe(env: NodeJS.ProcessEnv): HiggsfieldProbe {
+/** `base`: the API base from the launch env (`apiBase`), never read from `env` (it has the vault). */
+export function defaultHiggsfieldProbe(
+  env: NodeJS.ProcessEnv,
+  base: string = HIGGSFIELD_API,
+): HiggsfieldProbe {
   // the CLI runs with a minimal environment: never the daemon's keys
   const minimal = bearerEnv(env);
-  const base = apiBase(env);
   return {
     apiCheck: (key) => higgsfieldApiCheck(key, base),
     exec: (argv) =>

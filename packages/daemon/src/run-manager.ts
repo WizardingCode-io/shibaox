@@ -41,7 +41,7 @@ import {
   type WorkspaceMode,
 } from '@wizardingcode/shibaox-workspace';
 import type { DaemonConfig, HiggsfieldMode } from './config.js';
-import { apiBase, runtimeHiggsfieldMode } from './higgsfield.js';
+import { HIGGSFIELD_API, runtimeHiggsfieldMode } from './higgsfield.js';
 import type { InboxAnswer, InboxItem, InboxService } from './inbox.js';
 import { projectProtectedGlobs } from './protected.js';
 import { type DiffResult, diffWorkspace, worktreeBase } from './runs/diff.js';
@@ -168,7 +168,7 @@ export interface RunManagerOptions {
    * Higgsfield's mode (`partners.higgsfield.mode`), read when each task starts; `fetch` is the
    * API tools' (tests inject a fake).
    */
-  higgsfield?: { mode(): HiggsfieldMode; fetch?: typeof fetch };
+  higgsfield?: { mode(): HiggsfieldMode; fetch?: typeof fetch; base?: string };
   /** A run with an `origin` ended: the daemon reports it where it was asked for. */
   onFinished?: (
     state: RunState,
@@ -1088,7 +1088,8 @@ export class RunManager {
       return higgsfieldApiTools({
         key: () => env.HIGGSFIELD_API_KEY || undefined,
         fetch: this.opts.higgsfield?.fetch ?? fetch,
-        base: apiBase(env),
+        // from the launch env (the daemon's `apiBase`), never the run env: it has the vault
+        base: this.opts.higgsfield?.base ?? HIGGSFIELD_API,
         workspace: job.workspace,
         protectedGlobs: projectProtectedGlobs(project),
         // captured now: the run's controller, even once it is aborted

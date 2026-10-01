@@ -48,6 +48,22 @@ describe('Higgsfield API: validity and modes', () => {
     expect(PROBE_REQUEST_ID).toBe('00000000-0000-0000-0000-000000000000');
   });
 
+  it('apiBase: https, or http only on a loopback host; anything else falls back to the public API', () => {
+    const b = (v: string) => apiBase({ SHIBAOX_HIGGSFIELD_API_BASE: v });
+    expect(b('https://proxy.test/hf/')).toBe('https://proxy.test/hf');
+    expect(b('http://localhost:8080')).toBe('http://localhost:8080');
+    expect(b('http://[::1]:8080')).toBe('http://[::1]:8080');
+    expect(b('http://127.0.0.1:9')).toBe('http://127.0.0.1:9');
+    const warned: string[] = [];
+    expect(
+      apiBase({ SHIBAOX_HIGGSFIELD_API_BASE: 'http://other.test' }, (w) => warned.push(w)),
+    ).toBe(HIGGSFIELD_API);
+    expect(warned[0]).toMatch(/https/);
+    expect(b('http://127.0.0.1.other.test')).toBe(HIGGSFIELD_API);
+    expect(b('ftp://x')).toBe(HIGGSFIELD_API);
+    expect(b('not a url')).toBe(HIGGSFIELD_API);
+  });
+
   it('effectiveHiggsfieldMode: what generates now', () => {
     const t = (keySet: boolean, loggedIn: boolean) => ({ keySet, loggedIn });
     expect(effectiveHiggsfieldMode('auto', t(true, true))).toBe('api');
@@ -88,9 +104,17 @@ describe('the API key probe', () => {
     await new Promise((r) => s?.close(r));
     expect(await higgsfieldApiCheck('id:secret', dead.base)).toEqual({});
   });
-  it('the default probe uses the base from the environment', async () => {
+  it('a 3xx answer says nothing about the key (unknown), never followed', async () => {
+    const { base, seen } = await serve(302);
+    expect(await higgsfieldApiCheck('id:secret', base)).toEqual({ status: 302 });
+    expect(seen).toHaveLength(1);
+  });
+  it('the default probe uses the base it is given, never one from the (vault) env', async () => {
     const { base, seen } = await serve(401);
-    const probe = defaultHiggsfieldProbe({ SHIBAOX_HIGGSFIELD_API_BASE: base });
+    const probe = defaultHiggsfieldProbe(
+      { SHIBAOX_HIGGSFIELD_API_BASE: 'http://127.0.0.1:9' },
+      base,
+    );
     expect(await probe.apiCheck?.('a:b')).toEqual({ valid: false, status: 401 });
     expect(seen[0]?.auth).toBe('Key a:b');
   });

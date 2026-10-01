@@ -23,6 +23,8 @@ export interface KeyRow extends KnownKey {
 }
 
 const NAME_RE = /^[A-Z][A-Z0-9_]*$/;
+/** The only `SHIBAOX_*` names the vault holds: every other one is a Shibaox setting. */
+const SHIBAOX_SECRETS = new Set(['SHIBAOX_TELEGRAM_TOKEN', 'SHIBAOX_DAEMON_TOKEN']);
 const BUILT_IN: KnownKey[] = [
   { name: 'TYPESAFE_API_KEY', description: 'Jev decisions and checks (TypeSafe)' },
   { name: 'SHIBAOX_TELEGRAM_TOKEN', description: 'Telegram bot (channels.telegram)' },
@@ -104,6 +106,10 @@ export class SecretsStore {
   set(name: string, value: string): void {
     if (!NAME_RE.test(name))
       throw new Error(`key name "${name}" must look like an environment variable (OPENAI_API_KEY)`);
+    if (name.startsWith('SHIBAOX_') && !SHIBAOX_SECRETS.has(name))
+      throw new Error(
+        `"${name}" is reserved for Shibaox's own settings: set it in the environment the daemon starts with, not in the vault`,
+      );
     const v = value.trim();
     if (!v) throw new Error('key value is empty');
     const rule = VALUE_RULES[name];
