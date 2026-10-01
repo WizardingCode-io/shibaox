@@ -7,9 +7,8 @@ import { useAppState, useStore } from '../store/hooks.js';
 const SECTIONS = [
   { id: 'chats', label: 'Chats', icon: 'message-square', path: '#/chats' },
   { id: 'scheduled', label: 'Scheduled', icon: 'clock', path: '#/scheduled' },
-  { id: 'skills', label: 'Skills', icon: 'zap', path: '#/skills' },
+  { id: 'customize', label: 'Customize', icon: 'puzzle', path: '#/customize' },
   { id: 'memory', label: 'Memory', icon: 'brain', path: '#/memory' },
-  { id: 'integrations', label: 'Integrations', icon: 'plug', path: '#/integrations' },
 ] as const;
 
 /** The mockup's sidebar: brand, New chat, the sections, the recent threads, and you. */
@@ -28,7 +27,8 @@ export function Sidebar(props: { route: Route; onNewChat: () => void }): JSX.Ele
   const needsYou = state.inbox.length;
   const active = (id: string) =>
     (props.route.name === 'chats' && id === 'chats') ||
-    (props.route.name === 'section' && props.route.section === id);
+    (props.route.name === 'section' && props.route.section === id) ||
+    (props.route.name === 'customize' && id === 'customize');
   const scheduled = state.routines?.filter((r) => r.enabled).length ?? 0;
   return (
     <aside className="side">

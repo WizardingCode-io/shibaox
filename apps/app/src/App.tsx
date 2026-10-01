@@ -12,12 +12,11 @@ import { useFileThumbs, useVoice } from './hooks/attachments.js';
 import { useRoute } from './router.js';
 import { ChatsScreen } from './screens/ChatsScreen.js';
 import { ConnectScreen } from './screens/ConnectScreen.js';
-import { IntegrationsScreen } from './screens/IntegrationsScreen.js';
+import { CustomizeScreen } from './screens/customize/CustomizeScreen.js';
 import { MemoryScreen } from './screens/MemoryScreen.js';
 import { ScheduledScreen } from './screens/ScheduledScreen.js';
 import { SettingsScreen } from './screens/SettingsScreen.js';
 import { Sidebar } from './screens/Sidebar.js';
-import { SkillsScreen } from './screens/SkillsScreen.js';
 import { SoonScreen } from './screens/SoonScreen.js';
 import { ThreadScreen } from './screens/ThreadScreen.js';
 import { StoreContext, useAppState, useStore } from './store/hooks.js';
@@ -137,13 +136,11 @@ function Shell(props: { base: string; onDisconnect: () => void }): JSX.Element {
       ) : route.name === 'section' ? (
         route.section === 'scheduled' ? (
           <ScheduledScreen />
-        ) : route.section === 'skills' ? (
-          <SkillsScreen />
-        ) : route.section === 'memory' ? (
-          <MemoryScreen />
         ) : (
-          <IntegrationsScreen />
+          <MemoryScreen />
         )
+      ) : route.name === 'customize' ? (
+        <CustomizeScreen tab={route.tab} view={route.view} focusKey={route.key} />
       ) : route.name === 'soon' ? (
         <SoonScreen section={route.section} />
       ) : (

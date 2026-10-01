@@ -118,6 +118,7 @@ export const CONNECTORS: ConnectorTemplate[] = [
     server: {
       transport: 'http',
       url: 'https://api.githubcopilot.com/mcp/',
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the catalog's own ${KEY} placeholder
       headers: { Authorization: 'Bearer ${GH_TOKEN}' },
       env_keys: ['GH_TOKEN'],
     },

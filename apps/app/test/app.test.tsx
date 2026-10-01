@@ -13,7 +13,7 @@ beforeAll(() =>
 );
 
 describe('the app', () => {
-  it('renders the mockup: brand, New chat, the five sections, the recent threads and the me row', async () => {
+  it('renders the mockup: brand, New chat, the four sections, the recent threads and the me row', async () => {
     const { client: c } = client({
       runs: [
         summary('root'),
@@ -31,7 +31,7 @@ describe('the app', () => {
     const side = screen.getByRole('complementary');
     expect(within(side).getByText('shibaox')).toBeTruthy();
     expect(within(side).getByRole('button', { name: 'New chat' })).toBeTruthy();
-    for (const label of ['Chats', 'Scheduled', 'Skills', 'Memory', 'Integrations'])
+    for (const label of ['Chats', 'Scheduled', 'Customize', 'Memory'])
       expect(within(side).getByText(label)).toBeTruthy();
     expect(within(side).getByText('Recent')).toBeTruthy();
     await waitFor(() => expect(within(side).getByText('Find me a hotel in Porto')).toBeTruthy());
@@ -255,22 +255,6 @@ describe('the app: the review fixes', () => {
 });
 
 describe('the sections', () => {
-  it('Skills lists the workflows and runs one as a task', async () => {
-    const { client: c, calls } = client();
-    mount(c, { hash: '#/skills' });
-    await waitFor(() =>
-      expect(screen.getAllByRole('button', { name: 'Run task' })[0] as HTMLElement).toBeTruthy(),
-    );
-    fireEvent.click(screen.getAllByRole('button', { name: 'Run task' })[0] as HTMLElement);
-    fireEvent.change(screen.getByLabelText('Request'), { target: { value: 'Add a footer' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
-    await waitFor(() =>
-      expect(calls.find((x) => x.name === 'submitRun')?.args[0]).toMatchObject({
-        workflow: 'chat',
-        input: 'Add a footer',
-      }),
-    );
-  });
   it('Memory shows the project profile and the org', async () => {
     const { client: c } = client();
     mount(c, { hash: '#/memory' });
@@ -278,58 +262,6 @@ describe('the sections', () => {
     expect(screen.getByText(/main/)).toBeTruthy();
     expect(screen.getByText(/pnpm test/)).toBeTruthy();
     expect(screen.getByText(/claude-opus/)).toBeTruthy();
-  });
-  it('Integrations: MCP with Test, models, keys with Set/Unset, tiers with Save', async () => {
-    const { client: c, calls } = client();
-    mount(c, { hash: '#/integrations' });
-    await waitFor(() => expect(screen.getByText('playwright')).toBeTruthy());
-    expect(screen.getByText(/PW_TOKEN/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Test' }));
-    await waitFor(() => expect(screen.getByText(/browser_navigate/)).toBeTruthy());
-    expect(screen.getByText('lmstudio/qwen')).toBeTruthy();
-    expect(screen.getAllByText(/OPENAI_API_KEY/).length).toBeGreaterThan(0);
-    fireEvent.change(screen.getByLabelText('OPENAI_API_KEY'), { target: { value: 'sk-new' } });
-    fireEvent.click(screen.getAllByRole('button', { name: 'Set' })[0] as HTMLElement);
-    await waitFor(() =>
-      expect(calls.find((x) => x.name === 'setKey')?.args).toEqual(['OPENAI_API_KEY', 'sk-new']),
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Unset' }));
-    await waitFor(() => expect(calls.find((x) => x.name === 'unsetKey')?.args[0]).toBe('GH_TOKEN'));
-    fireEvent.change(screen.getByLabelText('Cheap'), { target: { value: 'openai/gpt-5-nano' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save tiers' }));
-    await waitFor(() =>
-      expect(calls.find((x) => x.name === 'setOrgConfig')?.args[1]).toMatchObject({
-        tiers: { cheap: 'openai/gpt-5-nano' },
-      }),
-    );
-  });
-  it('Integrations: Higgsfield shows the account, the credits and the way in', async () => {
-    const { client: c, calls } = client();
-    mount(c, { hash: '#/integrations' });
-    await waitFor(() => expect(screen.getByText('Higgsfield')).toBeTruthy());
-    expect(screen.getByText(/3\.5 credits/)).toBeTruthy();
-    expect(screen.getByText('andre@example.com')).toBeTruthy();
-    expect(screen.getByText('MCP connected')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Create an account' }).getAttribute('href')).toBe(
-      'https://higgsfield.ai?fpr=andre-4fae29',
-    );
-    expect(screen.queryByRole('button', { name: 'Log in' })).toBeNull();
-    expect(screen.getByText(/affiliate link/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
-    await waitFor(() =>
-      expect(calls.filter((x) => x.name === 'higgsfield').length).toBeGreaterThan(1),
-    );
-  });
-  it('Integrations: Decisions says who decides and lists the latest ones', async () => {
-    const { client: c } = client();
-    mount(c, { hash: '#/integrations' });
-    await waitFor(() => expect(screen.getByText('Decisions')).toBeTruthy());
-    expect(screen.getAllByText(/openrouter\/typesafe\/jev-router/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/missing OPENROUTER_API_KEY/)).toBeTruthy();
-    const row = screen.getByRole('link', { name: /judge/ });
-    expect(row.textContent).toMatch(/ship/);
-    expect(row.textContent).toMatch(/91%/);
-    expect(row.getAttribute('href')).toBe('#/t/root');
   });
   it('the agent message names the model that wrote it', async () => {
     const { client: c } = client({
