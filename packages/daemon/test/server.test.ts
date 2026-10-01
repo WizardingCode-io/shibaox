@@ -1081,7 +1081,7 @@ describe('MCP servers through the API', () => {
     expect(test.ok).toBe(true);
     expect(test.tools?.map((t) => t.name)).toEqual(['echo', 'secret']);
     await expect(client.mcpTest('nope', s.orgRoot)).rejects.toMatchObject({ status: 404 });
-    const pw = before[1];
+    const pw = before.find((r) => r.id === 'playwright');
     expect(pw?.target).toContain('--isolated');
     expect(pw?.target).not.toContain('@latest');
   });
