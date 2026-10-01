@@ -74,7 +74,9 @@ function ServerCard(props: {
       description={r.description}
       meta={
         <>
-          <span className="mono ellipsis">{`${r.transport} · ${r.target}`}</span>
+          <span className="mono ellipsis" title={r.target}>
+            {`${r.transport} · ${r.target}`}
+          </span>
           <span>{r.roles.length ? `Roles: ${r.roles.join(', ')}` : 'No role uses it'}</span>
           {r.keys.map((k) => (
             <KeyBadge key={k.name} name={k.name} present={k.present} />

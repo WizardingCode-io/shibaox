@@ -379,7 +379,8 @@ a.decision:hover {
   overflow: hidden;
 }
 .sx-card__meta .ellipsis {
-  max-width: 100%;
+  flex: 1 1 100%;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -456,8 +457,23 @@ a.decision:hover {
   gap: 8px;
 }
 .key-set .sx-field {
-  flex: 1;
-  min-width: 160px;
+  flex: 1 1 auto;
+  width: 160px;
+  min-width: 120px;
+}
+.key-set > .sx-btn {
+  flex: none;
+}
+td .key-set .sx-field {
+  flex: none;
+  width: 136px;
+}
+td .key-set {
+  justify-content: flex-end;
+}
+.stack-12 > p,
+.stack-16 > p {
+  margin: 0;
 }
 .key-focus {
   background: var(--shiba-soft);
