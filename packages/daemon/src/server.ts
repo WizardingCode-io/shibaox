@@ -15,11 +15,22 @@ import {
 } from '@wizardingcode/shibaox-core';
 import type { RoutineRow, ScheduleRow } from '@wizardingcode/shibaox-persistence-sqlite';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
-import { RoutineTriggerSchema } from '@wizardingcode/shibaox-schemas';
+import {
+  type RoutineApprovals,
+  RoutineApprovalsSchema,
+  RoutineTriggerSchema,
+} from '@wizardingcode/shibaox-schemas';
 import { AlreadyResolvedError, type InboxService, NotFoundError } from './inbox.js';
 import type { McpServerRow, McpTestResult } from './mcp.js';
 import { type OrgConfigPatch, orgInfo, readOrgConfig, writeOrgConfig } from './org-config.js';
-import { allowedUrl, MIN_INTERVAL_S, type RoutineInput } from './routines.js';
+import {
+  allowedUrl,
+  MIN_INTERVAL_S,
+  type RoutineInput,
+  type RoutinePatch,
+  type RoutineView,
+} from './routines.js';
+import type { RoutineDraft } from './runs/routine-draft.js';
 
 /** Requests that came over the network listener are marked by it. */
 const REMOTE = new WeakSet<IncomingMessage>();
@@ -66,6 +77,9 @@ export interface RoutinesApi {
   list(): RoutineRow[];
   get(id: string): RoutineRow | undefined;
   add(r: RoutineInput): RoutineRow;
+  update(id: string, patch: RoutinePatch): RoutineRow;
+  views(): Promise<RoutineView[]>;
+  view(id: string): Promise<RoutineView>;
   remove(id: string): void;
   setEnabled(id: string, enabled: boolean): RoutineRow;
   runNow(id: string): Promise<{ runId: string }>;
@@ -103,6 +117,8 @@ export interface ServerDeps {
   runs: RunManager;
   inbox: InboxService;
   schedules: () => SchedulesApi | undefined;
+  /** "Create with Shibaox": a sentence into a routine draft (undefined when no model can be called). */
+  draftRoutine?: (text: string, orgRoot: string) => Promise<RoutineDraft | undefined>;
   health: () => Health;
   /** The built browser app's dist, when installed (served under /app on both listeners). */
   appDist: () => string | undefined;
@@ -689,7 +705,29 @@ export class DaemonServer {
   ): Promise<void> {
     const api = this.deps.schedules();
     if (!api) throw new HttpError(404, 'not_found', 'routines are not available');
-    if (method === 'GET' && path === '/routines') return send(res, 200, api.list());
+    if (method === 'GET' && path === '/routines') return send(res, 200, await api.views());
+    if (method === 'POST' && path === '/routines/draft') {
+      const body = asRecord(await readBody(req));
+      const text = typeof body.text === 'string' ? body.text.trim() : '';
+      if (!text) throw new HttpError(400, 'bad_request', '"text" is required');
+      if (typeof body.orgRoot !== 'string' || !body.orgRoot)
+        throw new HttpError(400, 'bad_request', '"orgRoot" is required');
+      if (!this.deps.draftRoutine)
+        throw new HttpError(503, 'no_model', 'No model can write drafts here');
+      let draft: RoutineDraft | undefined;
+      try {
+        draft = await this.deps.draftRoutine(text, body.orgRoot);
+      } catch (e) {
+        throw new HttpError(502, 'bad_draft', e instanceof Error ? e.message : String(e));
+      }
+      if (!draft)
+        throw new HttpError(
+          503,
+          'no_model',
+          'No model can write drafts: set a cheap or strong tier with a key in the vault',
+        );
+      return send(res, 200, draft);
+    }
     if (method === 'POST' && path === '/routines') {
       const body = asRecord(await readBody(req));
       for (const k of ['orgRoot', 'project', 'workflow'])
@@ -717,6 +755,8 @@ export class DaemonServer {
       if (num('maxDailyUsd') !== undefined && (num('maxDailyUsd') as number) <= 0)
         throw new HttpError(400, 'bad_request', '"maxDailyUsd" must be positive');
       const str = (k: string) => (typeof body[k] === 'string' ? (body[k] as string) : undefined);
+      if (body.approvals !== undefined && !RoutineApprovalsSchema.safeParse(body.approvals).success)
+        throw new HttpError(400, 'bad_request', '"approvals" takes inbox, auto or skip');
       return send(
         res,
         200,
@@ -727,6 +767,9 @@ export class DaemonServer {
           workflow: body.workflow as string,
           input: str('input') ?? '',
           name: str('name'),
+          description: str('description'),
+          model: str('model'),
+          approvals: body.approvals as RoutineApprovals | undefined,
           adapter: str('adapter'),
           budgetUsd: num('budgetUsd'),
           maxDailyUsd: num('maxDailyUsd'),
@@ -752,9 +795,73 @@ export class DaemonServer {
     if (one) {
       const id = decodeURIComponent(one[1] as string);
       if (method === 'GET') {
-        const r = api.get(id);
-        if (!r) throw new HttpError(404, 'not_found', `routine ${id} not found`);
-        return send(res, 200, r);
+        if (!api.get(id)) throw new HttpError(404, 'not_found', `routine ${id} not found`);
+        return send(res, 200, await api.view(id));
+      }
+      if (method === 'PUT' || method === 'PATCH') {
+        if (!api.get(id)) throw new HttpError(404, 'not_found', `routine ${id} not found`);
+        const body = asRecord(await readBody(req));
+        const patch: RoutinePatch = {};
+        const str = (k: string) => (typeof body[k] === 'string' ? (body[k] as string) : undefined);
+        const num = (k: string) => (typeof body[k] === 'number' ? (body[k] as number) : undefined);
+        if (body.trigger !== undefined) {
+          const t = RoutineTriggerSchema.safeParse(body.trigger);
+          if (!t.success)
+            throw new HttpError(
+              400,
+              'bad_request',
+              `"trigger": ${t.error.issues.map((i) => i.message).join('; ')}`,
+            );
+          if ((t.data.type === 'command' || t.data.type === 'file') && isRemote(req))
+            throw new HttpError(
+              403,
+              'forbidden',
+              `a ${t.data.type} trigger is set from the daemon's own machine, not over the network`,
+            );
+          if (t.data.type === 'url' && !allowedUrl(t.data.url))
+            throw new HttpError(
+              400,
+              'bad_request',
+              '"trigger.url" must be a public http(s) address',
+            );
+          patch.trigger = t.data;
+        }
+        for (const k of [
+          'name',
+          'description',
+          'project',
+          'workflow',
+          'input',
+          'adapter',
+          'model',
+        ] as const)
+          if (body[k] !== undefined) {
+            if (body[k] !== null && typeof body[k] !== 'string')
+              throw new HttpError(400, 'bad_request', `"${k}" must be a string`);
+            (patch as Record<string, unknown>)[k] = body[k] === null ? undefined : str(k);
+          }
+        if (body.approvals !== undefined) {
+          if (!RoutineApprovalsSchema.safeParse(body.approvals).success)
+            throw new HttpError(400, 'bad_request', '"approvals" takes inbox, auto or skip');
+          patch.approvals = body.approvals as RoutineApprovals;
+        }
+        for (const k of ['budgetUsd', 'maxDailyUsd', 'intervalS'] as const)
+          if (body[k] !== undefined) {
+            if (typeof body[k] !== 'number' || (body[k] as number) <= 0)
+              throw new HttpError(400, 'bad_request', `"${k}" must be a positive number`);
+            patch[k] = num(k);
+          }
+        if (body.mode !== undefined) {
+          if (body.mode !== 'always' && body.mode !== 'on_change')
+            throw new HttpError(400, 'bad_request', '"mode" takes always or on_change');
+          patch.mode = body.mode;
+        }
+        if (body.enabled !== undefined) patch.enabled = body.enabled === true;
+        try {
+          return send(res, 200, api.update(id, patch));
+        } catch (e) {
+          throw new HttpError(400, 'bad_request', e instanceof Error ? e.message : String(e));
+        }
       }
       if (method === 'DELETE') {
         api.remove(id);

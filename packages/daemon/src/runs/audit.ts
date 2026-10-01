@@ -56,6 +56,7 @@ export interface AuditDoc {
     adapter?: string;
     model?: string;
     origin?: string;
+    approvals?: 'inbox' | 'auto' | 'skip';
     parentRunId?: string;
     budgetUsd?: number;
   };
@@ -225,6 +226,7 @@ export function buildAudit(
       adapter: state.adapter,
       model: state.model,
       origin: state.origin,
+      approvals: state.approvals,
       parentRunId: state.parentRunId,
       budgetUsd: state.budgetUsd,
     },
@@ -288,6 +290,14 @@ export function renderAuditMarkdown(doc: AuditDoc): string {
     ['Adapter', r.adapter],
     ['Model', r.model],
     ['Origin', r.origin],
+    [
+      'Approvals',
+      r.approvals === 'auto'
+        ? 'auto (tool approvals answered without asking)'
+        : r.approvals === 'skip'
+          ? 'skip (nothing asked, human steps included)'
+          : undefined,
+    ],
     ['Parent run', r.parentRunId],
   ];
   for (const [k, v] of facts) if (v) out.push(`- ${k}: ${v}`);

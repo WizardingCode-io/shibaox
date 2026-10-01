@@ -1120,4 +1120,50 @@ describe('runtime buffer after a run ends', () => {
     await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('completed'));
     expect(m.runtimeEvents(runId).length).toBeGreaterThan(0);
   });
+
+  it('approvals: auto answers tool approvals itself; skip answers human steps too; both are on the record', async () => {
+    const s = setup({ claudeCode: true });
+    const store = new MemoryEventStore();
+    const asked: string[] = [];
+    const q = fakeQuery(async function* ({ options }) {
+      yield msg.init({ session_id: 'sess' });
+      const d = await options.canUseTool?.('Bash', { command: 'git push origin main' }, {
+        signal: new AbortController().signal,
+      } as never);
+      asked.push(JSON.stringify(d));
+      yield msg.success('ok');
+    });
+    const { manager: m, inbox } = manager(
+      store,
+      { queryFn: q, vault: s.vault },
+      { approvalTimeoutMs: 50 },
+    );
+    const { runId } = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'x',
+      workspace: 'inplace',
+      approvals: 'auto',
+    });
+    // the push is allowed without the inbox; the human step still waits
+    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('waiting_human'), {
+      timeout: 10_000,
+    });
+    expect(asked.some((a) => a.includes('"allow"'))).toBe(true);
+    expect((await inbox.list()).filter((i) => i.kind === 'approval')).toHaveLength(0);
+    expect((await m.state(runId)).approvals).toBe('auto');
+    const skip = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'hello-feature',
+      input: 'y',
+      workspace: 'inplace',
+      approvals: 'skip',
+    });
+    await vi.waitFor(async () => expect((await m.state(skip.runId)).status).toBe('completed'), {
+      timeout: 10_000,
+    });
+    expect(await inbox.list()).toHaveLength(1); // only the first run's human step waits
+  });
 });

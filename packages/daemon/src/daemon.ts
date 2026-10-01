@@ -31,6 +31,7 @@ import { RunManager } from './run-manager.js';
 import { vaultDir } from './runs/notes.js';
 import { profileFor } from './runs/profile.js';
 import { buildRunReport } from './runs/report.js';
+import { draftPrompt, parseDraft, routineDraftWriter } from './runs/routine-draft.js';
 import { orgSummarizer } from './runs/summarize.js';
 import { commandEnv, registryFor } from './runtime.js';
 import { SecretsStore } from './secrets.js';
@@ -71,6 +72,8 @@ export interface DaemonOptions {
   telegramApiBase?: string;
   /** Conversation summariser (tests inject one); by default the org's cheap tier or the run's model. */
   summarize?: (transcript: string, org: Org) => Promise<string>;
+  /** "Create with Shibaox" writer (tests inject one): the model's answer for a draft prompt; by default the org's cheap tier. */
+  routineDraft?: (prompt: string, org: Org) => Promise<string>;
   /** Tokens a conversation may carry before it is compacted (tests lower it). */
   conversationTokens?: number;
   /** Interval of the SSE heartbeat comment (default 20 s; tests shorten it). */
@@ -237,6 +240,22 @@ export class Daemon {
       runs: this.runs,
       inbox: this.inbox,
       schedules: () => this.schedules,
+      draftRoutine: async (text, orgRoot) => {
+        const org = loadOrg(orgRoot);
+        const write = this.opts.routineDraft
+          ? (prompt: string) => this.opts.routineDraft?.(prompt, org) as Promise<string>
+          : routineDraftWriter(() => registryFor(this.env, this.opts.extraProviders))(org);
+        if (!write) return undefined;
+        const workflows = Object.values(org.workflows).map((w) => ({
+          name: w.workflow,
+          description: w.description,
+        }));
+        const answer = await write(draftPrompt(text, workflows));
+        return parseDraft(
+          answer,
+          workflows.map((w) => w.name),
+        );
+      },
       health: () => this.health(),
       appDist: () => this.appDist(),
       profile: (path, orgRoot) =>

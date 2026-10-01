@@ -69,6 +69,8 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     origin: z.string().optional(),
     /** A model ref (`provider/model`) chosen for this run, over the org's routing. */
     model: z.string().optional(),
+    /** How approvals are answered: `inbox` (default), `auto` (tool approvals), `skip` (human steps too). */
+    approvals: z.enum(['inbox', 'auto', 'skip']).optional(),
   }),
   z.object({ ...base, type: z.literal('RunStarted') }),
   z.object({

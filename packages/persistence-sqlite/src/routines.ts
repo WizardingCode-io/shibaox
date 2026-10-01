@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { RoutineTrigger } from '@wizardingcode/shibaox-schemas';
+import type { RoutineApprovals, RoutineTrigger } from '@wizardingcode/shibaox-schemas';
 import type Database from 'better-sqlite3';
 
 export type RoutineMode = 'always' | 'on_change';
@@ -7,12 +7,18 @@ export type RoutineMode = 'always' | 'on_change';
 export interface RoutineRow {
   id: string;
   name?: string;
+  /** A line for the Scheduled screen. */
+  description?: string;
   trigger: RoutineTrigger;
   orgRoot: string;
   project: string;
   workflow: string;
   input: string;
   adapter?: string;
+  /** A model ref for the routine's runs; else the org's tiers. */
+  model?: string;
+  /** `inbox` (default), `auto` or `skip`: see RoutineApprovalsSchema. */
+  approvals?: RoutineApprovals;
   budgetUsd?: number;
   maxDailyUsd?: number;
   mode: RoutineMode;
@@ -31,12 +37,15 @@ export interface RoutineRow {
 interface Raw {
   id: string;
   name: string | null;
+  description: string | null;
   trigger: string;
   org_root: string;
   project: string;
   workflow: string;
   input: string;
   adapter: string | null;
+  model: string | null;
+  approvals: string | null;
   budget_usd: number | null;
   max_daily_usd: number | null;
   mode: string;
@@ -53,12 +62,15 @@ interface Raw {
 const toRow = (r: Raw): RoutineRow => ({
   id: r.id,
   name: r.name ?? undefined,
+  description: r.description ?? undefined,
   trigger: JSON.parse(r.trigger) as RoutineTrigger,
   orgRoot: r.org_root,
   project: r.project,
   workflow: r.workflow,
   input: r.input,
   adapter: r.adapter ?? undefined,
+  model: r.model ?? undefined,
+  approvals: (r.approvals as RoutineApprovals | null) ?? undefined,
   budgetUsd: r.budget_usd ?? undefined,
   maxDailyUsd: r.max_daily_usd ?? undefined,
   mode: r.mode as RoutineMode,
@@ -83,6 +95,16 @@ export class RoutinesRepo {
       budget_usd REAL, max_daily_usd REAL, mode TEXT NOT NULL, interval_s INTEGER NOT NULL,
       enabled INTEGER NOT NULL DEFAULT 1, source TEXT NOT NULL, last_run_id TEXT,
       last_fingerprint TEXT, last_checked_at TEXT, last_fired_at TEXT, created_at TEXT NOT NULL)`);
+    // columns added since 0.2.3: a table from before gets them in place
+    const have = new Set(
+      (db.prepare('PRAGMA table_info(routines)').all() as { name: string }[]).map((c) => c.name),
+    );
+    for (const [col, ddl] of [
+      ['description', 'description TEXT'],
+      ['model', 'model TEXT'],
+      ['approvals', 'approvals TEXT'],
+    ])
+      if (!have.has(col as string)) db.exec(`ALTER TABLE routines ADD COLUMN ${ddl}`);
   }
 
   list(): RoutineRow[] {
@@ -101,20 +123,23 @@ export class RoutinesRepo {
     const createdAt = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT INTO routines (id, name, trigger, org_root, project, workflow, input, adapter, budget_usd,
-          max_daily_usd, mode, interval_s, enabled, source, last_run_id, last_fingerprint, last_checked_at,
-          last_fired_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO routines (id, name, description, trigger, org_root, project, workflow, input, adapter, model,
+          approvals, budget_usd, max_daily_usd, mode, interval_s, enabled, source, last_run_id, last_fingerprint,
+          last_checked_at, last_fired_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
         row.name ?? null,
+        row.description ?? null,
         JSON.stringify(row.trigger),
         row.orgRoot,
         row.project,
         row.workflow,
         row.input,
         row.adapter ?? null,
+        row.model ?? null,
+        row.approvals ?? null,
         row.budgetUsd ?? null,
         row.maxDailyUsd ?? null,
         row.mode,
@@ -138,12 +163,15 @@ export class RoutinesRepo {
     const cols: Record<string, unknown> = {};
     const map: Record<string, string> = {
       name: 'name',
+      description: 'description',
       trigger: 'trigger',
       orgRoot: 'org_root',
       project: 'project',
       workflow: 'workflow',
       input: 'input',
       adapter: 'adapter',
+      model: 'model',
+      approvals: 'approvals',
       budgetUsd: 'budget_usd',
       maxDailyUsd: 'max_daily_usd',
       mode: 'mode',

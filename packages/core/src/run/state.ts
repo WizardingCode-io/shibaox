@@ -91,6 +91,8 @@ export interface RunState {
   origin?: string;
   /** The model ref chosen for the run (`/model` in the dashboard, `--model` in the CLI). */
   model?: string;
+  /** How approvals were answered: `auto` and `skip` never asked (routines); absent = the inbox. */
+  approvals?: 'inbox' | 'auto' | 'skip';
   status: RunStatus;
   nodes: Record<string, NodeState>;
   spentUsd: number;

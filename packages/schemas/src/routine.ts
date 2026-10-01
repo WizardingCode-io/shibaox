@@ -17,8 +17,18 @@ export const RoutineTriggerSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('url'), url: z.string().url() }),
   z.object({ type: z.literal('file'), path: z.string().min(1) }),
   z.object({ type: z.literal('command'), command: z.string().min(1) }),
+  /** Fires only by hand (Run now): a task kept ready. */
+  z.object({ type: z.literal('manual') }),
 ]);
 export type RoutineTrigger = z.infer<typeof RoutineTriggerSchema>;
+
+/**
+ * How a routine's runs handle approvals: `inbox` asks you (default); `auto` approves tool
+ * approvals (push, deploy, commands, network, protected files) without asking; `skip` answers
+ * the workflow's human steps too, so a run never pauses.
+ */
+export const RoutineApprovalsSchema = z.enum(['inbox', 'auto', 'skip']);
+export type RoutineApprovals = z.infer<typeof RoutineApprovalsSchema>;
 
 /** The `on:` block of a routine file: exactly one trigger, written the short way. */
 const OnSchema = z
@@ -31,19 +41,22 @@ const OnSchema = z
     url: z.string().url().optional(),
     file: z.string().min(1).optional(),
     command: z.string().min(1).optional(),
+    manual: z.literal(true).optional(),
   })
   .transform((on, ctx): RoutineTrigger => {
-    const kinds = (['cron', 'github', 'url', 'file', 'command'] as const).filter(
+    const kinds = (['cron', 'github', 'url', 'file', 'command', 'manual'] as const).filter(
       (k) => on[k] !== undefined,
     );
     if (kinds.length !== 1) {
       ctx.addIssue({
         code: 'custom',
-        message: 'on: needs exactly one of cron, github, url, file, command',
+        message: 'on: needs exactly one of cron, github, url, file, command, manual',
       });
       return z.NEVER;
     }
     switch (kinds[0]) {
+      case 'manual':
+        return { type: 'manual' };
       case 'cron':
         return { type: 'cron', cron: on.cron as string };
       case 'github':
@@ -68,12 +81,17 @@ export const RoutineFileSchema = z
   .object({
     routine: Id,
     name: z.string().optional(),
+    /** A line for the Scheduled screen (the input is the instruction; this is the gist). */
+    description: z.string().optional(),
     on: OnSchema,
     workflow: Id,
     input: z.string().default(''),
     /** The project the run works on, relative to the org directory (default: the org's parent). */
     project: z.string().optional(),
     adapter: z.enum(['mock', 'direct', 'claude-code']).optional(),
+    /** A model ref (`provider/model`) for the routine's runs; else the org's tiers. */
+    model: z.string().optional(),
+    approvals: RoutineApprovalsSchema.optional(),
     budget_usd: z.number().positive().optional(),
     /** Spend across this routine's runs in a day beyond which it stops firing until tomorrow. */
     max_daily_usd: z.number().positive().optional(),
@@ -86,6 +104,10 @@ export const RoutineFileSchema = z
   })
   .transform((r) => ({
     ...r,
-    mode: r.mode ?? (r.on.type === 'cron' ? ('always' as const) : ('on_change' as const)),
+    mode:
+      r.mode ??
+      (r.on.type === 'cron' || r.on.type === 'manual'
+        ? ('always' as const)
+        : ('on_change' as const)),
   }));
 export type RoutineFile = z.infer<typeof RoutineFileSchema>;

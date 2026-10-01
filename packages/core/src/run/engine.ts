@@ -83,6 +83,8 @@ export interface StartOptions {
   thread?: string;
   origin?: string;
   model?: string;
+  /** How approvals are answered for this run (recorded; the daemon wires the handlers). */
+  approvals?: 'inbox' | 'auto' | 'skip';
   /** A dependency install to run first (a fresh worktree): becomes a `setup` node in the snapshot. */
   setup?: { command: string; timeoutMs?: number };
 }
@@ -133,6 +135,7 @@ export class RunEngine {
       thread: opts.thread ?? runId,
       origin: opts.origin,
       model: opts.model,
+      approvals: opts.approvals,
     });
     return runId;
   }

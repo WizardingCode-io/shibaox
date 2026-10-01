@@ -6,11 +6,12 @@ import type { ModelChoice } from '@wizardingcode/shibaox-providers';
 import type { InboxItem } from './inbox.js';
 import type { McpServerRow, McpTestResult } from './mcp.js';
 import type { OrgConfig, OrgConfigPatch, OrgInfo } from './org-config.js';
-import type { RoutineInput } from './routines.js';
+import type { RoutineInput, RoutinePatch, RoutineView } from './routines.js';
 import type { RunSummaryPlus, SubmitRequest } from './run-manager.js';
 import type { AuditDoc } from './runs/audit.js';
 import type { DiffResult } from './runs/diff.js';
 import type { RunFile, RunFileContent } from './runs/files.js';
+import type { RoutineDraft } from './runs/routine-draft.js';
 import type { KeyRow } from './secrets.js';
 import type { Envelope, Health, ProjectEntry } from './server.js';
 
@@ -295,11 +296,19 @@ export class DaemonClient {
   runSchedule(id: string): Promise<{ runId: string }> {
     return this.json('POST', `/schedules/${encodeURIComponent(id)}/run`);
   }
-  routines(): Promise<RoutineRow[]> {
+  routines(): Promise<RoutineView[]> {
     return this.json('GET', '/routines');
   }
-  routine(id: string): Promise<RoutineRow> {
+  routine(id: string): Promise<RoutineView> {
     return this.json('GET', `/routines/${encodeURIComponent(id)}`);
+  }
+  /** Changes the given fields of a routine (an org routine edited here becomes `api`). */
+  updateRoutine(id: string, patch: RoutinePatch): Promise<RoutineRow> {
+    return this.json('PUT', `/routines/${encodeURIComponent(id)}`, patch);
+  }
+  /** A sentence into a routine draft, by the org's cheap model; nothing is saved. */
+  draftRoutine(r: { text: string; orgRoot: string; project?: string }): Promise<RoutineDraft> {
+    return this.json('POST', '/routines/draft', r);
   }
   addRoutine(r: RoutineInput): Promise<RoutineRow> {
     return this.json('POST', '/routines', r);

@@ -3,6 +3,8 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { QueryFn } from '@wizardingcode/shibaox-adapter-claude-code';
 import {
+  AutoApproveApprovals,
+  AutoApproveHuman,
   compactConversation,
   detectSetupCommand,
   type EventStore,
@@ -18,6 +20,7 @@ import {
 } from '@wizardingcode/shibaox-core';
 import { type Graphify, MemoryNotes } from '@wizardingcode/shibaox-memory';
 import type { ProviderEntry } from '@wizardingcode/shibaox-providers';
+import type { RoutineApprovals } from '@wizardingcode/shibaox-schemas';
 import {
   type ChatMessage,
   loadOrg,
@@ -83,6 +86,12 @@ export interface SubmitRequest {
   setup?: string;
   /** A JSON Schema the run's last task answers in (`start_workflow(output_schema)`); checked when it ends. */
   outputSchema?: Record<string, unknown>;
+  /**
+   * How approvals are answered: `inbox` (default) asks you; `auto` approves push, deploy,
+   * commands, network and protected files by itself; `skip` answers human steps too. A
+   * routine's policy; recorded on the run.
+   */
+  approvals?: RoutineApprovals;
 }
 
 /** A conversation carried into a run is compacted beyond this (estimated tokens). */
@@ -235,6 +244,7 @@ export class RunManager {
       origin: req.origin,
       thread,
       model,
+      approvals: req.approvals,
       warn: (w) => warnings.push(w),
     });
     const ws = await createRunWorkspace({ project, runId, mode });
@@ -277,6 +287,7 @@ export class RunManager {
       origin: req.origin,
       thread,
       model,
+      approvals: req.approvals,
       setup,
     });
     this.prepared.set(runId, { engine, org, adapter });
@@ -662,6 +673,7 @@ export class RunManager {
       workspaceMode: state.workspaceMode,
       origin: state.origin,
       model: state.model,
+      approvals: state.approvals,
       warn: (w) => this.opts.log(`warn: ${w}`),
     });
     return { engine, org, adapter };
@@ -700,16 +712,19 @@ export class RunManager {
       /** The conversation the run belongs to (its orchestrator sees every run dispatched in it). */
       thread?: string;
       model?: string;
+      approvals?: RoutineApprovals;
       warn: (w: string) => void;
     },
   ): RunEngine {
+    const policy = r.approvals ?? 'inbox';
     const { engine, warnings } = buildRuntime({
       tools: this.taskTools(org, r),
       model: r.model,
       org,
       store: this.opts.store,
-      human: this.opts.inbox,
-      approvals: this.opts.inbox,
+      // `auto`: tool approvals answer themselves; `skip`: the workflow's human steps too
+      human: policy === 'skip' ? new AutoApproveHuman() : this.opts.inbox,
+      approvals: policy === 'inbox' ? this.opts.inbox : new AutoApproveApprovals(),
       log: this.opts.log,
       adapter: r.adapter,
       workflow: r.workflow,
@@ -759,6 +774,7 @@ export class RunManager {
       origin?: string;
       thread?: string;
       model?: string;
+      approvals?: RoutineApprovals;
     },
   ): RuntimeOptions['tools'] {
     const project = r.project;
@@ -806,6 +822,8 @@ export class RunManager {
               origin: r.origin,
               thread: r.thread,
               model: r.model,
+              // a routine that never asks keeps not asking in the runs it dispatches
+              approvals: r.approvals,
               outputSchema: o?.outputSchema,
             });
             return { runId };

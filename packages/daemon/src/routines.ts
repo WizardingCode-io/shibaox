@@ -7,10 +7,15 @@ import type {
   RoutineRow,
   RoutinesRepo,
 } from '@wizardingcode/shibaox-persistence-sqlite';
-import { RoutineFileSchema, type RoutineTrigger } from '@wizardingcode/shibaox-schemas';
+import {
+  RoutineApprovalsSchema,
+  RoutineFileSchema,
+  type RoutineTrigger,
+} from '@wizardingcode/shibaox-schemas';
 import { Cron } from 'croner';
 import { parse as parseYaml } from 'yaml';
 import type { RunManager } from './run-manager.js';
+import { triggerWords } from './runs/routine-words.js';
 import type { AdapterId } from './runtime.js';
 
 export type {
@@ -46,7 +51,10 @@ export type RoutineInput = Pick<
       RoutineRow,
       | 'id'
       | 'name'
+      | 'description'
       | 'adapter'
+      | 'model'
+      | 'approvals'
       | 'budgetUsd'
       | 'maxDailyUsd'
       | 'mode'
@@ -55,6 +63,42 @@ export type RoutineInput = Pick<
       | 'source'
     >
   >;
+
+/** What the API may change on a routine (its state fields stay the daemon's). */
+export type RoutinePatch = Partial<
+  Pick<
+    RoutineRow,
+    | 'name'
+    | 'description'
+    | 'trigger'
+    | 'project'
+    | 'workflow'
+    | 'input'
+    | 'adapter'
+    | 'model'
+    | 'approvals'
+    | 'budgetUsd'
+    | 'maxDailyUsd'
+    | 'mode'
+    | 'intervalS'
+    | 'enabled'
+  >
+>;
+
+/** A routine as the screens show it: when it runs next and how its last run went. */
+export interface RoutineView extends RoutineRow {
+  /** ISO time of the next occurrence or look; null when paused or manual. */
+  nextRunAt: string | null;
+  /** In words ("Weekdays at 09:00", "On issues labelled bug"). */
+  words: string;
+  lastRun?: {
+    runId: string;
+    status: string;
+    spentUsd: number;
+    createdAt: string;
+    updatedAt?: string;
+  };
+}
 
 /** How much of what a trigger saw goes into the run's input. */
 const DATA_LIMIT = 6000;
@@ -111,14 +155,10 @@ export class Routines {
   }
 
   add(r: RoutineInput): RoutineRow {
-    if (r.trigger.type === 'cron') {
-      try {
-        new Cron(r.trigger.cron);
-      } catch {
-        throw new Error(`invalid cron expression: ${r.trigger.cron}`);
-      }
-    }
-    const watcher = r.trigger.type !== 'cron';
+    checkTrigger(r.trigger);
+    if (r.approvals !== undefined && !RoutineApprovalsSchema.safeParse(r.approvals).success)
+      throw new Error('approvals: inbox, auto or skip');
+    const watcher = isWatcher(r.trigger);
     const row: RoutineInsert = {
       ...r,
       mode: r.mode ?? (watcher ? 'on_change' : 'always'),
@@ -132,6 +172,62 @@ export class Routines {
 
   remove(id: string): void {
     if (!this.opts.repo.remove(id)) throw new Error(`routine ${id} not found`);
+  }
+
+  /**
+   * Changes the given fields. An org routine edited here stops following its file (it becomes
+   * `api`): what you changed would otherwise be undone by the next sync.
+   */
+  update(id: string, patch: RoutinePatch): RoutineRow {
+    const r = this.must(id);
+    if (patch.trigger) checkTrigger(patch.trigger);
+    if (patch.approvals !== undefined && !RoutineApprovalsSchema.safeParse(patch.approvals).success)
+      throw new Error('approvals: inbox, auto or skip');
+    if (patch.mode !== undefined && patch.mode !== 'always' && patch.mode !== 'on_change')
+      throw new Error('mode: always or on_change');
+    const next: RoutinePatch & { source?: 'api' } = { ...patch };
+    if (next.intervalS !== undefined) next.intervalS = Math.max(MIN_INTERVAL_S, next.intervalS);
+    if (r.source === 'org') {
+      next.source = 'api';
+      this.opts.log(`routine ${id}: edited by hand, the org file no longer applies to it`);
+    }
+    this.opts.repo.update(id, next);
+    return this.must(id);
+  }
+
+  /** Every routine with its next run and its last run. */
+  async views(): Promise<RoutineView[]> {
+    const runs = await this.opts.runs.list();
+    const now = this.now();
+    return this.opts.repo.list().map((r) => {
+      const own = runs
+        .filter((x) => x.origin === `routine:${r.id}`)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const last = own[0];
+      return {
+        ...r,
+        nextRunAt: nextRunOf(r, now),
+        words: triggerWords(r.trigger),
+        ...(last
+          ? {
+              lastRun: {
+                runId: last.runId,
+                status: last.status,
+                spentUsd: last.spentUsd ?? 0,
+                createdAt: last.createdAt,
+                updatedAt: last.updatedAt,
+              },
+            }
+          : {}),
+      };
+    });
+  }
+
+  async view(id: string): Promise<RoutineView> {
+    this.must(id);
+    const v = (await this.views()).find((x) => x.id === id);
+    if (!v) throw new Error(`routine ${id} not found`);
+    return v;
   }
 
   setEnabled(id: string, enabled: boolean): RoutineRow {
@@ -148,7 +244,7 @@ export class Routines {
     const r = this.must(id);
     if (await this.activeRun(r)) throw new Error(`routine ${id}: its previous run is still active`);
     let seen: Observation | undefined;
-    if (r.trigger.type !== 'cron') {
+    if (isWatcher(r.trigger)) {
       try {
         seen = await this.observe(r);
       } catch (e) {
@@ -177,6 +273,7 @@ export class Routines {
       for (const r of this.opts.repo.list()) {
         if (!r.enabled) continue;
         try {
+          if (r.trigger.type === 'manual') continue; // only by hand
           if (r.trigger.type === 'cron') await this.tickCron(r, now);
           else await this.tickWatcher(r, now);
         } catch (e) {
@@ -260,7 +357,7 @@ export class Routines {
       seen.add(rf.routine);
       const trigger: RoutineTrigger =
         rf.on.type === 'file' ? { ...rf.on, path: resolve(root, rf.on.path) } : rf.on;
-      const watcher = trigger.type !== 'cron';
+      const watcher = isWatcher(trigger);
       const existing = this.opts.repo.get(rf.routine);
       if (existing && existing.source !== 'org') {
         this.opts.log(`routine ${rf.routine}: added by hand, the org file is ignored`);
@@ -274,12 +371,15 @@ export class Routines {
         this.add({
           id: rf.routine,
           name: rf.name,
+          description: rf.description,
           trigger,
           orgRoot: root,
           project: resolve(root, rf.project ?? '..'),
           workflow: rf.workflow,
           input: rf.input,
           adapter: rf.adapter,
+          model: rf.model,
+          approvals: rf.approvals,
           budgetUsd: rf.budget_usd,
           maxDailyUsd: rf.max_daily_usd,
           mode: rf.mode,
@@ -292,12 +392,15 @@ export class Routines {
       }
       this.opts.repo.update(rf.routine, {
         name: rf.name ?? null,
+        description: rf.description ?? null,
         trigger,
         orgRoot: root,
         project: resolve(root, rf.project ?? '..'),
         workflow: rf.workflow,
         input: rf.input,
         adapter: rf.adapter ?? null,
+        model: rf.model ?? null,
+        approvals: rf.approvals ?? null,
         budgetUsd: rf.budget_usd ?? null,
         maxDailyUsd: rf.max_daily_usd ?? (watcher ? DEFAULT_WATCHER_DAILY_USD : null),
         mode: rf.mode,
@@ -397,6 +500,8 @@ export class Routines {
       workflow: r.workflow,
       input: this.composeInput(r, data),
       adapter: r.adapter as AdapterId | undefined,
+      model: r.model,
+      approvals: r.approvals,
       budgetUsd: r.budgetUsd,
       origin: `routine:${r.id}`,
     });
@@ -582,6 +687,34 @@ export class Routines {
     const m = /github\.com[:/]([^/\s]+\/[^/\s]+?)(?:\.git)?\s*$/.exec(res.stdout.trim());
     return m?.[1];
   }
+}
+
+const isWatcher = (t: RoutineTrigger): boolean => t.type !== 'cron' && t.type !== 'manual';
+
+function checkTrigger(t: RoutineTrigger): void {
+  if (t.type === 'cron') {
+    try {
+      new Cron(t.cron);
+    } catch {
+      throw new Error(`invalid cron expression: ${t.cron}`);
+    }
+  }
+}
+
+/** When a routine fires or looks next: the cron's next occurrence; a watcher's last look plus its interval (now when it never looked); never for manual or paused ones. */
+export function nextRunOf(r: RoutineRow, now: Date): string | null {
+  if (!r.enabled || r.trigger.type === 'manual') return null;
+  if (r.trigger.type === 'cron') {
+    try {
+      return new Cron(r.trigger.cron).nextRun(now)?.toISOString() ?? null;
+    } catch {
+      return null;
+    }
+  }
+  const last = r.lastCheckedAt ? Date.parse(r.lastCheckedAt) : undefined;
+  const due =
+    last === undefined ? now.getTime() : Math.max(now.getTime(), last + r.intervalS * 1000);
+  return new Date(due).toISOString();
 }
 
 /** A public http(s) address: never the daemon's own host, a private network or a link-local metadata endpoint. */

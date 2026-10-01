@@ -260,6 +260,7 @@ export function reduce(state: RunState | undefined, event: RunEvent, idx: number
       thread: event.thread,
       origin: event.origin,
       model: event.model,
+      approvals: event.approvals,
       status: 'queued',
       nodes: {},
       spentUsd: 0,
