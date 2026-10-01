@@ -739,12 +739,10 @@ describe('Customize: Plugins', () => {
     await waitFor(() =>
       expect(calls.filter((x) => x.name === 'plugins').length).toBeGreaterThan(reads),
     );
+    // the account mode brings Shibaox's own higgsfield skill
     fireEvent.click(screen.getByRole('button', { name: 'Add skill higgsfield' }));
     await waitFor(() =>
-      expect(call(calls, 'addSkill')).toEqual([
-        '/o',
-        { source: 'repo', repo: 'higgsfield-ai/skills', ids: ['higgsfield'] },
-      ]),
+      expect(call(calls, 'addSkill')).toEqual(['/o', { source: 'builtin', id: 'higgsfield' }]),
     );
     expect(await screen.findByRole('dialog', { name: 'Roles for higgsfield' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -792,6 +790,31 @@ describe('Customize: Plugins', () => {
     // neither a usable link nor a known id: hidden
     expect(screen.queryByText('Mystery')).toBeNull();
     expect(screen.queryByText('Nothing')).toBeNull();
+  });
+
+  it("a skill a plugin brings without builtin comes from its vendor's repository", async () => {
+    const { client: c, calls } = client({
+      plugins: [
+        {
+          id: 'higgsfield',
+          name: 'Higgsfield',
+          description: 'Images, video, audio and 3D',
+          status: 'partial',
+          checks: [],
+          keys: [],
+          actions: [],
+          brings: { connectors: [], skills: ['higgsfield'] },
+        },
+      ],
+    });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Add skill higgsfield' }));
+    await waitFor(() =>
+      expect(call(calls, 'addSkill')).toEqual([
+        '/o',
+        { source: 'repo', repo: 'higgsfield-ai/skills', ids: ['higgsfield'] },
+      ]),
+    );
   });
 
   it('Add skill says why when the source does not have it', async () => {

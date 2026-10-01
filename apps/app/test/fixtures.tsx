@@ -248,7 +248,7 @@ const HF_ACCOUNT: PluginMode = {
     { id: 'signup', label: 'Create an account', href: 'https://higgsfield.ai?fpr=andre-4fae29' },
     { id: 'open', label: 'Open Higgsfield', href: 'https://higgsfield.ai' },
   ],
-  brings: { connectors: ['higgsfield'], skills: ['higgsfield'] },
+  brings: { connectors: ['higgsfield'], skills: ['higgsfield'], builtin: ['higgsfield'] },
 };
 
 export const HF_API: PluginMode = {
@@ -258,13 +258,13 @@ export const HF_API: PluginMode = {
   active: false,
   status: 'off',
   checks: [
-    { label: 'API key saved', ok: false, detail: 'no key' },
+    { label: 'API key saved', ok: false },
     { label: 'API key valid', ok: false, detail: 'no key' },
   ],
   keys: [{ name: 'HIGGSFIELD_API_KEY', present: false }],
   actions: [
     { id: 'connect_key', label: 'Connect API key', href: 'https://open.higgsfield.ai/api-keys' },
-    { id: 'docs', label: 'API docs', href: 'https://docs.higgsfield.ai' },
+    { id: 'docs', label: 'API docs', href: 'https://docs.higgsfield.ai/docs' },
   ],
   brings: {
     connectors: [],
@@ -300,7 +300,7 @@ export function higgsfieldApi(o: {
     keys: [{ name: 'HIGGSFIELD_API_KEY', present: true }],
     actions: [
       { id: 'connect_key', label: 'Manage API key', href: 'https://open.higgsfield.ai/api-keys' },
-      { id: 'docs', label: 'API docs', href: 'https://docs.higgsfield.ai' },
+      { id: 'docs', label: 'API docs', href: 'https://docs.higgsfield.ai/docs' },
     ],
   };
   const account = { ...HF_ACCOUNT, active: !o.active };
@@ -319,6 +319,24 @@ export function higgsfieldApi(o: {
   };
 }
 
+/** GET /integrations/higgsfield: logged in on the account, no API key (a real daemon shape). */
+export function higgsfieldView(o: Partial<HiggsfieldView> = {}): HiggsfieldView {
+  return {
+    cli: { installed: true, version: '1.1.26' },
+    loggedIn: true,
+    account: { email: 'andre@example.com', plan: 'plus', credits: 3.5 },
+    mcp: 'ok',
+    signupUrl: 'https://higgsfield.ai?fpr=andre-4fae29',
+    installCommand:
+      'curl -fsSL https://raw.githubusercontent.com/higgsfield-ai/cli/main/install.sh | sh',
+    site: 'https://higgsfield.ai',
+    api: { keySet: false },
+    mode: 'auto',
+    effective: 'account',
+    ...o,
+  };
+}
+
 export const PLUGINS: PluginRow[] = [
   {
     id: 'higgsfield',
@@ -328,7 +346,7 @@ export const PLUGINS: PluginRow[] = [
     checks: HF_ACCOUNT.checks,
     keys: [],
     actions: HF_ACCOUNT.actions,
-    brings: { connectors: ['higgsfield'], skills: ['higgsfield'] },
+    brings: HF_ACCOUNT.brings,
     modes: [HF_ACCOUNT, HF_API],
     mode: { configured: 'auto', effective: 'account' },
   },
@@ -467,19 +485,7 @@ export function client(
     },
     async higgsfield() {
       rec('higgsfield');
-      return {
-        cli: { installed: true, version: '1.1.26' },
-        loggedIn: true,
-        account: { email: 'andre@example.com', plan: 'plus', credits: 3.5 },
-        mcp: 'ok' as const,
-        signupUrl: 'https://higgsfield.ai?fpr=andre-4fae29',
-        installCommand:
-          'curl -fsSL https://raw.githubusercontent.com/higgsfield-ai/cli/main/install.sh | sh',
-        site: 'https://higgsfield.ai',
-        api: { keySet: false },
-        mode: 'auto' as const,
-        effective: 'account' as const,
-      };
+      return higgsfieldView();
     },
     async higgsfieldLogin() {
       rec('higgsfieldLogin');
@@ -487,7 +493,7 @@ export function client(
     },
     async setHiggsfieldMode(mode) {
       rec('setHiggsfieldMode', mode);
-      return {} as never;
+      return higgsfieldView({ mode });
     },
     async decisions() {
       return {

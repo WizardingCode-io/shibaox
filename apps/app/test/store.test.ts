@@ -1,13 +1,14 @@
 import type { RunState } from '@wizardingcode/shibaox-core';
 import type {
   Envelope,
+  HiggsfieldMode,
   InboxItem,
   RunSummaryPlus,
   SubmitRequest,
 } from '@wizardingcode/shibaox-daemon';
 import { describe, expect, it, vi } from 'vitest';
 import { AppStore } from '../src/store/store.js';
-import { client as fixtureClient, higgsfieldApi, storage } from './fixtures.js';
+import { client as fixtureClient, higgsfieldApi, higgsfieldView, storage } from './fixtures.js';
 
 type Turn = { summary: RunSummaryPlus; state: RunState; frames: Envelope[] };
 function fakeClient() {
@@ -138,9 +139,9 @@ function fakeClient() {
     async higgsfieldLogin() {
       return { started: true };
     },
-    async setHiggsfieldMode(mode: string) {
+    async setHiggsfieldMode(mode: HiggsfieldMode) {
       rec('setHiggsfieldMode', mode);
-      return {} as never;
+      return higgsfieldView({ mode });
     },
     async writeFile(id: string, path: string, content: string) {
       rec('writeFile', id, path, content);
