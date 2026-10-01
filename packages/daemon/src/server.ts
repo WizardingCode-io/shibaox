@@ -41,6 +41,7 @@ const isLoopback = (req: IncomingMessage): boolean =>
 
 const isRemote = (req: IncomingMessage) => REMOTE.has(req);
 
+import { HIGGSFIELD_MODES, type HiggsfieldMode } from './config.js';
 import type { HiggsfieldView, LoginStart } from './higgsfield.js';
 import type { PluginRow } from './plugins.js';
 import type { ConnectorTemplate } from './registry/connectors.js';
@@ -156,6 +157,8 @@ export interface ServerDeps {
   mcpTest: (id: string, org: string) => Promise<McpTestResult>;
   higgsfield: () => Promise<HiggsfieldView>;
   higgsfieldLogin: () => Promise<LoginStart>;
+  /** Writes `partners.higgsfield.mode` to daemon.yaml (local callers only). */
+  setHiggsfieldMode: (mode: HiggsfieldMode) => Promise<HiggsfieldView>;
   /** Whether a network caller may start that org's servers (the daemon's own orgs only). */
   mcpRemoteAllowed: (org: string) => Promise<boolean>;
   setKey: (name: string, value: string) => void;
@@ -461,6 +464,24 @@ export class DaemonServer {
           "log in on the daemon's machine (higgsfield auth login)",
         );
       return send(res, 200, await this.deps.higgsfieldLogin());
+    }
+    if (method === 'PUT' && path === '/integrations/higgsfield') {
+      // daemon.yaml is the machine's own configuration: changed from this machine only
+      if (!this.localCaller(req))
+        throw new HttpError(
+          403,
+          'forbidden',
+          "the Higgsfield mode is changed on the daemon's machine (shibaox plugins higgsfield-mode)",
+        );
+      const body = asRecord(await readBody(req));
+      const mode = body.mode;
+      if (typeof mode !== 'string' || !(HIGGSFIELD_MODES as readonly string[]).includes(mode))
+        throw new HttpError(
+          400,
+          'bad_request',
+          `"mode" must be one of ${HIGGSFIELD_MODES.join(', ')}`,
+        );
+      return send(res, 200, await this.deps.setHiggsfieldMode(mode as HiggsfieldMode));
     }
     if (method === 'GET' && path === '/decisions') {
       const limit = Number(url.searchParams.get('limit') ?? '20');

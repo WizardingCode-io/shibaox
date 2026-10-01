@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { QueryFn } from '@wizardingcode/shibaox-adapter-claude-code';
@@ -21,11 +22,20 @@ import { macosChannel } from './channels/macos.js';
 import { OutboxWorker } from './channels/outbox.js';
 import { inboxToken, telegramChannel } from './channels/telegram.js';
 import type { Channel } from './channels/types.js';
-import { type DaemonConfig, HIGGSFIELD_SIGNUP_URL, loadDaemonConfig } from './config.js';
+import {
+  type DaemonConfig,
+  HIGGSFIELD_SIGNUP_URL,
+  type HiggsfieldMode,
+  loadDaemonConfig,
+  writeDaemonConfig,
+} from './config.js';
 import { ensureDefaultOrg } from './default-org.js';
 import {
   defaultHiggsfieldProbe,
+  effectiveHiggsfieldMode,
   HIGGSFIELD_INSTALL,
+  type HiggsfieldAccountView,
+  type HiggsfieldApiView,
   type HiggsfieldProbe,
   type HiggsfieldView,
   higgsfieldStatus,
@@ -295,6 +305,7 @@ export class Daemon {
       decisions: (limit) => this.decisions(limit),
       higgsfield: () => this.higgsfield(),
       higgsfieldLogin: () => this.higgsfieldLogin(),
+      setHiggsfieldMode: (mode) => this.setHiggsfieldMode(mode),
       defaultOrg: () => this.defaultOrg(),
       projects: () => this.projects(),
       heartbeatMs: opts.heartbeatMs,
@@ -349,11 +360,13 @@ export class Daemon {
       setKey: (name, value) => {
         this.secrets.set(name, value);
         this.refreshEnv(opts.env ?? process.env);
+        if (name === 'HIGGSFIELD_API_KEY') this.higgsfieldApiCache = undefined;
         log(`key set: ${name}`);
       },
       unsetKey: (name) => {
         const removed = this.secrets.unset(name);
         this.refreshEnv(opts.env ?? process.env);
+        if (name === 'HIGGSFIELD_API_KEY') this.higgsfieldApiCache = undefined;
         if (removed) log(`key removed: ${name}`);
         return removed;
       },
@@ -448,12 +461,60 @@ export class Daemon {
     return this.modelsInFlight;
   }
 
-  private higgsfieldCache?: { at: number; view: Promise<HiggsfieldView> };
+  private higgsfieldCache?: { at: number; view: Promise<HiggsfieldAccountView> };
+  private higgsfieldApiCache?: { at: number; hash: string; view: Promise<HiggsfieldApiView> };
   private get higgsfieldProbe(): HiggsfieldProbe {
     return this.opts.higgsfield ?? defaultHiggsfieldProbe(this.env);
   }
-  /** The Higgsfield status (CLI, account, MCP), cached for a minute. */
-  higgsfield(): Promise<HiggsfieldView> {
+  /** `partners.higgsfield.mode` (an injected config may lack the block: auto). */
+  higgsfieldMode(): HiggsfieldMode {
+    return this.config.partners?.higgsfield?.mode ?? 'auto';
+  }
+  /** Both Higgsfield paths, the configured mode and what generates now. */
+  async higgsfield(): Promise<HiggsfieldView> {
+    const [account, api] = await Promise.all([this.higgsfieldAccount(), this.higgsfieldApi()]);
+    const mode = this.higgsfieldMode();
+    return {
+      ...account,
+      api,
+      mode,
+      effective: effectiveHiggsfieldMode(mode, {
+        keySet: api.keySet,
+        loggedIn: account.loggedIn,
+      }),
+    };
+  }
+  /**
+   * The API key's state: no key, no probe; otherwise the probe's answer, kept a minute per key
+   * (the cache holds a hash of the key, never the key).
+   */
+  higgsfieldApi(): Promise<HiggsfieldApiView> {
+    const key = this.env.HIGGSFIELD_API_KEY;
+    if (!key) return Promise.resolve({ keySet: false });
+    const hash = createHash('sha256').update(key).digest('hex');
+    const c = this.higgsfieldApiCache;
+    if (c && c.hash === hash && Date.now() - c.at <= 60_000) return c.view;
+    const probe = this.higgsfieldProbe;
+    const view: Promise<HiggsfieldApiView> = probe.apiCheck
+      ? probe
+          .apiCheck(key)
+          .catch(() => ({}))
+          .then((r) => ({ keySet: true, ...r, checkedAt: new Date().toISOString() }))
+      : Promise.resolve({ keySet: true });
+    this.higgsfieldApiCache = { at: Date.now(), hash, view };
+    return view;
+  }
+  /** Writes `partners.higgsfield.mode` to daemon.yaml and uses it from the next task on. */
+  async setHiggsfieldMode(mode: HiggsfieldMode): Promise<HiggsfieldView> {
+    const next = writeDaemonConfig(this.paths.config, { higgsfieldMode: mode });
+    const partners = this.config.partners ?? next.partners;
+    partners.higgsfield = { ...next.partners.higgsfield, ...partners.higgsfield, mode };
+    this.config.partners = partners;
+    (this.opts.log ?? ((l: string) => console.log(l)))(`higgsfield: mode ${mode}`);
+    return this.higgsfield();
+  }
+  /** The Higgsfield account status (CLI, account, MCP), cached for a minute. */
+  higgsfieldAccount(): Promise<HiggsfieldAccountView> {
     const signupUrl = this.config.partners?.higgsfield?.signup_url ?? HIGGSFIELD_SIGNUP_URL;
     // a signed-in answer is kept a minute; "not signed in" is read again next time (the user
     // may be logging in right now)
@@ -468,7 +529,7 @@ export class Daemon {
   }
   /** Starts the Higgsfield browser login on this machine; 409 when the CLI is missing. */
   async higgsfieldLogin(): Promise<LoginStart> {
-    const v = await this.higgsfield();
+    const v = await this.higgsfieldAccount();
     if (!v.cli.installed)
       throw new HttpError(
         409,

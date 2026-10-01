@@ -3,6 +3,7 @@ import { request as httpsRequest } from 'node:https';
 import type { ProjectProfile, RunState } from '@wizardingcode/shibaox-core';
 import type { RoutineRow, ScheduleRow } from '@wizardingcode/shibaox-persistence-sqlite';
 import type { ModelChoice } from '@wizardingcode/shibaox-providers';
+import type { HiggsfieldMode } from './config.js';
 import type { HiggsfieldView, LoginStart } from './higgsfield.js';
 import type { InboxItem } from './inbox.js';
 import type { McpAddRequest, McpServerRow, McpTestResult } from './mcp.js';
@@ -295,6 +296,10 @@ export class DaemonClient {
   /** Starts the Higgsfield browser login on the daemon's machine. */
   higgsfieldLogin(): Promise<LoginStart> {
     return this.json('POST', '/integrations/higgsfield/login');
+  }
+  /** `partners.higgsfield.mode` in the daemon's daemon.yaml (from the daemon's machine only). */
+  setHiggsfieldMode(mode: HiggsfieldMode): Promise<HiggsfieldView> {
+    return this.json('PUT', '/integrations/higgsfield', { mode });
   }
   /** Who decides and the latest decisions across runs. */
   decisions(limit?: number): Promise<DecisionsView> {

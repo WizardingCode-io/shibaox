@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MemoryEventStore } from '@wizardingcode/shibaox-core';
@@ -136,6 +136,143 @@ describe('GET /integrations/higgsfield', () => {
     await c.higgsfield();
     expect(calls).toBeGreaterThanOrEqual(2);
   });
+  it('without an API key the API is never probed; mode auto falls back to the account', async () => {
+    let probes = 0;
+    const c = await daemon({
+      exec: async (argv) =>
+        argv[1] === 'version'
+          ? { exitCode: 0, stdout: 'higgsfield 1.1.26\n', stderr: '' }
+          : argv[1] === 'account'
+            ? { exitCode: 0, stdout: '{"email":"a@b.c"}', stderr: '' }
+            : { exitCode: 0, stdout: 'tok\n', stderr: '' },
+      mcp: async () => 'ok',
+      login: async () => ({ started: true }),
+      apiCheck: async () => {
+        probes++;
+        return { valid: true, status: 404 };
+      },
+    });
+    const v = await c.higgsfield();
+    expect(v.api).toEqual({ keySet: false });
+    expect(v).toMatchObject({ mode: 'auto', effective: 'account' });
+    expect(probes).toBe(0);
+  });
+
+  it('a saved key is probed once a minute per key; a new key probes again; 401 is valid:false', async () => {
+    const keys: string[] = [];
+    const c = await daemon({
+      exec: async () => ({ exitCode: 127, stdout: '', stderr: '' }),
+      mcp: async () => 'unreachable',
+      login: async () => ({ started: true }),
+      apiCheck: async (key) => {
+        keys.push(key);
+        return key === 'id:good' ? { valid: true, status: 404 } : { valid: false, status: 401 };
+      },
+    });
+    await c.setKey('HIGGSFIELD_API_KEY', 'id:good');
+    const v = await c.higgsfield();
+    expect(v.api).toMatchObject({ keySet: true, valid: true, status: 404 });
+    expect(typeof v.api.checkedAt).toBe('string');
+    expect(v).toMatchObject({ mode: 'auto', effective: 'api' });
+    await c.higgsfield();
+    expect(keys).toEqual(['id:good']);
+    await c.setKey('HIGGSFIELD_API_KEY', 'id:bad');
+    expect((await c.higgsfield()).api).toMatchObject({ keySet: true, valid: false, status: 401 });
+    expect(keys).toEqual(['id:good', 'id:bad']);
+    expect(JSON.stringify(await c.higgsfield())).not.toContain('id:bad');
+    await c.unsetKey('HIGGSFIELD_API_KEY');
+    expect((await c.higgsfield()).api).toEqual({ keySet: false });
+  });
+
+  it('PUT /integrations/higgsfield {mode} writes daemon.yaml keeping comments; a bad mode is 400', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hf-mode-'));
+    tmp.push(dir);
+    scaffoldOrg(dir);
+    const home = homePaths({ SHIBAOX_HOME: join(dir, 'home') });
+    const { mkdirSync, writeFileSync } = await import('node:fs');
+    mkdirSync(home.root, { recursive: true });
+    writeFileSync(home.config, '# mine\nmax_concurrent_runs: 2 # two\n');
+    const d = new Daemon({
+      discovery: false,
+      home,
+      store: new MemoryEventStore(),
+      channels: [],
+      env: {},
+      log: () => {},
+      version: '9.9.9',
+      vault: join(dir, 'vault'),
+      higgsfield: {
+        exec: async () => ({ exitCode: 127, stdout: '', stderr: '' }),
+        mcp: async () => 'unreachable',
+        login: async () => ({ started: true }),
+      },
+    });
+    daemons.push(d);
+    await d.start();
+    const c = new DaemonClient(home.socket);
+    const v = await c.setHiggsfieldMode('api');
+    expect(v).toMatchObject({ mode: 'api', effective: 'none' });
+    const text = readFileSync(home.config, 'utf8');
+    expect(text).toContain('# mine');
+    expect(text).toContain('# two');
+    expect(text).toMatch(/mode: api/);
+    expect((await c.higgsfield()).mode).toBe('api');
+    expect(d.config.partners.higgsfield.mode).toBe('api');
+    await expect(c.setHiggsfieldMode('x' as never)).rejects.toMatchObject({ status: 400 });
+    expect(readFileSync(home.config, 'utf8')).toBe(text);
+  });
+
+  it('PUT /integrations/higgsfield is refused to another machine and through a proxy', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hf-mode-far-'));
+    tmp.push(dir);
+    scaffoldOrg(dir);
+    const home = homePaths({ SHIBAOX_HOME: join(dir, 'home') });
+    let local = true;
+    const d = new Daemon({
+      discovery: false,
+      home,
+      store: new MemoryEventStore(),
+      channels: [],
+      env: { SHIBAOX_DAEMON_TOKEN: 'secret-1' },
+      log: () => {},
+      version: '9.9.9',
+      vault: join(dir, 'vault'),
+      localPeer: () => local,
+      config: {
+        max_concurrent_runs: 2,
+        approval_timeout_minutes: 1,
+        channels: { macos: { enabled: false } },
+        projects: [],
+        listen: { host: '127.0.0.1', port: 0, token_env: 'SHIBAOX_DAEMON_TOKEN' },
+      } as never,
+      higgsfield: {
+        exec: async () => ({ exitCode: 127, stdout: '', stderr: '' }),
+        mcp: async () => 'unreachable',
+        login: async () => ({ started: true }),
+      },
+    });
+    daemons.push(d);
+    await d.start();
+    const base = `http://127.0.0.1:${d.listenAddress()?.port}`;
+    const put = (headers: Record<string, string> = {}) =>
+      fetch(`${base}/integrations/higgsfield`, {
+        method: 'PUT',
+        headers: {
+          authorization: 'Bearer secret-1',
+          'content-type': 'application/json',
+          ...headers,
+        },
+        body: JSON.stringify({ mode: 'api' }),
+      });
+    expect((await put({ 'x-forwarded-for': '203.0.113.9' })).status).toBe(403);
+    local = false;
+    expect((await put()).status).toBe(403);
+    expect(existsSync(home.config)).toBe(false);
+    local = true;
+    expect((await put()).status).toBe(200);
+    expect(readFileSync(home.config, 'utf8')).toMatch(/mode: api/);
+  });
+
   it('the login endpoint answers a loopback client of the network listener, and returns what the CLI printed', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'hf-listen-'));
     tmp.push(dir);
