@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { ds } from '../../../ds.js';
 import { useAppState, useStore } from '../../../store/hooks.js';
 import { splitRepo } from '../filter.js';
+import { SkippedNote } from '../parts.js';
+import { settle } from '../skill-results.js';
 
 /** "From a repository": what `owner/repo[/path]` (or a git URL) offers, pick, install. */
 export function SkillRepoDialog(props: {
@@ -20,6 +22,7 @@ export function SkillRepoDialog(props: {
   >(undefined);
   const [picked, setPicked] = useState<string[]>([]);
   const [installing, setInstalling] = useState(false);
+  const [skipped, setSkipped] = useState<string[]>([]);
   const look = () => {
     const { repo, path } = splitRepo(input);
     if (!repo) return;
@@ -62,8 +65,13 @@ export function SkillRepoDialog(props: {
                 .then((r) => {
                   setInstalling(false);
                   if (!r) return;
-                  props.onClose();
-                  props.onAdded(r.added);
+                  setSkipped(
+                    settle(r, {
+                      close: props.onClose,
+                      onAdded: props.onAdded,
+                      notice: (m) => store.notice(m),
+                    }),
+                  );
                 });
             }}
           >
@@ -90,6 +98,7 @@ export function SkillRepoDialog(props: {
             Look
           </S.Button>
         </form>
+        <SkippedNote lines={skipped} />
         {found && 'error' in found ? (
           <p className="note">{`Could not read it: ${found.error}`}</p>
         ) : null}

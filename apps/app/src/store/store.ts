@@ -23,7 +23,7 @@ import {
   threadView,
 } from '@wizardingcode/shibaox-view';
 import type { AppClient, RoutineDraft, RoutinePatch, RunFileContent } from '../api/client.js';
-import type { AddSkillOutcome } from '../screens/customize/types.js';
+import type { AddSkillOutcome, SkillDoc } from '../screens/customize/types.js';
 import { type AppState, initialState, type Settings, TERMINAL } from './state.js';
 
 /** The part of AppClient the store uses (a fake in tests). */
@@ -79,6 +79,7 @@ export type StoreClient = Pick<
   | 'registryConnectors'
   | 'registrySkills'
   | 'plugins'
+  | 'skill'
 >;
 
 interface StorageLike {
@@ -128,6 +129,8 @@ export class AppStore {
   private readonly settleEvery: number;
   private readonly log: (line: string) => void;
   private readonly subs = new Map<string, Sub>();
+  /** Repository listings being read (`repo|path`): one request per source at a time. */
+  private readonly discovering = new Map<string, Promise<SkillDiscovery | { error: string }>>();
   /** The last cursor seen per run, to resume a stream where it stopped. */
   private readonly cursors = new Map<string, string>();
   /** Dispatched runs whose end was already reported to their thread (or ended before we looked). */
@@ -889,18 +892,35 @@ export class AppStore {
     );
   }
 
-  /** What a repository offers; the listing (or why it failed) is kept for Discover. */
-  async discoverSkills(repo: string, path?: string): Promise<SkillDiscovery | { error: string }> {
+  /**
+   * What a repository offers; the listing (or why it failed) is kept for Discover. A source
+   * already being read is not asked twice: the call joins the pending one.
+   */
+  discoverSkills(repo: string, path?: string): Promise<SkillDiscovery | { error: string }> {
     const key = path ? `${repo}|${path}` : repo;
-    let r: SkillDiscovery | { error: string };
-    try {
-      r = await this.client.discoverSkills(repo, path);
-    } catch (e) {
-      if (isUnauthorized(e)) this.set({ unauthorized: true });
-      r = { error: message(e) };
-    }
-    this.set((s) => ({ discovered: { ...s.discovered, [key]: r } }));
-    return r;
+    const pending = this.discovering.get(key);
+    if (pending) return pending;
+    const p = (async () => {
+      let r: SkillDiscovery | { error: string };
+      try {
+        r = await this.client.discoverSkills(repo, path);
+      } catch (e) {
+        if (isUnauthorized(e)) this.set({ unauthorized: true });
+        r = { error: message(e) };
+      }
+      this.set((s) => ({ discovered: { ...s.discovered, [key]: r } }));
+      return r;
+    })().finally(() => this.discovering.delete(key));
+    this.discovering.set(key, p);
+    return p;
+  }
+  /** Whether a source's listing is being read. */
+  isDiscovering(repo: string, path?: string): boolean {
+    return this.discovering.has(path ? `${repo}|${path}` : repo);
+  }
+  /** One skill with its SKILL.md (undefined: the toast says why). */
+  loadSkill(id: string): Promise<SkillDoc | undefined> {
+    return this.load(async () => this.client.skill(await this.orgRoot(), id));
   }
   /** Installs or writes skills; the result says what was added and skipped (undefined: the toast says why). */
   async addSkill(req: SkillAddRequest): Promise<AddSkillOutcome | undefined> {
@@ -911,11 +931,26 @@ export class AppStore {
     });
     return ok ? r : undefined;
   }
-  removeSkill(id: string, detach: boolean): Promise<boolean> {
-    return this.act(async () => {
-      await this.client.removeSkill(await this.orgRoot(), id, detach);
+  /**
+   * Removes a skill. While roles still list it (a 409 naming them), the answer is those roles
+   * (no toast): the screen asks whether to detach first.
+   */
+  async removeSkill(id: string, detach: boolean): Promise<boolean | { inUse: string[] }> {
+    let inUse: string[] | undefined;
+    const ok = await this.act(async () => {
+      try {
+        await this.client.removeSkill(await this.orgRoot(), id, detach);
+      } catch (e) {
+        const roles = (e as { status?: number; details?: { roles?: unknown } }).details?.roles;
+        if ((e as { status?: number }).status === 409 && Array.isArray(roles)) {
+          inUse = roles.map(String);
+          return;
+        }
+        throw e;
+      }
       await this.loadCustomize();
     });
+    return inUse ? { inUse } : ok;
   }
   /** Replaces the lists of each role that changed, then reads the org again. */
   setRoleLinks(changes: { id: string; links: RolePatch }[]): Promise<boolean> {

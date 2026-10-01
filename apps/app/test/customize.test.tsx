@@ -150,17 +150,127 @@ describe('Customize: Skills', () => {
     expect(screen.getByText('higgsfield')).toBeTruthy();
     // pdf is already yours
     expect(screen.getByLabelText('pdf is added')).toBeTruthy();
-    await pickCategory(/^Category/, 'document-skills');
-    expect(screen.queryByText('canvas-design')).toBeNull();
-    expect(screen.getByText('xlsx')).toBeTruthy();
+    // the source path is not a folder: it is never a category nor a meta line
+    expect(screen.queryByText('skills')).toBeNull();
+    expect(screen.getByText('recipes')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /^Category/ }));
+    const items = (await screen.findAllByRole('menuitemradio')).map((x) => x.textContent);
+    expect(items).toEqual(['All', 'Anthropic skills', 'Higgsfield skills', 'recipes']);
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'recipes' }));
+    expect(screen.queryByText('xlsx')).toBeNull();
+    expect(screen.queryByText('higgsfield')).toBeNull();
+    expect(screen.getByText('product-shot')).toBeTruthy();
+    await pickCategory(/^Category/, 'Anthropic skills');
+    expect(screen.queryByText('product-shot')).toBeNull();
+    expect(screen.getByText('canvas-design')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Add xlsx' }));
     await waitFor(() =>
       expect(call(calls, 'addSkill')).toEqual([
         '/o',
-        { source: 'repo', repo: 'anthropics/skills', ids: ['xlsx'] },
+        { source: 'repo', repo: 'anthropics/skills', path: 'skills', ids: ['xlsx'] },
       ]),
     );
+    // each source was read once
+    expect(calls.filter((x) => x.name === 'discoverSkills').map((x) => x.args)).toEqual([
+      ['anthropics/skills', 'skills'],
+      ['higgsfield-ai/skills', undefined],
+    ]);
     expect(await screen.findByRole('dialog', { name: 'Roles for xlsx' })).toBeTruthy();
+  });
+
+  it('Discover: a source that could not be read has Retry', async () => {
+    const { client: c, calls } = client({ discoverFails: 2 });
+    mount(c, { hash: '#/customize&tab=skills&view=discover' });
+    const retries = await screen.findAllByRole('button', { name: 'Retry' });
+    expect(retries).toHaveLength(2);
+    expect(screen.getAllByText(/git clone timed out/)).toHaveLength(2);
+    fireEvent.click(retries[0] as HTMLElement);
+    expect(await screen.findByText('xlsx')).toBeTruthy();
+    expect(calls.filter((x) => x.name === 'discoverSkills')).toHaveLength(3);
+  });
+
+  it('Open shows the SKILL.md, its path and Copy path', async () => {
+    const writes: string[] = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (t: string) => void writes.push(t) },
+    });
+    const { client: c, calls } = client();
+    mount(c, { hash: '#/customize' });
+    await screen.findByText('PDF');
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for PDF' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Open' }));
+    expect(await screen.findByRole('heading', { name: 'PDF guide' })).toBeTruthy();
+    expect(screen.getByText('first').tagName).toBe('STRONG');
+    expect(call(calls, 'skill')).toEqual(['/o', 'pdf']);
+    expect(screen.getByText('/o/skills/pdf/SKILL.md')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy path' }));
+    await waitFor(() => expect(writes).toEqual(['/o/skills/pdf/SKILL.md']));
+  });
+
+  it('Remove: a 409 from the daemon names the roles and offers to detach', async () => {
+    const { client: c, calls } = client({ inUse: ['assistant'] });
+    mount(c, { hash: '#/customize' });
+    await screen.findByText('Brand voice');
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Brand voice' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Remove' }));
+    let dialog = await screen.findByRole('dialog', { name: 'Remove Brand voice?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove' }));
+    dialog = await screen.findByRole('dialog', { name: 'Remove Brand voice?' });
+    expect(within(dialog).getByText(/used by assistant — detach\?/i)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Detach and remove' }));
+    await waitFor(() =>
+      expect(calls.filter((x) => x.name === 'removeSkill').map((x) => x.args)).toEqual([
+        ['/o', 'brand-voice', false],
+        ['/o', 'brand-voice', true],
+      ]),
+    );
+  });
+
+  it('nothing added: the dialog stays open and says why for each id', async () => {
+    const { client: c } = client({ skip: { invoice: 'exists', pdf: 'symlink' } });
+    mount(c, { hash: '#/customize', store: undefined });
+    await screen.findByText('Brand voice');
+    await openAdd('From a repository');
+    const dialog = await screen.findByRole('dialog', { name: 'Add skills from a repository' });
+    fireEvent.change(within(dialog).getByLabelText('Repository'), {
+      target: { value: 'acme/tools/skills' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Look' }));
+    await within(dialog).findByRole('checkbox', { name: /invoice/ });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Install 1' }));
+    expect(await within(dialog).findByText(/invoice: already in the org/)).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Add skills from a repository' })).toBeTruthy();
+  });
+
+  it('some added: the rest and the files left out are a note', async () => {
+    const { client: c, calls } = client({
+      skip: { pdf: 'too_large' },
+      omitted: { xlsx: ['assets/big.bin'] },
+    });
+    mount(c, { hash: '#/customize&tab=skills&view=discover' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Add xlsx' }));
+    await waitFor(() => expect(call(calls, 'addSkill')).toBeTruthy());
+    expect(await screen.findByText(/assets\/big\.bin/)).toBeTruthy();
+  });
+
+  it('From a folder posts the path', async () => {
+    const { client: c, calls } = client();
+    mount(c, { hash: '#/customize' });
+    await screen.findByText('Brand voice');
+    await openAdd('From a folder');
+    const dialog = await screen.findByRole('dialog', { name: 'Add a skill from a folder' });
+    fireEvent.change(within(dialog).getByLabelText('Folder'), {
+      target: { value: ' /Users/me/skills/release-notes ' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
+    await waitFor(() =>
+      expect(call(calls, 'addSkill')).toEqual([
+        '/o',
+        { source: 'folder', path: '/Users/me/skills/release-notes' },
+      ]),
+    );
+    expect(await screen.findByRole('dialog', { name: 'Roles for release-notes' })).toBeTruthy();
   });
 
   it('From a repository lists what it finds and installs the ones picked', async () => {
@@ -523,6 +633,8 @@ describe('Customize: Plugins', () => {
         { source: 'repo', repo: 'higgsfield-ai/skills', ids: ['higgsfield'] },
       ]),
     );
+    expect(await screen.findByRole('dialog', { name: 'Roles for higgsfield' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     // github brings a connector from the registry: + opens its dialog
     fireEvent.click(screen.getByRole('button', { name: 'Add connector github' }));
     expect(await screen.findByRole('dialog', { name: 'Add GitHub' })).toBeTruthy();
@@ -567,6 +679,13 @@ describe('Customize: Plugins', () => {
     // neither a usable link nor a known id: hidden
     expect(screen.queryByText('Mystery')).toBeNull();
     expect(screen.queryByText('Nothing')).toBeNull();
+  });
+
+  it('Add skill says why when the source does not have it', async () => {
+    const { client: c } = client({ skip: { higgsfield: 'not_found' } });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Add skill higgsfield' }));
+    expect(await screen.findByText(/higgsfield: not found in the source/)).toBeTruthy();
   });
 
   it('Discover shows the rest; there is no Add for plugins', async () => {

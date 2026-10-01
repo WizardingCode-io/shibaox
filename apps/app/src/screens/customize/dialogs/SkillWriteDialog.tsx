@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { ds } from '../../../ds.js';
 import { useStore } from '../../../store/hooks.js';
 import { ID_RE } from '../filter.js';
+import { SkippedNote } from '../parts.js';
+import { settle } from '../skill-results.js';
 
 const template = (id: string) => `---
 name: ${id || 'my-skill'}
@@ -24,6 +26,7 @@ export function SkillWriteDialog(props: {
   const [id, setId] = useState('');
   const [content, setContent] = useState<string | undefined>(undefined);
   const [saving, setSaving] = useState(false);
+  const [skipped, setSkipped] = useState<string[]>([]);
   const ok = ID_RE.test(id.trim());
   const text = content ?? template(id.trim());
   return (
@@ -48,8 +51,13 @@ export function SkillWriteDialog(props: {
               void store.addSkill({ source: 'inline', id: id.trim(), content: text }).then((r) => {
                 setSaving(false);
                 if (!r) return;
-                props.onClose();
-                props.onAdded(r.added);
+                setSkipped(
+                  settle(r, {
+                    close: props.onClose,
+                    onAdded: props.onAdded,
+                    notice: (m) => store.notice(m),
+                  }),
+                );
               });
             }}
           >
@@ -59,6 +67,7 @@ export function SkillWriteDialog(props: {
       }
     >
       <div className="form">
+        <SkippedNote lines={skipped} />
         <S.Input
           label="Id"
           placeholder="release-notes"
@@ -87,6 +96,7 @@ export function SkillFolderDialog(props: {
   const store = useStore();
   const [path, setPath] = useState('');
   const [saving, setSaving] = useState(false);
+  const [skipped, setSkipped] = useState<string[]>([]);
   return (
     <S.Dialog
       open
@@ -109,8 +119,13 @@ export function SkillFolderDialog(props: {
               void store.addSkill({ source: 'folder', path: path.trim() }).then((r) => {
                 setSaving(false);
                 if (!r) return;
-                props.onClose();
-                props.onAdded(r.added);
+                setSkipped(
+                  settle(r, {
+                    close: props.onClose,
+                    onAdded: props.onAdded,
+                    notice: (m) => store.notice(m),
+                  }),
+                );
               });
             }}
           >
@@ -119,12 +134,15 @@ export function SkillFolderDialog(props: {
         </>
       }
     >
-      <S.Input
-        label="Folder"
-        placeholder="/Users/me/skills/release-notes"
-        value={path}
-        onChange={(e) => setPath((e.target as HTMLInputElement).value)}
-      />
+      <div className="form">
+        <SkippedNote lines={skipped} />
+        <S.Input
+          label="Folder"
+          placeholder="/Users/me/skills/release-notes"
+          value={path}
+          onChange={(e) => setPath((e.target as HTMLInputElement).value)}
+        />
+      </div>
     </S.Dialog>
   );
 }

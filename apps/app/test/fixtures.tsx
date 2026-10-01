@@ -12,7 +12,7 @@ import type {
 } from '@wizardingcode/shibaox-daemon';
 import type { McpServer } from '@wizardingcode/shibaox-schemas';
 import { App } from '../src/App.js';
-import type { RunFileContent } from '../src/api/client.js';
+import { AppHttpError, type RunFileContent } from '../src/api/client.js';
 import type { McpRow } from '../src/screens/customize/types.js';
 import { AppStore, type StoreClient } from '../src/store/store.js';
 
@@ -179,8 +179,9 @@ export const SOURCES: SkillSource[] = [
     repo: 'anthropics/skills',
     name: 'Anthropic skills',
     vendor: 'Anthropic',
-    description: "Anthropic's example skills",
-    categories: ['document-skills'],
+    description: 'Anthropic’s public skills: documents, design, development, communication.',
+    path: 'skills',
+    categories: ['Documents', 'Design', 'Development', 'Communication'],
   },
   {
     repo: 'higgsfield-ai/skills',
@@ -193,14 +194,15 @@ export const DISCOVER: Record<
   string,
   { id: string; name: string; description: string; path: string }[]
 > = {
+  // the daemon's paths are relative to the repository (anthropics/skills keeps them in skills/)
   'anthropics/skills': [
-    { id: 'pdf', name: 'pdf', description: 'PDF tools', path: 'document-skills/pdf' },
-    { id: 'xlsx', name: 'xlsx', description: 'Spreadsheets', path: 'document-skills/xlsx' },
+    { id: 'pdf', name: 'pdf', description: 'PDF tools', path: 'skills/pdf' },
+    { id: 'xlsx', name: 'xlsx', description: 'Spreadsheets', path: 'skills/xlsx' },
     {
       id: 'canvas-design',
       name: 'canvas-design',
       description: 'Posters and art',
-      path: 'canvas-design',
+      path: 'skills/canvas-design',
     },
   ],
   'higgsfield-ai/skills': [
@@ -209,6 +211,12 @@ export const DISCOVER: Record<
       name: 'higgsfield',
       description: 'Images and video',
       path: 'higgsfield',
+    },
+    {
+      id: 'product-shot',
+      name: 'product-shot',
+      description: 'Product photos',
+      path: 'recipes/product-shot',
     },
   ],
   'acme/tools': [
@@ -290,6 +298,14 @@ export function client(
     roles?: RoleRow[];
     plugins?: PluginRow[];
     mcp?: McpRow[];
+    /** addSkill skips these ids with that reason. */
+    skip?: Record<string, string>;
+    /** addSkill leaves these files out of the skills it adds. */
+    omitted?: Record<string, string[]>;
+    /** DELETE /skills answers 409 with these roles (unless detach). */
+    inUse?: string[];
+    /** discoverSkills fails this many times first. */
+    discoverFails?: number;
   } = {},
 ) {
   const calls: { name: string; args: unknown[] }[] = [];
@@ -573,25 +589,43 @@ export function client(
           : req.source === 'repo'
             ? (req.ids ?? [])
             : [req.path.split('/').pop() ?? 'x'];
+      const skip = o.skip ?? {};
       return {
-        added: ids.map((id) => ({
-          id,
-          name: id,
-          description: '',
-          path: `/o/skills/${id}`,
-          roles: [],
-        })),
-        skipped: [],
+        added: ids
+          .filter((id) => !skip[id])
+          .map((id) => ({
+            id,
+            name: id,
+            description: '',
+            path: `/o/skills/${id}/SKILL.md`,
+            roles: [],
+            ...(o.omitted?.[id] ? { omitted: o.omitted[id] } : {}),
+          })),
+        skipped: ids.filter((id) => skip[id]).map((id) => ({ id, reason: skip[id] as 'exists' })),
       };
     },
     async discoverSkills(repo, path) {
       rec('discoverSkills', repo, path);
       if (repo === 'nope/nope') throw new Error('repository not found');
+      if (o.discoverFails && o.discoverFails-- > 0) throw new Error('git clone timed out');
       return { repo, skills: DISCOVER[repo] ?? [] };
     },
     async removeSkill(org, id, detach) {
       rec('removeSkill', org, id, detach);
+      if (o.inUse && !detach)
+        throw new AppHttpError(409, 'in_use', `skill ${id} is used by ${o.inUse.join(', ')}`, {
+          roles: o.inUse,
+        });
       return { removed: true as const };
+    },
+    async skill(org, id) {
+      rec('skill', org, id);
+      const row = (o.skills ?? SKILLS).find((s) => s.id === id);
+      if (!row) throw new AppHttpError(404, 'not_found', `skill ${id} not found`);
+      return {
+        ...row,
+        content: `---\nname: ${row.name}\ndescription: ${row.description}\n---\n\n# ${row.name} guide\n\nFill the form **first**.\n`,
+      };
     },
     async roles(org) {
       rec('roles', org);

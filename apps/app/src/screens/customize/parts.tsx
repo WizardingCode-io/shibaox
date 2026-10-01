@@ -213,6 +213,21 @@ export function RoleChecks(props: {
   );
 }
 
+/** Why nothing was added: one line per id, inside the dialog. */
+export function SkippedNote(props: { lines: string[] }): JSX.Element | null {
+  if (props.lines.length === 0) return null;
+  return (
+    <div className="note" role="status">
+      <p>Nothing was added:</p>
+      <ul className="skipped">
+        {props.lines.map((l) => (
+          <li key={l}>{l}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** What an empty list says. */
 export function Empty(props: { children: ReactNode }): JSX.Element {
   return <p className="muted empty-line">{props.children}</p>;

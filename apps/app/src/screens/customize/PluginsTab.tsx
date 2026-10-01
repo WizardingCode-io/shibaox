@@ -7,6 +7,7 @@ import { RolesDialog } from './dialogs/RolesDialog.js';
 import { matches } from './filter.js';
 import { pluginKeyNeeds } from './needed-keys.js';
 import { AddMenu, Empty, goTo, KeyBadge, Toolbar } from './parts.js';
+import { settle } from './skill-results.js';
 import type { CustomizeView } from './types.js';
 
 type IconName = Parameters<Window['Shibaox']['Icon']>[0]['name'];
@@ -42,14 +43,11 @@ function PluginCard(props: {
   const [copied, setCopied] = useState(false);
   const [adding, setAdding] = useState<string | undefined>(undefined);
   const st = STATUS[p.status];
+  /** A skill the plugin brings, from the skill source of the same vendor. */
   const addSkill = (id: string) => {
-    const sources = c?.registry.skills ?? [];
     const own = (s: string) => s.toLowerCase();
-    const src = sources.find(
-      (s) =>
-        own(s.vendor) === own(p.name) ||
-        own(s.vendor) === own(p.id) ||
-        own(s.repo).includes(own(p.id)),
+    const src = (c?.registry.skills ?? []).find(
+      (s) => own(s.vendor) === own(p.name) || own(s.vendor) === own(p.id),
     );
     if (!src) return goTo('skills', 'discover');
     setAdding(id);
@@ -62,8 +60,16 @@ function PluginCard(props: {
       })
       .then((r) => {
         setAdding(undefined);
-        const first = r?.added[0];
-        if (first) props.onSkillAdded(first.id, first.name);
+        if (!r) return;
+        const skipped = settle(r, {
+          close: () => undefined,
+          onAdded: (added) => {
+            const first = added[0];
+            if (first) props.onSkillAdded(first.id, first.name);
+          },
+          notice: (m) => store.notice(m),
+        });
+        if (skipped.length) store.notice(`Not added: ${skipped.join('; ')}`);
       });
   };
   const install = (command: string) => {

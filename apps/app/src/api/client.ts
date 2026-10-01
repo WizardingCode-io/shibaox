@@ -41,6 +41,8 @@ export class AppHttpError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /** Extra fields of the error body (a 409 of `DELETE /skills/:id` names the `roles`). */
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'AppHttpError';
@@ -83,8 +85,14 @@ export class AppClient {
       parsed = undefined;
     }
     if (r.status >= 400) {
-      const err = (parsed as { error?: { code?: string; message?: string } } | undefined)?.error;
-      throw new AppHttpError(r.status, err?.code ?? 'error', err?.message ?? `HTTP ${r.status}`);
+      const { error: err, ...details } =
+        (parsed as { error?: { code?: string; message?: string } } | undefined) ?? {};
+      throw new AppHttpError(
+        r.status,
+        err?.code ?? 'error',
+        err?.message ?? `HTTP ${r.status}`,
+        Object.keys(details).length ? details : undefined,
+      );
     }
     return parsed as T;
   }
@@ -239,6 +247,10 @@ export class AppClient {
   /** The org's skills (`org/skills/<id>/SKILL.md`) with the roles that use each. */
   skills(org: string): Promise<SkillRow[]> {
     return this.json('GET', `/skills?org=${encodeURIComponent(org)}`);
+  }
+  /** One skill with its SKILL.md. */
+  skill(org: string, id: string): Promise<SkillDoc> {
+    return this.json('GET', `/skills/${encodeURIComponent(id)}?org=${encodeURIComponent(org)}`);
   }
   /** Installs skills from a repository or a folder, or writes one. */
   addSkill(org: string, req: SkillAddRequest): Promise<AddSkillOutcome> {
