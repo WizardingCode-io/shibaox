@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,5 +31,21 @@ describe('shibaox doctor: decisions', () => {
     const line = r.stdout.split('\n').find((l) => /\bdecisions\b/.test(l)) ?? '';
     expect(line).toContain('jev-latest');
     expect(line).toMatch(/TYPESAFE_API_KEY/);
+  });
+  it('with the TypeSafe key and Jev as an OpenRouter model, says to switch to jev-latest', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'doctor-'));
+    tmp.push(home);
+    scaffoldOrg(home);
+    writeFileSync(
+      join(home, 'org', 'models.yaml'),
+      'providers: {}\ntiers: { strong: anthropic/claude-sonnet-5, decision: openrouter/typesafe/jev-1.13 }\nroles: {}\ngates: {}\n',
+    );
+    const r = await cli(
+      { SHIBAOX_HOME: home, OPENROUTER_API_KEY: 'k', TYPESAFE_API_KEY: 't' },
+      'doctor',
+    );
+    const line = r.stdout.split('\n').find((l) => /\bdecisions\b/.test(l)) ?? '';
+    expect(line).toContain('openrouter/typesafe/jev-1.13');
+    expect(line).toContain('switch the decision tier to jev-latest for typed decisions');
   });
 });

@@ -431,6 +431,10 @@ export interface DeciderInfo {
   reason?: string;
 }
 
+/** What `deciderInfo` says when an LLM Jev decides although TypeSafe's typed API could. */
+export const JEV_SWITCH_REASON =
+  'the key is set: switch the decision tier to jev-latest for typed decisions';
+
 export function deciderInfo(
   org: Org,
   env: NodeJS.ProcessEnv,
@@ -445,7 +449,15 @@ export function deciderInfo(
   const isRef = decisionRef?.includes('/') ?? false;
   const decisionWhy = isRef ? unusable(registry, decisionRef) : undefined;
   if (isRef && decisionRef && decisionWhy === undefined)
-    return { kind: 'model', ref: decisionRef, usable: true };
+    return {
+      kind: 'model',
+      ref: decisionRef,
+      usable: true,
+      // Jev as a chat model (openrouter/typesafe/jev-*) while its typed API's key is here
+      ...(env.TYPESAFE_API_KEY && /jev/i.test(decisionRef.slice(decisionRef.indexOf('/') + 1))
+        ? { reason: JEV_SWITCH_REASON }
+        : {}),
+    };
   if (!isRef && env.TYPESAFE_API_KEY)
     return { kind: 'jev', ref: decisionRef || 'jev-latest', usable: true };
   const why = isRef
