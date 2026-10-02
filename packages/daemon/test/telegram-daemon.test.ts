@@ -215,7 +215,7 @@ describe('talking to the orchestrator from Telegram', () => {
     expect(messages.length).toBeLessThan(7); // not the whole thread again
   });
 
-  it('without org and project in daemon.yaml the text gets an explanation', async () => {
+  it('without org and project in daemon.yaml the text runs on the home org and workspace', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tgd-'));
     tmp.push(dir);
     fake = await fakeTelegram();
@@ -226,31 +226,41 @@ describe('talking to the orchestrator from Telegram', () => {
       log: () => {},
       pollTimeoutSeconds: 0,
     });
+    const home = homePaths({ SHIBAOX_HOME: join(dir, 'home') });
     const daemon = new Daemon({
-      home: homePaths({ SHIBAOX_HOME: join(dir, 'home') }),
+      discovery: false,
+      home,
       store: new MemoryEventStore(),
       channels: [channel],
       env: {},
       log: () => {},
+      vault: join(dir, 'vault'),
       config: {
         max_concurrent_runs: 2,
         approval_timeout_minutes: 1,
         channels: {
           macos: { enabled: false },
-          telegram: { bot_token_env: 'X', chat_id: 7, workflow: 'chat' },
+          telegram: { bot_token_env: 'X', chat_id: 7, workflow: 'chat', adapter: 'mock' },
         },
       },
     });
     daemons.push(daemon);
     await daemon.start();
     fake.push(message(1, 7, 'olá'));
+    await vi.waitFor(async () => expect(await daemon.runs.list()).toHaveLength(1));
+    const [run] = await daemon.runs.list();
+    expect(run).toMatchObject({
+      workflow: 'chat',
+      origin: 'telegram:7',
+      orgRoot: (await daemon.defaultOrg()).root,
+      project: daemon.workspace,
+    });
     await vi.waitFor(() =>
       expect(fake?.calls.filter((c) => c.method === 'sendMessage')).toHaveLength(1),
     );
     expect(String(fake.calls.find((c) => c.method === 'sendMessage')?.body.text)).toContain(
-      'channels.telegram.org',
+      'mock assistant',
     );
-    expect(await daemon.runs.list()).toEqual([]);
   });
 });
 

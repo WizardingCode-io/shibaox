@@ -31,13 +31,13 @@ channels:
   telegram:
     chat_id: 123456789
     org: ./org                 # relative paths resolve next to daemon.yaml
-    project: /path/to/project  # with org + project, text messages talk to the orchestrator
+    project: /path/to/project  # optional: pin text messages to this org and project
     workflow: chat             # default
     # adapter: claude-code
     # bot_token_env: SHIBAOX_TELEGRAM_TOKEN   # default
 ```
 
-`org` and `project` are not written by the pairing: add them to talk to the orchestrator from the chat (approvals, reports and `telegram_send` work without them).
+`org` and `project` are not written by the pairing and are optional: without them a text message runs on the daemon's home org and home workspace (the same place a new chat without a project uses); set them to pin the chat to one org and project.
 
 `shibaox doctor` checks the token with `getMe`.
 

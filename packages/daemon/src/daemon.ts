@@ -740,14 +740,24 @@ export class Daemon {
     );
   }
 
-  /** Free text from a channel: a turn for the orchestrator on the configured org and project. */
-  private async onChatText(channel: Channel, chatId: number, text: string): Promise<void> {
+  /**
+   * Where a Telegram chat runs: `channels.telegram.org`/`project` when set, else the home org and
+   * the home workspace (so a chat paired from the app works with nothing else to configure).
+   */
+  private async telegramTarget(): Promise<{ org: string; project: string } | undefined> {
     const tg = this.config.channels.telegram;
+    if (!tg) return undefined;
+    const org = tg.org ?? (await this.defaultOrg()).root;
+    const project = tg.project ?? this.workspace;
+    mkdirSync(project, { recursive: true });
+    return { org, project };
+  }
+
+  /** Free text from a channel: a turn for the orchestrator on the org and project of the chat. */
+  private async onChatText(channel: Channel, chatId: number, text: string): Promise<void> {
     const say = (t: string) => channel.say?.(t).catch(() => undefined) ?? Promise.resolve();
-    if (!tg?.org || !tg.project) {
-      await say(
-        'Set channels.telegram.org and project in daemon.yaml to talk to the orchestrator.',
-      );
+    if (!(await this.telegramTarget())) {
+      await say('Telegram is not paired: Customize → Plugins → Telegram → Pair.');
       return;
     }
     const origin = `telegram:${chatId}`;
@@ -767,14 +777,15 @@ export class Daemon {
     say: (t: string) => Promise<void> = async () => undefined,
   ): Promise<void> {
     const tg = this.config.channels.telegram;
+    const target = await this.telegramTarget();
     const flight = this.inFlight.get(origin);
-    if (!tg?.org || !tg.project || !flight) return;
+    if (!tg || !target || !flight) return;
     const messages = [...(this.threads.get(origin) ?? [])];
     this.remember(origin, { role: 'user', content: text });
     try {
       const { runId, messages: used } = await this.runs.submit({
-        orgRoot: tg.org,
-        project: tg.project,
+        orgRoot: target.org,
+        project: target.project,
         workflow: tg.workflow,
         adapter: tg.adapter,
         input: text,
