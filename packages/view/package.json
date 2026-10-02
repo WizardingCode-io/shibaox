@@ -1,6 +1,6 @@
 {
   "name": "@wizardingcode/shibaox-view",
-  "version": "0.2.25",
+  "version": "0.2.26",
   "license": "Apache-2.0",
   "type": "module",
   "description": "Pure derivations shared by the shibaox dashboards: run timelines, threads, requests (no Node APIs)",
