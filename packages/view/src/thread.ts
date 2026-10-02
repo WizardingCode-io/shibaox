@@ -145,7 +145,8 @@ export function threadView(turns: readonly ThreadTurn[]): ThreadView {
         parts: messageParts(cards),
         time: updatedAt,
         blocks,
-        pending: live && !text,
+        // pending while the run lives: text alone is not the end of a turn (tools may follow)
+        pending: live,
         model: text || blocks.length > 0 ? (runUsage(cards)?.model ?? state.model) : undefined,
         runId: state.runId,
       });

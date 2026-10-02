@@ -183,4 +183,16 @@ describe('threadView', () => {
       attachments: [{ path: 'attachments/x.csv', size: 8, mime: 'text/csv' }],
     });
   });
+
+  it('a running last turn stays pending after its text started: the user must see work going on', () => {
+    const v = threadView([
+      {
+        state: state({ runId: 'r1', status: 'running', input: { spec: 'Olá', messages: [] } }),
+        cards: [node([{ kind: 'text', key: 'x', text: 'Estou a verificar…' }], 'running')],
+      },
+    ]);
+    const last = v.messages[v.messages.length - 1];
+    expect(last?.text).toContain('Estou a verificar');
+    expect(last?.pending).toBe(true);
+  });
 });

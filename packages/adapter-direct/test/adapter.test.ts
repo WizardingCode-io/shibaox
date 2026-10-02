@@ -116,6 +116,41 @@ describe('DirectAdapter', () => {
     expect(r.output).toEqual({ text: 'Nothing to do here.' });
     expect(r.summary).toContain('Nothing to do');
   });
+  it('a reply that only announces work is handed back once: the model then does it', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    let n = 0;
+    fake = await startFakeOpenAI(() =>
+      ++n === 1
+        ? { content: 'Estou a verificar isso para si.' }
+        : { content: 'Three repos: a, b, c.' },
+    );
+    const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    const r = await collectRun(adapter, { ...jobFor(ws), conversation: true }, ctx());
+    expect(fake.requests).toHaveLength(2);
+    const second = fake.requests[1] as { messages: { role: string; content: string }[] };
+    const last = second.messages[second.messages.length - 1];
+    expect(last?.role).toBe('user');
+    expect(last?.content).toContain('Do it now');
+    expect(second.messages[second.messages.length - 2]?.content).toBe(
+      'Estou a verificar isso para si.',
+    );
+    expect(r.output).toEqual({ text: 'Three repos: a, b, c.' });
+  });
+  it('a reply with results is never handed back', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI(() => ({ content: 'Three repos: a, b, c. Want details on one?' }));
+    const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    await collectRun(adapter, { ...jobFor(ws), conversation: true }, ctx());
+    expect(fake.requests).toHaveLength(1);
+  });
   it('streams the reply in pieces and never repeats it at the end', async () => {
     const ws = mkdtempSync(join(tmpdir(), 'ws-'));
     fake = await startFakeOpenAI(() => ({ content: 'Olá! Como posso ajudar hoje? 😊' }));

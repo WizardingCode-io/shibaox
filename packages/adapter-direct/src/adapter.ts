@@ -118,6 +118,19 @@ export function replyText(
   return finished.summary.trim();
 }
 
+/**
+ * A reply that promises work instead of doing it ("Let me check that for you.", "Estou a verificar
+ * isso para si."): short, no results, ending on a promise. Only the last sentence is read.
+ */
+export function announcesWork(text: string): boolean {
+  const t = text.trim();
+  if (!t || t.length > 600) return false;
+  const last = (t.split(/(?<=[.!?…])\s+/).pop() ?? t).toLowerCase();
+  return /\b(let me|i['’]ll|i will|i am going to|i'm going to|one moment|hold on|vou |irei |estou a (verificar|procurar|ver|analisar|tratar|confirmar)|deixa-me|deixe-me|um momento)\b/.test(
+    last,
+  );
+}
+
 export class DirectAdapter implements RuntimeAdapter {
   readonly id = 'direct';
   constructor(private readonly opts: DirectAdapterOptions) {}
@@ -325,6 +338,7 @@ export class DirectAdapter implements RuntimeAdapter {
     // results back, and let it continue (a few rounds at most)
     const totals = { inputTokens: 0, outputTokens: 0 };
     let shown = false;
+    let nudged = false;
     for (let round = 0; ; round++) {
       if (suspended || !settled.ok) break;
       totals.inputTokens += settled.r.usage.inputTokens;
@@ -349,7 +363,28 @@ export class DirectAdapter implements RuntimeAdapter {
       if (finished || !tools || settled.r.finishReason !== 'stop' || round >= TEXT_TOOL_ROUNDS)
         break;
       const parsed = parseTextToolCalls(settled.r.text);
-      if (parsed.calls.length === 0) break;
+      if (parsed.calls.length === 0) {
+        // "I'll check that for you." and a stop: a weak model ended its turn on a promise. Once,
+        // hand the promise back and ask for the work itself (tools in this turn, or a question).
+        if (!nudged && settled.r.steps <= 1 && announcesWork(settled.r.text)) {
+          nudged = true;
+          ctx.log(`[direct] the model announced work and stopped: asked once to do it now`);
+          while (queue.length > 0) yield queue.shift() as RuntimeEvent;
+          messages = [
+            ...messages,
+            { role: 'assistant', content: settled.r.text },
+            {
+              role: 'user',
+              content:
+                'You announced work and stopped. Do it now, in this turn, with your tools; or ask one precise question. Do not repeat the announcement.',
+            },
+          ];
+          streamer = new TextStreamer((text) => emit({ type: 'text', text }));
+          settled = yield* drain(callModel(messages));
+          continue;
+        }
+        break;
+      }
       const rest = streamer.remainder(parsed.text);
       if (rest.trim()) yield { type: 'text', text: rest };
       shown = true;

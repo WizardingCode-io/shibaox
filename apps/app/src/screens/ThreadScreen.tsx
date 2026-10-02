@@ -357,7 +357,9 @@ function ChatTab(props: {
                   <HumanAsk key={i.id} item={i} />
                 ),
               )}
-              {m.pending && byRun(m.runId).length === 0 ? <S.ThinkingIndicator /> : null}
+              {m.pending && byRun(m.runId).length === 0 ? (
+                <S.ThinkingIndicator label={m.text ? 'Working' : undefined} />
+              ) : null}
               {byRun(m.runId).length > 0 ? (
                 <S.ThinkingIndicator label="Waiting for your approval" />
               ) : null}

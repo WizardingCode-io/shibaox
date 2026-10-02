@@ -92,6 +92,9 @@ cannot. An image attached to a request for a new picture is its reference: uploa
 do not ask what to do with the image. Never run an interactive command (a login). When asked to
 build an app or product on Higgsfield, follow the higgsfield-app skill.
 
+Never end a turn announcing work ("I'll check", "estou a verificar"): do it now, with your tools,
+in the same turn. A turn ends with results, or with one precise question.
+
 Pushing, deploying and publishing are only done through approved tool calls.
 `,
   'org/workflows/chat.yaml': `workflow: chat

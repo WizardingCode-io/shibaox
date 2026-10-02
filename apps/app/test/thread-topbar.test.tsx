@@ -469,4 +469,27 @@ describe('the reply is rendered as a document', () => {
     expect(stop).not.toBe(send);
     expect(stop.textContent).toContain('Stop');
   });
+
+  it('a live turn keeps a working indicator under its text, even after a tool ran', async () => {
+    const { client: c } = client({
+      runs: [{ ...summary('root'), status: 'running' as const }],
+      states: { root: state('root', { status: 'running' }) },
+      frames: {
+        root: [
+          runFrame(1, 'NodeStarted', { nodeId: 'reply' }),
+          rtFrame(1, 'reply', { type: 'text', text: 'Estou a verificar…' }),
+          rtFrame(2, 'reply', {
+            type: 'tool_use',
+            id: 'u1',
+            name: 'web_fetch',
+            input: { url: 'https://x' },
+          }),
+          rtFrame(3, 'reply', { type: 'tool_result', id: 'u1', output: 'x' }),
+        ],
+      },
+    });
+    mount(c, { hash: '#/t/root' });
+    await screen.findByText(/Estou a verificar/);
+    expect(await screen.findByRole('status')).toBeTruthy();
+  });
 });
