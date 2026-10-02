@@ -181,6 +181,15 @@ export interface ServerDeps {
   connectorRegistry: () => ConnectorTemplate[];
   skillSources: () => SkillSource[];
   plugins: () => Promise<PluginRow[]>;
+  /** Telegram's plugin actions: pair the bot with the next chat (local callers only), send a text. */
+  telegram: {
+    pair(o: {
+      timeoutMs?: number;
+    }): Promise<
+      { paired: true; chatId: number; from?: string } | { paired: false; reason: string }
+    >;
+    send(text: string): Promise<{ sent: true; chatId: number } | { sent: false; reason: string }>;
+  };
   /** Whether a peer of the network listener is this machine (default: a loopback address). */
   localPeer?: (remoteAddress: string | undefined) => boolean;
   unsetKey: (name: string) => boolean;
@@ -540,6 +549,17 @@ export class DaemonServer {
     if (method === 'GET' && path === '/registry/skills')
       return send(res, 200, this.deps.skillSources());
     if (method === 'GET' && path === '/plugins') return send(res, 200, await this.deps.plugins());
+    const pluginAction = /^\/plugins\/([^/]+)\/actions\/([^/]+)$/.exec(path);
+    if (method === 'POST' && pluginAction)
+      return send(
+        res,
+        200,
+        await this.pluginAction(
+          req,
+          decodeURIComponent(pluginAction[1] ?? ''),
+          decodeURIComponent(pluginAction[2] ?? ''),
+        ),
+      );
     if (path === '/mcp' || /^\/mcp\/[^/]+\/test$/.test(path)) {
       const org = url.searchParams.get('org') ?? '';
       if (!org) throw new HttpError(400, 'bad_request', '"org" is required');
@@ -821,6 +841,42 @@ export class DaemonServer {
     if (req.headers['x-forwarded-for'] !== undefined || req.headers.forwarded !== undefined)
       return false;
     return this.deps.localPeer ? this.deps.localPeer(req.socket.remoteAddress) : isLoopback(req);
+  }
+
+  /**
+   * A plugin's action from its card. Telegram: `pair` waits for the next message to the bot and
+   * writes its chat to daemon.yaml (this machine only), `test` sends a test message to the chat.
+   */
+  private async pluginAction(req: IncomingMessage, id: string, action: string): Promise<unknown> {
+    if (id === 'telegram' && action === 'pair') {
+      if (!this.localCaller(req))
+        throw new HttpError(
+          403,
+          'forbidden',
+          "Telegram is paired from the daemon's machine (it writes daemon.yaml)",
+        );
+      const body = asRecord(await readBody(req));
+      const t = body.timeoutMs;
+      const timeoutMs =
+        typeof t === 'number' && Number.isFinite(t)
+          ? Math.min(Math.max(t, 100), 120_000)
+          : undefined;
+      return this.deps.telegram.pair(timeoutMs !== undefined ? { timeoutMs } : {});
+    }
+    if (id === 'telegram' && action === 'test') {
+      const r = await this.deps.telegram.send('Shibaox ✓ test message from the app');
+      if (r.sent) return r;
+      if (r.reason === 'not paired')
+        throw new HttpError(
+          409,
+          'not_paired',
+          'Telegram is not paired: Customize → Plugins → Telegram → Pair',
+        );
+      if (r.reason === 'no token')
+        throw new HttpError(409, 'no_token', 'The Telegram bot token is not set');
+      throw new HttpError(409, 'not_running', `Telegram cannot send: ${r.reason}`);
+    }
+    throw new HttpError(404, 'not_found', `no action ${action} for plugin ${id}`);
   }
 
   /** Org writes are for callers on the daemon's machine only (403 otherwise). */

@@ -367,6 +367,10 @@ export class Daemon {
           env: this.env,
           decider: () => this.decider(),
         }),
+      telegram: {
+        pair: (o) => this.pairTelegram(o),
+        send: (text) => this.telegramSend(text),
+      },
       ...(opts.localPeer ? { localPeer: opts.localPeer } : {}),
       mcpTest: (id, org) => mcpTest(id, org, this.env, opts.log ?? (() => undefined)),
       mcpRemoteAllowed: async (org) => {

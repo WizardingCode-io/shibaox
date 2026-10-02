@@ -270,6 +270,21 @@ export class DaemonClient {
   plugins(): Promise<PluginRow[]> {
     return this.json('GET', '/plugins');
   }
+  /**
+   * A plugin's action from its card: `telegram` `pair` (waits up to a minute for a message to
+   * the bot; from the daemon's machine only) or `test` (a test message to the paired chat).
+   */
+  pluginAction<T = unknown>(
+    id: string,
+    action: string,
+    body?: Record<string, unknown>,
+  ): Promise<T> {
+    return this.json(
+      'POST',
+      `/plugins/${encodeURIComponent(id)}/actions/${encodeURIComponent(action)}`,
+      body ?? {},
+    );
+  }
   /** Projects a dashboard may pick, the daemon's home workspace last. */
   projects(): Promise<ProjectEntry[]> {
     return this.json('GET', '/projects');
