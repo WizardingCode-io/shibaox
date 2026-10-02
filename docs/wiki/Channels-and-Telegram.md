@@ -8,9 +8,23 @@ Channels announce what needs you and, for some, let you answer. They get the com
 
 ## Setting up Telegram
 
-1. Create a bot with @BotFather and note its token; find your chat id (message the bot, then read `getUpdates`, or use @userinfobot).
-2. Put the token in the vault: `shibaox keys set SHIBAOX_TELEGRAM_TOKEN 123:abc`. The channel starts polling at once; remove the key and it stops; change it and it restarts. No daemon restart.
-3. In `~/.shibaox/daemon.yaml`:
+### From the app
+
+1. Create a bot with @BotFather (Customize → Plugins → Telegram → **Create a bot**) and note its token.
+2. Paste the token on the Telegram card (or `shibaox keys set SHIBAOX_TELEGRAM_TOKEN 123:abc`): it goes to the vault.
+3. Click **Pair with my Telegram**, then open your bot in Telegram and send `/start` within a minute. The daemon long polls the Bot API for that message, writes its chat to `channels.telegram.chat_id` in `~/.shibaox/daemon.yaml` (comments and the other keys kept) and starts the channel on it at once: no restart. The card says **Paired with chat <id>**, or why not (no message arrived in 60 s, Telegram refused the token…). Messages the bot received before the pairing are consumed, never answered later; a `/start` is preferred when several arrive together. One pairing at a time.
+4. **Send a test message** checks the whole path: the bot writes "Shibaox ✓ test message from the app" to the paired chat.
+
+The card is **Ready** only when the token is saved, a chat is paired and the channel is running. Pairing writes `daemon.yaml`, so it works from the daemon's own machine only (see [Security](Security)); the test message works from any client.
+
+Same thing over the API: `POST /plugins/telegram/actions/pair` (optional `{ "timeoutMs": … }`, up to 120 000) answers `{ paired: true, chatId, from? }` or `{ paired: false, reason }`; `POST /plugins/telegram/actions/test` answers `{ sent: true, chatId }`, or 409 `not_paired` / `no_token`.
+
+### By hand
+
+The chat id can still be written yourself (message the bot, then read `getUpdates`, or use @userinfobot):
+
+1. Put the token in the vault: `shibaox keys set SHIBAOX_TELEGRAM_TOKEN 123:abc`. The channel starts polling at once; remove the key and it stops; change it and it restarts. No daemon restart.
+2. In `~/.shibaox/daemon.yaml`:
 
 ```yaml
 channels:
@@ -23,7 +37,13 @@ channels:
     # bot_token_env: SHIBAOX_TELEGRAM_TOKEN   # default
 ```
 
+`org` and `project` are not written by the pairing: add them to talk to the orchestrator from the chat (approvals, reports and `telegram_send` work without them).
+
 `shibaox doctor` checks the token with `getMe`.
+
+## Sending from a conversation
+
+Roles with `telegram` in their `tools` get the daemon's `telegram_send(text)` tool (the scaffold's `assistant` has it): "send me a Telegram when the build is done" works. The text goes to the paired chat as plain text (escaped, split under Telegram's limit) through the daemon; the bot token never reaches the model. When nothing is paired the tool says "Telegram is not paired: Customize → Plugins → Telegram → Pair". An org created before this release adds `telegram` to `org/roles/assistant.yaml` `tools` by hand.
 
 ## Approvals
 
