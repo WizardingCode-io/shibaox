@@ -66,6 +66,7 @@ import { finishRun, vaultDir } from './runs/notes.js';
 import { memoryTools, orchestrationTools, toolsForRole } from './runs/orchestration.js';
 import { profileFor } from './runs/profile.js';
 import type { Summarizer } from './runs/summarize.js';
+import { type TelegramSendResult, telegramTools } from './runs/telegram-tools.js';
 import {
   assertProjectDir,
   gitPrefix,
@@ -169,6 +170,8 @@ export interface RunManagerOptions {
    * API tools' (tests inject a fake).
    */
   higgsfield?: { mode(): HiggsfieldMode; fetch?: typeof fetch; base?: string };
+  /** The daemon's Telegram send: roles with `telegram` in their tools get `telegram_send`. */
+  telegram?: { send(text: string): Promise<TelegramSendResult> };
   /** A run with an `origin` ended: the daemon reports it where it was asked for. */
   onFinished?: (
     state: RunState,
@@ -1034,6 +1037,9 @@ export class RunManager {
       extra: (job) => [
         ...toolsForRole(job.role, job.input, { orchestration, memory }),
         ...this.higgsfieldTools(org, job, project, r.runId),
+        ...(this.opts.telegram && job.role.tools.includes('telegram')
+          ? telegramTools(this.opts.telegram)
+          : []),
       ],
     };
   }

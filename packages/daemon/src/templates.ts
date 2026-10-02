@@ -52,7 +52,8 @@ system_prompt: prompts/team-leader.md
 description: The orchestrator you talk to; it answers, acts, and dispatches the teams.
 model_tier: cheap
 capabilities: [orchestrate, memory]
-tools: [read, write, git, node, npm, pnpm, bun, python3, higgsfield]
+tools: [read, write, git, node, npm, pnpm, bun, python3, higgsfield, telegram]
+# telegram: the daemon's telegram_send (the chat paired in Plugins → Telegram)
 # Higgsfield's tools (images, video, audio) and the skills that say how to use them and build on them
 # (in API mode the daemon's higgsfield_api_* tools replace the MCP server: Plugins → Higgsfield)
 mcp: [higgsfield]
@@ -94,6 +95,9 @@ build an app or product on Higgsfield, follow the higgsfield-app skill.
 
 Never end a turn announcing work ("I'll check", "estou a verificar"): do it now, with your tools,
 in the same turn. A turn ends with results, or with one precise question.
+
+Telegram: \`telegram_send(text)\` sends a message to the paired chat (Plugins → Telegram); use it
+when asked to message or notify on Telegram.
 
 Pushing, deploying and publishing are only done through approved tool calls.
 `,

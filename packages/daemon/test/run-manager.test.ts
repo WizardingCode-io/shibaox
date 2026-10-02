@@ -1425,3 +1425,66 @@ describe('Higgsfield gating per task', () => {
     expect(toolResult?.isError).toBe(true);
   });
 });
+
+describe('telegram_send per role', () => {
+  const toolNames = (srv: unknown): string[] =>
+    Object.keys(
+      (srv as { instance?: { _registeredTools?: Record<string, unknown> } } | undefined)?.instance
+        ?._registeredTools ?? {},
+    );
+  const run = async (o: { withTelegram: boolean; injected: boolean }) => {
+    const s = setup({ claudeCode: true });
+    const role = join(s.orgRoot, 'roles', 'assistant.yaml');
+    // no Higgsfield here: the account's MCP is not what this is about
+    let yaml = readFileSync(role, 'utf8')
+      .replace(/^mcp: \[higgsfield\]$/m, 'mcp: []')
+      .replace(/^skills: .*$/m, 'skills: []');
+    if (!o.withTelegram) yaml = yaml.replace(/, telegram\]/, ']');
+    writeFileSync(role, yaml);
+    const seen: string[][] = [];
+    const q = fakeQuery(async function* ({ options }) {
+      seen.push(toolNames((options.mcpServers as Record<string, unknown> | undefined)?.shibaox));
+      yield msg.init();
+      yield msg.success('hi');
+    });
+    const sent: string[] = [];
+    const { manager: m } = manager(new MemoryEventStore(), {
+      queryFn: q,
+      vault: s.vault,
+      ...(o.injected
+        ? {
+            telegram: {
+              send: async (text: string) => {
+                sent.push(text);
+                return { sent: true as const, chatId: 42 };
+              },
+            },
+          }
+        : {}),
+    });
+    const { runId } = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'chat',
+      input: 'send me a telegram',
+      workspace: 'inplace',
+    });
+    await vi.waitFor(async () => expect(isTerminal((await m.state(runId)).status)).toBe(true), {
+      timeout: 10_000,
+    });
+    return seen[0] ?? [];
+  };
+
+  it('a role with telegram in its tools gets telegram_send', async () => {
+    const tools = await run({ withTelegram: true, injected: true });
+    expect(tools).toContain('telegram_send');
+  });
+
+  it('a role without it does not, nor does any role when the daemon gives no sender', async () => {
+    const without = await run({ withTelegram: false, injected: true });
+    // the tools were captured (the negative assertion means something)
+    expect(without.length).toBeGreaterThan(0);
+    expect(without).not.toContain('telegram_send');
+    expect(await run({ withTelegram: true, injected: false })).not.toContain('telegram_send');
+  });
+});
