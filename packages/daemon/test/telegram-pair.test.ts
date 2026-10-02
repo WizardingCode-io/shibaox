@@ -110,6 +110,24 @@ describe('pairing Telegram from the daemon', () => {
     );
   });
 
+  it('a Conflict from another poller is retried: the /start after it pairs', async () => {
+    fake = await fakeBotApi({ conflicts: 2 });
+    fake.push(start(10, 42));
+    const { d } = daemonWith();
+    await d.start();
+    const r = await d.pairTelegram({ timeoutMs: 20_000 });
+    expect(r).toMatchObject({ paired: true, chatId: 42 });
+    expect(fake.calls.filter((c) => c.method === 'getUpdates').length).toBeGreaterThanOrEqual(3);
+  });
+  it('a Conflict that never clears names the cause: another program uses the bot', async () => {
+    fake = await fakeBotApi({ conflicts: 1000 });
+    const { d } = daemonWith();
+    await d.start();
+    const r = await d.pairTelegram({ timeoutMs: 2_500 });
+    expect(r.paired).toBe(false);
+    expect(r.paired === false && r.reason).toMatch(/another program is polling this bot/);
+    expect(r.paired === false && r.reason).toMatch(/BotFather/);
+  });
   it('no message before the timeout: not paired, nothing written', async () => {
     fake = await fakeBotApi();
     const { d, home } = daemonWith();

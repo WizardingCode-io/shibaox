@@ -7,10 +7,12 @@ export interface Call {
 }
 
 /** A Bot API fake: `getUpdates` answers from `updates` (by offset) once `emptyPolls` ran out. */
-export async function fakeBotApi(o: { emptyPolls?: number } = {}) {
+export async function fakeBotApi(o: { emptyPolls?: number; conflicts?: number } = {}) {
   const calls: Call[] = [];
   const updates: { update_id: number; [k: string]: unknown }[] = [];
   let empty = o.emptyPolls ?? 0;
+  // another program long-polling the same bot: Telegram answers 409 Conflict for a while
+  let conflicts = o.conflicts ?? 0;
   const server: Server = createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on('data', (c: Buffer) => chunks.push(c));
@@ -21,6 +23,18 @@ export async function fakeBotApi(o: { emptyPolls?: number } = {}) {
       const text = Buffer.concat(chunks).toString('utf8');
       const body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
       calls.push({ method, token, body });
+      if (method === 'getUpdates' && conflicts > 0) {
+        conflicts--;
+        res.writeHead(409, { 'content-type': 'application/json' });
+        return res.end(
+          JSON.stringify({
+            ok: false,
+            error_code: 409,
+            description:
+              'Conflict: terminated by other getUpdates request; make sure that only one bot instance is running',
+          }),
+        );
+      }
       res.writeHead(200, { 'content-type': 'application/json' });
       if (method === 'getUpdates') {
         if (empty > 0) {

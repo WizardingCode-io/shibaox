@@ -15,6 +15,8 @@ interface PairUpdate {
 
 /** A message older than this (seconds before the pairing began) was not sent for it. */
 const STALE_S = 120;
+/** How long to wait after a 409 Conflict (another poller) before asking Telegram again. */
+const CONFLICT_RETRY_MS = 1_500;
 
 /**
  * Waits for the first message sent to the bot (a `/start` preferred in a batch) with Bot API
@@ -34,6 +36,7 @@ export async function pollForChat(o: {
   const deadline = began + o.timeoutMs;
   const fresh = Math.floor(began / 1000) - STALE_S;
   let offset = 0;
+  let conflicts = 0;
   while (!o.signal?.aborted) {
     const left = deadline - Date.now();
     if (left <= 0) break;
@@ -53,12 +56,20 @@ export async function pollForChat(o: {
         result?: PairUpdate[];
         description?: string;
       };
-      if (!res.ok || !json.ok)
+      if (!res.ok || !json.ok) {
+        // another program long-polls the same bot: Telegram answers 409 for a moment at a time;
+        // wait and try again until the deadline, then say what is going on
+        if (/terminated by other getUpdates/i.test(json.description ?? '') || res.status === 409) {
+          conflicts++;
+          await sleep(CONFLICT_RETRY_MS, o.signal);
+          continue;
+        }
         return {
           found: false,
           reason: `Telegram refused: ${json.description ?? `HTTP ${res.status}`}`,
           offset,
         };
+      }
       updates = json.result ?? [];
     } catch (e) {
       if (o.signal?.aborted) break;
@@ -90,7 +101,9 @@ export async function pollForChat(o: {
     found: false,
     reason: o.signal?.aborted
       ? 'pairing stopped (the daemon is stopping)'
-      : `no message received in ${Math.round(o.timeoutMs / 1000)} s: open your bot in Telegram, send /start and try again`,
+      : conflicts > 0
+        ? `another program is polling this bot (Telegram answered Conflict ${conflicts} times): Telegram serves one poller per bot, so give Shibaox a bot of its own (BotFather → /newbot, then replace the token) or stop the other program`
+        : `no message received in ${Math.round(o.timeoutMs / 1000)} s: open your bot in Telegram, send /start and try again`,
     offset,
   };
 }

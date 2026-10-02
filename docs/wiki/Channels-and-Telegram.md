@@ -54,3 +54,7 @@ Every human node and tool approval arrives as a message with Approve and Deny. T
 Any text you send the bot from your **private** chat (groups are ignored: the orchestrator writes to the project) is a turn for the orchestrator, one at a time; texts sent while it answers wait their turn. The reply comes back to the chat, and workflows it dispatches report their end there too. `/status` answers with the daemon, its runs and what needs you; `/help` lists this.
 
 The thread lives in memory (a restart forgets it; the orchestrator's `remember` notes do not) and is compacted like any long conversation. Messages that piled up while the daemon was down: only the last one is answered, and the chat is told how many were skipped.
+
+## One bot, one program
+
+Telegram serves `getUpdates` to one program per bot. If another program (another daemon, a server, an older install) polls the same bot, Telegram answers `409 Conflict` to the other one and messages land in whichever asked last. Pairing waits through a Conflict for the whole wait and then says so; a channel that keeps losing messages has the same cause. Give Shibaox a bot of its own: BotFather → `/newbot`, then replace the token in Customize → Keys (or `shibaox keys set SHIBAOX_TELEGRAM_TOKEN`) and pair again.
