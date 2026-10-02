@@ -369,6 +369,46 @@ describe('telegram text', () => {
     expect(fake.calls.at(-1)?.body).toMatchObject({ chat_id: 7, text: 'plain' });
   });
 
+  it('a conversation reply is rendered as Telegram HTML: headings bold, no raw markdown; typing renews until stopped', async () => {
+    fake = await fakeTelegram();
+    const channel = telegramChannel({
+      token: 't',
+      chatId: 7,
+      apiBase: fake.apiBase,
+      log: () => {},
+      pollTimeoutSeconds: 0,
+      typingIntervalMs: 10,
+    });
+    const stop = channel.typing?.() ?? (() => {});
+    await new Promise((r) => setTimeout(r, 45));
+    stop();
+    const pings = fake.calls.filter((c) => c.method === 'sendChatAction').length;
+    expect(pings).toBeGreaterThanOrEqual(3);
+    await new Promise((r) => setTimeout(r, 30));
+    // a ping already on the wire when stop() ran may still land: never more than one
+    expect(fake.calls.filter((c) => c.method === 'sendChatAction').length).toBeLessThanOrEqual(
+      pings + 1,
+    );
+    await channel.report?.({
+      runId: 'r',
+      workflow: 'chat',
+      status: 'completed',
+      nodes: [],
+      spentUsd: 0,
+      reply: '## Análise\n\nA **empresa** usa `Laravel`.\n- um\n- dois',
+    } as never);
+    const sent = fake.calls.filter((c) => c.method === 'sendMessage');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.body).toMatchObject({ parse_mode: 'HTML' });
+    const text = String(sent[0]?.body.text);
+    expect(text).toContain('<b>Análise</b>');
+    expect(text).toContain('<b>empresa</b>');
+    expect(text).toContain('<code>Laravel</code>');
+    expect(text).toContain('• um');
+    expect(text).not.toContain('**');
+    expect(text).not.toContain('##');
+  });
+
   it('escapes after chunking (no entity is ever split) and retries a rate-limited chunk', async () => {
     fake = await fakeTelegram();
     fake.failNext({

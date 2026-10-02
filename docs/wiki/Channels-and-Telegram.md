@@ -55,6 +55,10 @@ Any text you send the bot from your **private** chat (groups are ignored: the or
 
 The thread lives in memory (a restart forgets it; the orchestrator's `remember` notes do not) and is compacted like any long conversation. Messages that piled up while the daemon was down: only the last one is answered, and the chat is told how many were skipped.
 
+## Replies, rendered
+
+A reply is Markdown from the model, sent rendered the way Telegram shows it: headings and `**bold**` as bold, `*italic*`, `` `code` `` and fenced blocks, links, bullets. Long replies go out in pieces under Telegram's limit, cut between paragraphs (a code block stays whole). While a turn runs, the chat shows *typing…* until the reply lands.
+
 ## Files from the assistant
 
 `telegram_send(text, path?)` also sends a file of the run's workspace: images go as photos, videos as videos, audio as audio and anything else as a document (50 MB at most; the text is the caption). Only files of the workspace, never protected ones (`.env`, the project's protected globs). Ask the assistant to send an image it generated, a report it wrote or a file you attached.

@@ -164,7 +164,10 @@ export class Daemon {
   /** The conversation per Telegram chat (last turns), for the orchestrator's `messages`. */
   private readonly threads = new Map<string, ChatMessage[]>();
   /** One turn at a time per chat: the run in flight and the texts waiting for it. */
-  private readonly inFlight = new Map<string, { runId: string; queue: string[] }>();
+  private readonly inFlight = new Map<
+    string,
+    { runId: string; queue: string[]; stopTyping?: () => void }
+  >();
   private modelsCache: { at: number; models: ModelChoice[] } | undefined;
   private readonly higgsfieldBase: string;
 
@@ -258,6 +261,7 @@ export class Daemon {
             this.remember(report.origin, { role: 'assistant', content: report.reply });
           const flight = this.inFlight.get(report.origin);
           if (flight?.runId === state.runId) {
+            flight.stopTyping?.();
             this.inFlight.delete(report.origin);
             const next = flight.queue.shift();
             if (next !== undefined) {
@@ -808,7 +812,7 @@ export class Daemon {
       flight.queue.push(text);
       return;
     }
-    this.inFlight.set(origin, { runId: '', queue: [] });
+    this.inFlight.set(origin, { runId: '', queue: [], stopTyping: channel.typing?.() });
     await this.submitTurn(origin, text, say);
   }
 
@@ -842,8 +846,10 @@ export class Daemon {
       this.threads.set(origin, messages);
       await say(`✗ could not start: ${e instanceof Error ? e.message : String(e)}`);
       const next = flight.queue.shift();
-      if (next === undefined) this.inFlight.delete(origin);
-      else void this.submitTurn(origin, next, say);
+      if (next === undefined) {
+        flight.stopTyping?.();
+        this.inFlight.delete(origin);
+      } else void this.submitTurn(origin, next, say);
     }
   }
 

@@ -15,6 +15,11 @@ export interface Channel {
   onMessage?(cb: (chatId: number, text: string) => Promise<void>): void;
   /** Says something on the channel (plain text). */
   say?(text: string): Promise<void>;
+  /**
+   * Shows "typing…" on the channel until the returned function is called (Telegram forgets the
+   * state after a few seconds, so the channel renews it while a turn runs).
+   */
+  typing?(): () => void;
   start?(): Promise<void>;
   stop?(): Promise<void>;
 }
