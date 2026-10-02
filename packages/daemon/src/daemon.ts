@@ -367,6 +367,14 @@ export class Daemon {
           which: whichOnPath(this.env),
           env: this.env,
           decider: () => this.decider(),
+          telegram: () => {
+            const chatId = this.config.channels.telegram?.chat_id;
+            return {
+              paired: chatId !== undefined,
+              ...(chatId !== undefined ? { chatId } : {}),
+              running: this.channels.some((ch) => ch.id === 'telegram'),
+            };
+          },
         }),
       telegram: {
         pair: (o) => this.pairTelegram(o),

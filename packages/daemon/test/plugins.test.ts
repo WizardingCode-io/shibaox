@@ -19,10 +19,41 @@ const checks = (o: Partial<PluginChecks> = {}): PluginChecks => ({
   which: async () => undefined,
   env: {},
   decider: async () => ({ kind: 'none', usable: false, reason: 'no decision tier' }),
+  telegram: () => ({ paired: false, running: false }),
   ...o,
 });
 
 describe('plugins', () => {
+  it('Telegram: ready only with the token, a paired chat and the channel running', async () => {
+    const tg = async (o: Partial<PluginChecks>) =>
+      (await pluginsStatus(checks(o))).find((r) => r.id === 'telegram');
+    // the token alone is not Ready: nothing is paired
+    const tokenOnly = await tg({ env: { SHIBAOX_TELEGRAM_TOKEN: 't' } });
+    expect(tokenOnly?.status).toBe('partial');
+    expect(tokenOnly?.checks).toEqual([
+      { label: 'Bot token (SHIBAOX_TELEGRAM_TOKEN)', ok: true },
+      { label: 'Paired with a chat', ok: false },
+      { label: 'Channel running', ok: false },
+    ]);
+    const paired = await tg({
+      env: { SHIBAOX_TELEGRAM_TOKEN: 't' },
+      telegram: () => ({ paired: true, chatId: 42, running: true }),
+    });
+    expect(paired?.status).toBe('ready');
+    expect(paired?.checks[1]).toEqual({ label: 'Paired with a chat', ok: true, detail: 'chat 42' });
+    expect(paired?.actions.map((a) => a.id)).toEqual(['pair', 'test', 'botfather', 'docs']);
+    expect(paired?.actions.slice(0, 2)).toEqual([
+      { id: 'pair', label: 'Pair with my Telegram' },
+      { id: 'test', label: 'Send a test message' },
+    ]);
+    expect(paired?.brings).toEqual({ connectors: [], skills: [], tools: ['telegram_send'] });
+    const notRunning = await tg({
+      env: { SHIBAOX_TELEGRAM_TOKEN: 't' },
+      telegram: () => ({ paired: true, chatId: 42, running: false }),
+    });
+    expect(notRunning?.status).toBe('partial');
+  });
+
   it('everything off when nothing is there', async () => {
     const rows = await pluginsStatus(checks());
     expect(rows.map((r) => [r.id, r.status])).toEqual([

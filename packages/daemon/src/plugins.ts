@@ -66,6 +66,8 @@ export interface PluginChecks {
   /** The daemon's environment with the vault on top (only presence is read). */
   env: NodeJS.ProcessEnv;
   decider(): Promise<DeciderInfo | undefined>;
+  /** Telegram: a chat paired in daemon.yaml (`channels.telegram.chat_id`), the channel running. */
+  telegram(): { paired: boolean; chatId?: number; running: boolean };
 }
 
 /** `which` without a shell: the first executable file named `cmd` on PATH (plus the user bins). */
@@ -143,17 +145,37 @@ export async function pluginsStatus(c: PluginChecks): Promise<PluginRow[]> {
   });
 
   const tg = present(c.env, 'SHIBAOX_TELEGRAM_TOKEN');
+  const tgState = (() => {
+    try {
+      return c.telegram();
+    } catch {
+      return { paired: false, running: false };
+    }
+  })();
   rows.push({
     id: 'telegram',
     name: 'Telegram',
     description: 'Talk to the orchestrator and answer approvals from a Telegram bot.',
-    checks: [{ label: 'Bot token (SHIBAOX_TELEGRAM_TOKEN)', ok: tg }],
+    checks: [
+      { label: 'Bot token (SHIBAOX_TELEGRAM_TOKEN)', ok: tg },
+      {
+        label: 'Paired with a chat',
+        ok: tgState.paired,
+        ...(tgState.paired && tgState.chatId !== undefined
+          ? { detail: `chat ${tgState.chatId}` }
+          : {}),
+      },
+      { label: 'Channel running', ok: tgState.running },
+    ],
     keys: [{ name: 'SHIBAOX_TELEGRAM_TOKEN', present: tg }],
     actions: [
+      // POSTed by the app to /plugins/telegram/actions/<id>
+      { id: 'pair', label: 'Pair with my Telegram' },
+      { id: 'test', label: 'Send a test message' },
       { id: 'botfather', label: 'Create a bot', href: 'https://t.me/BotFather' },
       { id: 'docs', label: 'Channels', href: `${WIKI}/Channels-and-Telegram` },
     ],
-    brings: { connectors: [], skills: [] },
+    brings: { connectors: [], skills: [], tools: ['telegram_send'] },
   });
 
   const ts = present(c.env, 'TYPESAFE_API_KEY');
