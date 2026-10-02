@@ -21,6 +21,7 @@ import { githubChannel } from './channels/github.js';
 import { macosChannel } from './channels/macos.js';
 import { OutboxWorker } from './channels/outbox.js';
 import { inboxToken, telegramChannel } from './channels/telegram.js';
+import { pollForChat } from './channels/telegram-pair.js';
 import type { Channel } from './channels/types.js';
 import {
   type DaemonConfig,
@@ -116,6 +117,14 @@ export interface DaemonOptions {
   heartbeatMs?: number;
 }
 
+/** The vault/env name of the bot token when daemon.yaml does not name one. */
+export const TELEGRAM_TOKEN_ENV = 'SHIBAOX_TELEGRAM_TOKEN';
+
+/** What pairing the bot with a chat ended with. */
+export type TelegramPairResult =
+  | { paired: true; chatId: number; from?: string }
+  | { paired: false; reason: string };
+
 /** Turns kept per Telegram chat for the orchestrator's conversation. */
 const THREAD_TURNS = 20;
 
@@ -182,6 +191,7 @@ export class Daemon {
     this.telegramToken = this.config.channels.telegram
       ? this.env[this.config.channels.telegram.bot_token_env]
       : undefined;
+    this.telegramChat = this.config.channels.telegram?.chat_id;
     // with a SQLite store the outbox persists retries; an injected store delivers directly
     // (with a channel that may appear later, such as Telegram once its token is set)
     this.outbox =
@@ -385,6 +395,10 @@ export class Daemon {
 
   /** The Telegram token the running channel was built with (to notice a change). */
   private telegramToken: string | undefined;
+  /** The chat the running channel was built for (a pairing may change it). */
+  private telegramChat: number | undefined;
+  /** Where the next channel starts polling (past what a pairing read). */
+  private telegramOffset: number | undefined;
   private telegramSync: Promise<void> = Promise.resolve();
   private started = false;
 
@@ -406,17 +420,16 @@ export class Daemon {
     const tg = this.config.channels.telegram;
     if (!tg || this.opts.channels || this.stopping) return; // injected channels are the tests' business
     const token = this.env[tg.bot_token_env];
-    if (token === this.telegramToken) return;
+    const running = this.channels.some((c) => c.id === 'telegram');
+    if (token === this.telegramToken && tg.chat_id === this.telegramChat && (running || !token))
+      return;
     const log = this.opts.log ?? ((l: string) => console.log(l));
-    const current = this.channels.find((c) => c.id === 'telegram');
-    if (current) {
-      await current.stop?.().catch(() => undefined);
-      const i = this.channels.indexOf(current);
-      if (i >= 0) this.channels.splice(i, 1);
-      log('telegram: channel stopped (token changed or removed)');
-    }
+    await this.stopTelegramChannel('token or chat changed, or token removed');
     this.telegramToken = token;
+    this.telegramChat = tg.chat_id;
     if (!token) return;
+    const offset = this.telegramOffset;
+    this.telegramOffset = undefined;
     const c = telegramChannel({
       token,
       chatId: tg.chat_id,
@@ -424,11 +437,107 @@ export class Daemon {
       lookup: async (t) => (await this.inbox.list()).find((i) => inboxToken(i.id) === t)?.id,
       status: () => this.statusText(),
       apiBase: this.opts.telegramApiBase,
+      ...(offset !== undefined ? { offset } : {}),
     });
     this.attach(c);
     this.channels.push(c);
     if (this.started) await c.start?.();
     log('telegram: channel started with the token from the vault');
+  }
+
+  /** Stops and drops the running Telegram channel (if any). */
+  private async stopTelegramChannel(why: string): Promise<void> {
+    const current = this.channels.find((c) => c.id === 'telegram');
+    if (!current) return;
+    await current.stop?.().catch(() => undefined);
+    const i = this.channels.indexOf(current);
+    if (i >= 0) this.channels.splice(i, 1);
+    (this.opts.log ?? ((l: string) => console.log(l)))(`telegram: channel stopped (${why})`);
+  }
+
+  /** Runs `syncTelegram` in the queue every channel change goes through. */
+  private queueTelegramSync(): Promise<void> {
+    this.telegramSync = this.telegramSync.then(() =>
+      this.syncTelegram().catch((e) =>
+        this.opts.log?.(`telegram: ${e instanceof Error ? e.message : String(e)}`),
+      ),
+    );
+    return this.telegramSync;
+  }
+
+  private pairing: Promise<TelegramPairResult> | undefined;
+  private pairAbort: AbortController | undefined;
+  /**
+   * Pairs the bot with the chat that writes to it next: long polls `getUpdates` (≤ `timeoutMs`,
+   * default a minute) for the first message (a `/start` preferred), writes its chat to
+   * daemon.yaml and (re)starts the channel on it, past every update the pairing read. One
+   * pairing at a time (409 `pairing`); the running channel pauses meanwhile (Telegram serves
+   * one poller per bot).
+   */
+  pairTelegram(o: { timeoutMs?: number } = {}): Promise<TelegramPairResult> {
+    if (this.pairing)
+      return Promise.reject(
+        new HttpError(409, 'pairing', 'A Telegram pairing is already waiting for a message'),
+      );
+    this.pairing = this.pairOnce(o.timeoutMs ?? 60_000).finally(() => {
+      this.pairing = undefined;
+      this.pairAbort = undefined;
+    });
+    return this.pairing;
+  }
+
+  private async pairOnce(timeoutMs: number): Promise<TelegramPairResult> {
+    const log = this.opts.log ?? ((l: string) => console.log(l));
+    const envName = this.config.channels.telegram?.bot_token_env ?? TELEGRAM_TOKEN_ENV;
+    const token = this.env[envName];
+    if (!token) return { paired: false, reason: 'no token' };
+    if (this.stopping) return { paired: false, reason: 'the daemon is stopping' };
+    const abort = new AbortController();
+    this.pairAbort = abort;
+    // one getUpdates poller per bot: the channel pauses while the pairing listens
+    const own = !this.opts.channels;
+    if (own) {
+      await this.telegramSync;
+      await this.stopTelegramChannel('pairing');
+      this.telegramToken = undefined;
+    }
+    log('telegram: pairing, waiting for a message to the bot');
+    const r = await pollForChat({
+      base: `${this.opts.telegramApiBase ?? 'https://api.telegram.org/bot'}${token}`,
+      timeoutMs,
+      signal: abort.signal,
+    });
+    if (!r.found) {
+      log(`telegram: pairing ended without a chat (${r.reason})`);
+      if (own && !this.stopping) {
+        if (r.offset > 0) this.telegramOffset = r.offset;
+        await this.queueTelegramSync();
+      }
+      return { paired: false, reason: r.reason };
+    }
+    writeDaemonConfig(this.paths.config, { telegram: { chat_id: r.chatId } });
+    const tg = this.config.channels.telegram;
+    this.config.channels.telegram = {
+      ...(tg ?? { bot_token_env: envName, workflow: 'chat' }),
+      chat_id: r.chatId,
+    };
+    log(`telegram: paired with chat ${r.chatId}`);
+    // the read updates are confirmed with Telegram too (a channel built elsewhere never sees them)
+    if (!own)
+      await fetch(
+        `${this.opts.telegramApiBase ?? 'https://api.telegram.org/bot'}${token}/getUpdates`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ offset: r.offset, timeout: 0, allowed_updates: ['message'] }),
+          signal: AbortSignal.timeout(10_000),
+        },
+      ).catch(() => undefined);
+    else if (!this.stopping) {
+      this.telegramOffset = r.offset;
+      await this.queueTelegramSync();
+    }
+    return { paired: true, chatId: r.chatId, ...(r.from ? { from: r.from } : {}) };
   }
 
   /** Rebuilds the live environment in place after the vault changed (nothing holds a copy). */
@@ -439,11 +548,7 @@ export class Daemon {
     this.modelsCache = undefined;
     this.warmModels(); // a new key may open a provider whose prices and windows runs need
     // one sync at a time: two quick key changes never race over the channel list
-    this.telegramSync = this.telegramSync.then(() =>
-      this.syncTelegram().catch((e) =>
-        this.opts.log?.(`telegram: ${e instanceof Error ? e.message : String(e)}`),
-      ),
-    );
+    void this.queueTelegramSync();
   }
 
   private modelsInFlight: Promise<ModelChoice[]> | undefined;
@@ -758,6 +863,7 @@ export class Daemon {
 
   stop(o: { force?: boolean } = {}): Promise<void> {
     this.stopping ??= (async () => {
+      this.pairAbort?.abort();
       this.schedules?.stop();
       this.outbox?.stop();
       // a skills clone in flight dies with its process group

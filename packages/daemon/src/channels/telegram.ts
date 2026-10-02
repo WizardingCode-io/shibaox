@@ -22,6 +22,8 @@ export interface TelegramOptions {
   pollTimeoutSeconds?: number;
   /** What `/status` answers (the daemon's health as text). */
   status?: () => Promise<string>;
+  /** The first `getUpdates` offset (past what a pairing already read: never replayed). */
+  offset?: number;
 }
 
 const HELP = [
@@ -114,7 +116,7 @@ export function telegramChannel(o: TelegramOptions): Channel {
   let answer: ((id: InboxId, a: { approved: boolean; note?: string }) => Promise<void>) | undefined;
   let onText: ((chatId: number, text: string) => Promise<void>) | undefined;
   let polling: AbortController | undefined;
-  let offset = 0;
+  let offset = o.offset ?? 0;
 
   async function api<T>(
     method: string,
