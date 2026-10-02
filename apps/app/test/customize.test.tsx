@@ -802,6 +802,37 @@ describe('Customize: Connectors', () => {
 });
 
 describe('Customize: Plugins', () => {
+  it('a missing token is pasted on the card itself and saved to the vault under the first name', async () => {
+    const github = PLUGINS.find((x) => x.id === 'github') as PluginRow;
+    const { client: c, calls } = client({
+      plugins: [
+        ...PLUGINS.filter((x) => x.id !== 'github'),
+        {
+          ...github,
+          status: 'partial',
+          checks: [
+            { label: 'gh installed', ok: true },
+            { label: 'Token (GH_TOKEN or GITHUB_TOKEN)', ok: false },
+          ],
+          keys: [
+            { name: 'GH_TOKEN', present: false },
+            { name: 'GITHUB_TOKEN', present: false },
+          ],
+        },
+      ],
+    });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    await screen.findByText('GitHub');
+    const field = screen.getByLabelText('GH_TOKEN') as HTMLInputElement;
+    expect(field.type).toBe('password');
+    fireEvent.change(field, { target: { value: ' ghp_example ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save GH_TOKEN' }));
+    await waitFor(() => expect(call(calls, 'setKey')).toEqual(['GH_TOKEN', 'ghp_example']));
+    expect(screen.queryByText('ghp_example')).toBeNull();
+    // Higgsfield's API panel keeps its own Connect API key flow: no second field for the same key
+    expect(screen.queryByLabelText('HIGGSFIELD_API_KEY')).toBeNull();
+  });
+
   it('Yours shows what is set up, with its checks, its actions and what it brings', async () => {
     const { client: c, calls } = client();
     mount(c, { hash: '#/customize&tab=plugins' });

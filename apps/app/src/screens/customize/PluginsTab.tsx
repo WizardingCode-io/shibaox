@@ -37,6 +37,49 @@ const NOW: Record<HiggsfieldEffective, string> = {
 type Part = Pick<PluginRow, 'checks' | 'keys' | 'actions' | 'brings'> & { id?: string };
 
 /** A plugin's (or a mode's) checks, actions and what it brings. */
+/** A plugin's missing key, pasted right here: saved to the vault, the checks refresh at once. */
+function TokenPaste(props: { name: string; alternatives: string[] }): JSX.Element {
+  const S = ds();
+  const store = useStore();
+  const [value, setValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const others = props.alternatives.filter((n) => n !== props.name);
+  return (
+    <div className="key-set">
+      <S.Input
+        type="password"
+        autoComplete="off"
+        aria-label={props.name}
+        placeholder={`Paste the token (saved as ${props.name}${others.length ? `; ${others.join(', ')} also works` : ''})`}
+        value={value}
+        onChange={(e) => setValue((e.target as HTMLInputElement).value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && value.trim() && !saving) {
+            e.preventDefault();
+            setSaving(true);
+            void store.setKey(props.name, value.trim()).then(() => setSaving(false));
+          }
+        }}
+      />
+      <S.Button
+        size="sm"
+        loading={saving}
+        disabled={!value.trim()}
+        aria-label={`Save ${props.name}`}
+        onClick={() => {
+          setSaving(true);
+          void store.setKey(props.name, value.trim()).then((ok) => {
+            setSaving(false);
+            if (ok) setValue('');
+          });
+        }}
+      >
+        Save
+      </S.Button>
+    </div>
+  );
+}
+
 function PluginBody(props: {
   p: PluginRow;
   part: Part;
@@ -52,6 +95,8 @@ function PluginBody(props: {
   // the command an install action copies; shown whole while the CLI is not there
   const installCommand = part.actions.find((a) => a.id === 'install' && a.command)?.command;
   const cliMissing = part.checks.some((ch) => /^CLI installed/.test(ch.label) && !ch.ok);
+  // every key of this part is missing (alternatives such as GH_TOKEN or GITHUB_TOKEN count as one)
+  const missingKeys = part.keys.some((k) => k.present) ? [] : part.keys.map((k) => k.name);
   const [login, setLogin] = useState<{ url?: string } | undefined>(undefined);
   const [copied, setCopied] = useState(false);
   const [adding, setAdding] = useState<string | undefined>(undefined);
@@ -172,6 +217,9 @@ function PluginBody(props: {
         <S.CodeBlock language="bash" code={installCommand}>
           {installCommand}
         </S.CodeBlock>
+      ) : null}
+      {missingKeys.length && !part.actions.some((a) => a.id === 'connect_key') ? (
+        <TokenPaste name={missingKeys[0] ?? ''} alternatives={missingKeys} />
       ) : null}
       <div className="row">
         {part.actions.map(action)}
