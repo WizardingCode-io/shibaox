@@ -20,8 +20,26 @@ export async function fakeBotApi(o: { emptyPolls?: number; conflicts?: number } 
       const parts = (req.url ?? '').split('/');
       const method = parts.pop() ?? '';
       const token = (parts.pop() ?? '').replace(/^bot/, '');
-      const text = Buffer.concat(chunks).toString('utf8');
-      const body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+      const raw = Buffer.concat(chunks);
+      const text = raw.toString('utf8');
+      const ctype = String(req.headers['content-type'] ?? '');
+      let body: Record<string, unknown>;
+      if (ctype.startsWith('multipart/form-data')) {
+        // enough of a multipart parse for the tests: the file part's field and name, the caption
+        const field = /name="(photo|video|audio|document|animation)"; filename="([^"]*)"/.exec(
+          text,
+        );
+        const caption = /name="caption"\r\n\r\n([^\r]*)/.exec(text);
+        const chat = /name="chat_id"\r\n\r\n([^\r]*)/.exec(text);
+        body = {
+          multipart: true,
+          field: field?.[1],
+          filename: field?.[2],
+          caption: caption?.[1],
+          chat_id: chat?.[1],
+          bytes: raw.length,
+        };
+      } else body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
       calls.push({ method, token, body });
       if (method === 'getUpdates' && conflicts > 0) {
         conflicts--;

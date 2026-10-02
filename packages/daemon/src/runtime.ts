@@ -52,6 +52,34 @@ export const effectiveAdapter = (explicit: AdapterId | undefined, org: Org): Ada
   explicit ?? org.org.adapter ?? 'mock';
 
 /**
+ * The adapter of a run that named no model: `--adapter` first; an org on `mock` stays on mock;
+ * otherwise the strong tier decides: a provider that only lives behind a runtime (the Claude
+ * subscription behind claude-code) makes the run use that runtime, whatever org.yaml says, so
+ * the tiers the user picked in the app are what runs. The answer says when it differed.
+ */
+export function adapterForTiers(
+  explicit: AdapterId | undefined,
+  org: Org,
+  registry: ProviderRegistry,
+): { adapter: AdapterId; note?: string } {
+  const base = effectiveAdapter(explicit, org);
+  if (explicit || base === 'mock') return { adapter: base };
+  const strong = org.models.tiers.strong;
+  if (!strong?.includes('/')) return { adapter: base };
+  try {
+    const wanted = adapterForModel(strong, registry);
+    if (wanted !== base)
+      return {
+        adapter: wanted,
+        note: `the strong tier ${strong} runs through ${wanted}: the run uses that runtime instead of ${base}`,
+      };
+  } catch {
+    // an unknown provider in the tier: the org's adapter, and the run says what is wrong
+  }
+  return { adapter: base };
+}
+
+/**
  * What `code` nodes, gate commands and `git` nodes get on top of the process environment: the
  * GitHub token (for `gh`), git identity and the SSH agent. Never the provider keys: a test or
  * a hook the model wrote runs there, and its output becomes evidence.

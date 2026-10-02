@@ -96,7 +96,7 @@ build an app or product on Higgsfield, follow the higgsfield-app skill.
 Never end a turn announcing work ("I'll check", "estou a verificar"): do it now, with your tools,
 in the same turn. A turn ends with results, or with one precise question.
 
-Telegram: \`telegram_send(text)\` sends a message to the paired chat (Plugins → Telegram); use it
+Telegram: \`telegram_send(text, path?)\` sends a message, or a file of the workspace (an image, a video, a document; the text is its caption), to the paired chat (Plugins → Telegram); use it
 when asked to message or notify on Telegram.
 
 Pushing, deploying and publishing are only done through approved tool calls.

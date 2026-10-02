@@ -20,7 +20,12 @@ import { type ChatMessage, loadOrg, type Org } from '@wizardingcode/shibaox-sche
 import { githubChannel } from './channels/github.js';
 import { macosChannel } from './channels/macos.js';
 import { OutboxWorker } from './channels/outbox.js';
-import { inboxToken, isTelegramChannel, telegramChannel } from './channels/telegram.js';
+import {
+  inboxToken,
+  isTelegramChannel,
+  type TelegramFile,
+  telegramChannel,
+} from './channels/telegram.js';
 import { pollForChat } from './channels/telegram-pair.js';
 import type { Channel } from './channels/types.js';
 import {
@@ -226,7 +231,10 @@ export class Daemon {
       env: this.env,
       // read when each task starts: a mode change applies to the next task
       higgsfield: { mode: () => this.higgsfieldMode(), base: this.higgsfieldBase },
-      telegram: { send: (text) => this.telegramSend(text) },
+      telegram: {
+        send: (text) => this.telegramSend(text),
+        sendFile: (file, caption) => this.telegramSendFile(file, caption),
+      },
       ready: opts.discovery === false ? undefined : () => this.models(),
       summarizer: opts.summarize
         ? (org) => (t) => opts.summarize?.(t, org) ?? Promise.reject(new Error('no summariser'))
@@ -512,6 +520,20 @@ export class Daemon {
     const c = this.channels.find(isTelegramChannel);
     if (!c) return { sent: false, reason: 'channel not running' };
     await c.send(text);
+    return { sent: true, chatId: c.chatId };
+  }
+
+  /** A file (image, video, audio, document) to the paired chat, with an optional caption. */
+  async telegramSendFile(
+    file: TelegramFile,
+    caption?: string,
+  ): Promise<{ sent: true; chatId: number } | { sent: false; reason: string }> {
+    const tg = this.config.channels.telegram;
+    if (!tg) return { sent: false, reason: 'not paired' };
+    if (!this.env[tg.bot_token_env]) return { sent: false, reason: 'no token' };
+    const c = this.channels.find(isTelegramChannel);
+    if (!c) return { sent: false, reason: 'channel not running' };
+    await c.sendFile(file, caption);
     return { sent: true, chatId: c.chatId };
   }
 

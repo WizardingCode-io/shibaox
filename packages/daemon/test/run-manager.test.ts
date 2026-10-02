@@ -727,6 +727,32 @@ describe('RunManager', () => {
     expect(mockCreated?.type === 'RunCreated' && mockCreated.model).toBeUndefined();
   });
 
+  it('without a chosen model, a direct org whose strong tier lives behind claude-code runs on that runtime', async () => {
+    const s = setup();
+    writeFileSync(
+      join(s.orgRoot, 'org.yaml'),
+      'organization: my-org\nbudgets: { per_run_usd: 5 }\nteams: [engineering]\nadapter: direct\nvault: ../vault\n',
+    );
+    writeFileSync(
+      join(s.orgRoot, 'models.yaml'),
+      'providers: {}\ntiers: { strong: anthropic-subscription/claude-sonnet-5, cheap: anthropic-subscription/claude-haiku-4-5 }\nroles: {}\ngates: {}\n',
+    );
+    const store = new MemoryEventStore();
+    const q = fakeQuery(() => [msg.init(), msg.success('ok')]);
+    const { manager: m } = manager(store, { queryFn: q, vault: s.vault });
+    const { runId, warnings } = await m.submit({
+      orgRoot: s.orgRoot,
+      project: s.project,
+      workflow: 'chat',
+      input: 'olá',
+      workspace: 'inplace',
+    });
+    const created = (await store.read(runId))[0];
+    expect(created?.type === 'RunCreated' && created.adapter).toBe('claude-code');
+    expect(warnings.join(' ')).toContain('claude-code');
+    await vi.waitFor(async () => expect((await m.state(runId)).status).toBe('completed'));
+  });
+
   it('a claude-code chat run gets the shibaox MCP tools and the project preamble; memory reaches memory roles only', async () => {
     const s = setup({ claudeCode: true });
     const store = new MemoryEventStore();

@@ -185,6 +185,31 @@ describe('sending to the paired chat', () => {
     ).toEqual([4000, 4000, 1000]);
   });
 
+  it('sends a file to the chat: a photo, a video or a document by its type, with a caption', async () => {
+    fake = await fakeBotApi();
+    const { d } = daemonWith({ telegram: true });
+    await d.start();
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+    const r = await d.telegramSendFile(
+      { bytes: png, filename: 'shiba.png', mime: 'image/png' },
+      'um shiba',
+    );
+    expect(r).toMatchObject({ sent: true });
+    await d.telegramSendFile({ bytes: Buffer.alloc(10), filename: 'clip.mp4', mime: 'video/mp4' });
+    await d.telegramSendFile({
+      bytes: Buffer.alloc(10),
+      filename: 'report.pdf',
+      mime: 'application/pdf',
+    });
+    const ups = fake.calls.filter((c) => c.body.multipart);
+    expect(ups.map((c) => [c.method, c.body.field, c.body.filename, c.body.caption])).toEqual([
+      ['sendPhoto', 'photo', 'shiba.png', 'um shiba'],
+      ['sendVideo', 'video', 'clip.mp4', undefined],
+      ['sendDocument', 'document', 'report.pdf', undefined],
+    ]);
+    expect(ups[0]?.body.chat_id).toBe(String(r.sent && r.chatId));
+  });
+
   it('not paired, or no token: says why and sends nothing', async () => {
     fake = await fakeBotApi();
     const a = daemonWith();

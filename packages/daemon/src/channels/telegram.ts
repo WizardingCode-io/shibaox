@@ -112,6 +112,31 @@ export interface TelegramChannel extends Channel {
   readonly chatId: number;
   /** Sends plain text (HTML-escaped, split under Telegram's limit) to the chat. */
   send(text: string): Promise<void>;
+  /** Sends a file as a photo, video, audio or document by its type, with an optional caption. */
+  sendFile(file: TelegramFile, caption?: string): Promise<void>;
+}
+
+/** A file to send: its bytes, the name Telegram shows, and its media type. */
+export interface TelegramFile {
+  bytes: Buffer;
+  filename: string;
+  mime: string;
+}
+/** Telegram's upload limit for bots (photos: 10 MB; everything else 50 MB). */
+export const TELEGRAM_FILE_LIMIT = 50 * 1024 * 1024;
+const TELEGRAM_PHOTO_LIMIT = 10 * 1024 * 1024;
+
+/** The Bot API method and field for a file: photo, video, audio, else document. */
+export function telegramUploadKind(f: { mime: string; bytes: { length: number } }): {
+  method: 'sendPhoto' | 'sendVideo' | 'sendAudio' | 'sendDocument';
+  field: 'photo' | 'video' | 'audio' | 'document';
+} {
+  const m = f.mime.toLowerCase();
+  if (m.startsWith('image/') && m !== 'image/gif' && f.bytes.length <= TELEGRAM_PHOTO_LIMIT)
+    return { method: 'sendPhoto', field: 'photo' };
+  if (m.startsWith('video/')) return { method: 'sendVideo', field: 'video' };
+  if (m.startsWith('audio/')) return { method: 'sendAudio', field: 'audio' };
+  return { method: 'sendDocument', field: 'document' };
 }
 
 /** Whether a channel is the Telegram one with `send` (a test may inject a bare one). */
@@ -190,6 +215,33 @@ export function telegramChannel(o: TelegramOptions): TelegramChannel {
           throw e;
         }
       }
+    }
+  }
+
+  /** A file as multipart/form-data (the bot token only in the URL, never in a field). */
+  async function sendFile(f: TelegramFile, caption?: string): Promise<void> {
+    if (f.bytes.length > TELEGRAM_FILE_LIMIT)
+      throw new Error(`${f.filename} is ${f.bytes.length} bytes; Telegram takes 50 MB at most`);
+    const { method, field } = telegramUploadKind(f);
+    const form = new FormData();
+    form.set('chat_id', String(o.chatId));
+    if (caption) form.set('caption', caption.slice(0, 1024));
+    form.set(field, new Blob([new Uint8Array(f.bytes)], { type: f.mime }), f.filename);
+    for (let attempt = 0; ; attempt++) {
+      const res = await doFetch(`${base}/${method}`, { method: 'POST', body: form });
+      const json = (await res.json()) as {
+        ok: boolean;
+        description?: string;
+        parameters?: { retry_after?: number };
+      };
+      if (res.ok && json.ok) return;
+      if (res.status === 429 && attempt < 3) {
+        await new Promise((r) =>
+          setTimeout(r, Math.min(json.parameters?.retry_after ?? 1, 30) * 1000),
+        );
+        continue;
+      }
+      throw new TelegramApiError(method, res.status, json.description ?? String(res.status));
     }
   }
 
@@ -308,6 +360,7 @@ export function telegramChannel(o: TelegramOptions): TelegramChannel {
     id: 'telegram',
     chatId: o.chatId,
     send: (text) => sendText(text, 'HTML'),
+    sendFile,
     async notify(item) {
       const text = telegramText(item);
       const token = inboxToken(item.id);

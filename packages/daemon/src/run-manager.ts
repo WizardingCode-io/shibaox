@@ -78,6 +78,7 @@ import {
 import {
   type AdapterId,
   adapterForModel,
+  adapterForTiers,
   buildRuntime,
   effectiveAdapter,
   type GraphWiring,
@@ -171,7 +172,13 @@ export interface RunManagerOptions {
    */
   higgsfield?: { mode(): HiggsfieldMode; fetch?: typeof fetch; base?: string };
   /** The daemon's Telegram send: roles with `telegram` in their tools get `telegram_send`. */
-  telegram?: { send(text: string): Promise<TelegramSendResult> };
+  telegram?: {
+    send(text: string): Promise<TelegramSendResult>;
+    sendFile(
+      file: { bytes: Buffer; filename: string; mime: string },
+      caption?: string,
+    ): Promise<TelegramSendResult>;
+  };
   /** A run with an `origin` ended: the daemon reports it where it was asked for. */
   onFinished?: (
     state: RunState,
@@ -250,9 +257,14 @@ export class RunManager {
     // an explicit mock adapter never calls a model: a chosen model is set aside with a warning
     const model = req.adapter === 'mock' ? undefined : req.model;
     if (req.model && !model) warnings.push(`adapter mock: the model ${req.model} is not used`);
-    const adapter = model
-      ? adapterForModel(model, registryFor(this.opts.env ?? process.env, this.opts.extraProviders))
-      : effectiveAdapter(req.adapter, org);
+    const registry = registryFor(this.opts.env ?? process.env, this.opts.extraProviders);
+    let adapter: AdapterId;
+    if (model) adapter = adapterForModel(model, registry);
+    else {
+      const picked = adapterForTiers(req.adapter, org, registry);
+      adapter = picked.adapter;
+      if (picked.note) warnings.push(picked.note);
+    }
     if (model) await this.assertListed(model);
     const mode = await workspaceMode(project, req.workspace, (l) => warnings.push(l));
     const budgetUsd = req.budgetUsd ?? org.org.budgets.per_run_usd;
@@ -1038,7 +1050,11 @@ export class RunManager {
         ...toolsForRole(job.role, job.input, { orchestration, memory }),
         ...this.higgsfieldTools(org, job, project, r.runId),
         ...(this.opts.telegram && job.role.tools.includes('telegram')
-          ? telegramTools(this.opts.telegram)
+          ? telegramTools({
+              ...this.opts.telegram,
+              workspace: job.workspace,
+              protectedGlobs: projectProtectedGlobs(project),
+            })
           : []),
       ],
     };
