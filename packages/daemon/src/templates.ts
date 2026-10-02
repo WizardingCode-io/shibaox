@@ -34,6 +34,12 @@ tiers:
   # its provider (e.g. openrouter/typesafe/jev-router); jev-latest uses TypeSafe's typed API
   # and needs TYPESAFE_API_KEY (without it, decisions fall back to the strong tier)
   decision: jev-latest
+# Jev routes every chat turn (with TYPESAFE_API_KEY and Jev deciding): its intent, whether it
+# is risky, and the tier it needs. A "cheap" route at or above cheap_min_confidence runs the
+# turn on the cheap tier when you did not pick a model. jev: false turns routing off.
+# routing:
+#   jev: true
+#   cheap_min_confidence: 0.75
 roles: {}
 gates: {}
 `,

@@ -139,6 +139,18 @@ export function isEventTurn(input: Record<string, unknown>): boolean {
   return input.event === true;
 }
 
+/**
+ * The input a model reads: without the conversation (sent as turns) and without the router's
+ * hint (`input.router`, a line of its own ahead of the input, never the user's text).
+ */
+export function modelInput(input: Record<string, unknown>): {
+  input: Record<string, unknown>;
+  hint?: string;
+} {
+  const { messages: _messages, router, ...rest } = input;
+  return typeof router === 'string' && router ? { input: rest, hint: router } : { input: rest };
+}
+
 /** The conversation carried in a run's input (`input.messages`), well-formed turns only. */
 export function conversationOf(input: Record<string, unknown>): ChatMessage[] {
   const raw = input.messages;

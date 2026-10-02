@@ -97,6 +97,16 @@ describe('org config endpoints', () => {
       status: 400,
     });
   });
+  it('PUT /orgs/config turns Jev routing off and on', async () => {
+    const s = setup();
+    const { client } = await started(s);
+    const off = await client.setOrgConfig(s.orgRoot, { routing: { jev: false } });
+    expect(off.routing).toEqual({ jev: false });
+    expect((await client.orgConfig(s.orgRoot)).routing).toEqual({ jev: false });
+    await expect(
+      client.setOrgConfig(s.orgRoot, { routing: { cheap_min_confidence: 3 } }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
 });
 
 describe('default org', () => {

@@ -666,6 +666,22 @@ describe('DirectAdapter', () => {
     expect(msgs[3]?.content).toContain('and now?');
     expect(msgs[3]?.content).not.toContain('"messages"');
   });
+  it("the router's hint is a line of its own ahead of the input, never inside the input JSON", async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'ws-'));
+    fake = await startFakeOpenAI(() => ({ content: 'sure' }));
+    const adapter = new DirectAdapter({
+      approvals: new AutoApproveApprovals(),
+      registry: registry(fake.baseURL),
+      resolveRef: () => 'fake/m',
+    });
+    const hint =
+      '[router] intent=media (0.98) tier=cheap risky=no: generate it with Higgsfield now';
+    await collectRun(adapter, { ...jobFor(ws), input: { spec: 'a cat', router: hint } }, ctx());
+    const msgs = (fake.requests[0] as { messages: { role: string; content: string }[] }).messages;
+    const user = msgs.at(-1)?.content ?? '';
+    expect(user).toContain(`${hint}\n\nInput: {"spec":"a cat"}`);
+    expect(user).not.toContain('"router"');
+  });
   it('role.max_steps caps the tool loop', async () => {
     const ws = mkdtempSync(join(tmpdir(), 'ws-'));
     fake = await startFakeOpenAI(() => ({ toolCalls: [{ name: 'list_files', args: {} }] }));

@@ -15,6 +15,8 @@ export interface OrgConfig {
   tiers: Partial<Record<TierName, string>>;
   /** `models.gates.judge`: the model of `judge` checks (default: decision, then strong). */
   judge?: string;
+  /** `models.yaml routing` as written: Jev routing chat turns, and the cheap tier's threshold. */
+  routing?: { jev?: boolean; cheap_min_confidence?: number };
 }
 
 /** Values to change; `null` clears one (judge, adapter, budget: a tier cannot be cleared). */
@@ -23,6 +25,8 @@ export interface OrgConfigPatch {
   judge?: string | null;
   adapter?: OrgConfig['adapter'] | null;
   per_run_usd?: number | null;
+  /** `null` goes back to the default (routing on with Jev; 0.75). */
+  routing?: { jev?: boolean | null; cheap_min_confidence?: number | null };
 }
 
 const isModelRef = (v: unknown): v is string =>
@@ -80,6 +84,7 @@ export function readOrgConfig(root: string): OrgConfig {
       ...(org.models.tiers.decision ? { decision: org.models.tiers.decision } : {}),
     },
     judge: org.models.gates.judge,
+    ...(org.models.routing ? { routing: { ...org.models.routing } } : {}),
   };
 }
 
@@ -93,6 +98,23 @@ function validate(patch: OrgConfigPatch): void {
       throw new Error(
         `tier ${name}: "${String(v)}" must look like provider/model (see /model for the list)${name === 'decision' ? ' or jev-latest' : ''}`,
       );
+  }
+  const routing = patch.routing;
+  if (routing !== undefined) {
+    if (typeof routing !== 'object' || routing === null)
+      throw new Error('routing must be an object: { jev, cheap_min_confidence }');
+    for (const k of Object.keys(routing))
+      if (k !== 'jev' && k !== 'cheap_min_confidence')
+        throw new Error(`routing: unknown key "${k}" (jev, cheap_min_confidence)`);
+    if (routing.jev !== undefined && routing.jev !== null && typeof routing.jev !== 'boolean')
+      throw new Error('routing.jev must be true or false');
+    const c = routing.cheap_min_confidence;
+    if (
+      c !== undefined &&
+      c !== null &&
+      !(typeof c === 'number' && Number.isFinite(c) && c >= 0 && c <= 1)
+    )
+      throw new Error('routing.cheap_min_confidence must be a number from 0 to 1');
   }
   if (patch.judge !== undefined && patch.judge !== null && !isModelRef(patch.judge))
     throw new Error(`judge: "${String(patch.judge)}" must look like provider/model`);
@@ -116,7 +138,7 @@ function validate(patch: OrgConfigPatch): void {
 
 export { readDoc, writeAtomic };
 
-const setOrDelete = (doc: Doc, path: string[], v: string | number | null | undefined) => {
+const setOrDelete = (doc: Doc, path: string[], v: string | number | boolean | null | undefined) => {
   if (v === undefined) return;
   if (v === null) {
     if (doc.hasIn(path)) doc.deleteIn(path);
@@ -132,11 +154,16 @@ export function writeOrgConfig(root: string, patch: OrgConfigPatch): OrgConfig {
   validate(patch);
   loadOrg(root); // an org that does not load is not edited
   const writes: { path: string; text: string }[] = [];
-  if (patch.tiers !== undefined || patch.judge !== undefined) {
+  if (patch.tiers !== undefined || patch.judge !== undefined || patch.routing !== undefined) {
     const path = join(root, 'models.yaml');
     const doc = readDoc(path);
     for (const [name, v] of Object.entries(patch.tiers ?? {})) setOrDelete(doc, ['tiers', name], v);
     setOrDelete(doc, ['gates', 'judge'], patch.judge);
+    setOrDelete(doc, ['routing', 'jev'], patch.routing?.jev);
+    setOrDelete(doc, ['routing', 'cheap_min_confidence'], patch.routing?.cheap_min_confidence);
+    // an emptied routing block goes away (the defaults apply)
+    const left = doc.getIn(['routing']) as { items?: unknown[] } | undefined;
+    if (left && Array.isArray(left.items) && left.items.length === 0) doc.deleteIn(['routing']);
     ModelsSchema.parse(doc.toJS() ?? {});
     writes.push({ path, text: doc.toString() });
   }

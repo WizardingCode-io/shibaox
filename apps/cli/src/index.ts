@@ -466,12 +466,16 @@ plugins
 
 const tiers = program
   .command('tiers')
-  .description("the org's model tiers, judge, adapter and budget (no YAML editing)")
+  .description("the org's model tiers, judge, adapter, budget and Jev routing (no YAML editing)")
   .option(
     '--org <dir>',
     'org directory (default: ./org when it exists, else the org under ~/.shibaox)',
   )
-  .action(async function (this: Command, o: { org?: string }) {
+  .option(
+    '--routing <on|off>',
+    'turn Jev routing of chat turns on or off (models.yaml routing.jev)',
+  )
+  .action(async function (this: Command, o: { org?: string; routing?: string }) {
     exitWith(await tiersList(o, out(this)));
   });
 tiers

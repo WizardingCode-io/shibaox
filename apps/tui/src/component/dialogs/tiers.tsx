@@ -9,13 +9,23 @@ import { Dialog, useDialog } from '../../ui/dialog.js';
 import { useToast } from '../../ui/toast.js';
 
 const VISIBLE = 12;
-type RowName = 'strong' | 'cheap' | 'decision' | 'judge' | 'adapter';
+type RowName = 'strong' | 'cheap' | 'decision' | 'judge' | 'adapter' | 'routing';
 interface Row {
   name: RowName;
   value?: string;
   note: string;
 }
 const ADAPTERS = ['direct', 'claude-code', 'mock'];
+const ROUTING = ['on', 'off', 'default'];
+
+/** Jev routing of chat turns as models.yaml has it: on, off, or the default. */
+const routingWord = (c: OrgConfig | undefined): string =>
+  c?.routing?.jev === true ? 'on' : c?.routing?.jev === false ? 'off' : 'default';
+
+/** The patch a routing choice saves (`default`: back to on-with-Jev). */
+export function routingPatch(value: string): OrgConfigPatch {
+  return { routing: { jev: value === 'on' ? true : value === 'off' ? false : null } };
+}
 
 /** What the dialog lists for an org config, in the order people read it. */
 export function tierRows(c: OrgConfig | undefined): Row[] {
@@ -25,12 +35,18 @@ export function tierRows(c: OrgConfig | undefined): Row[] {
     { name: 'decision', value: c?.tiers.decision, note: 'decide nodes (model ref or jev-latest)' },
     { name: 'judge', value: c?.judge, note: 'judge checks (default: decision, then strong)' },
     { name: 'adapter', value: c?.adapter, note: 'default runtime; a chosen model overrides it' },
+    {
+      name: 'routing',
+      value: routingWord(c),
+      note: 'Jev routes chat turns (default: on with TYPESAFE_API_KEY when Jev decides)',
+    },
   ];
 }
 
 /** The choices for a row: the daemon's models (usable first) for a tier, the adapters otherwise. */
 export function tierChoices(name: RowName, models: readonly ModelChoice[]): string[] {
   if (name === 'adapter') return ADAPTERS;
+  if (name === 'routing') return ROUTING;
   const refs = [...models]
     .sort((a, b) => Number(b.configured) - Number(a.configured))
     .map((m) => m.ref);
@@ -63,11 +79,13 @@ export function TiersDialog(props: { orgRoot: string; onSaved?: () => void }): J
   });
   const selected = () => rows()[Math.min(cursor(), rows().length - 1)];
   const patchFor = (name: RowName, value: string | null): OrgConfigPatch =>
-    name === 'judge'
-      ? { judge: value }
-      : name === 'adapter'
-        ? { adapter: value as OrgConfigPatch['adapter'] }
-        : { tiers: { [name]: value } };
+    name === 'routing'
+      ? routingPatch(value ?? 'default')
+      : name === 'judge'
+        ? { judge: value }
+        : name === 'adapter'
+          ? { adapter: value as OrgConfigPatch['adapter'] }
+          : { tiers: { [name]: value } };
   const save = async (name: RowName, value: string | null) => {
     try {
       await client.setOrgConfig(props.orgRoot, patchFor(name, value));
@@ -123,6 +141,7 @@ export function TiersDialog(props: { orgRoot: string; onSaved?: () => void }): J
     if (key.name === 'x' && !key.ctrl) {
       const r = selected();
       if (r && (r.name === 'judge' || r.name === 'adapter')) void save(r.name, null);
+      else if (r?.name === 'routing') void save(r.name, 'default');
       else toast.show({ message: 'Tiers cannot be cleared, pick another model', variant: 'info' });
       return true;
     }

@@ -1,6 +1,12 @@
 import type { RunEvent } from '@wizardingcode/shibaox-schemas';
 import { finalTaskIds } from './final-tasks.js';
-import type { NodeState, PendingApproval, RunState, RunStatus } from './state.js';
+import {
+  isRouterNode,
+  type NodeState,
+  type PendingApproval,
+  type RunState,
+  type RunStatus,
+} from './state.js';
 
 function nodeOf(state: RunState, id: string): NodeState {
   return state.nodes[id] ?? { status: 'pending', attempts: 0, approvals: {} };
@@ -170,6 +176,22 @@ function applyEvent(s: RunState, event: NonCreatedEvent, idx: number): RunState 
         lastGateReport: event.report,
       };
     case 'DecisionMade':
+      // a router decision (Jev routing a chat turn) belongs to the run, not to a node
+      if (isRouterNode(event.nodeId) && !s.workflowSnapshot?.nodes[event.nodeId])
+        return {
+          ...s,
+          route:
+            event.nodeId === 'router'
+              ? {
+                  ...s.route,
+                  intent: event.choice,
+                  confidence: event.confidence,
+                  ...(event.by ? { by: event.by } : {}),
+                }
+              : event.nodeId === 'router:tier'
+                ? { ...s.route, tier: event.choice, tierConfidence: event.confidence }
+                : s.route,
+        };
       return withNode(s, event.nodeId, {
         status: 'completed',
         finishedIdx: idx,

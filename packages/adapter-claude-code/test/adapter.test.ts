@@ -457,6 +457,15 @@ describe('ClaudeCodeAdapter (3A)', () => {
     expect(prompt).toContain('Task: add /health');
     expect(prompt).not.toContain('"messages"');
   });
+  it("the router's hint is a line of its own ahead of the input, never inside the input JSON", async () => {
+    const q = fakeQuery(() => [msg.init(), msg.success('ok')]);
+    const adapter = new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q });
+    const hint = '[router] intent=chat (0.91) tier=cheap risky=no';
+    await collectRun(adapter, job({ input: { spec: 'olá', router: hint } }), ctx());
+    const prompt = q.calls[0]?.prompt ?? '';
+    expect(prompt).toContain(`${hint}\n\nInput: {"spec":"olá"}`);
+    expect(prompt).not.toContain('"router"');
+  });
   it('a conversation summary is transcribed ahead of the turns', async () => {
     const q = fakeQuery(() => [msg.init(), msg.success('ok')]);
     const adapter = new ClaudeCodeAdapter({ approvals: new AutoApproveApprovals(), queryFn: q });

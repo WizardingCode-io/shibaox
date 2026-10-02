@@ -67,6 +67,18 @@ export interface PendingHuman {
   prompt: string;
 }
 
+/** A chat turn's route: Jev's intent and tier with their confidence. */
+export interface RunRoute {
+  intent?: string;
+  confidence?: number;
+  tier?: string;
+  tierConfidence?: number;
+  by?: string;
+}
+
+/** The decisions a router records on a run (`router`, `router:<what>`): never workflow nodes. */
+export const isRouterNode = (nodeId: string): boolean => /^router(:|$)/.test(nodeId);
+
 export interface RunState {
   runId: string;
   workflow: string;
@@ -95,6 +107,8 @@ export interface RunState {
   model?: string;
   /** How approvals were answered: `auto` and `skip` never asked (routines); absent = the inbox. */
   approvals?: 'inbox' | 'auto' | 'skip';
+  /** How Jev routed the turn (the `router` / `router:tier` decisions of a chat turn). */
+  route?: RunRoute;
   status: RunStatus;
   nodes: Record<string, NodeState>;
   spentUsd: number;

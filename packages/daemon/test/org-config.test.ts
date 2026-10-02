@@ -108,4 +108,29 @@ describe('org config', () => {
     expect(() => writeOrgConfig(root, { judge: null, per_run_usd: null })).not.toThrow();
     expect(readOrgConfig(root).judge).toBeUndefined();
   });
+  it('routing: jev on/off and cheap_min_confidence, written to models.yaml and read back', () => {
+    const root = org();
+    expect(readOrgConfig(root).routing).toBeUndefined();
+    expect(writeOrgConfig(root, { routing: { jev: false } }).routing).toEqual({ jev: false });
+    expect(readFileSync(join(root, 'models.yaml'), 'utf8')).toMatch(/routing:\n\s+jev: false/);
+    expect(writeOrgConfig(root, { routing: { cheap_min_confidence: 0.8 } }).routing).toEqual({
+      jev: false,
+      cheap_min_confidence: 0.8,
+    });
+    expect(writeOrgConfig(root, { routing: { jev: true } }).routing?.jev).toBe(true);
+    expect(loadOrg(root).models.routing).toEqual({ jev: true, cheap_min_confidence: 0.8 });
+    // null goes back to the default
+    expect(writeOrgConfig(root, { routing: { jev: null } }).routing).toEqual({
+      cheap_min_confidence: 0.8,
+    });
+    expect(() => writeOrgConfig(root, { routing: { jev: 'yes' as never } })).toThrow(/routing/);
+    expect(() => writeOrgConfig(root, { routing: { cheap_min_confidence: 1.5 } })).toThrow(
+      /cheap_min_confidence/,
+    );
+  });
+  it("the template's models.yaml explains routing", () => {
+    const models = readFileSync(join(org(), 'models.yaml'), 'utf8');
+    expect(models).toContain('# routing:');
+    expect(models).toContain('cheap_min_confidence: 0.75');
+  });
 });
