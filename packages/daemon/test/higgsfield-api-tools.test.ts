@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AgentTool } from '@wizardingcode/shibaox-core';
@@ -8,6 +8,7 @@ import {
   type HiggsfieldApiDeps,
   higgsfieldApiTools,
   nextDelay,
+  saveInto,
   scrub,
 } from '../src/runs/higgsfield-api-tools.js';
 
@@ -578,5 +579,12 @@ describe('defaultSleep', () => {
     const p = defaultSleep(60_000, ac.signal);
     ac.abort();
     await p;
+  });
+
+  it('saveInto writes a media result over the 2 MB file-API cap into outputs/', async () => {
+    const ws = workspace();
+    const r = await saveInto(ws, [], 'hf-r-1-1.png', Buffer.alloc(3 * 1024 * 1024, 1));
+    expect(r).toBe('outputs/hf-r-1-1.png');
+    expect(statSync(join(ws, 'outputs', 'hf-r-1-1.png')).size).toBe(3 * 1024 * 1024);
   });
 });

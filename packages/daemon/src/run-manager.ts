@@ -59,7 +59,7 @@ import {
   writeRunFile,
 } from './runs/files.js';
 import { type GraphMode, prepareGraph } from './runs/graph.js';
-import { higgsfieldApiTools } from './runs/higgsfield-api-tools.js';
+import { higgsfieldApiTools, saveInto } from './runs/higgsfield-api-tools.js';
 import { type HiggsfieldPlan, higgsfieldPlan } from './runs/higgsfield-gate.js';
 import { higgsfieldTools, uploadTimeoutMs } from './runs/higgsfield-tools.js';
 import { finishRun, vaultDir } from './runs/notes.js';
@@ -1102,11 +1102,9 @@ export class RunManager {
             maxBytes: 200 * 1024 * 1024,
             allow: ['*'],
           });
-          const w = await writeRunFile(job.workspace, `outputs/${name}`, bytes, {
-            protectedGlobs: projectProtectedGlobs(project),
-          });
-          if (runId) this.recordRuntime(runId, job.nodeId, { type: 'file_changed', path: w.path });
-          return w.path;
+          const path = await saveInto(job.workspace, projectProtectedGlobs(project), name, bytes);
+          if (runId) this.recordRuntime(runId, job.nodeId, { type: 'file_changed', path });
+          return path;
         },
       });
     }

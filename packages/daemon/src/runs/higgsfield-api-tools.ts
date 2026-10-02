@@ -1,6 +1,7 @@
 import type { AgentTool } from '@wizardingcode/shibaox-core';
 import { z } from 'zod';
 import { HIGGSFIELD_API } from '../higgsfield.js';
+import { writeRunFile } from './files.js';
 import { uploadableFile, uploadTimeoutMs } from './higgsfield-tools.js';
 
 /**
@@ -85,6 +86,23 @@ interface StatusBody {
   audio?: { url?: string };
   audios?: { url?: string }[];
   error?: unknown;
+}
+
+/** The largest media result written into outputs/ (the file API's 2 MB cap is for text edits). */
+export const RESULT_MAX_BYTES = 200 * 1024 * 1024;
+
+/** Writes a result into `outputs/<name>` of the workspace (same fence as every run write). */
+export async function saveInto(
+  workspace: string,
+  protectedGlobs: string[],
+  name: string,
+  bytes: Buffer,
+): Promise<string> {
+  const w = await writeRunFile(workspace, `outputs/${name}`, bytes, {
+    protectedGlobs,
+    maxBytes: RESULT_MAX_BYTES,
+  });
+  return w.path;
 }
 
 /** `hf-<request id>-<n>.<ext>`, the extension from the URL's path (else by kind). */
