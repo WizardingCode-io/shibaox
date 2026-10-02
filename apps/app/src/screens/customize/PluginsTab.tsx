@@ -6,19 +6,12 @@ import { ApiKeyDialog, HIGGSFIELD_KEY } from './dialogs/ApiKeyDialog.js';
 import { TemplateDialog } from './dialogs/ConnectorDialog.js';
 import { RolesDialog } from './dialogs/RolesDialog.js';
 import { matches } from './filter.js';
+import { BrandLogo } from './logos.js';
 import { pluginKeyNeeds } from './needed-keys.js';
 import { AddMenu, Empty, goTo, KeyBadge, Toolbar } from './parts.js';
 import { settle } from './skill-results.js';
 import type { CustomizeView, HiggsfieldEffective, HiggsfieldMode, PluginMode } from './types.js';
 
-type IconName = Parameters<Window['Shibaox']['Icon']>[0]['name'];
-const ICON: Record<string, IconName> = {
-  higgsfield: 'image',
-  github: 'github',
-  telegram: 'message-square',
-  typesafe: 'brain',
-  jev: 'brain',
-};
 const STATUS: Record<
   PluginRow['status'],
   { tone: 'matcha' | 'warning' | 'neutral'; label: string }
@@ -350,7 +343,7 @@ function PluginCard(props: {
   const st = STATUS[p.status];
   return (
     <S.Card
-      icon={ICON[p.id] ?? 'package'}
+      logo={<BrandLogo id={p.id} name={p.name} />}
       title={p.name}
       description={p.description}
       meta={

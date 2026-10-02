@@ -570,6 +570,14 @@ describe('Customize: Connectors', () => {
     expect(within(dialog).getByRole('button', { name: 'Open Plugins' })).toBeTruthy();
   });
 
+  it('cards carry the service logo (GitHub) or a monogram (Playwright), in Yours and in Discover', async () => {
+    const { client: c } = client();
+    mount(c, { hash: '#/customize&tab=connectors&view=discover' });
+    await screen.findByText('GitHub');
+    expect(document.querySelector('svg[data-logo="github"]')).toBeTruthy();
+    expect(document.querySelector('[data-monogram="playwright"]')?.textContent).toBe('P');
+  });
+
   it('a connector row never shows a key-like text as a badge', async () => {
     const { client: c } = client({
       mcp: [

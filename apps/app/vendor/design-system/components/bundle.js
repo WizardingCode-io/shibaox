@@ -273,7 +273,7 @@
 
   function Card(p) {
     return h('div', { className: cx('sx-card', p.interactive && 'is-interactive', p.className) },
-      (p.icon || p.title || p.aside) ? h('div', { className: 'sx-card__head' }, p.icon ? h('span', { className: 'sx-card__icon' }, h(Icon, { name: p.icon, size: 18 })) : null,
+      (p.icon || p.logo || p.title || p.aside) ? h('div', { className: 'sx-card__head' }, p.logo ? h('span', { className: 'sx-card__icon sx-card__icon--logo' }, p.logo) : p.icon ? h('span', { className: 'sx-card__icon' }, h(Icon, { name: p.icon, size: 18 })) : null,
         h('div', { className: 'sx-card__text' }, p.title ? h('div', { className: 'sx-card__title' }, p.title) : null, p.description ? h('div', { className: 'sx-card__desc' }, p.description) : null, p.meta ? h('div', { className: 'sx-card__meta' }, p.meta) : null),
         p.action ? h('div', { className: 'sx-card__action' }, p.action) : null,
         p.aside ? h('div', { className: 'sx-card__aside' }, p.aside) : null) : null,

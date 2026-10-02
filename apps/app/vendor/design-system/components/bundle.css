@@ -257,6 +257,7 @@ body { margin: 0; font-family: var(--font-sans); font-size: 15px; line-height: 2
 .sx-card__head { display: flex; gap: var(--space-3); align-items: flex-start; }
 .sx-card__icon { width: 36px; height: 36px; border-radius: var(--radius-md); background: var(--shiba-soft); color: var(--shiba-strong); display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .sx-card__title { font-size: 16px; font-weight: 600; line-height: 24px; }
+.sx-card__icon--logo { background: var(--surface-sunken); color: var(--ink); font-family: var(--font-display); font-weight: 600; font-size: 15px; }
 .sx-card__desc { font-size: 13px; line-height: 20px; color: var(--ink-muted); }
 .sx-card__text { flex: 1; min-width: 0; }
 .sx-card__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); margin-top: var(--space-1); font-size: 12px; line-height: 16px; color: var(--ink-muted); }

@@ -11,6 +11,7 @@ import {
 } from './dialogs/ConnectorDialog.js';
 import { RolesDialog } from './dialogs/RolesDialog.js';
 import { inCategory, matches } from './filter.js';
+import { BrandLogo } from './logos.js';
 import {
   AddMenu,
   AddOrAdded,
@@ -43,7 +44,7 @@ function ServerCard(props: {
   const result = props.result;
   return (
     <S.Card
-      icon="plug"
+      logo={<BrandLogo id={r.id} name={r.id} />}
       title={r.id}
       description={r.description}
       meta={
@@ -205,7 +206,7 @@ export function ConnectorsTab(props: { view: CustomizeView }): JSX.Element {
             {shownRegistry.map((t) => (
               <S.Card
                 key={t.id}
-                icon="plug"
+                logo={<BrandLogo id={t.id} name={t.name} vendor={t.vendor} />}
                 title={t.name}
                 description={t.description}
                 meta={
@@ -222,7 +223,11 @@ export function ConnectorsTab(props: { view: CustomizeView }): JSX.Element {
                         {k.optional ? `${k.name} (optional)` : k.name}
                       </span>
                     ))}
-                    {t.note ? <span>{t.note}</span> : null}
+                    {t.note ? (
+                      <span className="card-note" title={t.note}>
+                        {t.note}
+                      </span>
+                    ) : null}
                   </>
                 }
                 aside={

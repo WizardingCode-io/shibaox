@@ -374,7 +374,26 @@ a.decision:hover {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
-  align-items: start;
+  /* every card of a row gets the row's height: the grid reads as a grid */
+  align-items: stretch;
+}
+.grid-2 > .sx-card {
+  height: 100%;
+  box-sizing: border-box;
+}
+/* a connector's note: two lines at most, the whole text on hover */
+.grid-2 .card-note {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  flex-basis: 100%;
+}
+.logo-mark {
+  display: block;
+}
+.logo-mono {
+  line-height: 1;
 }
 @media (max-width: 900px) {
   .grid-2 {
