@@ -38,7 +38,7 @@ async function setup() {
     channels: [],
     env: { PATH: process.env.PATH, HOME: dir },
     log: () => {},
-    version: '0.2.18',
+    version: '0.2.19',
     higgsfield: noHiggsfield,
     claudeInstalled: false,
   });

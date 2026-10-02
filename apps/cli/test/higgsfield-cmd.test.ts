@@ -50,7 +50,7 @@ async function daemon(env: NodeJS.ProcessEnv = {}) {
     channels: [],
     env: { PATH: process.env.PATH, HOME: dir, ...env },
     log: () => {},
-    version: '0.2.18',
+    version: '0.2.19',
     claudeInstalled: false,
     higgsfield: {
       exec: async () => ({ exitCode: 127, stdout: '', stderr: '' }),

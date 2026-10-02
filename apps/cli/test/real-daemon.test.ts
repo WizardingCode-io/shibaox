@@ -67,7 +67,7 @@ describe.skipIf(!real)('real Claude Code approval flow through the daemon', () =
       home,
       channels: [],
       log: (l) => console.log(l),
-      version: '0.2.18',
+      version: '0.2.19',
     });
     daemons.push(daemon);
     await daemon.start();
