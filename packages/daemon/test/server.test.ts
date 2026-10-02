@@ -106,6 +106,9 @@ describe('org config endpoints', () => {
     await expect(
       client.setOrgConfig(s.orgRoot, { routing: { cheap_min_confidence: 3 } }),
     ).rejects.toMatchObject({ status: 400 });
+    // routing: null resets the whole block (the defaults apply)
+    await client.setOrgConfig(s.orgRoot, { routing: { cheap_min_confidence: 0.9 } });
+    expect((await client.setOrgConfig(s.orgRoot, { routing: null })).routing).toBeUndefined();
   });
 });
 

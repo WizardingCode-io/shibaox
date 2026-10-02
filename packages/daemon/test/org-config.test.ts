@@ -123,6 +123,11 @@ describe('org config', () => {
     expect(writeOrgConfig(root, { routing: { jev: null } }).routing).toEqual({
       cheap_min_confidence: 0.8,
     });
+    // routing: null resets the whole block
+    writeOrgConfig(root, { routing: { jev: false } });
+    expect(writeOrgConfig(root, { routing: null }).routing).toBeUndefined();
+    expect(readFileSync(join(root, 'models.yaml'), 'utf8')).not.toMatch(/^routing:/m);
+    expect(loadOrg(root).models.routing).toBeUndefined();
     expect(() => writeOrgConfig(root, { routing: { jev: 'yes' as never } })).toThrow(/routing/);
     expect(() => writeOrgConfig(root, { routing: { cheap_min_confidence: 1.5 } })).toThrow(
       /cheap_min_confidence/,

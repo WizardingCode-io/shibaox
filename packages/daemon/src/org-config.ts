@@ -25,8 +25,8 @@ export interface OrgConfigPatch {
   judge?: string | null;
   adapter?: OrgConfig['adapter'] | null;
   per_run_usd?: number | null;
-  /** `null` goes back to the default (routing on with Jev; 0.75). */
-  routing?: { jev?: boolean | null; cheap_min_confidence?: number | null };
+  /** `null` goes back to the default (routing on with Jev; 0.75); `routing: null` resets both. */
+  routing?: { jev?: boolean | null; cheap_min_confidence?: number | null } | null;
 }
 
 const isModelRef = (v: unknown): v is string =>
@@ -150,7 +150,12 @@ const setOrDelete = (doc: Doc, path: string[], v: string | number | boolean | nu
  * patched documents are checked against the org schemas before anything touches the disk,
  * so a refused change never leaves the org unloadable.
  */
-export function writeOrgConfig(root: string, patch: OrgConfigPatch): OrgConfig {
+export function writeOrgConfig(root: string, input: OrgConfigPatch): OrgConfig {
+  // `routing: null` resets the whole block
+  const patch: OrgConfigPatch =
+    input.routing === null
+      ? { ...input, routing: { jev: null, cheap_min_confidence: null } }
+      : input;
   validate(patch);
   loadOrg(root); // an org that does not load is not edited
   const writes: { path: string; text: string }[] = [];
