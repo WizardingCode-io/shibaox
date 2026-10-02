@@ -29,7 +29,41 @@ export interface ThreadMessage {
   model?: string;
   /** Files the user sent with the message (the run's `input.attachments`). */
   attachments?: { path: string; size: number; mime?: string }[];
+  /** How Jev routed the turn (agent messages of routed chat turns). */
+  route?: MessageRoute;
   runId: string;
+}
+
+/** Jev's route of a turn, with the muted line the thread shows. */
+export interface MessageRoute {
+  intent: string;
+  confidence?: number;
+  tier?: string;
+  /** `Routed by Jev · media (0.98) · cheap`. */
+  label: string;
+}
+
+/** `Routed by Jev · <intent> (<confidence>) · <tier>`; undefined without an intent. */
+export function routeLabel(r: {
+  intent?: string;
+  confidence?: number;
+  tier?: string;
+}): string | undefined {
+  if (!r.intent) return undefined;
+  const conf = r.confidence !== undefined ? ` (${r.confidence.toFixed(2)})` : '';
+  return `Routed by Jev · ${r.intent}${conf}${r.tier ? ` · ${r.tier}` : ''}`;
+}
+
+function messageRoute(state: RunState): MessageRoute | undefined {
+  const r = state.route;
+  const label = r ? routeLabel(r) : undefined;
+  if (!r?.intent || !label) return undefined;
+  return {
+    intent: r.intent,
+    ...(r.confidence !== undefined ? { confidence: r.confidence } : {}),
+    ...(r.tier ? { tier: r.tier } : {}),
+    label,
+  };
 }
 
 export interface ThreadTurn {
@@ -136,6 +170,7 @@ export function threadView(turns: readonly ThreadTurn[]): ThreadView {
     const text = replyText(cards);
     const live = LIVE.has(state.status) || WAITING.has(state.status);
     if (live) running.push(state.runId);
+    const route = messageRoute(state);
     // an event turn with nothing to say yet shows nothing; a user's turn shows the agent thinking
     if (text || blocks.length > 0 || (live && !event))
       messages.push({
@@ -148,6 +183,7 @@ export function threadView(turns: readonly ThreadTurn[]): ThreadView {
         // pending while the run lives: text alone is not the end of a turn (tools may follow)
         pending: live,
         model: text || blocks.length > 0 ? (runUsage(cards)?.model ?? state.model) : undefined,
+        ...(route ? { route } : {}),
         runId: state.runId,
       });
   }

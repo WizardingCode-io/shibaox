@@ -87,6 +87,7 @@ describe('plugins', () => {
         which: async (cmd) => (cmd === 'gh' ? '/opt/homebrew/bin/gh' : undefined),
         env: { GITHUB_TOKEN: 'x', TYPESAFE_API_KEY: 'k' },
         decider: async () => ({ kind: 'jev', ref: 'jev-latest', usable: true }),
+        routing: async () => ({ on: true }),
       }),
     );
     const by = Object.fromEntries(rows.map((r) => [r.id, r]));
@@ -101,6 +102,59 @@ describe('plugins', () => {
     expect(by.typesafe?.status).toBe('ready');
     const partial = await pluginsStatus(checks({ env: { TYPESAFE_API_KEY: 'k' } }));
     expect(partial.find((r) => r.id === 'typesafe')?.status).toBe('partial');
+  });
+
+  it('TypeSafe / Jev: key, decides, routes requests, runs checks; actions and the skill it brings', async () => {
+    const ts = async (o: Partial<PluginChecks>) =>
+      (await pluginsStatus(checks(o))).find((r) => r.id === 'typesafe');
+    const ready = await ts({
+      env: { TYPESAFE_API_KEY: 'k' },
+      decider: async () => ({ kind: 'jev', ref: 'jev-latest', usable: true }),
+      routing: async () => ({ on: true, last: { intent: 'media', confidence: 0.98 } }),
+    });
+    expect(ready?.name).toBe('TypeSafe / Jev');
+    expect(ready?.status).toBe('ready');
+    expect(ready?.checks).toEqual([
+      { label: 'API key (TYPESAFE_API_KEY)', ok: true },
+      { label: 'Jev decides', ok: true, detail: 'jev-latest' },
+      { label: 'Jev routes requests', ok: true, detail: 'last: media 0.98' },
+      { label: 'Jev runs checks', ok: true },
+    ]);
+    expect(ready?.actions).toEqual([
+      { id: 'routing_off', label: 'Stop routing requests' },
+      { id: 'docs', label: 'TypeSafe docs', href: 'https://docs.typesafe.ai' },
+    ]);
+    expect(ready?.brings).toEqual({ connectors: [], skills: ['typesafe-ai'], tools: [] });
+    // the key with an LLM deciding: offer Jev for decisions and routing
+    const llm = await ts({
+      env: { TYPESAFE_API_KEY: 'k' },
+      decider: async () => ({
+        kind: 'model',
+        ref: 'openrouter/typesafe/jev-1.13',
+        usable: true,
+        reason: 'the key is set: switch the decision tier to jev-latest for typed decisions',
+      }),
+      routing: async () => ({ on: false, reason: 'Jev does not decide for this org' }),
+    });
+    expect(llm?.status).toBe('partial');
+    expect(llm?.checks[1]).toEqual({
+      label: 'Jev decides',
+      ok: false,
+      detail: 'the decision tier is openrouter/typesafe/jev-1.13: an LLM decides',
+    });
+    expect(llm?.checks[2]).toEqual({
+      label: 'Jev routes requests',
+      ok: false,
+      detail: 'Jev does not decide for this org',
+    });
+    expect(llm?.checks[3]?.ok).toBe(false);
+    expect(llm?.actions.map((a) => [a.id, a.label])).toEqual([
+      ['use_jev', 'Use Jev for decisions'],
+      ['routing_on', 'Route requests with Jev'],
+      ['docs', 'TypeSafe docs'],
+    ]);
+    // no key: off
+    expect((await ts({}))?.status).toBe('off');
   });
 
   it('a failing probe is a failed check, never an error', async () => {

@@ -66,8 +66,17 @@ export interface PluginChecks {
   /** The daemon's environment with the vault on top (only presence is read). */
   env: NodeJS.ProcessEnv;
   decider(): Promise<DeciderInfo | undefined>;
+  /** Jev routing of the home org's chat turns, and the newest route. */
+  routing?(): Promise<PluginRouting | undefined>;
   /** Telegram: a chat paired in daemon.yaml (`channels.telegram.chat_id`), the channel running. */
   telegram(): { paired: boolean; chatId?: number; running: boolean };
+}
+
+/** Whether Jev routes chat turns (see `routingInfo`) and the newest `router` decision. */
+export interface PluginRouting {
+  on: boolean;
+  reason?: string;
+  last?: { intent: string; confidence?: number };
 }
 
 /** `which` without a shell: the first executable file named `cmd` on PATH (plus the user bins). */
@@ -107,10 +116,11 @@ const WIKI = 'https://github.com/WizardingCode-io/shibaox/wiki';
 
 /** The status of every built-in plugin: Higgsfield, GitHub, Telegram, TypeSafe / Jev. */
 export async function pluginsStatus(c: PluginChecks): Promise<PluginRow[]> {
-  const [hf, gh, decider] = await Promise.all([
+  const [hf, gh, decider, routing] = await Promise.all([
     safe(c.higgsfield),
     safe(() => c.which('gh')),
     safe(c.decider),
+    safe(async () => c.routing?.()),
   ]);
   const rows: Omit<PluginRow, 'status'>[] = [];
 
@@ -178,29 +188,66 @@ export async function pluginsStatus(c: PluginChecks): Promise<PluginRow[]> {
     brings: { connectors: [], skills: [], tools: ['telegram_send'] },
   });
 
-  const ts = present(c.env, 'TYPESAFE_API_KEY');
-  rows.push({
-    id: 'typesafe',
-    name: 'TypeSafe / Jev',
-    description: 'Jev decides decide nodes and checks with typed answers and a confidence.',
-    checks: [
-      { label: 'API key (TYPESAFE_API_KEY)', ok: ts },
-      {
-        label: 'Jev decides',
-        ok: decider?.kind === 'jev' && decider.usable,
-        detail: decider
-          ? `${decider.kind}${decider.ref ? ` · ${decider.ref}` : ''}${decider.reason ? ` · ${decider.reason}` : ''}`
-          : 'unknown',
-      },
-    ],
-    keys: [{ name: 'TYPESAFE_API_KEY', present: ts }],
-    actions: [
-      { id: 'docs', label: 'TypeSafe docs', href: 'https://docs.typesafe.ai/introduction' },
-    ],
-    brings: { connectors: [], skills: [] },
-  });
+  rows.push(typesafeRow(present(c.env, 'TYPESAFE_API_KEY'), decider, routing));
 
   return rows.map((r) => ({ ...r, status: statusOf(r.checks) }));
+}
+
+/**
+ * TypeSafe / Jev: the key, who decides, whether Jev routes chat turns, whether Jev runs the
+ * `jev` checks (its check runner is on exactly when Jev decides: the key and jev-latest).
+ */
+function typesafeRow(
+  key: boolean,
+  decider: DeciderInfo | undefined,
+  routing: PluginRouting | undefined,
+): Omit<PluginRow, 'status'> {
+  const decides = decider?.kind === 'jev' && decider.usable;
+  const decidesDetail = !decider
+    ? 'unknown'
+    : decides
+      ? (decider.ref ?? 'jev-latest')
+      : decider.kind === 'model'
+        ? `the decision tier is ${decider.ref}: an LLM decides`
+        : (decider.reason ?? 'nobody decides');
+  const routes = routing?.on === true;
+  const last = routing?.last;
+  const routesDetail =
+    routes && last
+      ? `last: ${last.intent}${last.confidence !== undefined ? ` ${last.confidence.toFixed(2)}` : ''}`
+      : routes
+        ? undefined
+        : (routing?.reason ?? 'off');
+  return {
+    id: 'typesafe',
+    name: 'TypeSafe / Jev',
+    description:
+      'Jev decides decide nodes, routes every chat turn and runs checks, with typed answers and a confidence.',
+    checks: [
+      { label: 'API key (TYPESAFE_API_KEY)', ok: key },
+      { label: 'Jev decides', ok: decides, detail: decidesDetail },
+      {
+        label: 'Jev routes requests',
+        ok: routes,
+        ...(routesDetail ? { detail: routesDetail } : {}),
+      },
+      {
+        label: 'Jev runs checks',
+        ok: key && decides,
+        ...(key && decides ? {} : { detail: 'with the key and jev-latest as the decision tier' }),
+      },
+    ],
+    keys: [{ name: 'TYPESAFE_API_KEY', present: key }],
+    actions: [
+      // POSTed by the app to /plugins/typesafe/actions/<id> (they write the home org)
+      ...(decides ? [] : [{ id: 'use_jev', label: 'Use Jev for decisions' }]),
+      routes
+        ? { id: 'routing_off', label: 'Stop routing requests' }
+        : { id: 'routing_on', label: 'Route requests with Jev' },
+      { id: 'docs', label: 'TypeSafe docs', href: 'https://docs.typesafe.ai' },
+    ],
+    brings: { connectors: [], skills: ['typesafe-ai'], tools: [] },
+  };
 }
 
 /** Higgsfield's two modes; the top level is the active one. */

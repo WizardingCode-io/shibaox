@@ -278,6 +278,24 @@ describe('the sections', () => {
     await waitFor(() => expect(screen.getByText('Done.')).toBeTruthy());
     expect(screen.getByText('qwen3-coder')).toBeTruthy();
   });
+  it('a turn Jev routed says so above the reply, in the muted meta style', async () => {
+    const { client: c } = client({
+      runs: [summary('root')],
+      states: {
+        root: state('root', {
+          route: { intent: 'media', confidence: 0.98, tier: 'cheap', by: 'jev' },
+        }),
+      },
+      frames: { root: [rtFrame(1, 'reply', { type: 'text', text: 'Here is the cat.' })] },
+    });
+    mount(c, { hash: '#/t/root' });
+    await waitFor(() => expect(screen.getByText('Here is the cat.')).toBeTruthy());
+    const line = screen.getByText('Routed by Jev · media (0.98) · cheap');
+    expect(line.className).toContain('muted');
+    // the user's message is unchanged
+    expect(screen.getAllByText('Find me a hotel in Porto').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/\[router\]/)).toBeNull();
+  });
   it('a conversation can pick its model for the next turns', async () => {
     const { client: c, calls } = client({
       runs: [summary('root')],

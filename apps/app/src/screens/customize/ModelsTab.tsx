@@ -75,7 +75,14 @@ const TIERS: { id: 'strong' | 'cheap' | 'decision'; label: string }[] = [
   { id: 'decision', label: 'Decision' },
 ];
 
-/** The org's tiers, judge and budget per run (`PUT /orgs/config`). */
+type Routing = 'default' | 'on' | 'off';
+const ROUTING: { id: Routing; label: string }[] = [
+  { id: 'default', label: 'Default' },
+  { id: 'on', label: 'On' },
+  { id: 'off', label: 'Off' },
+];
+
+/** The org's tiers, judge, budget per run and Jev routing (`PUT /orgs/config`). */
 function Tiers(): JSX.Element {
   const S = ds();
   const store = useStore();
@@ -84,6 +91,9 @@ function Tiers(): JSX.Element {
   const [tiers, setTiers] = useState<Record<string, string>>({});
   const [judge, setJudge] = useState<string | undefined>(undefined);
   const [budget, setBudget] = useState<string | undefined>(undefined);
+  const [routing, setRouting] = useState<Routing | undefined>(undefined);
+  const jev = config?.routing?.jev;
+  const routingNow: Routing = routing ?? (jev === true ? 'on' : jev === false ? 'off' : 'default');
   const val = (id: string) =>
     tiers[id] ?? (config?.tiers as Record<string, string | undefined>)?.[id] ?? '';
   return (
@@ -101,6 +111,8 @@ function Tiers(): JSX.Element {
         if (judge !== undefined) patch.judge = judge.trim() || null;
         if (budget !== undefined)
           patch.per_run_usd = budget.trim() ? Number.parseFloat(budget) : null;
+        if (routing !== undefined)
+          patch.routing = { jev: routing === 'on' ? true : routing === 'off' ? false : null };
         if (Object.keys(patch).length) void store.saveOrgConfig(patch);
       }}
     >
@@ -124,6 +136,18 @@ function Tiers(): JSX.Element {
         value={budget ?? (config?.per_run_usd !== undefined ? String(config.per_run_usd) : '')}
         onChange={(e) => setBudget((e.target as HTMLInputElement).value)}
       />
+      <div className="stack">
+        <span className="muted">
+          Jev routing: Jev reads every chat turn first and a simple one runs on the cheap tier
+          (default: on with TYPESAFE_API_KEY when Jev decides)
+        </span>
+        <S.Segmented
+          label="Jev routing"
+          items={ROUTING}
+          value={routingNow}
+          onChange={(id) => setRouting(id as Routing)}
+        />
+      </div>
       <div className="row tiers__save">
         <S.Button variant="primary" type="submit">
           Save tiers
@@ -156,9 +180,9 @@ function Decisions(props: { view: DecisionsView }): JSX.Element {
       </p>
       {decisions.length === 0 ? (
         <p className="muted">
-          No decision yet. A chat has none: decide nodes and gates with a judge (hello-feature's
-          judge, a review check) use the decider; the result shows here and in the Tasks tab of its
-          conversation.
+          No decision yet. Decide nodes and gates with a judge (hello-feature's judge, a review
+          check) use the decider, and Jev's routing of chat turns is a decision too (router); the
+          result shows here and in the Tasks tab of its conversation.
         </p>
       ) : (
         decisions.map((d) => (

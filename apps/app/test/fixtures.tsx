@@ -518,6 +518,14 @@ export function client(
             by: 'model:openrouter/typesafe/jev-router',
             at: '2026-10-01T10:00:00.000Z',
           },
+          {
+            runId: 'root',
+            nodeId: 'router',
+            choice: 'media',
+            confidence: 0.98,
+            by: 'jev',
+            at: '2026-10-01T09:59:00.000Z',
+          },
         ],
       };
     },
@@ -675,6 +683,7 @@ export function client(
       return { name, removed: true };
     },
     async orgConfig(root) {
+      rec('orgConfig', root);
       return {
         root,
         organization: 'wc',
