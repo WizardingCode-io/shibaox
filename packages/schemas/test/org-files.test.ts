@@ -44,3 +44,13 @@ describe('org.yaml setup', () => {
     expect(() => OrgFileSchema.parse({ organization: 'o', setup: 'maybe' })).toThrow();
   });
 });
+
+describe('models.yaml routing', () => {
+  it('accepts routing: { jev, cheap_min_confidence } and refuses a confidence outside 0..1', () => {
+    expect(
+      ModelsSchema.parse({ routing: { jev: false, cheap_min_confidence: 0.8 } }).routing,
+    ).toEqual({ jev: false, cheap_min_confidence: 0.8 });
+    expect(ModelsSchema.parse({}).routing).toBeUndefined();
+    expect(() => ModelsSchema.parse({ routing: { cheap_min_confidence: 2 } })).toThrow();
+  });
+});

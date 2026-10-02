@@ -44,6 +44,23 @@ describe('deciderInfo says what buildRuntime would use', () => {
       usable: true,
     });
   });
+  it('Jev as a chat model (an OpenRouter jev ref) with the TypeSafe key: says to switch to jev-latest', () => {
+    const o = org(
+      'providers: {}\ntiers: { strong: anthropic/claude-sonnet-5, decision: openrouter/typesafe/jev-1.13 }\nroles: {}\ngates: {}\n',
+    );
+    expect(info(o, { OPENROUTER_API_KEY: 'k', TYPESAFE_API_KEY: 't' })).toEqual({
+      kind: 'model',
+      ref: 'openrouter/typesafe/jev-1.13',
+      usable: true,
+      reason: 'the key is set: switch the decision tier to jev-latest for typed decisions',
+    });
+    // without the key, or another model, nothing to suggest
+    expect(info(o, { OPENROUTER_API_KEY: 'k' }).reason).toBeUndefined();
+    const other = org(
+      'providers: {}\ntiers: { strong: anthropic/claude-sonnet-5, decision: openrouter/openai/gpt-5 }\nroles: {}\ngates: {}\n',
+    );
+    expect(info(other, { OPENROUTER_API_KEY: 'k', TYPESAFE_API_KEY: 't' }).reason).toBeUndefined();
+  });
   it('an unusable decision tier falls back to the strong tier, and says so', () => {
     const o = org(
       'providers: {}\ntiers: { strong: anthropic/claude-sonnet-5, cheap: anthropic/claude-haiku-4-5, decision: openrouter/typesafe/jev-router }\nroles: {}\ngates: {}\n',

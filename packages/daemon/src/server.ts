@@ -876,6 +876,20 @@ export class DaemonServer {
         throw new HttpError(409, 'no_token', 'The Telegram bot token is not set');
       throw new HttpError(409, 'not_running', `Telegram cannot send: ${r.reason}`);
     }
+    // TypeSafe: Jev decides (the decision tier → jev-latest), Jev routes chat turns on/off;
+    // they write the home org's models.yaml, so only callers on the daemon's machine
+    const typesafe: Record<string, OrgConfigPatch> = {
+      use_jev: { tiers: { decision: 'jev-latest' } },
+      routing_on: { routing: { jev: true } },
+      routing_off: { routing: { jev: false } },
+    };
+    const patch =
+      id === 'typesafe' && Object.hasOwn(typesafe, action) ? typesafe[action] : undefined;
+    if (patch) {
+      this.requireLocalWrite(req);
+      const { root } = await this.deps.defaultOrg();
+      return writeOrgConfig(root, patch);
+    }
     throw new HttpError(404, 'not_found', `no action ${action} for plugin ${id}`);
   }
 

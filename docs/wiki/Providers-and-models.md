@@ -39,12 +39,31 @@ tiers:
   strong: anthropic/claude-sonnet-5              # API key, direct adapter
   # strong: anthropic-subscription/claude-sonnet-5   # Claude subscription, via Claude Code
   cheap: openrouter/qwen/qwen3-coder
-  decision: openrouter/typesafe/jev-router       # any model ref, or jev-latest with TYPESAFE_API_KEY
+  decision: jev-latest                           # Jev's typed API (TYPESAFE_API_KEY), or any model ref
 gates:
   judge: anthropic/claude-haiku-4-5              # judge and review checks (default: decision, then strong)
+routing:                                         # Jev routing of chat turns (optional)
+  jev: true                                      # default: on with TYPESAFE_API_KEY when Jev decides
+  cheap_min_confidence: 0.75                     # a "cheap" route from this confidence runs on the cheap tier
 ```
 
-You never have to edit that file: `shibaox tiers` shows the tiers, the judge, the default adapter and the budget per run, `shibaox tiers set strong openrouter/openai/gpt-5` changes one (comments in the YAML are kept), and `/tiers` in the dashboard does the same with the model list. `none` clears `judge` or `adapter`.
+### The decision tier: jev-latest
+
+`decision: jev-latest` makes Jev, TypeSafe's typed API, decide decide nodes: one call with the node's options as a `choice`, an answer with a confidence (below 0.8 the strong tier decides instead) and a cost of a fraction of a cent. It needs `TYPESAFE_API_KEY`; without it the strong tier decides. A model ref (`openrouter/typesafe/jev-1.13`) makes that model decide as an LLM: with the key set, `shibaox doctor`, `GET /decisions` and the TypeSafe card say "the key is set: switch the decision tier to jev-latest for typed decisions", and **Use Jev for decisions** on the card switches it (nothing switches by itself). With `jev-latest` and the key, Jev also runs `jev` checks of the gates.
+
+### Routing: Jev reads every chat turn first
+
+With routing on, each chat turn (the app, Telegram, a routine's chat run; never a dispatched run) goes through ONE Jev fan-out before the orchestrator runs: its **intent** (`chat`, `media`, `code`, `research`, `workflow:<id>` for each of the org's workflows, `human`; below 0.6 it is `unsure`), the **tier** it needs (`cheap` or `strong`) and whether it is **risky** (push, deploy, publish, delete, pay, message someone; a flag from 0.7). Jev sees the request (at most 4 000 characters), the names of attached files and the org's workflows with their descriptions.
+
+- When you did not pick a model and the route says `cheap` with a confidence of at least `cheap_min_confidence` (0.75), the turn runs on the org's cheap tier (when it is usable), recorded as the run's model; otherwise the role's own tier.
+- The orchestrator reads a line before your message, `[router] intent=media (0.98) tier=cheap risky=no: generate it with Higgsfield now` (for a workflow: start it with `start_workflow` unless you only ask about it; research: use the fetch/search tools; human: ask one precise question). Your message in the thread is unchanged.
+- The route is recorded as two decisions of the run, `router` (the intent) and `router:tier`, by `jev`, with the fan-out's cost added to the run's spend; `GET /decisions` lists them and the chat shows "Routed by Jev · media (0.98) · cheap".
+- `risky` only annotates: the approvals gate the actions themselves.
+- Jev failing or slow (8 s) never breaks a turn: the daemon logs a `[router]` line and the turn runs unrouted.
+
+`shibaox tiers --routing on|off`, the routing row of `/tiers` in the dashboard, the Jev routing control of Customize → Models and the TypeSafe card change `routing.jev`; `PUT /orgs/config` takes `{routing: {jev, cheap_min_confidence}}` (`null` goes back to the default).
+
+You never have to edit that file: `shibaox tiers` shows the tiers, the judge, the default adapter and the budget per run, `shibaox tiers set strong openrouter/openai/gpt-5` changes one (comments in the YAML are kept), and `/tiers` in the dashboard does the same with the model list. `none` clears `judge` or `adapter`. `shibaox tiers --routing on|off` turns Jev routing of chat turns on or off (below).
 
 ## Choosing the model for a run
 

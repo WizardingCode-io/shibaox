@@ -528,6 +528,22 @@ esac
     expect(after.find((r) => r.name === 'strong')?.value).toBe('openrouter/openai/gpt-5');
   });
 
+  it('tiers --routing on|off turns Jev routing of chat turns on or off', async () => {
+    const { org, cli } = await setup();
+    const routingRow = async () =>
+      json<{ name: string; value?: string }>(await cli('tiers', '--org', org, '--json')).find(
+        (r) => r.name === 'routing',
+      );
+    expect((await routingRow())?.value).toBe('default');
+    const off = await cli('tiers', '--routing', 'off', '--org', org);
+    expect(off.code).toBe(0);
+    expect(off.stdout).toContain('Jev routing off');
+    expect((await routingRow())?.value).toBe('off');
+    expect((await cli('tiers', '--routing', 'on', '--org', org)).code).toBe(0);
+    expect((await routingRow())?.value).toBe('on (cheap from 0.75)');
+    expect((await cli('tiers', '--routing', 'maybe', '--org', org)).code).not.toBe(0);
+  });
+
   it('run without --org uses the org under the shibaox home', async () => {
     const { project, cli, home } = await setup({ claudeInstalled: false });
     const r = await cli(

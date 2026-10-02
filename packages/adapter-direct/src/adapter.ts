@@ -10,6 +10,7 @@ import {
   type ExecutionContext,
   type McpServerSpec,
   MissingKeyError,
+  modelInput,
   modelToolName,
   type RuntimeAdapter,
   type RuntimeEvent,
@@ -154,9 +155,10 @@ export class DirectAdapter implements RuntimeAdapter {
 
   private userMessage(job: TaskJob): string {
     // the conversation travels as its own turns (see run), never inside the input JSON
-    const { messages: _messages, ...input } = job.input;
+    const { input, hint } = modelInput(job.input);
     return [
       `Task: ${job.instruction}`,
+      ...(hint ? [hint] : []),
       `Input: ${JSON.stringify(input)}`,
       `Previous outputs: ${JSON.stringify(job.context.previousOutputs).slice(0, 60_000)}`,
       `Last gate report: ${JSON.stringify(job.context.lastGateReport ?? null).slice(0, 20_000)}`,

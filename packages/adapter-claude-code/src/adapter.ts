@@ -12,6 +12,7 @@ import {
   type ExecutionContext,
   type McpServerSpec,
   MissingKeyError,
+  modelInput,
   type RuntimeAdapter,
   type RuntimeEvent,
   runArgv,
@@ -238,7 +239,7 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
       ),
     };
     // the conversation is transcribed ahead of the task; it never travels inside the input JSON
-    const { messages: _messages, ...input } = job.input;
+    const { input, hint } = modelInput(job.input);
     const { summary, turns } = splitConversation(conversationOf(job.input));
     const transcript =
       turns.length > 0
@@ -259,6 +260,7 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
               : []),
             ...(transcript ? [transcript] : []),
             `Task: ${job.instruction}`,
+            ...(hint ? [hint] : []),
             `Input: ${JSON.stringify(input)}`,
             `Previous outputs: ${JSON.stringify(job.context.previousOutputs).slice(0, 60_000)}`,
             `Last gate report: ${JSON.stringify(job.context.lastGateReport ?? null).slice(0, 20_000)}`,

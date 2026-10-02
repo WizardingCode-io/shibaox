@@ -170,6 +170,10 @@ body {
   color: var(--ink-muted);
   font-size: 13px;
 }
+/* "Routed by Jev · media (0.98) · cheap" above a routed turn's reply */
+.route-line {
+  font-size: 12px;
+}
 .mono {
   font-family: var(--font-mono);
   font-size: 13px;

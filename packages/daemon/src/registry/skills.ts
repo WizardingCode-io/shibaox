@@ -27,6 +27,15 @@ const SOURCES: SkillSource[] = [
     description: 'Generation recipes for Higgsfield: images, video, product shots, characters.',
     categories: ['Design & media'],
   },
+  {
+    repo: 'typesafe-ai/skills',
+    name: 'TypeSafe skills',
+    vendor: 'TypeSafe',
+    description:
+      'The typesafe-ai skill: typed decisions with Jev (choice, noul, score), intent and confidence routing.',
+    path: 'skills',
+    categories: ['Development'],
+  },
 ];
 
 export function skillSources(): SkillSource[] {

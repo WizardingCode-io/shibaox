@@ -24,6 +24,13 @@ import {
   type StoredEvent,
   type TaskJob,
 } from '@wizardingcode/shibaox-core';
+import {
+  JevClient,
+  type RouteResult,
+  routeHint,
+  routeLine,
+  routeRequest,
+} from '@wizardingcode/shibaox-jev';
 import { type Graphify, MemoryNotes } from '@wizardingcode/shibaox-memory';
 import type { ProviderEntry } from '@wizardingcode/shibaox-providers';
 import type { CatalogEntry, RoutineApprovals } from '@wizardingcode/shibaox-schemas';
@@ -85,6 +92,8 @@ import {
   isAdapterId,
   type RuntimeOptions,
   registryFor,
+  routingInfo,
+  runnableRef,
 } from './runtime.js';
 import { RuntimeBuffer, type RuntimeEnvelope } from './runtime-buffer.js';
 
@@ -179,6 +188,8 @@ export interface RunManagerOptions {
       caption?: string,
     ): Promise<TelegramSendResult>;
   };
+  /** How long a chat turn waits for Jev's route before it runs unrouted (default 8 s). */
+  routerTimeoutMs?: number;
   /** A run with an `origin` ended: the daemon reports it where it was asked for. */
   onFinished?: (
     state: RunState,
@@ -254,8 +265,10 @@ export class RunManager {
     const wf = org.workflows[req.workflow];
     if (!wf) throw new Error(`workflow "${req.workflow}" is not defined in the org`);
     const warnings: string[] = [];
+    // a chat turn is routed by Jev first (never a dispatched run): its intent, tier and risk
+    const route = await this.routeTurn(req, org, project);
     // an explicit mock adapter never calls a model: a chosen model is set aside with a warning
-    const model = req.adapter === 'mock' ? undefined : req.model;
+    const model = req.adapter === 'mock' ? undefined : (req.model ?? route?.model);
     if (req.model && !model) warnings.push(`adapter mock: the model ${req.model} is not used`);
     const registry = registryFor(this.opts.env ?? process.env, this.opts.extraProviders);
     let adapter: AdapterId;
@@ -265,7 +278,8 @@ export class RunManager {
       adapter = picked.adapter;
       if (picked.note) warnings.push(picked.note);
     }
-    if (model) await this.assertListed(model);
+    // a model the user named must be one discovery lists; the router's cheap tier was checked by it
+    if (req.model && model) await this.assertListed(model);
     const mode = await workspaceMode(project, req.workspace, (l) => warnings.push(l));
     const budgetUsd = req.budgetUsd ?? org.org.budgets.per_run_usd;
     const runId = randomUUID();
@@ -349,6 +363,7 @@ export class RunManager {
       workflow: req.workflow,
       input: {
         spec: input,
+        ...(route ? { router: routeHint(route.result) } : {}),
         ...(attached.length > 0 ? { attachments: attached } : {}),
         ...(messages.length > 0 ? { messages } : {}),
         ...(req.event ? { event: true } : {}),
@@ -369,11 +384,98 @@ export class RunManager {
       approvals: req.approvals,
       setup,
     });
+    if (route) await this.recordRoute(runId, route.result);
     for (const f of attached)
       this.recordRuntime(runId, 'you', { type: 'file_changed', path: f.path });
     this.prepared.set(runId, { engine, org, adapter });
     this.enqueue({ runId, action: 'run', settle: [] });
     return { runId, warnings, ...(compacted ? { messages } : {}) };
+  }
+
+  /**
+   * Jev's route for a chat turn (a conversation workflow submitted by a person, Telegram or a
+   * routine; never a dispatched run or an event turn) and the cheap tier when it applies: no
+   * model named, a `cheap` route at ≥ `cheap_min_confidence`, a usable cheap tier and a real
+   * adapter. Any Jev error or timeout → a log line and no route.
+   */
+  private async routeTurn(
+    req: SubmitRequest,
+    org: Org,
+    project: string,
+  ): Promise<{ result: RouteResult; model?: string } | undefined> {
+    const wf = org.workflows[req.workflow];
+    if (!wf?.conversation || req.event || req.parentRunId) return undefined;
+    const env = this.opts.env ?? process.env;
+    const registry = registryFor(env, this.opts.extraProviders);
+    const info = routingInfo(org, env, registry);
+    const key = env.TYPESAFE_API_KEY;
+    if (!info.on || !key) return undefined;
+    const client = new JevClient({ apiKey: key, baseURL: env.SHIBAOX_JEV_BASE_URL || undefined });
+    const result = await routeRequest(
+      client,
+      {
+        request: req.input,
+        workflows: Object.values(org.workflows).map((w) => ({
+          id: w.workflow,
+          description: w.description,
+          conversation: w.conversation,
+        })),
+        attachments: (req.attachments ?? []).map((a) => ({
+          path: a.name,
+          ...(a.mime ? { mime: a.mime } : {}),
+        })),
+        hasMedia: Object.values(org.roles).some((r) => r.mcp?.includes('higgsfield')),
+        hasCode: existsSync(join(project, '.git')),
+      },
+      {
+        timeoutMs: this.opts.routerTimeoutMs,
+        onError: (e) =>
+          this.opts.log(
+            `[router] Jev failed (${e.message.split(key).join('***')}): the turn runs unrouted`,
+          ),
+      },
+    );
+    if (!result) return undefined;
+    const cheap = org.models.tiers.cheap;
+    const applies =
+      !req.model &&
+      result.tier === 'cheap' &&
+      result.tierConfidence >= info.cheapMinConfidence &&
+      req.adapter !== 'mock' &&
+      effectiveAdapter(req.adapter, org) !== 'mock' &&
+      runnableRef(registry, cheap) &&
+      (await this.assertListed(cheap as string).then(
+        () => true,
+        () => false,
+      ));
+    this.opts.log(
+      `${routeLine(result)} cost=$${result.cost.usd.toFixed(6)}${applies ? ` → ${cheap}` : ''}`,
+    );
+    return { result, ...(applies ? { model: cheap } : {}) };
+  }
+
+  /** The route as two decisions of the run (`router`, `router:tier`), by Jev; the fan-out's cost on the first. */
+  private async recordRoute(runId: string, r: RouteResult): Promise<void> {
+    const at = this.now();
+    await this.opts.store.append({
+      type: 'DecisionMade',
+      runId,
+      nodeId: 'router',
+      at,
+      choice: r.intent,
+      confidence: r.intentConfidence,
+      cost: r.cost,
+      by: 'jev',
+    });
+    await this.opts.store.append({
+      type: 'DecisionMade',
+      runId,
+      nodeId: 'router:tier',
+      at,
+      choice: r.tier,
+      confidence: r.tierConfidence,
+      by: 'jev',
+    });
   }
 
   /** Recovers the runs left by a previous daemon process. */

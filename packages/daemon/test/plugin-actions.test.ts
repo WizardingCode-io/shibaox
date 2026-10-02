@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MemoryEventStore } from '@wizardingcode/shibaox-core';
@@ -104,5 +104,50 @@ describe('POST /plugins/:id/actions/:action', () => {
     // the test message writes nothing: allowed over the network (409 here: not paired)
     local = false;
     expect((await post('test')).status).toBe(409);
+  });
+
+  it('typesafe use_jev / routing_off / routing_on write the home org models.yaml', async () => {
+    const { client, home } = await daemon();
+    const org = (await client.defaultOrg()).root;
+    const models = join(org, 'models.yaml');
+    writeFileSync(
+      models,
+      'providers: {}\ntiers: { strong: anthropic/claude-sonnet-5, decision: openrouter/typesafe/jev-1.13 }\nroles: {}\ngates: {}\n',
+    );
+    expect(home.org).toBe(org);
+    expect(await client.pluginAction('typesafe', 'use_jev')).toMatchObject({
+      tiers: { decision: 'jev-latest' },
+    });
+    expect(readFileSync(models, 'utf8')).toContain('decision: jev-latest');
+    expect(await client.pluginAction('typesafe', 'routing_off')).toMatchObject({
+      routing: { jev: false },
+    });
+    expect(await client.pluginAction('typesafe', 'routing_on')).toMatchObject({
+      routing: { jev: true },
+    });
+    await expect(client.pluginAction('typesafe', 'nope')).rejects.toMatchObject({ status: 404 });
+    await expect(client.pluginAction('typesafe', 'constructor')).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+
+  it('typesafe actions change the org: refused to another machine (403)', async () => {
+    const { d, home } = await daemon({ local: () => false });
+    const before = existsSync(join(home.org, 'models.yaml'))
+      ? readFileSync(join(home.org, 'models.yaml'), 'utf8')
+      : undefined;
+    const r = await fetch(
+      `http://127.0.0.1:${d.listenAddress()?.port}/plugins/typesafe/actions/routing_off`,
+      {
+        method: 'POST',
+        headers: { authorization: 'Bearer secret-1', 'content-type': 'application/json' },
+        body: '{}',
+      },
+    );
+    expect(r.status).toBe(403);
+    const after = existsSync(join(home.org, 'models.yaml'))
+      ? readFileSync(join(home.org, 'models.yaml'), 'utf8')
+      : undefined;
+    expect(after).toBe(before);
   });
 });

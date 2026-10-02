@@ -1,4 +1,9 @@
-import type { NodeStatus, RunState, RunStatus } from '@wizardingcode/shibaox-core';
+import {
+  isRouterNode,
+  type NodeStatus,
+  type RunState,
+  type RunStatus,
+} from '@wizardingcode/shibaox-core';
 import type { Envelope } from '@wizardingcode/shibaox-daemon';
 import type { WorkflowNode } from '@wizardingcode/shibaox-schemas';
 
@@ -320,6 +325,12 @@ export function reduceTimeline(state: RunState | undefined, frames: Envelope[]):
           break;
         }
         case 'DecisionMade': {
+          // Jev routing a chat turn: the run's route (the thread shows it), never a card
+          if (
+            isRouterNode(ev.nodeId as string) &&
+            !state?.workflowSnapshot?.nodes[ev.nodeId as string]
+          )
+            break;
           const c = cardFor(ev.nodeId as string);
           if (c.kind === 'decide') {
             c.choice = ev.choice as string;

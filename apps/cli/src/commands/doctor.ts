@@ -323,7 +323,9 @@ function decisionsLine(env: NodeJS.ProcessEnv): CheckLine {
       name: 'decisions',
       ok: info.usable,
       required: false,
-      detail: info.usable ? `${what} (usable)` : `${what}: ${info.reason ?? 'not usable'}`,
+      detail: info.usable
+        ? `${what} (usable)${info.reason ? `: ${info.reason}` : ''}`
+        : `${what}: ${info.reason ?? 'not usable'}`,
     };
   } catch (e) {
     return {

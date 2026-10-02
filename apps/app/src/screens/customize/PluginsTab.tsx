@@ -33,6 +33,9 @@ const NOW: Record<HiggsfieldEffective, string> = {
   none: 'Now: nothing set up',
 };
 
+/** TypeSafe's actions: POSTed, and they write the org (the decision tier, routing). */
+const ORG_ACTIONS: ReadonlySet<string> = new Set(['use_jev', 'routing_on', 'routing_off']);
+
 /** What a body shows: the plugin itself, or one of its modes (`id` is the mode's). */
 type Part = Pick<PluginRow, 'checks' | 'keys' | 'actions' | 'brings'> & { id?: string };
 
@@ -67,6 +70,8 @@ function PluginBody(props: {
     void store.pluginAction(p.id, id).then((r) => {
       setBusy(undefined);
       setOutcome(actionOutcome(id, r));
+      // TypeSafe's actions change the org (decision tier, routing): tiers and decisions too
+      if (r.ok && ORG_ACTIONS.has(id)) void store.loadCustomize();
     });
   };
   // Connect vs Manage: the part's own key first, else the vault row (label and dialog agree)
@@ -121,6 +126,7 @@ function PluginBody(props: {
   /**
    * An action: `login` POSTs through the store (its href is a daemon path, never a link),
    * `pair` / `test` POST the plugin's action (a loading button, the outcome inline),
+   * `use_jev` / `routing_on` / `routing_off` POST TypeSafe's action (they write the org),
    * `connect_key` opens the key dialog, an absolute http(s) href opens apart, `install` copies
    * its command; anything else is hidden.
    */
@@ -140,12 +146,12 @@ function PluginBody(props: {
           {a.label}
         </S.Button>
       );
-    if (a.id === 'pair' || a.id === 'test')
+    if (a.id === 'pair' || a.id === 'test' || ORG_ACTIONS.has(a.id))
       return (
         <S.Button
           key={a.id}
           size="sm"
-          variant={a.id === 'pair' ? 'primary' : 'secondary'}
+          variant={a.id === 'pair' || a.id === 'use_jev' ? 'primary' : 'secondary'}
           loading={busy === a.id}
           disabled={busy !== undefined}
           onClick={() => post(a.id)}
@@ -290,6 +296,13 @@ function PluginBody(props: {
           daemon's vault.
         </p>
       ) : null}
+      {p.id === 'typesafe' ? (
+        <p className="muted">
+          Jev decides decide nodes, routes every chat turn (what it asks for, whether it is risky,
+          whether the cheap tier is enough) and runs jev checks, each with a confidence. A call
+          costs a fraction of a cent, added to the run's spend.
+        </p>
+      ) : null}
       {keyDialog ? (
         <ApiKeyDialog
           present={keyPresent}
@@ -313,6 +326,9 @@ function actionOutcome(
       ? { ok: true, text: `Paired with chat ${v.chatId}` }
       : { ok: false, text: v.reason ?? 'Not paired' };
   if (id === 'test') return { ok: true, text: 'Sent ✓' };
+  if (id === 'use_jev') return { ok: true, text: 'Jev decides now' };
+  if (id === 'routing_on') return { ok: true, text: 'Jev routes requests now' };
+  if (id === 'routing_off') return { ok: true, text: 'Routing is off' };
   return { ok: true, text: 'Done' };
 }
 

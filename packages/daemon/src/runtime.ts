@@ -459,6 +459,10 @@ export interface DeciderInfo {
   reason?: string;
 }
 
+/** What `deciderInfo` says when an LLM Jev decides although TypeSafe's typed API could. */
+export const JEV_SWITCH_REASON =
+  'the key is set: switch the decision tier to jev-latest for typed decisions';
+
 export function deciderInfo(
   org: Org,
   env: NodeJS.ProcessEnv,
@@ -473,7 +477,15 @@ export function deciderInfo(
   const isRef = decisionRef?.includes('/') ?? false;
   const decisionWhy = isRef ? unusable(registry, decisionRef) : undefined;
   if (isRef && decisionRef && decisionWhy === undefined)
-    return { kind: 'model', ref: decisionRef, usable: true };
+    return {
+      kind: 'model',
+      ref: decisionRef,
+      usable: true,
+      // Jev as a chat model (openrouter/typesafe/jev-*) while its typed API's key is here
+      ...(env.TYPESAFE_API_KEY && /jev/i.test(decisionRef.slice(decisionRef.indexOf('/') + 1))
+        ? { reason: JEV_SWITCH_REASON }
+        : {}),
+    };
   if (!isRef && env.TYPESAFE_API_KEY)
     return { kind: 'jev', ref: decisionRef || 'jev-latest', usable: true };
   const why = isRef
@@ -494,6 +506,56 @@ export function deciderInfo(
     usable: false,
     reason: `${why}, and the strong tier ${strongRef ? `${strongRef} is not usable (${strongWhy})` : 'is not set'}: decide nodes always pick ship`,
   };
+}
+
+/** The confidence from which a `cheap` route runs a chat turn on the cheap tier. */
+export const CHEAP_MIN_CONFIDENCE = 0.75;
+
+/** Whether Jev routes the org's chat turns (models.yaml `routing`), as the daemon applies it. */
+export interface RoutingInfo {
+  on: boolean;
+  /** `routing.jev` as written in models.yaml (absent: the default). */
+  configured?: boolean;
+  cheapMinConfidence: number;
+  /** Why it is off. */
+  reason?: string;
+}
+
+/**
+ * Routing is on when TYPESAFE_API_KEY is set and `routing.jev` is not false; without
+ * `routing.jev`, only when Jev decides for the org (the decision tier is jev-latest).
+ */
+export function routingInfo(
+  org: Org,
+  env: NodeJS.ProcessEnv,
+  registry: ProviderRegistry,
+): RoutingInfo {
+  const r = org.models.routing ?? {};
+  const base = {
+    ...(r.jev !== undefined ? { configured: r.jev } : {}),
+    cheapMinConfidence: r.cheap_min_confidence ?? CHEAP_MIN_CONFIDENCE,
+  };
+  if (!env.TYPESAFE_API_KEY) return { ...base, on: false, reason: 'TYPESAFE_API_KEY is not set' };
+  if (r.jev === false) return { ...base, on: false, reason: 'routing.jev is off (models.yaml)' };
+  if (r.jev === true) return { ...base, on: true };
+  return deciderInfo(org, env, registry).kind === 'jev'
+    ? { ...base, on: true }
+    : {
+        ...base,
+        on: false,
+        reason: 'Jev does not decide for this org (routing.jev: true turns routing on anyway)',
+      };
+}
+
+/** A model ref a run can use as its one model: a subscription runtime, or a usable provider model. */
+export function runnableRef(registry: ProviderRegistry, ref: string | undefined): boolean {
+  if (!ref?.includes('/')) return false;
+  try {
+    if (adapterForModel(ref, registry) === 'claude-code') return true;
+  } catch {
+    return false;
+  }
+  return unusable(registry, ref) === undefined;
 }
 
 /** One decision of a run, for the list in Integrations. */

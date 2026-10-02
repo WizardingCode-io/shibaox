@@ -321,6 +321,11 @@ function ChatTab(props: {
             </S.Message>
           ) : (
             <div key={m.key} className="stack">
+              {m.route ? (
+                <span className="muted route-line" title="Jev classified this request first">
+                  {m.route.label}
+                </span>
+              ) : null}
               {(m.text || m.blocks.length > 0) && (
                 <S.Message
                   from="agent"

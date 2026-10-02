@@ -85,7 +85,18 @@ The API: `GET /skills?org=` → `{id, name, description, path, roles}[]` (name a
 
 ## Plugins
 
-`shibaox plugins` (`GET /plugins`) shows the integrations that need more than one server: Higgsfield (two modes, below), GitHub (`gh` and a token), Telegram (the bot token) and TypeSafe / Jev (the key and whether Jev decides). Each is `ready` when every check passes, `partial` when some do, `off` when none.
+`shibaox plugins` (`GET /plugins`) shows the integrations that need more than one server: Higgsfield (two modes, below), GitHub (`gh` and a token), Telegram (the bot token) and TypeSafe / Jev (below). Each is `ready` when every check passes, `partial` when some do, `off` when none.
+
+### Plugins → TypeSafe / Jev
+
+Jev is TypeSafe's typed model: it answers a `choice`, a yes/no (`noul`) or a `score` with a confidence, in one call for several questions, for a fraction of a cent ($0.042 per million input tokens). In Shibaox it:
+
+- **decides** decide nodes (`tiers.decision: jev-latest`; below 0.8 confidence the strong tier decides instead);
+- **routes** every chat turn: intent, tier and risk in one fan-out before the orchestrator runs, a simple turn on the cheap tier ([Providers and models](Providers-and-models#routing-jev-reads-every-chat-turn-first));
+- **runs checks**: gates with `type: jev` checks (a `noul` or a `score`, escalated to the judge in the grey zone);
+- **autoroutes** capabilities: which catalog entries a run's first task gets.
+
+Its cost is added to the run's spend like a model's. The card's checks: **API key (TYPESAFE_API_KEY)**, **Jev decides** (`jev-latest`, or the LLM that decides instead), **Jev routes requests** (the last route: intent and confidence, or why it is off), **Jev runs checks**. Its actions: **Use Jev for decisions** (when Jev does not decide: the decision tier becomes `jev-latest`), **Route requests with Jev** / **Stop routing requests** (`routing.jev` in `models.yaml`), **TypeSafe docs** (docs.typesafe.ai). They are `POST /plugins/typesafe/actions/<use_jev|routing_on|routing_off>` and write the home org: from the daemon's own machine only. It is ready with the key, Jev deciding and routing; partial with the key alone. It brings the `typesafe-ai` skill (from the source `typesafe-ai/skills`, path `skills`, vendor TypeSafe): how to ask Jev typed questions, for roles that build on it.
 
 ### Plugins → Higgsfield: account or API
 

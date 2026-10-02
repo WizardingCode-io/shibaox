@@ -76,6 +76,13 @@ describe('skill sources', () => {
     expect(skillSources().map((s) => s.repo)).toEqual([
       'anthropics/skills',
       'higgsfield-ai/skills',
+      'typesafe-ai/skills',
     ]);
+  });
+  it("TypeSafe's skills live under skills/ (the typesafe-ai skill the plugin brings)", () => {
+    expect(skillSources().find((s) => s.repo === 'typesafe-ai/skills')).toMatchObject({
+      vendor: 'TypeSafe',
+      path: 'skills',
+    });
   });
 });

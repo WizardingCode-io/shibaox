@@ -51,7 +51,7 @@ import {
 import { type HomePaths, homePaths } from './home.js';
 import { type InboxId, InboxService } from './inbox.js';
 import { mcpAdd, mcpList, mcpRemove, mcpTest } from './mcp.js';
-import { pluginsStatus, whichOnPath } from './plugins.js';
+import { type PluginRouting, pluginsStatus, whichOnPath } from './plugins.js';
 import { connectorRegistry } from './registry/connectors.js';
 import { skillSources } from './registry/skills.js';
 import { listRoles, putRole } from './roles.js';
@@ -69,6 +69,7 @@ import {
   type DecisionsView,
   deciderInfo,
   registryFor,
+  routingInfo,
 } from './runtime.js';
 import { SecretsStore } from './secrets.js';
 import {
@@ -375,6 +376,7 @@ export class Daemon {
           which: whichOnPath(this.env),
           env: this.env,
           decider: () => this.decider(),
+          routing: () => this.routing(),
           telegram: () => {
             const chatId = this.config.channels.telegram?.chat_id;
             return {
@@ -706,6 +708,24 @@ export class Daemon {
   private async decider(): Promise<DeciderInfo> {
     const { root } = await this.defaultOrg();
     return deciderInfo(loadOrg(root), this.env, registryFor(this.env, this.opts.extraProviders));
+  }
+
+  /** Whether Jev routes the home org's chat turns, and the newest route (the TypeSafe card). */
+  private async routing(): Promise<PluginRouting> {
+    const { root } = await this.defaultOrg();
+    const info = routingInfo(
+      loadOrg(root),
+      this.env,
+      registryFor(this.env, this.opts.extraProviders),
+    );
+    const last = info.on
+      ? (await this.decisions(100)).decisions.find((d) => d.nodeId === 'router')
+      : undefined;
+    return {
+      on: info.on,
+      ...(info.reason ? { reason: info.reason } : {}),
+      ...(last ? { last: { intent: last.choice, confidence: last.confidence } } : {}),
+    };
   }
 
   /** Who decides (the home org's decision tier) and the latest decisions of the last 50 runs. */

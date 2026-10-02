@@ -29,7 +29,7 @@
 | Command | |
 | --- | --- |
 | `shibaox init [dir] [--stack node\|python\|php-laravel\|go\|auto]` | scaffolds `org/` and `vault/`; with a stack also `shibaox.yaml` (setup, tests, lint, typecheck, protected), `typecheck` and stack `review` gates, a weekly `security-scan` workflow + routine, and (node) a `frontend` role; `auto` reads the stack off the project's manifest |
-| `shibaox tiers [--org <dir>]`, `shibaox tiers set <strong\|cheap\|decision\|judge\|adapter\|budget> <value>` | the org's tiers, judge, adapter and budget (`none` clears judge/adapter) |
+| `shibaox tiers [--org <dir>] [--routing on\|off]`, `shibaox tiers set <strong\|cheap\|decision\|judge\|adapter\|budget> <value>` | the org's tiers, judge, adapter, budget and Jev routing (`none` clears judge/adapter; `--routing` turns Jev routing of chat turns on or off) |
 | `shibaox keys list\|set <NAME> [value]\|unset <NAME>` | the key vault (value from stdin when omitted); a value the daemon refuses (`HIGGSFIELD_API_KEY` without its colon) prints why and exits 1 |
 | `shibaox mcp list [--org <dir>]`, `shibaox mcp test <id> [--org <dir>]` | the catalog's MCP servers (roles, keys), and a start-and-list check of one on the daemon |
 | `shibaox mcp add <id> (--url <https> \| --command <cmd> [--arg …]) [--key NAME…] [--header K=V…] [--bearer-command <arg>…] [--tool …] [--role …] [--description …] [--timeout <ms>] [--replace] [--org <dir>]`, `shibaox mcp rm <id> [--org <dir>]` | writes `catalog/<id>.yaml` and gives it to roles (refused when the id exists, unless `--replace`; `--bearer-command` takes one argument per flag); `rm` takes it off every role first ([MCP and skills](MCP-and-skills)) |

@@ -5,10 +5,30 @@ import { resolveOrg } from './run.js';
 
 const SETTABLE = ['strong', 'cheap', 'decision', 'judge', 'adapter', 'budget'] as const;
 
-/** `shibaox tiers`: the org's tiers, judge, adapter and budget. */
-export async function tiersList(o: { org?: string }, out: Out): Promise<number> {
-  const client = await connect();
+/** `routing: { jev, cheap_min_confidence }` in one word: default, off, or on with the threshold. */
+function routingWords(r: { jev?: boolean; cheap_min_confidence?: number } | undefined): string {
+  if (r?.jev === false) return 'off';
+  const min = r?.cheap_min_confidence;
+  if (r?.jev === true) return `on (cheap from ${min ?? 0.75})`;
+  return min === undefined ? 'default' : `default (cheap from ${min})`;
+}
+
+/**
+ * `shibaox tiers`: the org's tiers, judge, adapter, budget and Jev routing; `--routing on|off`
+ * changes the routing first.
+ */
+export async function tiersList(o: { org?: string; routing?: string }, out: Out): Promise<number> {
+  if (o.routing !== undefined && o.routing !== 'on' && o.routing !== 'off') {
+    out.line(`--routing takes on or off, got "${o.routing}".`);
+    out.obj({ name: 'routing', set: false });
+    return 1;
+  }
+  const client = await connect(o.routing !== undefined ? { write: true } : undefined);
   const root = await resolveOrg(client, o.org);
+  if (o.routing !== undefined) {
+    await client.setOrgConfig(root, { routing: { jev: o.routing === 'on' } });
+    out.line(`Jev routing ${o.routing} for chat turns.`);
+  }
   const c = await client.orgConfig(root);
   out.line(`org ${c.organization} (${root})`);
   const rows = [
@@ -29,6 +49,11 @@ export async function tiersList(o: { org?: string }, out: Out): Promise<number> 
       name: 'budget',
       value: c.per_run_usd === undefined ? undefined : String(c.per_run_usd),
       note: 'USD per run',
+    },
+    {
+      name: 'routing',
+      value: routingWords(c.routing),
+      note: 'Jev routes chat turns (default: on with TYPESAFE_API_KEY when Jev decides); --routing on|off',
     },
   ];
   for (const r of rows) {

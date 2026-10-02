@@ -1055,6 +1055,89 @@ describe('Customize: Plugins → Telegram actions', () => {
   });
 });
 
+describe('Customize: Plugins → TypeSafe / Jev', () => {
+  const typesafe = (o: { decides: boolean; routes: boolean }): PluginRow => ({
+    id: 'typesafe',
+    name: 'TypeSafe / Jev',
+    description: 'Jev decides, routes every chat turn and runs checks.',
+    status: o.decides && o.routes ? 'ready' : 'partial',
+    checks: [
+      { label: 'API key (TYPESAFE_API_KEY)', ok: true },
+      {
+        label: 'Jev decides',
+        ok: o.decides,
+        detail: o.decides
+          ? 'jev-latest'
+          : 'the decision tier is openrouter/typesafe/jev-1.13: an LLM decides',
+      },
+      {
+        label: 'Jev routes requests',
+        ok: o.routes,
+        detail: o.routes ? 'last: media 0.98' : 'off',
+      },
+      { label: 'Jev runs checks', ok: o.decides },
+    ],
+    keys: [{ name: 'TYPESAFE_API_KEY', present: true }],
+    actions: [
+      ...(o.decides ? [] : [{ id: 'use_jev', label: 'Use Jev for decisions' }]),
+      o.routes
+        ? { id: 'routing_off', label: 'Stop routing requests' }
+        : { id: 'routing_on', label: 'Route requests with Jev' },
+      { id: 'docs', label: 'TypeSafe docs', href: 'https://docs.typesafe.ai' },
+    ],
+    brings: { connectors: [], skills: ['typesafe-ai'], tools: [] },
+  });
+
+  it('shows the four checks; Use Jev and Route requests post the actions and reload the org', async () => {
+    const { client: c, calls } = client({
+      plugins: [typesafe({ decides: false, routes: false })],
+      pluginAction: async (_id, action) =>
+        action === 'use_jev'
+          ? { tiers: { decision: 'jev-latest' } }
+          : { routing: { jev: action === 'routing_on' } },
+    });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    expect(await screen.findByText('Jev routes requests')).toBeTruthy();
+    expect(screen.getByText('Jev runs checks')).toBeTruthy();
+    expect(
+      screen.getByText('the decision tier is openrouter/typesafe/jev-1.13: an LLM decides'),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'TypeSafe docs' }).getAttribute('href')).toBe(
+      'https://docs.typesafe.ai',
+    );
+    expect(screen.getByRole('button', { name: 'Add skill typesafe-ai' })).toBeTruthy();
+    const reads = calls.filter((x) => x.name === 'orgConfig').length;
+    fireEvent.click(screen.getByRole('button', { name: 'Use Jev for decisions' }));
+    await waitFor(() => expect(call(calls, 'pluginAction')).toEqual(['typesafe', 'use_jev']));
+    expect(await screen.findByText('Jev decides now')).toBeTruthy();
+    // the org changed: its config (tiers, decisions) is read again
+    await waitFor(() =>
+      expect(calls.filter((x) => x.name === 'orgConfig').length).toBeGreaterThan(reads),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Route requests with Jev' }));
+    await waitFor(() =>
+      expect(calls.filter((x) => x.name === 'pluginAction').at(-1)?.args).toEqual([
+        'typesafe',
+        'routing_on',
+      ]),
+    );
+    expect(await screen.findByText('Jev routes requests now')).toBeTruthy();
+  });
+
+  it('when Jev routes, the card offers to stop it and says the last route', async () => {
+    const { client: c, calls } = client({
+      plugins: [typesafe({ decides: true, routes: true })],
+      pluginAction: async () => ({ routing: { jev: false } }),
+    });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    expect(await screen.findByText('last: media 0.98')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Use Jev for decisions' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Stop routing requests' }));
+    await waitFor(() => expect(call(calls, 'pluginAction')).toEqual(['typesafe', 'routing_off']));
+    expect(await screen.findByText('Routing is off')).toBeTruthy();
+  });
+});
+
 describe('Customize: Plugins → Higgsfield in two modes', () => {
   const HF_KEY = 'HIGGSFIELD_API_KEY';
   const savedKey = (source: 'vault' | 'env') => [
@@ -1568,10 +1651,31 @@ describe('Customize: Models', () => {
     );
     // decisions
     expect(screen.getByRole('heading', { name: 'Decisions' })).toBeTruthy();
+    // a router decision of a chat turn lists like the others, by jev
+    const routed = screen
+      .getAllByRole('link')
+      .find((l) => l.querySelector('.mono')?.textContent === 'router') as HTMLElement;
+    expect(routed.textContent).toMatch(/media/);
+    expect(routed.textContent).toMatch(/by jev/);
     expect(screen.getByText(/missing OPENROUTER_API_KEY/)).toBeTruthy();
     const row = screen.getByRole('link', { name: /judge/ });
     expect(row.textContent).toMatch(/91%/);
     expect(row.getAttribute('href')).toBe('#/t/root');
+  });
+
+  it('the tiers form turns Jev routing on, off or back to the default', async () => {
+    const { client: c, calls } = client();
+    mount(c, { hash: '#/customize&tab=models' });
+    await screen.findByText('lmstudio/qwen');
+    const group = screen.getByRole('radiogroup', { name: 'Jev routing' });
+    expect(within(group).getByRole('radio', { name: 'Default' }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    fireEvent.click(within(group).getByRole('radio', { name: 'Off' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save tiers' }));
+    await waitFor(() =>
+      expect(call(calls, 'setOrgConfig')?.[1]).toEqual({ routing: { jev: false } }),
+    );
   });
 
   it('Missing runtime: the models whose runtime is not there', async () => {
