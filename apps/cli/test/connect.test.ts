@@ -30,29 +30,29 @@ function fakeDaemon(versions: (string | undefined)[], pids: number[] = []) {
 
 describe('an older daemon', () => {
   it('is restarted by the CLI itself: shutdown, then spawn once it is gone, then the new version answers', async () => {
-    const d = fakeDaemon(['0.0.1', undefined, undefined, '0.2.19']);
+    const d = fakeDaemon(['0.0.1', undefined, undefined, '0.2.20']);
     const lines: string[] = [];
     const r = await restartOlderDaemon({
       client: d.client,
-      cliVersion: '0.2.19',
+      cliVersion: '0.2.20',
       spawn: () => d.calls.push('spawn'),
       log: (l) => lines.push(l),
       pollMs: 1,
     });
-    expect(r).toEqual({ restarted: true, version: '0.2.19' });
+    expect(r).toEqual({ restarted: true, version: '0.2.20' });
     expect(d.calls).toEqual(['shutdown', 'spawn']);
     expect(lines.join('\n')).toMatch(/older than this CLI.*restarting/);
   });
   it('a service that restarts it on its own needs no spawn: a new pid answers', async () => {
-    const d = fakeDaemon(['0.0.1', '0.2.19'], [10, 11]);
+    const d = fakeDaemon(['0.0.1', '0.2.20'], [10, 11]);
     const r = await restartOlderDaemon({
       client: d.client,
-      cliVersion: '0.2.19',
+      cliVersion: '0.2.20',
       spawn: () => d.calls.push('spawn'),
       log: () => {},
       pollMs: 1,
     });
-    expect(r).toEqual({ restarted: true, version: '0.2.19' });
+    expect(r).toEqual({ restarted: true, version: '0.2.20' });
     expect(d.calls).toEqual(['shutdown']);
   });
   it('a daemon that comes back still older is reported, with the way out', async () => {
@@ -60,7 +60,7 @@ describe('an older daemon', () => {
     const lines: string[] = [];
     const r = await restartOlderDaemon({
       client: d.client,
-      cliVersion: '0.2.19',
+      cliVersion: '0.2.20',
       spawn: () => {},
       log: (l) => lines.push(l),
       pollMs: 1,
