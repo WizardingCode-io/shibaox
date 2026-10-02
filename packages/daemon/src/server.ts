@@ -887,6 +887,16 @@ export class DaemonServer {
       id === 'typesafe' && Object.hasOwn(typesafe, action) ? typesafe[action] : undefined;
     if (patch) {
       this.requireLocalWrite(req);
+      // Jev decides or routes only with the key: switching it on without one would do nothing
+      if (
+        (action === 'use_jev' || action === 'routing_on') &&
+        !this.deps.keys().some((k) => k.name === 'TYPESAFE_API_KEY' && k.set)
+      )
+        throw new HttpError(
+          409,
+          'no_key',
+          'TYPESAFE_API_KEY is not set: add it in Customize → Plugins → TypeSafe first',
+        );
       const { root } = await this.deps.defaultOrg();
       return writeOrgConfig(root, patch);
     }

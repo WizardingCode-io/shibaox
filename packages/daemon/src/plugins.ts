@@ -240,10 +240,13 @@ function typesafeRow(
     keys: [{ name: 'TYPESAFE_API_KEY', present: key }],
     actions: [
       // POSTed by the app to /plugins/typesafe/actions/<id> (they write the home org)
-      ...(decides ? [] : [{ id: 'use_jev', label: 'Use Jev for decisions' }]),
-      routes
-        ? { id: 'routing_off', label: 'Stop routing requests' }
-        : { id: 'routing_on', label: 'Route requests with Jev' },
+      // switching Jev on needs the key (the server answers 409 no_key without it)
+      ...(decides || !key ? [] : [{ id: 'use_jev', label: 'Use Jev for decisions' }]),
+      ...(routes
+        ? [{ id: 'routing_off', label: 'Stop routing requests' }]
+        : key
+          ? [{ id: 'routing_on', label: 'Route requests with Jev' }]
+          : []),
       { id: 'docs', label: 'TypeSafe docs', href: 'https://docs.typesafe.ai' },
     ],
     brings: { connectors: [], skills: ['typesafe-ai'], tools: [] },

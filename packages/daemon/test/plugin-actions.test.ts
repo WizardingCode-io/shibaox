@@ -18,7 +18,7 @@ afterEach(async () => {
   for (const d of tmp.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-async function daemon(o: { local?: () => boolean } = {}) {
+async function daemon(o: { local?: () => boolean; env?: Record<string, string> } = {}) {
   fake = await fakeBotApi();
   const dir = mkdtempSync(join(tmpdir(), 'plugact-'));
   tmp.push(dir);
@@ -27,7 +27,7 @@ async function daemon(o: { local?: () => boolean } = {}) {
     discovery: false,
     home,
     store: new MemoryEventStore(),
-    env: { SHIBAOX_TELEGRAM_TOKEN: 'tok-1', SHIBAOX_DAEMON_TOKEN: 'secret-1' },
+    env: { SHIBAOX_TELEGRAM_TOKEN: 'tok-1', SHIBAOX_DAEMON_TOKEN: 'secret-1', ...o.env },
     log: () => {},
     vault: join(dir, 'vault'),
     telegramApiBase: fake.apiBase,
@@ -106,8 +106,21 @@ describe('POST /plugins/:id/actions/:action', () => {
     expect((await post('test')).status).toBe(409);
   });
 
+  it('typesafe use_jev / routing_on need the key: 409 no_key without it, nothing written', async () => {
+    const { client } = await daemon();
+    const org = (await client.defaultOrg()).root;
+    const models = join(org, 'models.yaml');
+    const before = readFileSync(models, 'utf8');
+    for (const action of ['use_jev', 'routing_on'])
+      await expect(client.pluginAction('typesafe', action)).rejects.toMatchObject({
+        status: 409,
+        code: 'no_key',
+      });
+    expect(readFileSync(models, 'utf8')).toBe(before);
+  });
+
   it('typesafe use_jev / routing_off / routing_on write the home org models.yaml', async () => {
-    const { client, home } = await daemon();
+    const { client, home } = await daemon({ env: { TYPESAFE_API_KEY: 'ts-key' } });
     const org = (await client.defaultOrg()).root;
     const models = join(org, 'models.yaml');
     writeFileSync(

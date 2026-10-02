@@ -153,8 +153,13 @@ describe('plugins', () => {
       ['routing_on', 'Route requests with Jev'],
       ['docs', 'TypeSafe docs'],
     ]);
-    // no key: off
-    expect((await ts({}))?.status).toBe('off');
+    // no key: off, and nothing to switch on (those actions need the key)
+    const none = await ts({
+      decider: async () => ({ kind: 'model', ref: 'anthropic/claude-sonnet-5', usable: true }),
+      routing: async () => ({ on: false, reason: 'TYPESAFE_API_KEY is not set' }),
+    });
+    expect(none?.status).toBe('off');
+    expect(none?.actions.map((a) => a.id)).toEqual(['docs']);
   });
 
   it('a failing probe is a failed check, never an error', async () => {
