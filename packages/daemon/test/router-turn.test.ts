@@ -1,4 +1,5 @@
 import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,7 +25,7 @@ afterEach(async () => {
 /** What the fake Jev answers next (intent, tier and their confidences). */
 type Answer = { intent: string; ic: number; tier: string; tc: number; risky?: number } | 'broken';
 
-async function world(o: { routing?: string } = {}) {
+async function world(o: { routing?: string; jevBase?: string; timeoutMs?: number } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'route-'));
   tmp.push(dir);
   scaffoldOrg(dir);
@@ -71,7 +72,8 @@ async function world(o: { routing?: string } = {}) {
     inbox,
     config: { max_concurrent_runs: 4 },
     log: (l) => logs.push(l),
-    env: { TYPESAFE_API_KEY: KEY, SHIBAOX_JEV_BASE_URL: jev.baseURL },
+    env: { TYPESAFE_API_KEY: KEY, SHIBAOX_JEV_BASE_URL: o.jevBase ?? jev.baseURL },
+    ...(o.timeoutMs !== undefined ? { routerTimeoutMs: o.timeoutMs } : {}),
     vault: join(dir, 'vault'),
     mockScript: (job) => {
       jobs.push(job);
@@ -247,5 +249,60 @@ describe('Jev routes chat turns', () => {
     expect(s.adapter).toBe('mock');
     expect(w.jobs[0]?.input.router).toMatch(/^\[router\] intent=media/);
     expect(w.jobs[0]?.input.spec).toBe('make a cat');
+  });
+
+  it('Jev too slow: the turn waits at most the router timeout, then runs unrouted', async () => {
+    // a Jev that never answers
+    const sockets = new Set<import('node:net').Socket>();
+    const hang = createServer(() => undefined);
+    hang.on('connection', (c) => sockets.add(c));
+    await new Promise<void>((r) => hang.listen(0, '127.0.0.1', r));
+    fakes.push({
+      close: () =>
+        new Promise<void>((r) => {
+          for (const c of sockets) c.destroy();
+          hang.close(() => r());
+        }),
+    });
+    const a = hang.address();
+    const port = typeof a === 'object' && a ? a.port : 0;
+    const w = await world({ jevBase: `http://127.0.0.1:${port}`, timeoutMs: 300 });
+    const t0 = Date.now();
+    const { runId } = await w.chat('make a cat');
+    expect(Date.now() - t0).toBeLessThan(5_000);
+    const s = await w.done(runId);
+    expect(s.status).toBe('completed');
+    expect(s.route).toBeUndefined();
+    expect(w.logs.some((l) => /^\[router\] Jev failed \(.*timed out after 300 ms\)/.test(l))).toBe(
+      true,
+    );
+  });
+
+  it("Telegram turns and routines' chat runs are routed too; attachment names (never contents) reach Jev", async () => {
+    const w = await world();
+    const tg = await w.chat('make a cat', { origin: 'telegram:42' });
+    const routine = await w.chat('daily briefing', { origin: 'schedule:s1', adapter: 'mock' });
+    const withFile = await w.chat('make it like this', {
+      adapter: 'mock',
+      attachments: [
+        {
+          name: 'dog.png',
+          mime: 'image/png',
+          content: Buffer.from('SECRET-BYTES').toString('base64'),
+        },
+      ],
+    });
+    for (const r of [tg, routine, withFile])
+      expect((await w.done(r.runId)).route?.intent).toBe('media');
+    const states = w.jev.requests.map((r) => (r as { state: string }).state);
+    expect(states).toHaveLength(3);
+    expect(states[2]).toContain('dog.png (image/png)');
+    expect(states[2]).not.toContain('SECRET-BYTES');
+    expect(states[2]).not.toContain(Buffer.from('SECRET-BYTES').toString('base64'));
+    // the org's workflows are offered with their descriptions
+    const q = (w.jev.requests[0] as { questions: { intent: { criteria: Record<string, string> } } })
+      .questions.intent.criteria;
+    expect(Object.keys(q)).toContain('workflow:hello-feature');
+    expect(Object.keys(q)).not.toContain('workflow:chat');
   });
 });
