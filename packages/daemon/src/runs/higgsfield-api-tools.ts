@@ -22,6 +22,11 @@ export interface HiggsfieldApiDeps {
   /** The run's abort signal: a cancelled run cancels its Higgsfield request too. */
   signal?: () => AbortSignal | undefined;
   log?: (line: string) => void;
+  /**
+   * Saves a result URL into the workspace as `outputs/<name>` and answers the path written: the
+   * tools then list the files themselves, so no model has to download (or pretend it did).
+   */
+  save?: (url: string, name: string) => Promise<string>;
 }
 
 export const KEY_MISSING =
@@ -80,6 +85,61 @@ interface StatusBody {
   audio?: { url?: string };
   audios?: { url?: string }[];
   error?: unknown;
+}
+
+/** `hf-<request id>-<n>.<ext>`, the extension from the URL's path (else by kind). */
+export function resultName(
+  request_id: string,
+  n: number,
+  url: string,
+  kind: 'image' | 'video' | 'audio',
+): string {
+  let ext = '';
+  try {
+    const m = /\.([a-z0-9]{2,5})$/i.exec(new URL(url).pathname);
+    if (m?.[1]) ext = m[1].toLowerCase();
+  } catch {
+    ext = '';
+  }
+  if (!ext) ext = kind === 'video' ? 'mp4' : kind === 'audio' ? 'mp3' : 'png';
+  const id = request_id.replace(/[^A-Za-z0-9-]/g, '').slice(0, 12) || 'result';
+  return `hf-${id}-${n}.${ext}`;
+}
+
+/** Saves every URL of a completed result through `save`; the files written and a note for failures. */
+async function saveResults(
+  r: ReturnType<typeof resultOf>,
+  save: HiggsfieldApiDeps['save'],
+  key: string | undefined,
+): Promise<{ files?: string[]; note?: string }> {
+  if (!save || r.status !== 'completed') return {};
+  const all: { url: string; kind: 'image' | 'video' | 'audio' }[] = [
+    ...r.images.map((url) => ({ url, kind: 'image' as const })),
+    ...(r.video ? [{ url: r.video, kind: 'video' as const }] : []),
+    ...r.audio.map((url) => ({ url, kind: 'audio' as const })),
+  ];
+  const files: string[] = [];
+  const failed: string[] = [];
+  for (const [i, x] of all.entries()) {
+    const name = resultName(r.request_id, i + 1, x.url, x.kind);
+    try {
+      files.push(await save(x.url, name));
+    } catch (e) {
+      failed.push(
+        `${name} (${scrub(e instanceof Error ? e.message : String(e), key).slice(0, 120)})`,
+      );
+    }
+  }
+  return {
+    ...(files.length ? { files } : {}),
+    ...(failed.length
+      ? { note: `${failed.join(', ')} could not be saved: the URL is still in the answer` }
+      : files.length
+        ? {
+            note: 'saved into outputs/ of the workspace: report these files, nothing else to download',
+          }
+        : {}),
+  };
 }
 
 /** The parts of a status answer a model needs: the state, the result URLs, the error. */
@@ -289,7 +349,8 @@ export function higgsfieldApiTools(d: HiggsfieldApiDeps): AgentTool[] {
           const status = String((r.json as StatusBody).status ?? '');
           if (TERMINAL.has(status)) {
             log(`${id} ${status}`);
-            return resultOf(id, r.json as StatusBody);
+            const res = resultOf(id, r.json as StatusBody);
+            return { ...res, ...(await saveResults(res, d.save, d.key())) };
           }
         }
       },
@@ -313,7 +374,8 @@ export function higgsfieldApiTools(d: HiggsfieldApiDeps): AgentTool[] {
         if (r.status === 404) fail(`unknown request id ${id}: Higgsfield does not know it`);
         if (r.status < 200 || r.status >= 300)
           fail(`Higgsfield answered ${r.status}: try again later`);
-        return resultOf(id, r.json as StatusBody);
+        const res = resultOf(id, r.json as StatusBody);
+        return { ...res, ...(await saveResults(res, d.save, d.key())) };
       },
     },
     {

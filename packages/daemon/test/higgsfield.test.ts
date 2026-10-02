@@ -64,7 +64,7 @@ describe('Higgsfield in the scaffold', () => {
     expect(app).toContain('server-only environment variable');
     // tool names a runtime may not have come with their generic fallback
     expect(skill).toContain("`web_fetch` (or your runtime's fetch/download tool)");
-    expect(skill).toContain("`download_file(url, path)` (or your runtime's fetch/download tool)");
+    expect(skill).toContain('lists them under `files`');
     expect(app).toContain('Connect API key');
     expect(app).toContain('higgsfield-ai/app-templates/studio');
     expect(app).toContain('pnpm dlx shadcn@latest init -t next');

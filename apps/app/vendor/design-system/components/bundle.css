@@ -290,6 +290,7 @@ body { margin: 0; font-family: var(--font-sans); font-size: 15px; line-height: 2
 .sx-composer__input { font: inherit; font-size: 15px; line-height: 24px; border: 0; outline: 0; resize: none; background: transparent; color: var(--ink); padding: 4px 0; }
 .sx-composer__input::placeholder { color: var(--ink-muted); }
 .sx-composer__bar { display: flex; align-items: center; gap: var(--space-1); margin-left: -6px; }
+.sx-composer__stop { margin-right: var(--space-2); }
 .sx-composer__model { font-family: var(--font-mono); font-size: 12px; color: var(--ink-muted); padding: 0 var(--space-2); }
 .sx-composer__model--btn { font: inherit; font-family: var(--font-mono); font-size: 12px; line-height: 16px; color: var(--ink-muted); border: 0; background: transparent; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 var(--space-2); border-radius: var(--radius-sm); }
 .sx-composer__model--btn:hover { background: var(--surface-hover); color: var(--ink); }

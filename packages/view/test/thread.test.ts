@@ -96,7 +96,7 @@ describe('threadView', () => {
     ).toBe('waiting');
     expect(agentStatusOf(state({ status: 'completed' }))).toBe('online');
     expect(agentStatusOf(state({ status: 'failed' }))).toBe('error');
-    expect(agentStatusOf(state({ status: 'cancelled' }))).toBe('error');
+    expect(agentStatusOf(state({ status: 'cancelled' }))).toBe('idle');
     expect(agentStatusOf(state({ status: 'paused_budget' }))).toBe('waiting');
     expect(agentStatusOf(state({ status: 'queued' }))).toBe('working');
   });

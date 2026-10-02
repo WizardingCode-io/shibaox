@@ -93,6 +93,7 @@ export function agentStatusOf(state: RunState | undefined): AgentStatus {
   if (state.pendingApprovals.length > 0 || state.pendingHumans.length > 0) return 'waiting';
   if (LIVE.has(state.status)) return 'working';
   if (state.status === 'completed') return 'online';
+  if (state.status === 'cancelled') return 'idle';
   return 'error';
 }
 

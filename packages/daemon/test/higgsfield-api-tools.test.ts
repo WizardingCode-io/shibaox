@@ -128,6 +128,44 @@ describe('higgsfield_api_generate', () => {
     expect(logs.join('\n')).not.toContain('sekret');
   });
 
+  it('saves every result into outputs/ through deps.save and lists the files; a failed save is a note', async () => {
+    const { f } = fakeFetch((req) =>
+      req.method === 'POST'
+        ? { status: 200, body: submitted }
+        : {
+            status: 200,
+            body: {
+              status: 'completed',
+              images: [{ url: 'https://cdn/a.png' }, { url: 'https://cdn/b.webp?x=1' }],
+              video: { url: 'https://cdn/c.mp4' },
+            },
+          },
+    );
+    const saved: { url: string; name: string }[] = [];
+    const { tool } = deps({
+      fetch: f,
+      save: async (url, name) => {
+        saved.push({ url, name });
+        if (url.endsWith('c.mp4')) throw new Error('disk full https://signed.example/x?sig=1');
+        return `outputs/${name}`;
+      },
+    });
+    const r = (await tool('higgsfield_api_generate').execute({
+      model_path: 'higgsfield-ai/soul/standard',
+      input: { prompt: 'a shiba' },
+    })) as { files?: string[]; note?: string; images: string[] };
+    expect(saved.map((x) => x.name)).toEqual(['hf-r-1-1.png', 'hf-r-1-2.webp', 'hf-r-1-3.mp4']);
+    expect(r.files).toEqual(['outputs/hf-r-1-1.png', 'outputs/hf-r-1-2.webp']);
+    expect(r.note).toMatch(/hf-r-1-3\.mp4.*could not be saved/);
+    expect(r.note).not.toMatch(/sig=1/);
+    expect(r.images).toHaveLength(2);
+    // status on a completed request saves too
+    const st = (await tool('higgsfield_api_status').execute({ request_id: 'r-1' })) as {
+      files?: string[];
+    };
+    expect(st.files).toEqual(['outputs/hf-r-1-1.png', 'outputs/hf-r-1-2.webp']);
+  });
+
   it('nextDelay grows from 2 s by half up to 10 s, with ±20 % jitter', () => {
     const seq: number[] = [];
     let d: number | undefined;

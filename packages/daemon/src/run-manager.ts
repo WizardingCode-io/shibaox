@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { QueryFn } from '@wizardingcode/shibaox-adapter-claude-code';
-import { connectMcp } from '@wizardingcode/shibaox-adapter-direct';
+import { connectMcp, fetchBytes } from '@wizardingcode/shibaox-adapter-direct';
 import {
   type AgentTool,
   type ApprovalHandler,
@@ -1095,6 +1095,19 @@ export class RunManager {
         // captured now: the run's controller, even once it is aborted
         signal: () => signal,
         log: this.opts.log,
+        // results land in outputs/ of the workspace and list with the run's files
+        save: async (url, name) => {
+          const { bytes } = await fetchBytes(url, {
+            timeoutMs: 120_000,
+            maxBytes: 200 * 1024 * 1024,
+            allow: ['*'],
+          });
+          const w = await writeRunFile(job.workspace, `outputs/${name}`, bytes, {
+            protectedGlobs: projectProtectedGlobs(project),
+          });
+          if (runId) this.recordRuntime(runId, job.nodeId, { type: 'file_changed', path: w.path });
+          return w.path;
+        },
       });
     }
     if (plan.upload && entry)

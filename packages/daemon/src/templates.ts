@@ -276,8 +276,10 @@ asked-for result, the cost or model said afterwards, never a retry on your own.
    \`request_id\` at once for long videos; check later with \`higgsfield_api_status\`.
 5. Status \`unknown\` or \`canceled_by_timeout\`, or an error saying the request may or may not
    exist: never submit again. Check with \`higgsfield_api_status(request_id)\`, or tell the user.
-6. Save every result with \`download_file(url, path)\` (or your runtime's fetch/download tool):
-   \`outputs/<slug>.png\` (\`.mp4\`, \`.mp3\`), a short slug from the prompt, \`-2\`, \`-3\` for variants. Answer in one or two lines: what, the file
+6. The tool saves every result itself into \`outputs/\` and lists them under \`files\`: report those
+   paths. Never say a file exists unless the tool listed it; a URL without a file means the save
+   failed (its note says so): then \`download_file(url, outputs/<slug>.<ext>)\` once. Answer in one
+   or two lines: what, the file
    path, the model. No raw ids, no JSON.
 
 When it fails:

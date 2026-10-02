@@ -455,4 +455,18 @@ describe('the reply is rendered as a document', () => {
     await screen.findByText('cat.png');
     expect(main.querySelector('.sx-composer__thumb')).toBeTruthy();
   });
+
+  it('while a turn runs, Send stays in place but disabled and Stop is a separate labelled button', async () => {
+    const { client: c } = client({
+      runs: [{ ...summary('root'), status: 'running' as const }],
+      states: { root: state('root', { status: 'running' }) },
+    });
+    mount(c, { hash: '#/t/root' });
+    await screen.findByRole('textbox', { name: 'Message' });
+    const send = screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    const stop = screen.getByRole('button', { name: 'Stop' });
+    expect(stop).not.toBe(send);
+    expect(stop.textContent).toContain('Stop');
+  });
 });

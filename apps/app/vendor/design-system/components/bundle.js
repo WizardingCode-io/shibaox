@@ -329,8 +329,10 @@
           : p.model ? h('span', { className: 'sx-composer__model' }, p.model) : null,
         h('span', { className: 'sx-tool__spacer' }),
         p.voice === false ? null : h(IconButton, { icon: 'mic', label: p.listening ? 'Stop listening' : 'Voice', size: 'sm', variant: p.listening ? 'primary' : undefined, onClick: p.onVoice, disabled: !p.onVoice, 'aria-pressed': !!p.listening }),
-        p.busy ? h(IconButton, { icon: 'square', label: 'Stop', variant: 'secondary', size: 'sm', onClick: p.onStop })
-          : h(IconButton, { icon: 'arrow-up', label: 'Send', variant: 'primary', size: 'sm', onClick: send, disabled: !canSend })));
+        // while busy, Stop is its own labelled button and Send stays where it was, disabled: a second
+        // click on the orange button never cancels the turn
+        p.busy ? h(Button, { variant: 'secondary', size: 'sm', icon: 'square', className: 'sx-composer__stop', onClick: p.onStop }, 'Stop') : null,
+        h(IconButton, { icon: 'arrow-up', label: 'Send', variant: 'primary', size: 'sm', onClick: send, disabled: !canSend || !!p.busy })));
   }
 
   function Popover(p) {
