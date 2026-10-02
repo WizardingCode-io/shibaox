@@ -1,8 +1,9 @@
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fakeQuery, msg } from '@wizardingcode/shibaox-adapter-claude-code/testing';
 import { MemoryEventStore, type TaskJob } from '@wizardingcode/shibaox-core';
 import { startFakeJev } from '@wizardingcode/shibaox-jev/testing';
 import { startFakeOpenAI } from '@wizardingcode/shibaox-providers/testing';
@@ -25,15 +26,36 @@ afterEach(async () => {
 /** What the fake Jev answers next (intent, tier and their confidences). */
 type Answer = { intent: string; ic: number; tier: string; tc: number; risky?: number } | 'broken';
 
-async function world(o: { routing?: string; jevBase?: string; timeoutMs?: number } = {}) {
+async function world(
+  o: {
+    routing?: string;
+    jevBase?: string;
+    timeoutMs?: number;
+    /** The tiers (default: both on the fake provider). */
+    strong?: string;
+    cheap?: string;
+    /** `adapter:` in org.yaml (the scaffold leaves it on mock). */
+    orgAdapter?: string;
+    /** A Higgsfield API key is saved (media generation is set up). */
+    media?: boolean;
+    /** The discovery listing (`ready`), and how long it takes. */
+    listing?: { ref: string; provider: string; listed: boolean }[];
+    readyMs?: number;
+  } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), 'route-'));
   tmp.push(dir);
   scaffoldOrg(dir);
   const orgRoot = join(dir, 'org');
   writeFileSync(
     join(orgRoot, 'models.yaml'),
-    `providers: {}\ntiers: { strong: fake/strong, cheap: fake/cheap, decision: jev-latest }\nroles: {}\ngates: {}\n${o.routing ?? ''}`,
+    `providers: {}\ntiers: { strong: ${o.strong ?? 'fake/strong'}, cheap: ${o.cheap ?? 'fake/cheap'}, decision: jev-latest }\nroles: {}\ngates: {}\n${o.routing ?? ''}`,
   );
+  if (o.orgAdapter)
+    writeFileSync(
+      join(orgRoot, 'org.yaml'),
+      `${readFileSync(join(orgRoot, 'org.yaml'), 'utf8')}\nadapter: ${o.orgAdapter}\n`,
+    );
   // the orchestrator on the strong tier (Andre's org), without the account's MCP
   writeFileSync(
     join(orgRoot, 'roles', 'assistant.yaml'),
@@ -60,6 +82,8 @@ async function world(o: { routing?: string; jevBase?: string; timeoutMs?: number
   fakes.push(jev, llm);
   const logs: string[] = [];
   const jobs: TaskJob[] = [];
+  const q = fakeQuery(() => [msg.init(), msg.success('ok')]);
+  const listing = o.listing;
   const store = new MemoryEventStore();
   let m: RunManager | undefined;
   const inbox = new InboxService({
@@ -72,8 +96,18 @@ async function world(o: { routing?: string; jevBase?: string; timeoutMs?: number
     inbox,
     config: { max_concurrent_runs: 4 },
     log: (l) => logs.push(l),
-    env: { TYPESAFE_API_KEY: KEY, SHIBAOX_JEV_BASE_URL: o.jevBase ?? jev.baseURL },
+    env: {
+      TYPESAFE_API_KEY: KEY,
+      SHIBAOX_JEV_BASE_URL: o.jevBase ?? jev.baseURL,
+      ...(o.media ? { HIGGSFIELD_API_KEY: 'hf-key' } : {}),
+    },
     ...(o.timeoutMs !== undefined ? { routerTimeoutMs: o.timeoutMs } : {}),
+    queryFn: q,
+    ...(listing
+      ? {
+          ready: () => new Promise<unknown>((r) => setTimeout(() => r(listing), o.readyMs ?? 0)),
+        }
+      : {}),
     vault: join(dir, 'vault'),
     mockScript: (job) => {
       jobs.push(job);
@@ -118,6 +152,7 @@ async function world(o: { routing?: string; jevBase?: string; timeoutMs?: number
   const events = async (runId: string) => store.read(runId);
   return {
     m: manager,
+    q,
     jev,
     llm,
     logs,
@@ -138,7 +173,7 @@ const models = (llm: { requests: unknown[] }) =>
 
 describe('Jev routes chat turns', () => {
   it('a cheap route at ≥ 0.75 runs the turn on the cheap tier and records two jev decisions', async () => {
-    const w = await world();
+    const w = await world({ media: true });
     const { runId } = await w.chat('make me a picture of a cat');
     const state = await w.done(runId);
     expect(state.status).toBe('completed');
@@ -194,8 +229,118 @@ describe('Jev routes chat turns', () => {
     const w = await world();
     const s = await w.done((await w.chat('hi', { model: 'fake/strong' })).runId);
     expect(s.model).toBe('fake/strong');
-    expect(s.route?.tier).toBe('cheap'); // still routed and recorded
+    // still routed; the tier recorded is the one applied, Jev's own answer stays in the hint
+    expect(s.route?.tier).toBe('strong');
+    expect(s.route?.tierConfidence).toBeUndefined();
+    expect(s.input.router).toContain('tier=cheap');
     expect(models(w.llm)).toEqual(['strong']);
+  });
+
+  it('without media generation set up, a media route gets no Higgsfield advice', async () => {
+    const w = await world();
+    const s = await w.done((await w.chat('make me a picture of a cat')).runId);
+    expect(s.input.router).toBe('[router] intent=media (0.98) tier=cheap risky=no');
+  });
+
+  it('an unsure intent never switches to the cheap tier', async () => {
+    const w = await world();
+    w.answer({ intent: 'chat', ic: 0.4, tier: 'cheap', tc: 0.9 });
+    const s = await w.done((await w.chat('hmm')).runId);
+    expect(s.model).toBeUndefined();
+    expect(s.route).toMatchObject({ intent: 'unsure', tier: 'strong' });
+    expect(models(w.llm)).toEqual(['strong']);
+  });
+
+  it('a risky turn never switches to the cheap tier', async () => {
+    const w = await world();
+    w.answer({ intent: 'chat', ic: 0.9, tier: 'cheap', tc: 0.9, risky: 0.9 });
+    const s = await w.done((await w.chat('push it to main')).runId);
+    expect(s.model).toBeUndefined();
+    expect(s.route?.tier).toBe('strong');
+  });
+
+  it('an explicit adapter is never overridden by a cheap tier on another runtime', async () => {
+    const w = await world();
+    w.answer({ intent: 'chat', ic: 0.9, tier: 'cheap', tc: 0.9 });
+    // a Telegram turn on claude-code; the cheap tier is a direct provider
+    const r = await w.chat('hello', { adapter: 'claude-code', origin: 'telegram:42' });
+    expect(r.warnings).toContain(
+      'the cheap tier fake/cheap runs through direct, not the claude-code this turn asked for: the default tier runs',
+    );
+    const s = await w.done(r.runId);
+    expect(s.adapter).toBe('claude-code');
+    expect(s.model).toBeUndefined();
+    expect(s.route?.tier).toBe('strong');
+  });
+
+  it("without an explicit adapter, a cheap route takes the cheap model's runtime; else the strong tier's", async () => {
+    const w = await world({
+      orgAdapter: 'direct',
+      strong: 'anthropic-subscription/claude-sonnet-5',
+    });
+    w.answer({ intent: 'chat', ic: 0.9, tier: 'cheap', tc: 0.9 });
+    const cheap = await w.done((await w.chat('hello', { adapter: undefined })).runId);
+    expect(cheap.model).toBe('fake/cheap');
+    expect(cheap.adapter).toBe('direct');
+    expect(models(w.llm)).toEqual(['cheap']);
+    w.answer({ intent: 'chat', ic: 0.9, tier: 'cheap', tc: 0.5 });
+    const strong = await w.done((await w.chat('hello again', { adapter: undefined })).runId);
+    expect(strong.model).toBeUndefined();
+    expect(strong.adapter).toBe('claude-code');
+    expect(w.q.calls).toHaveLength(1);
+  });
+
+  it('a cheap tier the provider does not list, or cannot run, keeps the default tier', async () => {
+    const listed = await world({
+      listing: [
+        { ref: 'fake/strong', provider: 'fake', listed: true },
+        { ref: 'fake/other', provider: 'fake', listed: true },
+      ],
+    });
+    const a = await listed.done((await listed.chat('hi')).runId);
+    expect(a.model).toBeUndefined();
+    expect(a.route?.tier).toBe('strong');
+    const unusable = await world({ cheap: 'openrouter/some/model' });
+    const b = await unusable.done((await unusable.chat('hi')).runId);
+    expect(b.model).toBeUndefined();
+    expect(b.route?.tier).toBe('strong');
+  });
+
+  it('a slow discovery never holds the turn past the router budget', async () => {
+    const w = await world({
+      timeoutMs: 300,
+      readyMs: 2_500,
+      listing: [{ ref: 'fake/cheap', provider: 'fake', listed: true }],
+    });
+    const t0 = Date.now();
+    const { runId } = await w.chat('hi');
+    expect(Date.now() - t0).toBeLessThan(1_500);
+    const s = await w.done(runId);
+    expect(s.model).toBeUndefined();
+    expect(s.route?.tier).toBe('strong');
+  });
+
+  it('a bad request fails before Jev is asked', async () => {
+    const w = await world({ listing: [{ ref: 'fake/strong', provider: 'fake', listed: true }] });
+    await expect(w.chat('hi', { model: 'fake/nope' })).rejects.toThrow(/not offered/);
+    await expect(
+      w.chat('hi', {
+        attachments: [{ name: '.env', content: Buffer.from('x').toString('base64') }],
+      }),
+    ).rejects.toThrow(/protected/);
+    expect(w.jev.requests).toHaveLength(0);
+  });
+
+  it('a workflow with its own router node is never routed', async () => {
+    const w = await world();
+    writeFileSync(
+      join(w.orgRoot, 'workflows', 'chat.yaml'),
+      'workflow: chat\ndescription: Talk.\nconversation: true\nstart: router\nnodes:\n  router: { type: task, role: assistant, instruction: "Reply to the user." }\n',
+    );
+    const s = await w.done((await w.chat('make a cat')).runId);
+    expect(s.status).toBe('completed');
+    expect(w.jev.requests).toHaveLength(0);
+    expect(s.input.router).toBeUndefined();
   });
 
   it('routing.jev: false turns it off: no fan-out, no decisions, no hint', async () => {
@@ -241,20 +386,30 @@ describe('Jev routes chat turns', () => {
     expect(routing).toHaveLength(0);
   });
 
-  it('the mock adapter gets the hint but never a model', async () => {
+  it('a mock turn (explicit, or the org default) never calls Jev', async () => {
     const w = await world();
-    const { runId } = await w.chat('make a cat', { adapter: 'mock' });
-    const s = await w.done(runId);
-    expect(s.model).toBeUndefined();
-    expect(s.adapter).toBe('mock');
-    expect(w.jobs[0]?.input.router).toMatch(/^\[router\] intent=media/);
+    const explicit = await w.done((await w.chat('make a cat', { adapter: 'mock' })).runId);
+    // the scaffold's org.yaml leaves the adapter on mock
+    const byOrg = await w.done((await w.chat('make a dog', { adapter: undefined })).runId);
+    for (const s of [explicit, byOrg]) {
+      expect(s.adapter).toBe('mock');
+      expect(s.model).toBeUndefined();
+      expect(s.route).toBeUndefined();
+      expect(s.input.router).toBeUndefined();
+    }
+    expect(w.jev.requests).toHaveLength(0);
     expect(w.jobs[0]?.input.spec).toBe('make a cat');
   });
 
   it('Jev too slow: the turn waits at most the router timeout, then runs unrouted', async () => {
     // a Jev that never answers
     const sockets = new Set<import('node:net').Socket>();
-    const hang = createServer(() => undefined);
+    let closed = 0;
+    const hang = createServer((req) => {
+      req.on('close', () => {
+        closed++;
+      });
+    });
     hang.on('connection', (c) => sockets.add(c));
     await new Promise<void>((r) => hang.listen(0, '127.0.0.1', r));
     fakes.push({
@@ -276,14 +431,15 @@ describe('Jev routes chat turns', () => {
     expect(w.logs.some((l) => /^\[router\] Jev failed \(.*timed out after 300 ms\)/.test(l))).toBe(
       true,
     );
+    // the request to Jev was aborted, not left hanging
+    await vi.waitFor(() => expect(closed).toBeGreaterThan(0));
   });
 
   it("Telegram turns and routines' chat runs are routed too; attachment names (never contents) reach Jev", async () => {
     const w = await world();
     const tg = await w.chat('make a cat', { origin: 'telegram:42' });
-    const routine = await w.chat('daily briefing', { origin: 'schedule:s1', adapter: 'mock' });
+    const routine = await w.chat('daily briefing', { origin: 'routine:r1' });
     const withFile = await w.chat('make it like this', {
-      adapter: 'mock',
       attachments: [
         {
           name: 'dog.png',
@@ -304,5 +460,24 @@ describe('Jev routes chat turns', () => {
       .questions.intent.criteria;
     expect(Object.keys(q)).toContain('workflow:hello-feature');
     expect(Object.keys(q)).not.toContain('workflow:chat');
+  });
+
+  it('a Jev error is logged cut to 200 chars, without the key', async () => {
+    const long = createServer((_req, res) => {
+      res.statusCode = 400;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ error: { message: `bad ${KEY} ${'z'.repeat(2_000)}` } }));
+    });
+    await new Promise<void>((r) => long.listen(0, '127.0.0.1', r));
+    fakes.push({ close: () => new Promise<void>((r) => long.close(() => r())) });
+    const a = long.address();
+    const port = typeof a === 'object' && a ? a.port : 0;
+    const w = await world({ jevBase: `http://127.0.0.1:${port}` });
+    await w.done((await w.chat('make a cat')).runId);
+    const line = w.logs.find((l) => l.startsWith('[router] Jev failed'));
+    expect(line).toBeDefined();
+    expect(line).not.toContain(KEY);
+    const msg = /^\[router\] Jev failed \((.*)\): the turn runs unrouted$/s.exec(line ?? '')?.[1];
+    expect(msg?.length).toBeLessThanOrEqual(200);
   });
 });

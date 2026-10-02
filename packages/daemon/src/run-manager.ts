@@ -26,13 +26,14 @@ import {
 } from '@wizardingcode/shibaox-core';
 import {
   JevClient,
+  ROUTE_TIMEOUT_MS,
   type RouteResult,
   routeHint,
   routeLine,
   routeRequest,
 } from '@wizardingcode/shibaox-jev';
 import { type Graphify, MemoryNotes } from '@wizardingcode/shibaox-memory';
-import type { ProviderEntry } from '@wizardingcode/shibaox-providers';
+import type { ProviderEntry, ProviderRegistry } from '@wizardingcode/shibaox-providers';
 import type { CatalogEntry, RoutineApprovals } from '@wizardingcode/shibaox-schemas';
 import {
   type ChatMessage,
@@ -265,12 +266,24 @@ export class RunManager {
     const wf = org.workflows[req.workflow];
     if (!wf) throw new Error(`workflow "${req.workflow}" is not defined in the org`);
     const warnings: string[] = [];
+    const registry = registryFor(this.opts.env ?? process.env, this.opts.extraProviders);
+    // a bad request fails before Jev is paid: a model the user named must be one discovery
+    // lists (and of a known provider), the message's files are checked (names, sizes,
+    // protection) before any workspace exists
+    if (req.model && req.adapter !== 'mock') {
+      adapterForModel(req.model, registry);
+      await this.assertListed(req.model);
+    }
+    const planned =
+      req.attachments && req.attachments.length > 0
+        ? planAttachments(req.attachments, { protectedGlobs: projectProtectedGlobs(project) })
+        : [];
     // a chat turn is routed by Jev first (never a dispatched run): its intent, tier and risk
-    const route = await this.routeTurn(req, org, project);
+    const route = await this.routeTurn(req, org, project, registry);
+    if (route?.warning) warnings.push(route.warning);
     // an explicit mock adapter never calls a model: a chosen model is set aside with a warning
     const model = req.adapter === 'mock' ? undefined : (req.model ?? route?.model);
     if (req.model && !model) warnings.push(`adapter mock: the model ${req.model} is not used`);
-    const registry = registryFor(this.opts.env ?? process.env, this.opts.extraProviders);
     let adapter: AdapterId;
     if (model) adapter = adapterForModel(model, registry);
     else {
@@ -278,8 +291,6 @@ export class RunManager {
       adapter = picked.adapter;
       if (picked.note) warnings.push(picked.note);
     }
-    // a model the user named must be one discovery lists; the router's cheap tier was checked by it
-    if (req.model && model) await this.assertListed(model);
     const mode = await workspaceMode(project, req.workspace, (l) => warnings.push(l));
     const budgetUsd = req.budgetUsd ?? org.org.budgets.per_run_usd;
     const runId = randomUUID();
@@ -315,11 +326,6 @@ export class RunManager {
       approvals: req.approvals,
       warn: (w) => warnings.push(w),
     });
-    // the message's files are checked (names, sizes, protection) before any workspace exists
-    const planned =
-      req.attachments && req.attachments.length > 0
-        ? planAttachments(req.attachments, { protectedGlobs: projectProtectedGlobs(project) })
-        : [];
     const ws = await createRunWorkspace({ project, runId, mode });
     const workspace = ws.mode === 'worktree' ? join(ws.path, await gitPrefix(project)) : ws.path;
     // the message's files go into the workspace first, and the message names them; a failure
@@ -363,7 +369,7 @@ export class RunManager {
       workflow: req.workflow,
       input: {
         spec: input,
-        ...(route ? { router: routeHint(route.result) } : {}),
+        ...(route ? { router: routeHint(route.result, { hasMedia: route.hasMedia }) } : {}),
         ...(attached.length > 0 ? { attachments: attached } : {}),
         ...(messages.length > 0 ? { messages } : {}),
         ...(req.event ? { event: true } : {}),
@@ -384,7 +390,7 @@ export class RunManager {
       approvals: req.approvals,
       setup,
     });
-    if (route) await this.recordRoute(runId, route.result);
+    if (route) await this.recordRoute(runId, route.result, route.model !== undefined);
     for (const f of attached)
       this.recordRuntime(runId, 'you', { type: 'file_changed', path: f.path });
     this.prepared.set(runId, { engine, org, adapter });
@@ -394,22 +400,36 @@ export class RunManager {
 
   /**
    * Jev's route for a chat turn (a conversation workflow submitted by a person, Telegram or a
-   * routine; never a dispatched run or an event turn) and the cheap tier when it applies: no
-   * model named, a `cheap` route at ≥ `cheap_min_confidence`, a usable cheap tier and a real
-   * adapter. Any Jev error or timeout → a log line and no route.
+   * routine; never a dispatched run, an event turn, a mock turn or a workflow with its own
+   * `router` node) and the cheap tier when it applies: no model named, a confident intent, a
+   * `cheap` route at >= `cheap_min_confidence` on a turn that is not risky, a usable and listed
+   * cheap tier, and no explicit adapter other than the cheap model's runtime (that case runs
+   * the default tier with a warning). Any Jev error or timeout: a log line and no route.
    */
   private async routeTurn(
     req: SubmitRequest,
     org: Org,
     project: string,
-  ): Promise<{ result: RouteResult; model?: string } | undefined> {
+    registry: ProviderRegistry,
+  ): Promise<
+    { result: RouteResult; model?: string; hasMedia: boolean; warning?: string } | undefined
+  > {
+    const t0 = Date.now();
     const wf = org.workflows[req.workflow];
     if (!wf?.conversation || req.event || req.parentRunId) return undefined;
+    // the workflow's own router node owns those decision ids
+    if (wf.nodes.router || wf.nodes['router:tier']) return undefined;
+    // a mock turn never calls a model, Jev included
+    if (req.adapter === 'mock' || (!req.model && effectiveAdapter(req.adapter, org) === 'mock'))
+      return undefined;
     const env = this.opts.env ?? process.env;
-    const registry = registryFor(env, this.opts.extraProviders);
     const info = routingInfo(org, env, registry);
     const key = env.TYPESAFE_API_KEY;
     if (!info.on || !key) return undefined;
+    const budget = this.opts.routerTimeoutMs ?? ROUTE_TIMEOUT_MS;
+    const hasMedia =
+      Object.values(org.roles).some((r) => r.mcp?.includes('higgsfield')) ||
+      (this.hfMode() === 'api' && !!env.HIGGSFIELD_API_KEY);
     const client = new JevClient({ apiKey: key, baseURL: env.SHIBAOX_JEV_BASE_URL || undefined });
     const result = await routeRequest(
       client,
@@ -424,39 +444,74 @@ export class RunManager {
           path: a.name,
           ...(a.mime ? { mime: a.mime } : {}),
         })),
-        hasMedia: Object.values(org.roles).some((r) => r.mcp?.includes('higgsfield')),
+        hasMedia,
         hasCode: existsSync(join(project, '.git')),
       },
       {
-        timeoutMs: this.opts.routerTimeoutMs,
+        timeoutMs: budget,
         onError: (e) =>
           this.opts.log(
-            `[router] Jev failed (${e.message.split(key).join('***')}): the turn runs unrouted`,
+            `[router] Jev failed (${e.message.split(key).join('***').slice(0, 200)}): the turn runs unrouted`,
           ),
       },
     );
     if (!result) return undefined;
     const cheap = org.models.tiers.cheap;
-    const applies =
+    let warning: string | undefined;
+    const wanted =
       !req.model &&
+      result.intent !== 'unsure' &&
+      !result.risky &&
       result.tier === 'cheap' &&
       result.tierConfidence >= info.cheapMinConfidence &&
-      req.adapter !== 'mock' &&
-      effectiveAdapter(req.adapter, org) !== 'mock' &&
-      runnableRef(registry, cheap) &&
-      (await this.assertListed(cheap as string).then(
-        () => true,
-        () => false,
-      ));
+      runnableRef(registry, cheap);
+    let applies = false;
+    if (wanted && cheap) {
+      const runtime = adapterForModel(cheap, registry);
+      if (req.adapter && runtime !== req.adapter)
+        warning = `the cheap tier ${cheap} runs through ${runtime}, not the ${req.adapter} this turn asked for: the default tier runs`;
+      // the listing check waits for discovery at most for what is left of the router budget
+      else applies = await this.listedWithin(cheap, budget - (Date.now() - t0));
+    }
     this.opts.log(
       `${routeLine(result)} cost=$${result.cost.usd.toFixed(6)}${applies ? ` → ${cheap}` : ''}`,
     );
-    return { result, ...(applies ? { model: cheap } : {}) };
+    return {
+      result,
+      hasMedia,
+      ...(applies ? { model: cheap } : {}),
+      ...(warning ? { warning } : {}),
+    };
   }
 
-  /** The route as two decisions of the run (`router`, `router:tier`), by Jev; the fan-out's cost on the first. */
-  private async recordRoute(runId: string, r: RouteResult): Promise<void> {
+  /** `assertListed` as a yes/no, bounded by `ms` (no answer in time: not listed). */
+  private async listedWithin(model: string, ms: number): Promise<boolean> {
+    if (ms <= 0) return false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<boolean>((r) => {
+      timer = setTimeout(() => r(false), ms);
+    });
+    try {
+      return await Promise.race([
+        this.assertListed(model).then(
+          () => true,
+          () => false,
+        ),
+        late,
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  /**
+   * The route as two decisions of the run (`router`, `router:tier`), by Jev; the fan-out's cost
+   * on the first. The tier recorded is the one APPLIED (`cheap` only when the turn switched to
+   * it), with Jev's confidence when its answer is that tier.
+   */
+  private async recordRoute(runId: string, r: RouteResult, applied: boolean): Promise<void> {
     const at = this.now();
+    const tier = applied ? 'cheap' : 'strong';
     await this.opts.store.append({
       type: 'DecisionMade',
       runId,
@@ -472,8 +527,8 @@ export class RunManager {
       runId,
       nodeId: 'router:tier',
       at,
-      choice: r.tier,
-      confidence: r.tierConfidence,
+      choice: tier,
+      ...(r.tier === tier ? { confidence: r.tierConfidence } : {}),
       by: 'jev',
     });
   }

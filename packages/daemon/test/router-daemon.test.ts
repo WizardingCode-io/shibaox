@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fakeQuery, msg } from '@wizardingcode/shibaox-adapter-claude-code/testing';
 import { MemoryEventStore } from '@wizardingcode/shibaox-core';
 import { startFakeJev } from '@wizardingcode/shibaox-jev/testing';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -38,6 +39,9 @@ describe('Jev routing through the daemon', () => {
       log: (l) => logs.push(l),
       version: '9.9.9',
       vault: join(dir, 'vault'),
+      // the default org on the Claude subscription (a mock turn is never routed)
+      claudeInstalled: true,
+      queryFn: fakeQuery(() => [msg.init(), msg.success('a cat')]),
     });
     daemons.push(daemon);
     await daemon.start();
@@ -48,7 +52,6 @@ describe('Jev routing through the daemon', () => {
       project: org,
       workflow: 'chat',
       input: 'draw me a cat',
-      adapter: 'mock',
       workspace: 'inplace',
     });
     for (let i = 0; i < 200; i++) {
