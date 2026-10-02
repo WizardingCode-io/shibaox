@@ -1,6 +1,6 @@
 {
   "name": "@wizardingcode/shibaox-bridge",
-  "version": "0.2.15",
+  "version": "0.2.16",
   "license": "Apache-2.0",
   "type": "module",
   "description": "The loopback bridge and static server for the Shibaox browser app (no dependencies: shared by the daemon, the CLI and the desktop app)",
