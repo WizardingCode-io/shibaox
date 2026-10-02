@@ -307,6 +307,14 @@ export class AppClient {
   plugins(): Promise<PluginRow[]> {
     return this.json('GET', '/plugins');
   }
+  /** A plugin's action from its card (Telegram: `pair` waits up to a minute, `test` sends a message). */
+  pluginAction(id: string, action: string, body?: Record<string, unknown>): Promise<unknown> {
+    return this.json(
+      'POST',
+      `/plugins/${encodeURIComponent(id)}/actions/${encodeURIComponent(action)}`,
+      body ?? {},
+    );
+  }
 
   projectProfile(path: string, org?: string): Promise<ProjectProfile> {
     const p = new URLSearchParams({ path });

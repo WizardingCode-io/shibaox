@@ -58,6 +58,17 @@ function PluginBody(props: {
   const [copied, setCopied] = useState(false);
   const [adding, setAdding] = useState<string | undefined>(undefined);
   const [keyDialog, setKeyDialog] = useState(false);
+  // a POSTed action (Telegram's pair / test): the one in flight and what it ended with
+  const [busy, setBusy] = useState<string | undefined>(undefined);
+  const [outcome, setOutcome] = useState<{ ok: boolean; text: string } | undefined>(undefined);
+  const post = (id: string) => {
+    setBusy(id);
+    setOutcome(undefined);
+    void store.pluginAction(p.id, id).then((r) => {
+      setBusy(undefined);
+      setOutcome(actionOutcome(id, r));
+    });
+  };
   // Connect vs Manage: the part's own key first, else the vault row (label and dialog agree)
   const keyPresent =
     part.keys.find((k) => k.name === HIGGSFIELD_KEY)?.present ??
@@ -109,6 +120,7 @@ function PluginBody(props: {
   };
   /**
    * An action: `login` POSTs through the store (its href is a daemon path, never a link),
+   * `pair` / `test` POST the plugin's action (a loading button, the outcome inline),
    * `connect_key` opens the key dialog, an absolute http(s) href opens apart, `install` copies
    * its command; anything else is hidden.
    */
@@ -124,6 +136,19 @@ function PluginBody(props: {
               if (r) setLogin(r);
             })
           }
+        >
+          {a.label}
+        </S.Button>
+      );
+    if (a.id === 'pair' || a.id === 'test')
+      return (
+        <S.Button
+          key={a.id}
+          size="sm"
+          variant={a.id === 'pair' ? 'primary' : 'secondary'}
+          loading={busy === a.id}
+          disabled={busy !== undefined}
+          onClick={() => post(a.id)}
         >
           {a.label}
         </S.Button>
@@ -184,6 +209,16 @@ function PluginBody(props: {
           Check again
         </S.Button>
       </div>
+      {busy === 'pair' ? (
+        <p className="muted" role="status">
+          Open your bot in Telegram and send /start now (waiting up to 60 s)…
+        </p>
+      ) : null}
+      {outcome ? (
+        <p className={outcome.ok ? 'muted' : 'note note--danger'} role="status">
+          {outcome.text}
+        </p>
+      ) : null}
       {login?.url ? (
         <p className="muted">
           Finish the login here:{' '}
@@ -264,6 +299,21 @@ function PluginBody(props: {
       ) : null}
     </div>
   );
+}
+
+/** What a POSTed action ended with, in one line: the paired chat, Sent ✓, or the reason. */
+function actionOutcome(
+  id: string,
+  r: { ok: true; result: unknown } | { ok: false; error: string },
+): { ok: boolean; text: string } {
+  if (!r.ok) return { ok: false, text: r.error };
+  const v = (r.result ?? {}) as { paired?: boolean; chatId?: number; reason?: string };
+  if (id === 'pair')
+    return v.paired
+      ? { ok: true, text: `Paired with chat ${v.chatId}` }
+      : { ok: false, text: v.reason ?? 'Not paired' };
+  if (id === 'test') return { ok: true, text: 'Sent ✓' };
+  return { ok: true, text: 'Done' };
 }
 
 /** The modes of a plugin (Higgsfield: Account | API), what generation uses, and the chosen panel. */

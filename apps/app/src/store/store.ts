@@ -80,6 +80,7 @@ export type StoreClient = Pick<
   | 'registryConnectors'
   | 'registrySkills'
   | 'plugins'
+  | 'pluginAction'
   | 'skill'
 >;
 
@@ -894,6 +895,25 @@ export class AppStore {
       await this.client.setHiggsfieldMode(mode);
       await this.refreshHiggsfield();
     });
+  }
+
+  /**
+   * A plugin's action (Telegram's `pair` and `test`): what the daemon answered, or why it refused;
+   * the plugins are read again either way (a pairing changes the card). Never the global error:
+   * the card says it inline.
+   */
+  async pluginAction(
+    pluginId: string,
+    actionId: string,
+  ): Promise<{ ok: true; result: unknown } | { ok: false; error: string }> {
+    try {
+      const result = await this.client.pluginAction(pluginId, actionId);
+      await this.refreshHiggsfield();
+      return { ok: true, result };
+    } catch (e) {
+      await this.refreshHiggsfield();
+      return { ok: false, error: message(e) };
+    }
   }
 
   /** The plugins again (Higgsfield's status among them), after a login in the browser. */

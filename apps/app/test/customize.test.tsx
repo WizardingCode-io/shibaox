@@ -977,6 +977,84 @@ describe('Customize: Plugins', () => {
   });
 });
 
+describe('Customize: Plugins → Telegram actions', () => {
+  const telegram: PluginRow = {
+    id: 'telegram',
+    name: 'Telegram',
+    description: 'Talk to Shibaox from Telegram',
+    status: 'partial',
+    checks: [
+      { label: 'Bot token (SHIBAOX_TELEGRAM_TOKEN)', ok: true },
+      { label: 'Paired with a chat', ok: false },
+      { label: 'Channel running', ok: false },
+    ],
+    keys: [{ name: 'SHIBAOX_TELEGRAM_TOKEN', present: true }],
+    actions: [
+      { id: 'pair', label: 'Pair with my Telegram' },
+      { id: 'test', label: 'Send a test message' },
+      { id: 'botfather', label: 'Create a bot', href: 'https://t.me/BotFather' },
+    ],
+    brings: { connectors: [], skills: [], tools: ['telegram_send'] },
+  };
+
+  it('Pair posts through the store, says what to do while it waits, then the chat; plugins reload', async () => {
+    let answer: (v: unknown) => void = () => undefined;
+    const { client: c, calls } = client({
+      plugins: [telegram],
+      pluginAction: () => new Promise((r) => (answer = r)),
+    });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Pair with my Telegram' }));
+    await waitFor(() => expect(call(calls, 'pluginAction')).toEqual(['telegram', 'pair']));
+    expect(
+      await screen.findByText(
+        'Open your bot in Telegram and send /start now (waiting up to 60 s)…',
+      ),
+    ).toBeTruthy();
+    const reads = calls.filter((x) => x.name === 'plugins').length;
+    answer({ paired: true, chatId: 42, from: 'andre' });
+    expect(await screen.findByText('Paired with chat 42')).toBeTruthy();
+    expect(screen.queryByText(/send \/start now/)).toBeNull();
+    await waitFor(() =>
+      expect(calls.filter((x) => x.name === 'plugins').length).toBeGreaterThan(reads),
+    );
+    // a link to BotFather still opens apart
+    expect(screen.getByRole('link', { name: 'Create a bot' }).getAttribute('href')).toBe(
+      'https://t.me/BotFather',
+    );
+  });
+
+  it('a pairing with no message shows the reason inline', async () => {
+    const { client: c } = client({
+      plugins: [telegram],
+      pluginAction: async () => ({ paired: false, reason: 'no message received in 60 s' }),
+    });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Pair with my Telegram' }));
+    expect(await screen.findByText('no message received in 60 s')).toBeTruthy();
+  });
+
+  it('Send a test message: Sent ✓, or the reason the daemon gave', async () => {
+    let fail = false;
+    const { client: c, calls } = client({
+      plugins: [telegram],
+      pluginAction: async () => {
+        if (fail) throw new Error('Telegram is not paired: Customize → Plugins → Telegram → Pair');
+        return { sent: true, chatId: 42 };
+      },
+    });
+    mount(c, { hash: '#/customize&tab=plugins' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Send a test message' }));
+    await waitFor(() => expect(call(calls, 'pluginAction')).toEqual(['telegram', 'test']));
+    expect(await screen.findByText('Sent ✓')).toBeTruthy();
+    fail = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Send a test message' }));
+    expect(
+      await screen.findByText('Telegram is not paired: Customize → Plugins → Telegram → Pair'),
+    ).toBeTruthy();
+  });
+});
+
 describe('Customize: Plugins → Higgsfield in two modes', () => {
   const HF_KEY = 'HIGGSFIELD_API_KEY';
   const savedKey = (source: 'vault' | 'env') => [

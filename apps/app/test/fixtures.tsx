@@ -420,6 +420,8 @@ export function client(
     fail?: (keyof StoreClient)[];
     /** GET /models answers these instead. */
     models?: Awaited<ReturnType<StoreClient['models']>>;
+    /** POST /plugins/:id/actions/:action answers with this (a rejection is the daemon's refusal). */
+    pluginAction?: (id: string, action: string) => Promise<unknown>;
   } = {},
 ) {
   const calls: { name: string; args: unknown[] }[] = [];
@@ -780,6 +782,13 @@ export function client(
     async plugins() {
       rec('plugins');
       return o.plugins ?? PLUGINS;
+    },
+    async pluginAction(id, action) {
+      rec('pluginAction', id, action);
+      if (o.pluginAction) return (await o.pluginAction(id, action)) as never;
+      return (
+        action === 'pair' ? { paired: true, chatId: 42 } : { sent: true, chatId: 42 }
+      ) as never;
     },
     async mcpTest(id, org) {
       rec('mcpTest', id, org);

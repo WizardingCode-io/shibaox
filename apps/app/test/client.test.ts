@@ -177,6 +177,7 @@ describe('AppClient: Customize', () => {
     await c.registryConnectors();
     await c.registrySkills();
     await c.plugins();
+    await c.pluginAction('telegram', 'pair');
     expect(f.calls.map((x) => `${x.init.method} ${x.url.replace('http://d', '')}`)).toEqual([
       'GET /skills?org=%2Fo',
       'POST /skills?org=%2Fo',
@@ -191,6 +192,7 @@ describe('AppClient: Customize', () => {
       'GET /registry/connectors',
       'GET /registry/skills',
       'GET /plugins',
+      'POST /plugins/telegram/actions/pair',
     ]);
     expect(JSON.parse(String(f.calls[1]?.init.body))).toEqual({
       source: 'repo',

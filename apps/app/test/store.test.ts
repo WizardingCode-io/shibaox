@@ -299,6 +299,9 @@ function fakeClient() {
     async plugins() {
       return [];
     },
+    async pluginAction() {
+      return {};
+    },
     async projectProfile(path: string, org?: string) {
       rec('projectProfile', path, org);
       return { name: 'p', path, git: true, stack: ['node'], files: 3, truncated: false } as never;
