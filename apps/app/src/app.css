@@ -275,6 +275,10 @@ pre.out {
   box-shadow: var(--focus-ring);
   border-radius: var(--radius-lg);
 }
+.note--danger {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
 .note {
   margin: 0;
   font-size: 13px;

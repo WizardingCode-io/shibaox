@@ -8,7 +8,7 @@ import { RolesDialog } from './dialogs/RolesDialog.js';
 import { matches } from './filter.js';
 import { BrandLogo } from './logos.js';
 import { pluginKeyNeeds } from './needed-keys.js';
-import { AddMenu, Empty, goTo, KeyBadge, Toolbar } from './parts.js';
+import { AddMenu, Empty, goTo, KeyBadge, TokenPaste, Toolbar } from './parts.js';
 import { settle } from './skill-results.js';
 import type { CustomizeView, HiggsfieldEffective, HiggsfieldMode, PluginMode } from './types.js';
 
@@ -37,49 +37,6 @@ const NOW: Record<HiggsfieldEffective, string> = {
 type Part = Pick<PluginRow, 'checks' | 'keys' | 'actions' | 'brings'> & { id?: string };
 
 /** A plugin's (or a mode's) checks, actions and what it brings. */
-/** A plugin's missing key, pasted right here: saved to the vault, the checks refresh at once. */
-function TokenPaste(props: { name: string; alternatives: string[] }): JSX.Element {
-  const S = ds();
-  const store = useStore();
-  const [value, setValue] = useState('');
-  const [saving, setSaving] = useState(false);
-  const others = props.alternatives.filter((n) => n !== props.name);
-  return (
-    <div className="key-set">
-      <S.Input
-        type="password"
-        autoComplete="off"
-        aria-label={props.name}
-        placeholder={`Paste the token (saved as ${props.name}${others.length ? `; ${others.join(', ')} also works` : ''})`}
-        value={value}
-        onChange={(e) => setValue((e.target as HTMLInputElement).value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && value.trim() && !saving) {
-            e.preventDefault();
-            setSaving(true);
-            void store.setKey(props.name, value.trim()).then(() => setSaving(false));
-          }
-        }}
-      />
-      <S.Button
-        size="sm"
-        loading={saving}
-        disabled={!value.trim()}
-        aria-label={`Save ${props.name}`}
-        onClick={() => {
-          setSaving(true);
-          void store.setKey(props.name, value.trim()).then((ok) => {
-            setSaving(false);
-            if (ok) setValue('');
-          });
-        }}
-      >
-        Save
-      </S.Button>
-    </div>
-  );
-}
-
 function PluginBody(props: {
   p: PluginRow;
   part: Part;

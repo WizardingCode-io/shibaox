@@ -20,6 +20,7 @@ import {
   Empty,
   goTo,
   KeyBadge,
+  TokenPaste,
   Toolbar,
 } from './parts.js';
 import { CONNECTOR_CATEGORIES, type CustomizeView, type McpRow } from './types.js';
@@ -93,8 +94,14 @@ function ServerCard(props: {
             {`${result.tools?.length ?? 0} ${(result.tools?.length ?? 0) === 1 ? 'tool' : 'tools'}: ${(result.tools ?? []).map((t) => t.name).join(', ')}`}
           </span>
         ) : (
-          <S.Badge tone="danger">{result.error ?? 'failed'}</S.Badge>
+          <p className="note note--danger">{result.error ?? 'failed'}</p>
         )
+      ) : null}
+      {r.keys.some((k) => !k.present) ? (
+        <TokenPaste
+          name={r.keys.find((k) => !k.present)?.name ?? ''}
+          alternatives={r.keys.filter((k) => !k.present).map((k) => k.name)}
+        />
       ) : null}
     </S.Card>
   );

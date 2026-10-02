@@ -2,6 +2,7 @@ import type { RoleRow } from '@wizardingcode/shibaox-daemon';
 import { type ReactNode, useState } from 'react';
 import { ds } from '../../ds.js';
 import { customizePath, navigate } from '../../router.js';
+import { useStore } from '../../store/hooks.js';
 import { KEY_NAME_RE } from './needed-keys.js';
 import type { CustomizeTab, CustomizeView } from './types.js';
 
@@ -239,4 +240,47 @@ export function SkippedNote(props: { lines: string[] }): JSX.Element | null {
 /** What an empty list says. */
 export function Empty(props: { children: ReactNode }): JSX.Element {
   return <p className="muted empty-line">{props.children}</p>;
+}
+
+/** A missing key, pasted right where it is needed: saved to the vault, the screen refreshes at once. */
+export function TokenPaste(props: { name: string; alternatives: string[] }): JSX.Element {
+  const S = ds();
+  const store = useStore();
+  const [value, setValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const others = props.alternatives.filter((n) => n !== props.name);
+  return (
+    <div className="key-set">
+      <S.Input
+        type="password"
+        autoComplete="off"
+        aria-label={props.name}
+        placeholder={`Paste the token (saved as ${props.name}${others.length ? `; ${others.join(', ')} also works` : ''})`}
+        value={value}
+        onChange={(e) => setValue((e.target as HTMLInputElement).value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && value.trim() && !saving) {
+            e.preventDefault();
+            setSaving(true);
+            void store.setKey(props.name, value.trim()).then(() => setSaving(false));
+          }
+        }}
+      />
+      <S.Button
+        size="sm"
+        loading={saving}
+        disabled={!value.trim()}
+        aria-label={`Save ${props.name}`}
+        onClick={() => {
+          setSaving(true);
+          void store.setKey(props.name, value.trim()).then((ok) => {
+            setSaving(false);
+            if (ok) setValue('');
+          });
+        }}
+      >
+        Save
+      </S.Button>
+    </div>
+  );
 }

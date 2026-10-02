@@ -470,7 +470,10 @@ describe('Customize: Connectors', () => {
     await screen.findByText('acme');
     expect(radio('Yours').querySelector('.sx-seg__dot')).toBeNull();
     fireEvent.click(screen.getAllByRole('button', { name: 'Test' })[1] as HTMLElement);
-    expect(await screen.findByText('spawn npx ENOENT')).toBeTruthy();
+    const err = await screen.findByText('spawn npx ENOENT');
+    // a failure wraps as a line of text, never a one-line badge that overflows the card
+    expect(err.className).toContain('note--danger');
+    expect(err.closest('.sx-badge')).toBeNull();
     expect(radio('Yours (needs attention)').querySelector('.sx-seg__dot')).toBeTruthy();
     await pickCategory(/^Category/, 'Custom');
     expect(screen.queryByText('playwright')).toBeNull();
@@ -576,6 +579,28 @@ describe('Customize: Connectors', () => {
     await screen.findByText('GitHub');
     expect(document.querySelector('svg[data-logo="github"]')).toBeTruthy();
     expect(document.querySelector('[data-monogram="playwright"]')?.textContent).toBe('P');
+  });
+
+  it('a connector whose key is missing takes the value on its own card', async () => {
+    const { client: c, calls } = client({
+      mcp: [
+        {
+          id: 'github',
+          description: 'x',
+          transport: 'http',
+          target: 'https://api.githubcopilot.com/mcp/',
+          roles: ['assistant'],
+          keys: [{ name: 'GH_TOKEN', present: false }],
+        },
+      ],
+    });
+    mount(c, { hash: '#/customize&tab=connectors' });
+    await screen.findByText('github');
+    const field = screen.getByLabelText('GH_TOKEN') as HTMLInputElement;
+    expect(field.type).toBe('password');
+    fireEvent.change(field, { target: { value: 'ghp_x' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save GH_TOKEN' }));
+    await waitFor(() => expect(call(calls, 'setKey')).toEqual(['GH_TOKEN', 'ghp_x']));
   });
 
   it('a connector row never shows a key-like text as a badge', async () => {
