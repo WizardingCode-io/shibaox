@@ -65,6 +65,16 @@ describe('the route of a chat turn', () => {
       tier: 'cheap',
       label: 'Routed by Jev · media (0.98) · cheap',
     });
+    // the tier shown is the one applied (Jev said cheap in the hint, the turn ran strong)
+    const strong = threadView([
+      {
+        state: chat({
+          route: { intent: 'media', confidence: 0.98, tier: 'strong', by: 'jev' } as never,
+        }),
+        cards,
+      },
+    ]);
+    expect(strong.messages[1]?.route?.label).toBe('Routed by Jev · media (0.98) · strong');
     // an unrouted turn has none
     const plain = threadView([{ state: chat({ route: undefined }), cards }]);
     expect(plain.messages[1]?.route).toBeUndefined();

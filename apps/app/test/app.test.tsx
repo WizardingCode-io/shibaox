@@ -282,15 +282,21 @@ describe('the sections', () => {
     const { client: c } = client({
       runs: [summary('root')],
       states: {
+        // Jev answered cheap but the turn ran on the strong tier: the line shows the applied
+        // tier; the router's hint is in the input and must never be shown
         root: state('root', {
-          route: { intent: 'media', confidence: 0.98, tier: 'cheap', by: 'jev' },
+          input: {
+            spec: 'Find me a hotel in Porto',
+            router: '[router] intent=media (0.98) tier=cheap risky=no',
+          },
+          route: { intent: 'media', confidence: 0.98, tier: 'strong', by: 'jev' },
         }),
       },
       frames: { root: [rtFrame(1, 'reply', { type: 'text', text: 'Here is the cat.' })] },
     });
     mount(c, { hash: '#/t/root' });
     await waitFor(() => expect(screen.getByText('Here is the cat.')).toBeTruthy());
-    const line = screen.getByText('Routed by Jev · media (0.98) · cheap');
+    const line = screen.getByText('Routed by Jev · media (0.98) · strong');
     expect(line.className).toContain('muted');
     // the user's message is unchanged
     expect(screen.getAllByText('Find me a hotel in Porto').length).toBeGreaterThan(0);
