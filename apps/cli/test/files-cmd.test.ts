@@ -53,7 +53,7 @@ describe('shibaox files', () => {
       channels: [],
       env: {},
       log: () => {},
-      version: '0.2.22',
+      version: '0.2.23',
     });
     daemons.push(daemon);
     await daemon.start();
