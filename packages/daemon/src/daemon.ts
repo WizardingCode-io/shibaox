@@ -20,7 +20,7 @@ import { type ChatMessage, loadOrg, type Org } from '@wizardingcode/shibaox-sche
 import { githubChannel } from './channels/github.js';
 import { macosChannel } from './channels/macos.js';
 import { OutboxWorker } from './channels/outbox.js';
-import { inboxToken, telegramChannel } from './channels/telegram.js';
+import { inboxToken, isTelegramChannel, telegramChannel } from './channels/telegram.js';
 import { pollForChat } from './channels/telegram-pair.js';
 import type { Channel } from './channels/types.js';
 import {
@@ -484,6 +484,22 @@ export class Daemon {
       this.pairAbort = undefined;
     });
     return this.pairing;
+  }
+
+  /**
+   * Sends `text` to the paired chat through the running channel: `not paired` without a
+   * `chat_id`, `no token` without the bot token, `channel not running` before it started.
+   */
+  async telegramSend(
+    text: string,
+  ): Promise<{ sent: true; chatId: number } | { sent: false; reason: string }> {
+    const tg = this.config.channels.telegram;
+    if (!tg) return { sent: false, reason: 'not paired' };
+    if (!this.env[tg.bot_token_env]) return { sent: false, reason: 'no token' };
+    const c = this.channels.find(isTelegramChannel);
+    if (!c) return { sent: false, reason: 'channel not running' };
+    await c.send(text);
+    return { sent: true, chatId: c.chatId };
   }
 
   private async pairOnce(timeoutMs: number): Promise<TelegramPairResult> {

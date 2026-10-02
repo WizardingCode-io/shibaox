@@ -202,3 +202,35 @@ describe('pairing Telegram from the daemon', () => {
     expect(Date.now() - t0).toBeLessThan(5000);
   });
 });
+
+describe('sending to the paired chat', () => {
+  it('sends escaped text to the configured chat, split under the limit', async () => {
+    fake = await fakeBotApi();
+    const { d } = daemonWith({ telegram: true });
+    await d.start();
+    expect(await d.telegramSend('a <b> & c')).toEqual({ sent: true, chatId: 5 });
+    const sent = () => (fake?.calls ?? []).filter((c) => c.method === 'sendMessage');
+    expect(sent()[0]?.body).toMatchObject({
+      chat_id: 5,
+      text: 'a &lt;b&gt; &amp; c',
+      parse_mode: 'HTML',
+    });
+    await d.telegramSend('x'.repeat(9000));
+    expect(
+      sent()
+        .slice(1)
+        .map((c) => String(c.body.text).length),
+    ).toEqual([4000, 4000, 1000]);
+  });
+
+  it('not paired, or no token: says why and sends nothing', async () => {
+    fake = await fakeBotApi();
+    const a = daemonWith();
+    await a.d.start();
+    expect(await a.d.telegramSend('hi')).toEqual({ sent: false, reason: 'not paired' });
+    const b = daemonWith({ env: {}, telegram: true });
+    await b.d.start();
+    expect(await b.d.telegramSend('hi')).toEqual({ sent: false, reason: 'no token' });
+    expect(fake.calls.some((c) => c.method === 'sendMessage')).toBe(false);
+  });
+});

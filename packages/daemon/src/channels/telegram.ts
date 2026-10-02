@@ -105,8 +105,21 @@ interface Update {
   message?: Message;
 }
 
+/** The Telegram channel: a channel that can also send any text to its chat. */
+export interface TelegramChannel extends Channel {
+  id: 'telegram';
+  /** The chat it talks to. */
+  readonly chatId: number;
+  /** Sends plain text (HTML-escaped, split under Telegram's limit) to the chat. */
+  send(text: string): Promise<void>;
+}
+
+/** Whether a channel is the Telegram one with `send` (a test may inject a bare one). */
+export const isTelegramChannel = (c: Channel): c is TelegramChannel =>
+  c.id === 'telegram' && typeof (c as Partial<TelegramChannel>).send === 'function';
+
 /** Telegram Bot API over `fetch`: inline Approve/Deny buttons, long polling for the answers. */
-export function telegramChannel(o: TelegramOptions): Channel {
+export function telegramChannel(o: TelegramOptions): TelegramChannel {
   const base = `${o.apiBase ?? 'https://api.telegram.org/bot'}${o.token}`;
   const doFetch = o.fetch ?? fetch;
   const messages = new Map<string, { messageId: number; text: string }>();
@@ -293,6 +306,8 @@ export function telegramChannel(o: TelegramOptions): Channel {
 
   return {
     id: 'telegram',
+    chatId: o.chatId,
+    send: (text) => sendText(text, 'HTML'),
     async notify(item) {
       const text = telegramText(item);
       const token = inboxToken(item.id);
