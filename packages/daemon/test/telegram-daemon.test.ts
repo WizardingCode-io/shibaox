@@ -215,6 +215,60 @@ describe('talking to the orchestrator from Telegram', () => {
     expect(messages.length).toBeLessThan(7); // not the whole thread again
   });
 
+  it('the chat shows typing from the text until the reply, then stops', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tgd-'));
+    tmp.push(dir);
+    scaffoldOrg(dir);
+    const project = join(dir, 'proj');
+    cpSync(sample, project, { recursive: true });
+    fake = await fakeTelegram();
+    const channel = telegramChannel({
+      token: 't',
+      chatId: 7,
+      apiBase: fake.apiBase,
+      log: () => {},
+      pollTimeoutSeconds: 0,
+      typingIntervalMs: 10,
+    });
+    const daemon = new Daemon({
+      discovery: false,
+      home: homePaths({ SHIBAOX_HOME: join(dir, 'home') }),
+      store: new MemoryEventStore(),
+      channels: [channel],
+      env: {},
+      log: () => {},
+      vault: join(dir, 'vault'),
+      config: {
+        max_concurrent_runs: 2,
+        approval_timeout_minutes: 1,
+        channels: {
+          macos: { enabled: false },
+          telegram: {
+            bot_token_env: 'X',
+            chat_id: 7,
+            org: join(dir, 'org'),
+            project,
+            workflow: 'chat',
+            adapter: 'mock',
+          },
+        },
+      },
+    });
+    daemons.push(daemon);
+    await daemon.start();
+    fake.push(message(1, 7, 'olá'));
+    await vi.waitFor(() =>
+      expect(fake?.calls.filter((c) => c.method === 'sendMessage')).toHaveLength(1),
+    );
+    const calls = fake.calls.map((c) => c.method);
+    const firstReply = calls.indexOf('sendMessage');
+    const pingsBefore = calls.slice(0, firstReply).filter((m) => m === 'sendChatAction').length;
+    expect(pingsBefore).toBeGreaterThanOrEqual(1);
+    await new Promise((r) => setTimeout(r, 60));
+    const after = fake.calls.map((c) => c.method).slice(firstReply + 1);
+    expect(after.filter((m) => m === 'sendChatAction').length).toBeLessThanOrEqual(1);
+  });
+
   it('without org and project in daemon.yaml the text runs on the home org and workspace', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tgd-'));
     tmp.push(dir);

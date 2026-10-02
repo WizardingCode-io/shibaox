@@ -7,9 +7,12 @@ import {
   STATUS_SYMBOL,
   shortDuration,
 } from '../runs/report.js';
+import { splitMarkdown } from './telegram-md.js';
 import type { Channel } from './types.js';
 
 export interface TelegramOptions {
+  /** How often "typing…" is renewed while a turn runs (default 4 s; tests shorten it). */
+  typingIntervalMs?: number;
   token: string;
   chatId: number;
   /** Resolves a callback token to the inbox item it stands for (after a restart). */
@@ -110,7 +113,7 @@ export interface TelegramChannel extends Channel {
   id: 'telegram';
   /** The chat it talks to. */
   readonly chatId: number;
-  /** Sends plain text (HTML-escaped, split under Telegram's limit) to the chat. */
+  /** Sends Markdown as the chat renders it (Telegram HTML, split under the limit) to the chat. */
   send(text: string): Promise<void>;
   /** Sends a file as a photo, video, audio or document by its type, with an optional caption. */
   sendFile(file: TelegramFile, caption?: string): Promise<void>;
@@ -245,6 +248,44 @@ export function telegramChannel(o: TelegramOptions): TelegramChannel {
     }
   }
 
+  /**
+   * Markdown as the models write it, rendered: each piece is whole blocks as Telegram HTML; a
+   * piece Telegram cannot parse (a tag it does not know) goes out as the plain text it came from.
+   */
+  async function sendMarkdown(md: string): Promise<void> {
+    for (const piece of splitMarkdown(md, TELEGRAM_CHUNK)) {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await api('sendMessage', { chat_id: o.chatId, text: piece, parse_mode: 'HTML' });
+          break;
+        } catch (e) {
+          if (e instanceof TelegramApiError && e.status === 429 && attempt < 3) {
+            await new Promise((r) => setTimeout(r, Math.min(e.retryAfter ?? 1, 30) * 1000));
+            continue;
+          }
+          if (e instanceof TelegramApiError && e.status === 400) {
+            const plain = piece.replace(/<[^>]+>/g, '');
+            for (const p of chunkText(plain, TELEGRAM_CHUNK))
+              await api('sendMessage', { chat_id: o.chatId, text: p });
+            break;
+          }
+          throw e;
+        }
+      }
+    }
+  }
+
+  /** "typing…" every few seconds until stopped: a long turn shows the chat something is going on. */
+  function typing(): () => void {
+    const every = o.typingIntervalMs ?? 4_000;
+    const ping = () =>
+      api('sendChatAction', { chat_id: o.chatId, action: 'typing' }).catch(() => undefined);
+    void ping();
+    const t = setInterval(() => void ping(), every);
+    t.unref?.();
+    return () => clearInterval(t);
+  }
+
   /** A pre-escaped HTML digest: pieces are already safe, only the split matters. */
   async function sendDigest(html: string): Promise<void> {
     for (const piece of chunkText(html, TELEGRAM_CHUNK))
@@ -359,7 +400,7 @@ export function telegramChannel(o: TelegramOptions): TelegramChannel {
   return {
     id: 'telegram',
     chatId: o.chatId,
-    send: (text) => sendText(text, 'HTML'),
+    send: (text) => sendMarkdown(text),
     sendFile,
     async notify(item) {
       const text = telegramText(item);
@@ -393,11 +434,12 @@ export function telegramChannel(o: TelegramOptions): TelegramChannel {
     },
     async report(r) {
       const text = telegramReportText(r);
-      // a conversation reply is raw text (escaped per piece); a digest is already HTML
-      if (r.reply !== undefined && text === r.reply) await sendText(text, 'HTML');
+      // a conversation reply is Markdown from the model, rendered; a digest is already HTML
+      if (r.reply !== undefined && text === r.reply) await sendMarkdown(text);
       else await sendDigest(text);
     },
     say: (text) => sendText(text),
+    typing,
     onAnswer(cb) {
       answer = cb;
     },
