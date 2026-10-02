@@ -60,13 +60,16 @@ const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` 
 const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
 
 function routable(workflows: RouteInput['workflows']) {
-  return workflows
-    .filter((w) => !w.conversation)
-    .slice(0, MAX_WORKFLOWS)
-    .map((w) => ({
-      id: cut(w.id, NAME_MAX),
-      description: cut(oneLine(w.description ?? ''), DESCRIPTION_MAX),
-    }));
+  return (
+    workflows
+      // an id too long to offer whole is dropped: a cut id would name a workflow that does not exist
+      .filter((w) => !w.conversation && w.id.length <= NAME_MAX)
+      .slice(0, MAX_WORKFLOWS)
+      .map((w) => ({
+        id: w.id,
+        description: cut(oneLine(w.description ?? ''), DESCRIPTION_MAX),
+      }))
+  );
 }
 
 function stateOf(input: RouteInput, workflows: { id: string; description: string }[]): string {
@@ -131,7 +134,8 @@ export async function routeRequest(
   const timeoutMs = opts.timeoutMs ?? ROUTE_TIMEOUT_MS;
   const ctrl = new AbortController();
   const onAbort = () => ctrl.abort();
-  opts.signal?.addEventListener('abort', onAbort);
+  if (opts.signal?.aborted) ctrl.abort();
+  else opts.signal?.addEventListener('abort', onAbort);
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const workflows = routable(input.workflows);
@@ -178,13 +182,14 @@ export function routeLine(r: RouteResult): string {
 
 /**
  * The line the orchestrator reads before the user's message:
- * `[router] intent=media (0.98) tier=cheap risky=no: generate it with Higgsfield now`.
+ * `[router] intent=media (0.98) tier=cheap risky=no: generate it with Higgsfield now` (the
+ * media advice only when media generation is set up, `hasMedia`).
  */
-export function routeHint(r: RouteResult): string {
+export function routeHint(r: RouteResult, opts: { hasMedia?: boolean } = {}): string {
   const line = routeLine(r);
   const wf = r.intent.startsWith('workflow:') ? r.intent.slice('workflow:'.length) : undefined;
   const todo =
-    r.intent === 'media'
+    r.intent === 'media' && opts.hasMedia
       ? 'generate it with Higgsfield now'
       : wf
         ? `start workflow ${wf} with start_workflow unless the user is only asking about it`

@@ -159,6 +159,46 @@ describe('routeRequest', () => {
     expect(aborted).toBe(true);
     expect(timedOut[0]).toMatch(/timed out after 50 ms/);
   });
+
+  it('a signal already aborted aborts the fan-out at once', async () => {
+    let aborted = false;
+    const hang: RouteFanOut = (_s, _q, o) =>
+      new Promise((_r, reject) => {
+        if (o?.signal?.aborted) {
+          aborted = true;
+          reject(new Error('aborted'));
+        }
+        o?.signal?.addEventListener('abort', () => {
+          aborted = true;
+          reject(new Error('aborted'));
+        });
+      });
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const t0 = Date.now();
+    expect(
+      await routeRequest(
+        hang,
+        { request: 'x', workflows: [] },
+        { signal: ctrl.signal, timeoutMs: 5_000 },
+      ),
+    ).toBeUndefined();
+    expect(aborted).toBe(true);
+    expect(Date.now() - t0).toBeLessThan(1_000);
+  });
+
+  it('a workflow id longer than 120 chars is dropped from the options, never cut', async () => {
+    const long = `w${'x'.repeat(120)}`;
+    const f = fake(answers({ intent: 'chat' }));
+    await routeRequest(f.fanOut, {
+      request: 'hi',
+      workflows: [{ id: long, description: 'too long' }, { id: 'short' }],
+    });
+    const q = f.sent[0]?.questions.intent as { criteria: Record<string, string> };
+    expect(Object.keys(q.criteria)).toContain('workflow:short');
+    expect(Object.keys(q.criteria).some((k) => k.startsWith('workflow:w'))).toBe(false);
+    expect(f.sent[0]?.state).not.toContain('wxxx');
+  });
 });
 
 describe('routeHint', () => {
@@ -175,7 +215,7 @@ describe('routeHint', () => {
     expect(routeHint({ ...base, intent: 'chat' })).toBe(
       '[router] intent=chat (0.98) tier=cheap risky=no',
     );
-    expect(routeHint({ ...base, intent: 'media', risky: true })).toBe(
+    expect(routeHint({ ...base, intent: 'media', risky: true }, { hasMedia: true })).toBe(
       '[router] intent=media (0.98) tier=cheap risky=yes: generate it with Higgsfield now',
     );
     expect(routeHint({ ...base, intent: 'workflow:fix-issue' })).toContain(
@@ -183,5 +223,14 @@ describe('routeHint', () => {
     );
     expect(routeHint({ ...base, intent: 'research' })).toContain('use your fetch/search tools');
     expect(routeHint({ ...base, intent: 'human' })).toContain('ask one precise question');
+  });
+
+  it('the media hint only when media generation is set up', () => {
+    expect(routeHint({ ...base, intent: 'media' })).toBe(
+      '[router] intent=media (0.98) tier=cheap risky=no',
+    );
+    expect(routeHint({ ...base, intent: 'media' }, { hasMedia: false })).not.toContain(
+      'Higgsfield',
+    );
   });
 });
