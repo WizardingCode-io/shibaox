@@ -183,3 +183,43 @@ describe('partners.higgsfield.mode and the daemon.yaml writer', () => {
     expect(readFileSync(p, 'utf8')).toBe(broken);
   });
 });
+
+describe('writeDaemonConfig: telegram pairing', () => {
+  it('sets channels.telegram.chat_id, keeps comments and other keys, keeps the default token env', () => {
+    dir = mkdtempSync(join(tmpdir(), 'shx-home-'));
+    const p = join(dir, 'daemon.yaml');
+    writeFileSync(
+      p,
+      '# mine\nmax_concurrent_runs: 3 # three\nchannels:\n  macos: { enabled: false }\n  telegram:\n    chat_id: 5 # old\n    org: ./org\n',
+    );
+    const c = writeDaemonConfig(p, { telegram: { chat_id: 42 } });
+    expect(c.channels.telegram).toMatchObject({
+      chat_id: 42,
+      bot_token_env: 'SHIBAOX_TELEGRAM_TOKEN',
+      org: join(dir, 'org'),
+    });
+    const text = readFileSync(p, 'utf8');
+    expect(text).toContain('# mine');
+    expect(text).toContain('# three');
+    expect(text).toContain('chat_id: 42');
+    expect(text).not.toContain('bot_token_env');
+    expect(c.channels.macos.enabled).toBe(false);
+    expect(c.max_concurrent_runs).toBe(3);
+  });
+
+  it('creates the file when absent and writes bot_token_env when given', () => {
+    dir = mkdtempSync(join(tmpdir(), 'shx-home-'));
+    const p = join(dir, 'sub', 'daemon.yaml');
+    const c = writeDaemonConfig(p, { telegram: { chat_id: -100123, bot_token_env: 'MY_BOT' } });
+    expect(c.channels.telegram).toMatchObject({ chat_id: -100123, bot_token_env: 'MY_BOT' });
+    expect(readFileSync(p, 'utf8')).toMatch(/bot_token_env: MY_BOT/);
+  });
+
+  it('a chat id that is not an integer is refused before anything is written', () => {
+    dir = mkdtempSync(join(tmpdir(), 'shx-home-'));
+    const p = join(dir, 'daemon.yaml');
+    writeFileSync(p, '# keep\n');
+    expect(() => writeDaemonConfig(p, { telegram: { chat_id: 1.5 } })).toThrow(/chat_id/);
+    expect(readFileSync(p, 'utf8')).toBe('# keep\n');
+  });
+});

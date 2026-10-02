@@ -102,6 +102,8 @@ export function loadDaemonConfig(path: string): DaemonConfig {
 /** What the daemon itself changes in `daemon.yaml` (everything else is the user's to edit). */
 export interface DaemonConfigPatch {
   higgsfieldMode?: HiggsfieldMode;
+  /** The chat a pairing found (`channels.telegram.chat_id`); `bot_token_env` only when given. */
+  telegram?: { chat_id: number; bot_token_env?: string };
 }
 
 /**
@@ -119,6 +121,11 @@ export function writeDaemonConfig(path: string, patch: DaemonConfigPatch): Daemo
         `partners.higgsfield.mode must be one of ${HIGGSFIELD_MODES.join(', ')} (got "${String(patch.higgsfieldMode)}")`,
       );
     doc.setIn(['partners', 'higgsfield', 'mode'], patch.higgsfieldMode);
+  }
+  if (patch.telegram !== undefined) {
+    doc.setIn(['channels', 'telegram', 'chat_id'], patch.telegram.chat_id);
+    if (patch.telegram.bot_token_env !== undefined)
+      doc.setIn(['channels', 'telegram', 'bot_token_env'], patch.telegram.bot_token_env);
   }
   const r = DaemonConfigSchema.safeParse(doc.toJS() ?? {});
   if (!r.success)
